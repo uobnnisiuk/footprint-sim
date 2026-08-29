@@ -1,0 +1,191 @@
+{
+  "schemaVersion": 1,
+  "id": "s0-walking-baseline",
+  "title": "S0: Walking baseline",
+  "description": "A deterministic pre-disaster encounter followed by ordinary movement from an outdoor plaza into a building.",
+  "targetPersonId": "person-aoi",
+  "normalWalkingRadius": 35.0,
+  "hazardTransportEnvelopeRegionIds": [],
+  "regions": [
+    {
+      "id": "outdoor-plaza",
+      "type": "outdoor",
+      "center": { "x": 0.0, "y": 0.0, "elevation": 4.0, "regionId": "outdoor-plaza" },
+      "passability": 1.0,
+      "connections": [
+        { "toRegionId": "access-road", "travelCost": 1.0, "passable": true }
+      ]
+    },
+    {
+      "id": "access-road",
+      "type": "road",
+      "center": { "x": 35.0, "y": 0.0, "elevation": 4.0, "regionId": "access-road" },
+      "passability": 1.0,
+      "connections": [
+        { "toRegionId": "outdoor-plaza", "travelCost": 1.0, "passable": true },
+        { "toRegionId": "building-entry", "travelCost": 1.0, "passable": true }
+      ]
+    },
+    {
+      "id": "building-entry",
+      "type": "building",
+      "center": { "x": 65.0, "y": 0.0, "elevation": 4.0, "regionId": "building-entry" },
+      "passability": 0.9,
+      "connections": [
+        { "toRegionId": "access-road", "travelCost": 1.0, "passable": true },
+        { "toRegionId": "building-office", "travelCost": 0.5, "passable": true }
+      ]
+    },
+    {
+      "id": "building-office",
+      "type": "building",
+      "center": { "x": 82.0, "y": 8.0, "elevation": 7.0, "regionId": "building-office" },
+      "passability": 0.8,
+      "connections": [
+        { "toRegionId": "building-entry", "travelCost": 0.5, "passable": true }
+      ]
+    }
+  ],
+  "entities": {
+    "persons": [
+      {
+        "id": "person-aoi",
+        "initialPosition": { "x": -8.0, "y": 0.0, "elevation": 4.0, "regionId": "outdoor-plaza" }
+      },
+      {
+        "id": "person-ren",
+        "initialPosition": { "x": -2.0, "y": 3.0, "elevation": 4.0, "regionId": "outdoor-plaza" }
+      }
+    ],
+    "devices": [
+      {
+        "id": "device-aoi-phone",
+        "initialPosition": { "x": -8.0, "y": 0.0, "elevation": 4.0, "regionId": "outdoor-plaza" }
+      },
+      {
+        "id": "device-ren-phone",
+        "initialPosition": { "x": -2.0, "y": 3.0, "elevation": 4.0, "regionId": "outdoor-plaza" }
+      }
+    ],
+    "carriers": [],
+    "rescuers": [
+      {
+        "id": "rescuer-1",
+        "initialPosition": { "x": 0.0, "y": -20.0, "elevation": 4.0, "regionId": "outdoor-plaza" }
+      }
+    ],
+    "hazards": []
+  },
+  "steps": [
+    {
+      "id": "associate-aoi-device",
+      "tick": 0,
+      "kind": "personDeviceAssociated",
+      "subjectIds": ["person-aoi"],
+      "relatedEntityIds": ["device-aoi-phone"],
+      "regionId": "outdoor-plaza",
+      "payload": { "relationship": "carried" }
+    },
+    {
+      "id": "associate-ren-device",
+      "tick": 0,
+      "kind": "personDeviceAssociated",
+      "subjectIds": ["person-ren"],
+      "relatedEntityIds": ["device-ren-phone"],
+      "regionId": "outdoor-plaza",
+      "payload": { "relationship": "carried" }
+    },
+    {
+      "id": "pre-disaster-encounter",
+      "tick": 3,
+      "kind": "encounter",
+      "subjectIds": ["person-aoi", "person-ren"],
+      "relatedEntityIds": ["device-aoi-phone", "device-ren-phone"],
+      "position": { "x": 0.0, "y": 1.0, "elevation": 4.0, "regionId": "outdoor-plaza" },
+      "payload": { "proximityMeters": 3.0 },
+      "observation": {
+        "evidenceType": "peerEncounter",
+        "reportedSubjectIds": ["person-aoi", "person-ren"],
+        "reportedPosition": { "x": 0.0, "y": 1.0, "elevation": 4.0, "regionId": "outdoor-plaza" },
+        "reportedRegionId": "outdoor-plaza",
+        "emissionProbability": 1.0,
+        "dropProbability": 0.0,
+        "minimumDelayTicks": 0,
+        "maximumDelayTicks": 0,
+        "state": "confirmed",
+        "conflictProbability": 0.0,
+        "publicPayload": { "source": "peer-encounter" }
+      }
+    },
+    {
+      "id": "exchange-evidence",
+      "tick": 4,
+      "kind": "evidenceExchanged",
+      "subjectIds": ["device-aoi-phone", "device-ren-phone"],
+      "causeStepId": "pre-disaster-encounter",
+      "position": { "x": 0.0, "y": 1.0, "elevation": 4.0, "regionId": "outdoor-plaza" },
+      "payload": { "bundleCount": 2 }
+    },
+    {
+      "id": "aoi-walks-road",
+      "tick": 9,
+      "kind": "voluntaryMovement",
+      "movementKind": "voluntary",
+      "subjectIds": ["person-aoi", "device-aoi-phone"],
+      "position": { "x": 35.0, "y": 0.0, "elevation": 4.0, "regionId": "access-road" },
+      "payload": { "mode": "walking" }
+    },
+    {
+      "id": "aoi-enters-building",
+      "tick": 14,
+      "kind": "regionEntered",
+      "movementKind": "voluntary",
+      "subjectIds": ["person-aoi", "device-aoi-phone"],
+      "position": { "x": 65.0, "y": 0.0, "elevation": 4.0, "regionId": "building-entry" },
+      "payload": { "fromRegionId": "access-road" },
+      "observation": {
+        "evidenceType": "entryRecord",
+        "reportedSubjectIds": ["person-aoi"],
+        "reportedPosition": { "x": 65.0, "y": 0.0, "elevation": 4.0, "regionId": "building-entry" },
+        "reportedRegionId": "building-entry",
+        "emissionProbability": 1.0,
+        "dropProbability": 0.0,
+        "minimumDelayTicks": 1,
+        "maximumDelayTicks": 1,
+        "state": "confirmed",
+        "conflictProbability": 0.0,
+        "publicPayload": { "source": "entry-reader" }
+      }
+    },
+    {
+      "id": "ren-enters-office",
+      "tick": 16,
+      "kind": "regionEntered",
+      "movementKind": "voluntary",
+      "subjectIds": ["person-ren", "device-ren-phone"],
+      "position": { "x": 82.0, "y": 8.0, "elevation": 7.0, "regionId": "building-office" },
+      "payload": { "fromRegionId": "access-road" }
+    },
+    {
+      "id": "aoi-contact-lost",
+      "tick": 30,
+      "kind": "communicationLost",
+      "subjectIds": ["person-aoi"],
+      "relatedEntityIds": ["device-aoi-phone"],
+      "regionId": "building-entry",
+      "payload": { "attempts": 3 },
+      "observation": {
+        "evidenceType": "contactFailure",
+        "reportedSubjectIds": ["person-aoi"],
+        "reportedRegionId": "building-entry",
+        "emissionProbability": 1.0,
+        "dropProbability": 0.0,
+        "minimumDelayTicks": 0,
+        "maximumDelayTicks": 0,
+        "state": "supportedButUncertain",
+        "conflictProbability": 0.0,
+        "publicPayload": { "source": "contact-desk" }
+      }
+    }
+  ]
+}

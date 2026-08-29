@@ -1,0 +1,15 @@
+bin/
+obj/
+results/
+TestResults/
+.vs/
+.vscode/
+.idea/
+.dotnet/
+*.user
+*.suo
+*.nupkg
+*.tmp
+*.log
+.DS_Store
+Thumbs.db

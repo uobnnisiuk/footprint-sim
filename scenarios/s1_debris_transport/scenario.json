@@ -1,0 +1,238 @@
+{
+  "schemaVersion": 1,
+  "id": "s1-debris-transport",
+  "title": "S1: Debris transport",
+  "description": "An abstract debris route moves a person beyond normal walking range while a separated device follows a different branch.",
+  "targetPersonId": "person-mika",
+  "normalWalkingRadius": 30.0,
+  "hazardTransportEnvelopeRegionIds": ["slope-channel", "river-bend", "deposition-zone", "downstream-bank"],
+  "regions": [
+    {
+      "id": "hillside-building",
+      "type": "building",
+      "center": { "x": 0.0, "y": 0.0, "elevation": 42.0, "regionId": "hillside-building" },
+      "passability": 0.8,
+      "connections": [
+        { "toRegionId": "mountain-road", "travelCost": 1.0, "passable": true }
+      ]
+    },
+    {
+      "id": "mountain-road",
+      "type": "road",
+      "center": { "x": 22.0, "y": 0.0, "elevation": 39.0, "regionId": "mountain-road" },
+      "passability": 0.9,
+      "connections": [
+        { "toRegionId": "hillside-building", "travelCost": 1.0, "passable": true },
+        { "toRegionId": "slope-channel", "travelCost": 2.0, "passable": false }
+      ]
+    },
+    {
+      "id": "slope-channel",
+      "type": "slope",
+      "center": { "x": 48.0, "y": -8.0, "elevation": 28.0, "regionId": "slope-channel" },
+      "passability": 0.1,
+      "connections": [
+        { "toRegionId": "river-bend", "travelCost": 1.5, "passable": false }
+      ]
+    },
+    {
+      "id": "river-bend",
+      "type": "river",
+      "center": { "x": 88.0, "y": -20.0, "elevation": 12.0, "regionId": "river-bend" },
+      "passability": 0.0,
+      "connections": [
+        { "toRegionId": "deposition-zone", "travelCost": 1.2, "passable": false },
+        { "toRegionId": "downstream-bank", "travelCost": 1.5, "passable": false }
+      ]
+    },
+    {
+      "id": "deposition-zone",
+      "type": "outdoor",
+      "center": { "x": 126.0, "y": -16.0, "elevation": 9.0, "regionId": "deposition-zone" },
+      "passability": 0.2,
+      "connections": []
+    },
+    {
+      "id": "downstream-bank",
+      "type": "outdoor",
+      "center": { "x": 148.0, "y": -32.0, "elevation": 7.0, "regionId": "downstream-bank" },
+      "passability": 0.3,
+      "connections": []
+    }
+  ],
+  "entities": {
+    "persons": [
+      {
+        "id": "person-mika",
+        "initialPosition": { "x": 0.0, "y": 0.0, "elevation": 42.0, "regionId": "hillside-building" }
+      }
+    ],
+    "devices": [
+      {
+        "id": "device-mika-phone",
+        "initialPosition": { "x": 0.0, "y": 0.0, "elevation": 42.0, "regionId": "hillside-building" }
+      }
+    ],
+    "carriers": [
+      {
+        "id": "carrier-shuttle",
+        "initialPosition": { "x": 22.0, "y": 0.0, "elevation": 39.0, "regionId": "mountain-road" }
+      }
+    ],
+    "rescuers": [
+      {
+        "id": "rescuer-1",
+        "initialPosition": { "x": 22.0, "y": 0.0, "elevation": 39.0, "regionId": "mountain-road" }
+      }
+    ],
+    "hazards": [
+      {
+        "id": "hazard-debris-flow",
+        "kind": "debris-flow",
+        "routeRegionIds": ["slope-channel", "river-bend", "deposition-zone"],
+        "minimumSpeedPerTick": 8.0,
+        "maximumSpeedPerTick": 18.0,
+        "stopProbability": 0.25
+      }
+    ]
+  },
+  "steps": [
+    {
+      "id": "associate-device",
+      "tick": 0,
+      "kind": "personDeviceAssociated",
+      "subjectIds": ["person-mika"],
+      "relatedEntityIds": ["device-mika-phone"],
+      "regionId": "hillside-building",
+      "payload": { "relationship": "carried" }
+    },
+    {
+      "id": "last-building-observation",
+      "tick": 3,
+      "kind": "regionEntered",
+      "movementKind": "voluntary",
+      "subjectIds": ["person-mika", "device-mika-phone"],
+      "position": { "x": 0.0, "y": 0.0, "elevation": 42.0, "regionId": "hillside-building" },
+      "observation": {
+        "evidenceType": "buildingAccessRecord",
+        "reportedSubjectIds": ["person-mika"],
+        "reportedPosition": { "x": 0.0, "y": 0.0, "elevation": 42.0, "regionId": "hillside-building" },
+        "reportedRegionId": "hillside-building",
+        "emissionProbability": 1.0,
+        "dropProbability": 0.0,
+        "minimumDelayTicks": 0,
+        "maximumDelayTicks": 0,
+        "state": "confirmed",
+        "conflictProbability": 0.0,
+        "publicPayload": { "source": "building-access-log" }
+      }
+    },
+    {
+      "id": "debris-transport-starts",
+      "tick": 10,
+      "kind": "hazardTransportStarted",
+      "movementKind": "hazardDriven",
+      "subjectIds": ["person-mika", "device-mika-phone"],
+      "relatedEntityIds": ["hazard-debris-flow"],
+      "position": { "x": 48.0, "y": -8.0, "elevation": 28.0, "regionId": "slope-channel" },
+      "payload": { "branch": "main-channel", "speedPerTick": 12.0 },
+      "observation": {
+        "evidenceType": "coarsePresenceSignal",
+        "reportedSubjectIds": ["person-mika"],
+        "reportedPosition": { "x": 48.0, "y": -8.0, "elevation": 28.0, "regionId": "slope-channel" },
+        "reportedRegionId": "slope-channel",
+        "emissionProbability": 1.0,
+        "dropProbability": 0.0,
+        "minimumDelayTicks": 2,
+        "maximumDelayTicks": 4,
+        "state": "supportedButUncertain",
+        "conflictProbability": 0.0,
+        "publicPayload": { "source": "slope-sensor", "signal": "coarse-presence" }
+      }
+    },
+    {
+      "id": "transport-to-river",
+      "tick": 12,
+      "kind": "hazardTransported",
+      "movementKind": "hazardDriven",
+      "subjectIds": ["person-mika", "device-mika-phone"],
+      "relatedEntityIds": ["hazard-debris-flow"],
+      "causeStepId": "debris-transport-starts",
+      "position": { "x": 82.0, "y": -18.0, "elevation": 13.0, "regionId": "river-bend" },
+      "payload": { "speedPerTick": 17.0 }
+    },
+    {
+      "id": "person-device-separate",
+      "tick": 13,
+      "kind": "personDeviceSeparated",
+      "movementKind": "hazardDriven",
+      "subjectIds": ["person-mika"],
+      "relatedEntityIds": ["device-mika-phone"],
+      "causeStepId": "transport-to-river",
+      "position": { "x": 94.0, "y": -18.0, "elevation": 11.0, "regionId": "river-bend" },
+      "relatedPosition": { "x": 70.0, "y": -12.0, "elevation": 17.0, "regionId": "slope-channel" },
+      "payload": { "mechanism": "impact-separation" }
+    },
+    {
+      "id": "person-deposited",
+      "tick": 16,
+      "kind": "deposited",
+      "movementKind": "depositionOrTrapping",
+      "subjectIds": ["person-mika"],
+      "relatedEntityIds": ["hazard-debris-flow"],
+      "causeStepId": "person-device-separate",
+      "position": { "x": 126.0, "y": -16.0, "elevation": 9.0, "regionId": "deposition-zone" },
+      "payload": { "stopProbabilityApplied": 0.25 },
+      "observation": {
+        "evidenceType": "coarsePresenceSignal",
+        "reportedSubjectIds": ["person-mika"],
+        "reportedPosition": { "x": 126.0, "y": -16.0, "elevation": 9.0, "regionId": "deposition-zone" },
+        "reportedRegionId": "deposition-zone",
+        "emissionProbability": 1.0,
+        "dropProbability": 1.0,
+        "minimumDelayTicks": 0,
+        "maximumDelayTicks": 0,
+        "state": "supportedButUncertain",
+        "conflictProbability": 0.0,
+        "publicPayload": { "source": "damaged-sensor" }
+      }
+    },
+    {
+      "id": "device-continues",
+      "tick": 17,
+      "kind": "secondaryTransported",
+      "movementKind": "secondaryTransport",
+      "subjectIds": ["device-mika-phone"],
+      "relatedEntityIds": ["hazard-debris-flow"],
+      "causeStepId": "person-device-separate",
+      "position": { "x": 148.0, "y": -32.0, "elevation": 7.0, "regionId": "downstream-bank" },
+      "payload": { "mechanism": "secondary-surge" },
+      "observation": {
+        "evidenceType": "deviceRadioFix",
+        "reportedSubjectIds": ["device-mika-phone"],
+        "reportedPosition": { "x": 148.0, "y": -32.0, "elevation": 7.0, "regionId": "downstream-bank" },
+        "reportedRegionId": "downstream-bank",
+        "emissionProbability": 1.0,
+        "dropProbability": 0.0,
+        "minimumDelayTicks": 1,
+        "maximumDelayTicks": 2,
+        "state": "supportedButUncertain",
+        "conflictProbability": 1.0,
+        "conflictOffsetX": -38.0,
+        "conflictOffsetY": 10.0,
+        "conflictRegionId": "river-bend",
+        "publicPayload": { "source": "radio-fix", "subjectType": "device" }
+      }
+    },
+    {
+      "id": "person-trapped",
+      "tick": 18,
+      "kind": "trapped",
+      "movementKind": "depositionOrTrapping",
+      "subjectIds": ["person-mika"],
+      "causeStepId": "person-deposited",
+      "position": { "x": 126.0, "y": -16.0, "elevation": 9.0, "regionId": "deposition-zone" },
+      "payload": { "material": "debris" }
+    }
+  ]
+}
