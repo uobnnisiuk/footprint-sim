@@ -9,10 +9,12 @@ This is a private research simulator, not an operational rescue or hazard-predic
 - Target C# / `net8.0`; respect `global.json`.
 - Keep ground truth (`SimulationEvent`, final entity state) out of inference inputs and observation JSON.
 - Preserve deterministic ordering and output for identical scenario bytes and seed.
+- Pass truth to `PerRunEvaluator` only after `ISearchStrategy` has returned; never add truth types to strategy input.
+- Keep evaluation JSON/CSV free of current time, absolute paths, random IDs, and unordered collections.
 - Treat `Person` and `Device` as independent physical entities after separation.
 - Keep scenario changes explicit and testable; do not imply real-world predictive accuracy.
 - Do not commit generated `results/`, `bin/`, `obj/`, or SDK artifacts.
 
 ## Before handing off
 
-Run `scripts/check-environment.sh`, `dotnet build FootprintSim.sln`, `dotnet test FootprintSim.sln`, and both sample scenarios from the README. Review `git diff` for truth leakage and unrelated changes.
+Run `scripts/check-environment.sh`, `dotnet build FootprintSim.sln`, `dotnet test FootprintSim.sln`, `dotnet format --verify-no-changes`, both sample scenarios, and the README evaluation command. Review `git diff` for truth leakage and unrelated changes.

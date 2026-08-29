@@ -15,5 +15,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/FootprintSim.Core/FootprintSim.Core.csproj" />
+    <ProjectReference Include="../../src/FootprintSim.Cli/FootprintSim.Cli.csproj" />
   </ItemGroup>
 </Project>

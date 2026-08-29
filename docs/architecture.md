@@ -1,6 +1,6 @@
 # Architecture
 
-M0 は単一 Core assembly 内で型と依存方向を分けます。分割の目的は小さな初期基盤を保ちながら、後で world engine や EBPC adapter を別 assembly に移せるようにすることです。
+M0 と M1-A は単一 Core assembly 内で型と依存方向を分けます。分割の目的は小さな基盤を保ちながら、後で world engine や EBPC adapter を別 assembly に移せるようにすることです。
 
 ```text
 Scenario + seed
@@ -15,8 +15,13 @@ Scenario + seed
 3. Footprint/EBPC boundary --- IRescueInference
       |
       v
-4. Rescue view/evaluator ---- search-zone summary
+4. Search strategy ----------- SearchStrategyResult
+                                      |
+                                      v
+5. Private truth ------------> Evaluator/aggregate
 ```
+
+Private truth enters only at step 5, after a strategy result has been produced.
 
 ## 1. World and hazard engine
 
@@ -34,10 +39,16 @@ World は region と connection のグラフです。region は平面座標、�
 
 Evidence state は `Confirmed`、`SupportedButUncertain`、`Conflicting`、`Indeterminate`、`UnsupportedForQuery` を契約として JSON に保持します。現在の `BasicRescueInference` は小さな基準実装であり、この interface の先に EBPC adapter を追加できます。
 
-## 4. Rescue view and evaluator
+## 4. Rescue view and search strategies
 
-CLI は最終確認位置を anchor にした通常歩行半径と、事前に宣言された hazard transport envelope を別々に出力します。検索優先領域には順位、根拠、evidence stateを付け、候補領域であって一点予測や他領域の確定除外ではないことも明記します。S1 では端末観測を person 観測へ暗黙変換しません。将来の evaluator は truth を採点に使用できますが、推論の入力には渡さず、結果生成後に比較する構成にします。
+CLI は最終確認位置を anchor にした通常歩行半径と、事前に宣言された hazard transport envelope を別々に出力します。検索優先領域には順位、根拠、evidence stateを付け、候補領域であって一点予測や他領域の確定除外ではないことも明記します。S1 では端末観測を person 観測へ暗黙変換しません。evaluator は truth を採点に使用できますが、推論の入力には渡さず、結果生成後に比較します。
+
+M1-A の `ISearchStrategy` は `RescueContext`、その tick までに利用可能な `ObservationSet`、clock と run identity だけを受け取ります。4つの比較戦略は同じ契約で `SearchStrategyResult` を確定します。現在の `EvidenceAwareCurrent` は M0 summary の adapter であり、完全な EBPC adapter ではありません。
+
+## 5. Evaluator and aggregate
+
+`PerRunEvaluator` だけが strategy result の確定後に `GroundTruthEvaluationContext` を受け取ります。truth containment、誤除外、search-space 比、device-only 昇格、time-to-guidance を計算し、`AggregateEvaluator` が scenario・strategy ごとに安定順で集計します。`BatchEvaluationRunner` は scenario、seed、strategy を正規化して逐次実行し、出力 writer は時刻や絶対パスを含まない決定的な JSON/JSONL/CSV を生成します。
 
 ## Trust boundary
 
-`ground-truth.events.json` と in-memory final state は private truth です。`observations.json` が推論境界を越えられるデータです。新しい観測フィールドは、真値由来であるだけの属性を公開していないかレビューし、必要な provenance は観測側で独立した識別子として表します。
+`ground-truth.events.json` と in-memory final state は private truth です。`observations.json` が推論・strategy 境界を越えられるデータです。新しい観測フィールドは、真値由来であるだけの属性を公開していないかレビューし、必要な provenance は観測側で独立した識別子として表します。評価時の真値は `FootprintSim.Evaluation.Truth` に閉じ、strategy input 型には追加しません。

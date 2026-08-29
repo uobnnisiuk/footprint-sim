@@ -72,11 +72,29 @@ diff -r results/s1 results/s1-repeat
 
 `results/` は生成物なので Git 管理外です。
 
+## 複数 run 評価（M1-A）
+
+S0/S1、seed 0..19、全4戦略をまとめて比較する例です。
+
+```bash
+dotnet run --project src/FootprintSim.Cli -- evaluate \
+  --scenarios scenarios \
+  --seeds 0..19 \
+  --strategies all \
+  --output results/evaluation
+```
+
+`--scenarios` には単一の scenario JSON または `scenario.json` を再帰検索するディレクトリ、`--seeds` には単一値・包含範囲（`0..19`）・カンマ区切り、`--strategies` には `all` または strategy ID のカンマ区切りを指定できます。
+
+出力は、1 strategy/run につき1行の `runs.jsonl` と `runs.csv`、scenario・strategy 別の `aggregate.json` と `aggregate.csv`、入力条件と schema を固定する `manifest.json` です。`GroundTruthContainment` は真の person region を候補に保持できたか、`SearchSpaceFraction` は全 scenario region に対する候補比率、`FalseExclusion` は真値を候補から落としたかを示します。算出不能値は `available: false` と `null` で表し、実測値 0 と区別します。
+
+同じ入力と source 状態では5ファイルすべてが byte-for-byte で再現されます。設計境界、4戦略、各 metric と分母、schema の正確な定義は [M1-A evaluation harness](docs/m1a-evaluation.md) を参照してください。数値は合成 M0 scenario の比較値であり、現実の災害・救助性能を示しません。
+
 ## 構成
 
-- `src/FootprintSim.Core`: world/event/observation/inference の契約と決定論エンジン
-- `src/FootprintSim.Cli`: scenario 読み込みと4種類の JSON 出力
-- `tests/FootprintSim.Core.Tests`: 決定性、境界、S0/S1 の自動テスト
+- `src/FootprintSim.Core`: world/event/observation/inference/evaluation の契約と決定論エンジン
+- `src/FootprintSim.Cli`: 単一 run と複数 run 評価の入出力
+- `tests/FootprintSim.Core.Tests`: 決定性、truth 境界、S0/S1、評価 schema の自動テスト
 - `scenarios`: 小さく明示的な M0 scenario
 - `docs`: アーキテクチャとモデル
 - `scripts`: SDK の準備・実測
@@ -89,4 +107,4 @@ M0 の経路、速度、分岐、停止は scenario に明示した抽象イベ�
 
 ## 次のマイルストーン
 
-M1 では、経路グラフ上の確率的 hazard propagator、観測チャネル別の校正済み欠落・遅延モデル、EBPC adapter、複数 run の評価指標（捜索面積縮小率、coverage、誤除外率）を追加する想定です。M0 の `ObservationSet` / `IRescueInference` 境界を維持したまま差し替えます。
+M1-A では複数 run の比較・集計基盤までを追加しました。M1-B 以降では、経路グラフ上の確率的 hazard propagator、観測チャネル別の校正済み欠落・遅延モデル、より広い scenario fixture を検討します。完全な EBPC adapter は別工程であり、M0 の `ObservationSet` / `IRescueInference` 境界を維持したまま接続します。

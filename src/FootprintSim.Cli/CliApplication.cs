@@ -1,0 +1,391 @@
+using System.Diagnostics;
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text.Json;
+using FootprintSim.Evaluation;
+using FootprintSim.Inference;
+using FootprintSim.Scenarios;
+using FootprintSim.Serialization;
+using FootprintSim.Simulation;
+
+namespace FootprintSim.Cli;
+
+public static class CliApplication
+{
+    public static async Task<int> RunAsync(string[] args)
+    {
+        try
+        {
+            if (args.Length > 0 && string.Equals(args[0], "evaluate", StringComparison.Ordinal))
+            {
+                return await RunEvaluationAsync(args[1..]);
+            }
+
+            return await RunSimulationAsync(args);
+        }
+        catch (Exception exception) when (exception is
+            ArgumentException or IOException or InvalidOperationException or JsonException or
+            UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine($"error: {exception.Message}");
+            return 2;
+        }
+    }
+
+    private static async Task<int> RunSimulationAsync(string[] args)
+    {
+        if (args.Length == 0 || args.Contains("--help", StringComparer.Ordinal))
+        {
+            PrintUsage();
+            return args.Length == 0 ? 2 : 0;
+        }
+
+        var options = ParseOptions(
+            args,
+            new HashSet<string>(["--scenario", "--seed", "--output"], StringComparer.Ordinal));
+        var scenarioPath = Path.GetFullPath(Require(options, "--scenario"));
+        var outputPath = Path.GetFullPath(Require(options, "--output"));
+        var seedText = Require(options, "--seed");
+        if (!int.TryParse(
+            seedText,
+            NumberStyles.Integer,
+            CultureInfo.InvariantCulture,
+            out var seed))
+        {
+            throw new ArgumentException("--seed must be a 32-bit integer.");
+        }
+
+        var scenario = ScenarioLoader.Load(scenarioPath);
+        var run = new SimulationEngine().Run(scenario, seed);
+        var summary = new BasicRescueInference().Infer(
+            new RescueContext
+            {
+                ScenarioId = scenario.Id,
+                TargetPersonId = scenario.TargetPersonId,
+                NormalWalkingRadius = scenario.NormalWalkingRadius,
+                PublicRegions = scenario.Regions,
+                DeclaredHazardEnvelopeRegionIds = scenario.HazardTransportEnvelopeRegionIds
+            },
+            run.ObservationSet);
+
+        Directory.CreateDirectory(outputPath);
+        var metadata = new RunMetadata
+        {
+            SchemaVersion = 1,
+            EngineVersion = "m0",
+            ScenarioId = scenario.Id,
+            Seed = seed,
+            ScenarioSha256 = HashFile(scenarioPath),
+            GroundTruthEventCount = run.GroundTruthEvents.Count,
+            ObservationCount = run.ObservationSet.Observations.Count,
+            Outputs =
+            [
+                "ground-truth.events.json",
+                "observations.json",
+                "search-zone.summary.json",
+                "run.metadata.json"
+            ]
+        };
+
+        await WriteJsonAsync(
+            Path.Combine(outputPath, "ground-truth.events.json"),
+            new GroundTruthEventLog
+            {
+                ScenarioId = scenario.Id,
+                Seed = seed,
+                Events = run.GroundTruthEvents
+            });
+        await WriteJsonAsync(Path.Combine(outputPath, "observations.json"), run.ObservationSet);
+        await WriteJsonAsync(Path.Combine(outputPath, "search-zone.summary.json"), summary);
+        await WriteJsonAsync(Path.Combine(outputPath, "run.metadata.json"), metadata);
+
+        Console.WriteLine(
+            $"Scenario '{scenario.Id}' completed with seed {seed}: " +
+            $"{run.GroundTruthEvents.Count} truth events, " +
+            $"{run.ObservationSet.Observations.Count} observations.");
+        Console.WriteLine($"Results: {outputPath}");
+        return 0;
+    }
+
+    private static async Task<int> RunEvaluationAsync(string[] args)
+    {
+        if (args.Contains("--help", StringComparer.Ordinal))
+        {
+            PrintEvaluationUsage();
+            return 0;
+        }
+
+        var options = ParseOptions(
+            args,
+            new HashSet<string>(
+                ["--scenarios", "--seeds", "--strategies", "--output"],
+                StringComparer.Ordinal));
+        var scenarioSource = Require(options, "--scenarios");
+        var seeds = SeedExpressionParser.Parse(Require(options, "--seeds"));
+        var strategies = SearchStrategyRegistry.Resolve(
+            Require(options, "--strategies").Split(',', StringSplitOptions.TrimEntries));
+        var outputPath = Path.GetFullPath(Require(options, "--output"));
+        var scenarios = LoadEvaluationScenarios(scenarioSource);
+        var git = GitMetadataReader.Read(Directory.GetCurrentDirectory());
+
+        var result = new BatchEvaluationRunner().Run(new BatchEvaluationRequest
+        {
+            Scenarios = scenarios,
+            Seeds = seeds,
+            Strategies = strategies,
+            SourceCommitSha = git.CommitSha,
+            DirtyWorkingTree = git.DirtyWorkingTree
+        });
+        await new EvaluationOutputWriter().WriteAsync(outputPath, result);
+
+        Console.WriteLine(
+            $"Evaluation completed: {result.Manifest.RunCount} strategy runs across " +
+            $"{result.Manifest.ScenarioIdentifiers.Count} scenarios, " +
+            $"{result.Manifest.Seeds.Count} seeds, and " +
+            $"{result.Manifest.StrategyIdentifiers.Count} strategies.");
+        Console.WriteLine($"Results: {outputPath}");
+        return 0;
+    }
+
+    private static IReadOnlyList<EvaluationScenarioInput> LoadEvaluationScenarios(string source)
+    {
+        var fullPath = Path.GetFullPath(source);
+        string[] files;
+        if (File.Exists(fullPath))
+        {
+            files = [fullPath];
+        }
+        else if (Directory.Exists(fullPath))
+        {
+            files = Directory.GetFiles(fullPath, "scenario.json", SearchOption.AllDirectories)
+                .OrderBy(path => path, StringComparer.Ordinal)
+                .ToArray();
+        }
+        else
+        {
+            throw new ArgumentException($"Scenario source '{source}' does not exist.");
+        }
+
+        if (files.Length == 0)
+        {
+            throw new ArgumentException($"Scenario source '{source}' contains no scenario.json files.");
+        }
+
+        return files.Select(file => new EvaluationScenarioInput
+        {
+            Scenario = ScenarioLoader.Load(file),
+            ContentSha256 = HashFile(file)
+        }).ToArray();
+    }
+
+    private static Dictionary<string, string> ParseOptions(
+        IReadOnlyList<string> args,
+        IReadOnlySet<string> allowed)
+    {
+        if (args.Count == 0 || args.Count % 2 != 0)
+        {
+            throw new ArgumentException("Options must be provided as name/value pairs.");
+        }
+
+        var options = new Dictionary<string, string>(StringComparer.Ordinal);
+        for (var index = 0; index < args.Count; index += 2)
+        {
+            var name = args[index];
+            if (!allowed.Contains(name))
+            {
+                throw new ArgumentException($"Unknown option '{name}'.");
+            }
+
+            if (!options.TryAdd(name, args[index + 1]))
+            {
+                throw new ArgumentException($"Option '{name}' was specified more than once.");
+            }
+        }
+
+        return options;
+    }
+
+    private static string Require(IReadOnlyDictionary<string, string> options, string name)
+    {
+        return options.TryGetValue(name, out var value) && !string.IsNullOrWhiteSpace(value)
+            ? value
+            : throw new ArgumentException($"Required option '{name}' is missing.");
+    }
+
+    private static string HashFile(string path) =>
+        Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant();
+
+    private static async Task WriteJsonAsync<T>(string path, T value)
+    {
+        await File.WriteAllTextAsync(path, JsonDefaults.Serialize(value) + "\n");
+    }
+
+    private static void PrintUsage()
+    {
+        Console.WriteLine(
+            "Simulation: dotnet run --project src/FootprintSim.Cli -- " +
+            "--scenario <scenario.json> --seed <integer> --output <directory>");
+        PrintEvaluationUsage();
+    }
+
+    private static void PrintEvaluationUsage()
+    {
+        Console.WriteLine(
+            "Evaluation: dotnet run --project src/FootprintSim.Cli -- evaluate " +
+            "--scenarios <file-or-directory> --seeds <n|a..b|list> " +
+            "--strategies <all|id-list> --output <directory>");
+    }
+}
+
+public static class SeedExpressionParser
+{
+    private const int MaximumSeedCount = 1_000_000;
+
+    public static IReadOnlyList<int> Parse(string expression)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(expression);
+        var seeds = new SortedSet<int>();
+        foreach (var component in expression.Split(',', StringSplitOptions.TrimEntries))
+        {
+            if (string.IsNullOrWhiteSpace(component))
+            {
+                throw new ArgumentException("Seed expressions cannot contain empty components.");
+            }
+
+            var separator = component.IndexOf("..", StringComparison.Ordinal);
+            if (separator < 0)
+            {
+                Add(ParseSeed(component), seeds);
+                continue;
+            }
+
+            if (component.IndexOf("..", separator + 2, StringComparison.Ordinal) >= 0)
+            {
+                throw new ArgumentException($"Invalid seed range '{component}'.");
+            }
+
+            var start = ParseSeed(component[..separator]);
+            var end = ParseSeed(component[(separator + 2)..]);
+            if (start > end)
+            {
+                throw new ArgumentException($"Seed range '{component}' is descending.");
+            }
+
+            var count = ((long)end - start) + 1;
+            if (count > MaximumSeedCount)
+            {
+                throw new ArgumentException(
+                    $"Seed range '{component}' exceeds {MaximumSeedCount} values.");
+            }
+
+            for (var seed = (long)start; seed <= end; seed++)
+            {
+                Add((int)seed, seeds);
+            }
+        }
+
+        return seeds.ToArray();
+    }
+
+    private static int ParseSeed(string value)
+    {
+        return int.TryParse(
+            value,
+            NumberStyles.Integer,
+            CultureInfo.InvariantCulture,
+            out var seed)
+            ? seed
+            : throw new ArgumentException($"Invalid seed value '{value}'.");
+    }
+
+    private static void Add(int seed, ISet<int> seeds)
+    {
+        seeds.Add(seed);
+        if (seeds.Count > MaximumSeedCount)
+        {
+            throw new ArgumentException($"Seed expression exceeds {MaximumSeedCount} unique values.");
+        }
+    }
+}
+
+internal static class GitMetadataReader
+{
+    public static GitMetadata Read(string workingDirectory)
+    {
+        var commit = RunGit(workingDirectory, "rev-parse", "HEAD");
+        var status = RunGit(workingDirectory, "status", "--porcelain", "--untracked-files=normal");
+        return new GitMetadata(commit.Trim(), !string.IsNullOrWhiteSpace(status));
+    }
+
+    private static string RunGit(string workingDirectory, params string[] arguments)
+    {
+        using var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = "git",
+                WorkingDirectory = workingDirectory,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            }
+        };
+        foreach (var argument in arguments)
+        {
+            process.StartInfo.ArgumentList.Add(argument);
+        }
+
+        try
+        {
+            process.Start();
+        }
+        catch (Exception exception) when (exception is
+            InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            throw new InvalidOperationException(
+                "Git is required to write evaluation manifest metadata.",
+                exception);
+        }
+
+        var output = process.StandardOutput.ReadToEnd();
+        var error = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+        if (process.ExitCode != 0)
+        {
+            throw new InvalidOperationException($"Git metadata command failed: {error.Trim()}");
+        }
+
+        return output;
+    }
+}
+
+internal sealed record GitMetadata(string CommitSha, bool DirtyWorkingTree);
+
+internal sealed record GroundTruthEventLog
+{
+    public required string ScenarioId { get; init; }
+
+    public required int Seed { get; init; }
+
+    public required IReadOnlyList<FootprintSim.Events.SimulationEvent> Events { get; init; }
+}
+
+internal sealed record RunMetadata
+{
+    public required int SchemaVersion { get; init; }
+
+    public required string EngineVersion { get; init; }
+
+    public required string ScenarioId { get; init; }
+
+    public required int Seed { get; init; }
+
+    public required string ScenarioSha256 { get; init; }
+
+    public required int GroundTruthEventCount { get; init; }
+
+    public required int ObservationCount { get; init; }
+
+    public required IReadOnlyList<string> Outputs { get; init; }
+}
