@@ -76,6 +76,6 @@ The five reproducibility files remain `runs.jsonl`, `runs.csv`, `aggregate.json`
 
 JSON declaration and collection order, scenario/seed/strategy/candidate/provenance order, CSV columns, invariant-culture numbers, LF endings, and UTF-8 without BOM are stable. The manifest records scenario hashes, sorted inputs, source commit, and dirty flag. Reproducibility files exclude current time, absolute paths, random run IDs, and runtime-generated identifiers. Byte identity requires identical scenario bytes, selected inputs, source state, and this implementation. `results/` remains ignored.
 
-## Deferred to M1-C and later
+## Deferred after M1-B
 
-Further work should address calibrated and purpose-separated observation streams, time-varying public-envelope updates with observation provenance, sensitivity analysis of synthetic weights, richer malformed-graph fixtures, a formal EBPC mapping, and larger scenario families. Physical debris/fluid simulation, real hazard probabilities, operational interpretation, survivability, and rescue prioritization remain out of scope.
+M1-C introduces causal weft as typed cross-entity occurrences, observations, and later constraints on candidate warp histories. Calibrated and purpose-separated observation streams and deeper EBPC integration are deferred to M2. Time-varying public-envelope updates, sensitivity analysis of synthetic weights, richer malformed-graph fixtures, and larger scenario families also remain future work. Physical debris/fluid simulation, real hazard probabilities, operational interpretation, survivability, and rescue prioritization remain out of scope.

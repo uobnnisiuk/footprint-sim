@@ -109,9 +109,13 @@ dotnet run --project src/FootprintSim.Cli -- evaluate \
 
 同じ入力と source 状態では5ファイルすべてが byte-for-byte で再現されます。M1-Aの評価定義は [M1-A evaluation harness](docs/m1a-evaluation.md)、確率伝播、公開境界、追加metricは [M1-B stochastic hazard](docs/m1b-stochastic-hazard.md) を参照してください。数値は合成scenario内の比較値であり、現実の災害・救助性能を示しません。
 
+## Cross-entity interaction（M1-C1）
+
+M1-C1は因果の横糸を、private truthの`InteractionOccurrence`、観測されたevidenceの`InteractionObservation`、観測だけから導出される`CrossThreadConstraint`へ分離します。最初のrelationはperson-person encounterだけです。constraintはまだsearch strategyへ渡さず、candidate regionや既存評価結果を変更しません。型、available-at境界、provenance、決定的IDの詳細は [M1-C1 interaction model](docs/m1c1-interaction-model.md) を参照してください。
+
 ## 構成
 
-- `src/FootprintSim.Core`: world/event/observation/inference/evaluation の契約と決定論エンジン
+- `src/FootprintSim.Core`: world/event/observation/interaction/inference/evaluation の契約と決定論エンジン
 - `src/FootprintSim.Cli`: 単一 run と複数 run 評価の入出力
 - `tests/FootprintSim.Core.Tests`: 決定性、truth 境界、S0/S1回帰、S2、評価 schema の自動テスト
 - `scenarios`: 小さく明示的な合成scenario
@@ -122,8 +126,8 @@ dotnet run --project src/FootprintSim.Cli -- evaluate \
 
 ## 現段階の制限
 
-S0/S1 の経路はscenarioに明示した抽象イベントです。S2の重みも研究用の合成値であり、校正済み確率ではありません。流体・土砂・建物倒壊の物理解析、観測チャネル校正、実時間処理、GUI、完全なEBPC、救助優先順位ポリシーは実装していません。特定の実災害を再現するものでも、現実の位置・生存・危険度を予測できるものでもありません。
+S0/S1 の経路はscenarioに明示した抽象イベントです。S2の重みも研究用の合成値であり、校正済み確率ではありません。M1-C1のinteraction observation/constraintは表現contractであり、捜索候補へまだ適用しません。流体・土砂・建物倒壊の物理解析、観測チャネル校正、実時間処理、GUI、完全なEBPC、救助優先順位ポリシーは実装していません。特定の実災害を再現するものでも、現実の位置・生存・危険度を予測できるものでもありません。
 
 ## 次のマイルストーン
 
-M1-Aは複数runの比較・集計基盤、M1-Bは安定PRNGによる合成hazard伝播、S2、公開envelope、region-level provenance、guidance持続性までを追加しました。M1-C以降では観測チャネルの校正、公開情報の時間変化、より広いscenario fixtureを検討します。完全なEBPC adapterは別工程であり、`ObservationSet` / `IRescueInference` 境界を維持したまま接続します。
+M1-Aは複数runの比較・集計基盤、M1-Bは確率分岐する経糸、M1-C1はtruth/evidenceを分離した横糸の表現contractです。M1-C2でcross-thread constraintのstrategy適用、M1-C3で正式scenarioと比較実験を扱います。観測チャネル校正と深いEBPC統合はM2へ送り、`ObservationSet` / `IRescueInference` 境界を維持します。中立telemetryは別milestone M1-T0で扱います。

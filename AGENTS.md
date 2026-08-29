@@ -14,6 +14,7 @@ This is a private research simulator, not an operational rescue or hazard-predic
 - Treat `Person` and `Device` as independent physical entities after separation.
 - Strategies may consume `PublicHazardEnvelope`; never pass a realized transition, terminal, or PRNG draw through it.
 - Keep SplitMix64 test vectors and entity/purpose-derived random streams stable.
+- Keep truth-side `InteractionOccurrence` out of observation, constraint, inference, and strategy contracts; an interaction observation or derived constraint is not an occurrence.
 - Keep scenario changes explicit and testable; do not imply real-world predictive accuracy.
 - Do not commit generated `results/`, `bin/`, `obj/`, or SDK artifacts.
 
