@@ -113,6 +113,12 @@ dotnet run --project src/FootprintSim.Cli -- evaluate \
 
 M1-C1は因果の横糸を、private truthの`InteractionOccurrence`、観測されたevidenceの`InteractionObservation`、観測だけから導出される`CrossThreadConstraint`へ分離します。最初のrelationはperson-person encounterだけです。constraintはまだsearch strategyへ渡さず、candidate regionや既存評価結果を変更しません。型、available-at境界、provenance、決定的IDの詳細は [M1-C1 interaction model](docs/m1c1-interaction-model.md) を参照してください。
 
+## Historical cross-thread constraint（M1-C2）
+
+M1-C2は、publicに利用可能になった`CrossThreadConstraint`を最終regionへ直接intersectionせず、`CandidateWarp`の対応するhistorical tickまたはinclusive intervalへ適用します。`Confirmed`、uncertain alternative、conflict、NoOpを区別し、生き残った候補は`PublicHazardEnvelope`だけで評価tickへ前方伝播します。exact tick、interval、relation kind、participant、source observation、provenanceはapplication auditへ保持します。
+
+これはconstraint意味論のfixture実装であり、既存4 strategyや評価schemaは変更しません。正式S3比較はM1-C3です。Causal Nexus / Causal Nexus Resolutionは将来仮説であり、M1-C2はformal schemaやscoreを実装しません。詳細は [M1-C2 cross-thread constraints](docs/m1c2-cross-thread-constraints.md) を参照してください。
+
 ## 構成
 
 - `src/FootprintSim.Core`: world/event/observation/interaction/inference/evaluation の契約と決定論エンジン
@@ -126,8 +132,8 @@ M1-C1は因果の横糸を、private truthの`InteractionOccurrence`、観測さ
 
 ## 現段階の制限
 
-S0/S1 の経路はscenarioに明示した抽象イベントです。S2の重みも研究用の合成値であり、校正済み確率ではありません。M1-C1のinteraction observation/constraintは表現contractであり、捜索候補へまだ適用しません。流体・土砂・建物倒壊の物理解析、観測チャネル校正、実時間処理、GUI、完全なEBPC、救助優先順位ポリシーは実装していません。特定の実災害を再現するものでも、現実の位置・生存・危険度を予測できるものでもありません。
+S0/S1 の経路はscenarioに明示した抽象イベントです。S2の重みも研究用の合成値であり、校正済み確率ではありません。M1-C2のCandidateWarpは手計算fixtureでconstraint意味論を固定する小さなpublic modelであり、strategy比較、formal Causal Nexus、belief engineではありません。流体・土砂・建物倒壊の物理解析、観測チャネル校正、実時間処理、GUI、完全なEBPC、救助優先順位ポリシーは実装していません。特定の実災害を再現するものでも、現実の位置・生存・危険度を予測できるものでもありません。
 
 ## 次のマイルストーン
 
-M1-Aは複数runの比較・集計基盤、M1-Bは確率分岐する経糸、M1-C1はtruth/evidenceを分離した横糸の表現contractです。M1-C2でcross-thread constraintのstrategy適用、M1-C3で正式scenarioと比較実験を扱います。観測チャネル校正と深いEBPC統合はM2へ送り、`ObservationSet` / `IRescueInference` 境界を維持します。中立telemetryは別milestone M1-T0で扱います。
+M1-Aは複数runの比較・集計基盤、M1-Bは確率分岐する経糸、M1-C1はtruth/evidenceを分離した横糸の表現contract、M1-C2はhistorical candidate warpへの証拠境界付きconstraint意味論です。M1-C3で正式scenarioとstrategy比較を扱います。観測チャネル校正と深いEBPC統合はM2へ送り、`ObservationSet` / `IRescueInference` 境界を維持します。中立telemetryは別milestone M1-T0、複数weftのoperational tracingはM1-Dで扱います。

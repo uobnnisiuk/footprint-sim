@@ -14,12 +14,17 @@ public sealed record CrossThreadConstraint
         string scenarioId,
         int seed,
         string sourceObservationId,
+        string sourceEvidenceIdentifier,
         string targetEntityId,
         InteractionRelationKind sourceRelationKind,
+        IReadOnlyList<InteractionParticipant> sourceParticipants,
+        InteractionTimeWindow sourceObservedTimeWindow,
         InteractionTimeWindow constrainedTimeWindow,
         IReadOnlyList<string> allowedRegionIds,
         long availableAtTick,
         EvidenceState evidenceBoundaryState,
+        bool isPersonEvidence,
+        bool isDeviceOnlyEvidence,
         CrossThreadConstraintDerivationKind derivationKind,
         InteractionVisibility visibility,
         IReadOnlyList<InteractionProvenance> provenance)
@@ -28,12 +33,17 @@ public sealed record CrossThreadConstraint
         ScenarioId = scenarioId;
         Seed = seed;
         SourceObservationId = sourceObservationId;
+        SourceEvidenceIdentifier = sourceEvidenceIdentifier;
         TargetEntityId = targetEntityId;
         SourceRelationKind = sourceRelationKind;
+        SourceParticipants = sourceParticipants;
+        SourceObservedTimeWindow = sourceObservedTimeWindow;
         ConstrainedTimeWindow = constrainedTimeWindow;
         AllowedRegionIds = allowedRegionIds;
         AvailableAtTick = availableAtTick;
         EvidenceBoundaryState = evidenceBoundaryState;
+        IsPersonEvidence = isPersonEvidence;
+        IsDeviceOnlyEvidence = isDeviceOnlyEvidence;
         DerivationKind = derivationKind;
         Visibility = visibility;
         Provenance = provenance;
@@ -47,9 +57,15 @@ public sealed record CrossThreadConstraint
 
     public string SourceObservationId { get; }
 
+    public string SourceEvidenceIdentifier { get; }
+
     public string TargetEntityId { get; }
 
     public InteractionRelationKind SourceRelationKind { get; }
+
+    public IReadOnlyList<InteractionParticipant> SourceParticipants { get; }
+
+    public InteractionTimeWindow SourceObservedTimeWindow { get; }
 
     public InteractionTimeWindow ConstrainedTimeWindow { get; }
 
@@ -58,6 +74,10 @@ public sealed record CrossThreadConstraint
     public long AvailableAtTick { get; }
 
     public EvidenceState EvidenceBoundaryState { get; }
+
+    public bool IsPersonEvidence { get; }
+
+    public bool IsDeviceOnlyEvidence { get; }
 
     public CrossThreadConstraintDerivationKind DerivationKind { get; }
 
@@ -121,12 +141,17 @@ public static class CrossThreadConstraintDeriver
             observation.ScenarioId,
             observation.Seed,
             observation.ObservationId,
+            observation.SourceEvidenceIdentifier,
             normalizedTarget,
             observation.ObservedRelationKind,
+            observation.ObservedParticipants,
+            observation.ObservedTimeWindow,
             observation.ObservedTimeWindow,
             regions,
             observation.AvailableAtTick,
             observation.EvidenceBoundaryState,
+            observation.IsPersonEvidence,
+            observation.IsDeviceOnlyEvidence,
             derivationKind,
             observation.Visibility,
             provenance);

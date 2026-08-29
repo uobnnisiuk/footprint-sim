@@ -1,6 +1,6 @@
 # Architecture
 
-M0、M1-A、M1-B、M1-C1は単一Core assembly内で型と依存方向を分けます。分割の目的は小さな基盤を保ちながら、後でworld engineやEBPC adapterを別assemblyに移せるようにすることです。
+M0、M1-A、M1-B、M1-C1、M1-C2は単一Core assembly内で型と依存方向を分けます。分割の目的は小さな基盤を保ちながら、後でworld engineやEBPC adapterを別assemblyに移せるようにすることです。
 
 ```text
 Scenario + seed
@@ -54,6 +54,12 @@ independent evidence input ---------------------> InteractionObservation
 `InteractionObservation`はoccurrence objectを保持せず、任意のinteraction referenceもopaqueなevidence-side stringです。`CrossThreadConstraint`はobservationだけから導出され、truth occurrenceを引数にもpropertyにも持ちません。両者のsetは`AvailableAtTick <= currentTick`のpublic evidenceだけを返せます。
 
 M1-C1ではこれらを`SearchStrategyInput`へ追加せず、candidate regionへ適用しません。最初の正式relationはperson-person encounterだけです。これは完全なCausal WeaveまたはEBPC adapterではありません。
+
+M1-C2は別のpublic-only研究経路として、public modelから作る`CandidateWarpSet`と、利用時点までにpublicになった`CrossThreadConstraint`を`CrossThreadConstraintApplicator`へ渡します。Applicatorはconstraintをhistorical tick/inclusive intervalへ適用し、`Confirmed`のnarrow、uncertain branchとouter alternative、conflict、NoOpを区別します。その後のstateは`PublicHazardEnvelope`だけで前方伝播します。truth event、realized transition、final entity stateはAPIへ入りません。
+
+`CandidateWarpState`はregionだけでなく、`EventPoint`/`StateInterval`、inclusive window、evidence state、relation/source-observationを含むprovenanceを保持します。application auditはrelation kind、participant role、observed/constrained window、application tick、disposition、before/after count、retained alternative、source ancestryを保持します。これはCausal Nexusのformal schemaやResolution metricではなく、将来relation resolutionを研究できる情報を失わないための最小contractです。
+
+既存4 strategyとevaluation schema version 2はM1-C2で変更しません。正式なstrategy接続とS3比較はM1-C3へ送ります。
 
 ## 4. Footprint/EBPC inference boundary
 

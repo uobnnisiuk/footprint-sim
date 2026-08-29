@@ -15,6 +15,8 @@ This is a private research simulator, not an operational rescue or hazard-predic
 - Strategies may consume `PublicHazardEnvelope`; never pass a realized transition, terminal, or PRNG draw through it.
 - Keep SplitMix64 test vectors and entity/purpose-derived random streams stable.
 - Keep truth-side `InteractionOccurrence` out of observation, constraint, inference, and strategy contracts; an interaction observation or derived constraint is not an occurrence.
+- Apply cross-thread constraints to matching historical candidate-warp ticks/windows, then propagate with the public model; never intersect an encounter region directly with final candidates.
+- Preserve exact-tick versus interval semantics, relation/source-observation metadata, uncertain outer alternatives, and conflicts in CandidateWarp audits.
 - Keep scenario changes explicit and testable; do not imply real-world predictive accuracy.
 - Do not commit generated `results/`, `bin/`, `obj/`, or SDK artifacts.
 
