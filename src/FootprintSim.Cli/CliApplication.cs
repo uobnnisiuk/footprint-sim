@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text.Json;
 using FootprintSim.Evaluation;
+using FootprintSim.Hazards;
 using FootprintSim.Inference;
 using FootprintSim.Scenarios;
 using FootprintSim.Serialization;
@@ -64,7 +65,14 @@ public static class CliApplication
                 TargetPersonId = scenario.TargetPersonId,
                 NormalWalkingRadius = scenario.NormalWalkingRadius,
                 PublicRegions = scenario.Regions,
-                DeclaredHazardEnvelopeRegionIds = scenario.HazardTransportEnvelopeRegionIds
+                DeclaredHazardEnvelopeRegionIds = scenario.HazardTransportEnvelopeRegionIds,
+                PublicHazardEnvelope = scenario.StochasticHazard is null
+                    ? null
+                    : PublicHazardEnvelopeBuilder.Create(scenario.StochasticHazard),
+                PublicDeviceIds = scenario.Entities.Devices
+                    .Select(device => device.Id)
+                    .OrderBy(deviceId => deviceId, StringComparer.Ordinal)
+                    .ToArray()
             },
             run.ObservationSet);
 
@@ -72,7 +80,7 @@ public static class CliApplication
         var metadata = new RunMetadata
         {
             SchemaVersion = 1,
-            EngineVersion = "m0",
+            EngineVersion = scenario.StochasticHazard is null ? "m0" : "m1b",
             ScenarioId = scenario.Id,
             Seed = seed,
             ScenarioSha256 = HashFile(scenarioPath),
@@ -118,9 +126,16 @@ public static class CliApplication
         var options = ParseOptions(
             args,
             new HashSet<string>(
-                ["--scenarios", "--seeds", "--strategies", "--output"],
+                ["--scenario", "--scenarios", "--seeds", "--strategies", "--output"],
                 StringComparer.Ordinal));
-        var scenarioSource = Require(options, "--scenarios");
+        if (options.ContainsKey("--scenario") && options.ContainsKey("--scenarios"))
+        {
+            throw new ArgumentException("Use either --scenario or --scenarios, not both.");
+        }
+
+        var scenarioSource = options.TryGetValue("--scenario", out var singleScenario)
+            ? singleScenario
+            : Require(options, "--scenarios");
         var seeds = SeedExpressionParser.Parse(Require(options, "--seeds"));
         var strategies = SearchStrategyRegistry.Resolve(
             Require(options, "--strategies").Split(',', StringSplitOptions.TrimEntries));
@@ -232,7 +247,7 @@ public static class CliApplication
     {
         Console.WriteLine(
             "Evaluation: dotnet run --project src/FootprintSim.Cli -- evaluate " +
-            "--scenarios <file-or-directory> --seeds <n|a..b|list> " +
+            "--scenario <file> | --scenarios <file-or-directory> --seeds <n|a..b|list> " +
             "--strategies <all|id-list> --output <directory>");
     }
 }

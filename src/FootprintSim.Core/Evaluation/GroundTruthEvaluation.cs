@@ -15,6 +15,13 @@ public sealed record GroundTruthEvaluationContext
     public IReadOnlyList<string> SearchableRegionIds { get; init; } = [];
 
     public IReadOnlyList<string> DeviceIds { get; init; } = [];
+
+    public IReadOnlyDictionary<string, string> TrueDeviceRegionIds { get; init; } =
+        new SortedDictionary<string, string>(StringComparer.Ordinal);
+
+    public int SecondaryTransportEventCount { get; init; }
+
+    public string TruthOutcomeIdentifier { get; init; } = "unavailable";
 }
 
 public sealed class PerRunEvaluator
@@ -74,7 +81,7 @@ public sealed class PerRunEvaluator
             truth,
             finalResult,
             completeEvidence);
-        var timeToGuidance = EvaluateTimeToUsefulGuidance(
+        var guidance = EvaluateGuidance(
             truth,
             searchableSet,
             timeline);
@@ -89,6 +96,7 @@ public sealed class PerRunEvaluator
             ConfirmedPersonRegionIds = finalResult.ConfirmedPersonRegionIds,
             ExplicitlyExcludedRegionIds = finalResult.ExplicitlyExcludedRegionIds,
             RationaleCodes = finalResult.RationaleCodes,
+            CandidateRegionProvenance = finalResult.CandidateRegionProvenance,
             EvidenceBoundaryState = finalResult.EvidenceBoundaryState,
             SearchableRegionCount = searchable.Length,
             GroundTruthContainment = containment,
@@ -102,7 +110,17 @@ public sealed class PerRunEvaluator
                 Available = true,
                 Value = violations
             },
-            TimeToUsefulGuidance = timeToGuidance
+            TimeToUsefulGuidance = guidance.TimeToUsefulGuidance,
+            FinalGuidanceUseful = guidance.FinalGuidanceUseful,
+            UsefulGuidanceTickCount = guidance.UsefulGuidanceTickCount,
+            EvaluatedTickCount = guidance.EvaluatedTickCount,
+            UsefulGuidancePersistenceFraction = guidance.PersistenceFraction,
+            LongestUsefulGuidanceStreak = guidance.LongestStreak,
+            GuidanceRegressedAfterUseful = guidance.RegressedAfterUseful,
+            RealizedPersonFinalRegionId = truth.TruePersonRegionId,
+            RealizedDeviceFinalRegionIds = truth.TrueDeviceRegionIds,
+            SecondaryTransportEventCount = truth.SecondaryTransportEventCount,
+            TruthOutcomeIdentifier = truth.TruthOutcomeIdentifier
         };
     }
 
@@ -121,38 +139,97 @@ public sealed class PerRunEvaluator
             confirmedPersonRegions.Contains(observation.ReportedRegionId));
     }
 
-    private static TickMetric EvaluateTimeToUsefulGuidance(
+    private static GuidanceMetrics EvaluateGuidance(
         GroundTruthEvaluationContext truth,
         IReadOnlySet<string> searchable,
         IEnumerable<SearchStrategyResult> timeline)
     {
+        var ordered = timeline.OrderBy(result => result.ProducedAtTick).ToArray();
+        var evaluatedTickCount = new IntegerMetric
+        {
+            Available = true,
+            Value = ordered.Length
+        };
         if (truth.TruePersonRegionId is null || !searchable.Contains(truth.TruePersonRegionId))
         {
-            return new TickMetric
-            {
-                Available = false,
-                UnavailableReason = "truth-region-unavailable-or-not-searchable"
-            };
+            const string reason = "truth-region-unavailable-or-not-searchable";
+            return new GuidanceMetrics(
+                new TickMetric
+                {
+                    Available = false,
+                    UnavailableReason = reason
+                },
+                UnavailableBoolean(reason),
+                UnavailableInteger(reason),
+                evaluatedTickCount,
+                UnavailableDecimal(reason),
+                UnavailableInteger(reason),
+                UnavailableBoolean(reason));
         }
 
-        var useful = timeline
-            .OrderBy(result => result.ProducedAtTick)
-            .FirstOrDefault(result =>
-                result.CandidateRegionIds.Contains(truth.TruePersonRegionId, StringComparer.Ordinal) &&
-                result.CandidateRegionIds.Distinct(StringComparer.Ordinal).Count() < searchable.Count);
+        if (ordered.Length == 0)
+        {
+            const string reason = "no-evaluated-ticks";
+            return new GuidanceMetrics(
+                new TickMetric
+                {
+                    Available = false,
+                    UnavailableReason = reason
+                },
+                UnavailableBoolean(reason),
+                UnavailableInteger(reason),
+                evaluatedTickCount,
+                UnavailableDecimal(reason),
+                UnavailableInteger(reason),
+                UnavailableBoolean(reason));
+        }
 
-        return useful is null
+        var usefulByTick = ordered.Select(result => IsUseful(
+            result,
+            truth.TruePersonRegionId,
+            searchable.Count)).ToArray();
+        var firstUsefulIndex = Array.FindIndex(usefulByTick, value => value);
+        var usefulCount = usefulByTick.Count(value => value);
+        var longestStreak = 0;
+        var currentStreak = 0;
+        foreach (var useful in usefulByTick)
+        {
+            currentStreak = useful ? currentStreak + 1 : 0;
+            longestStreak = Math.Max(longestStreak, currentStreak);
+        }
+
+        var regressed = firstUsefulIndex >= 0 && usefulByTick
+            .Skip(firstUsefulIndex + 1)
+            .Any(value => !value);
+        var timeToGuidance = firstUsefulIndex < 0
             ? new TickMetric
             {
                 Available = false,
-                Value = null,
                 UnavailableReason = "condition-never-met"
             }
             : new TickMetric
             {
                 Available = true,
-                Value = useful.ProducedAtTick
+                Value = ordered[firstUsefulIndex].ProducedAtTick
             };
+
+        return new GuidanceMetrics(
+            timeToGuidance,
+            AvailableBoolean(usefulByTick[^1]),
+            AvailableInteger(usefulCount),
+            evaluatedTickCount,
+            AvailableDecimal(usefulCount, ordered.Length),
+            AvailableInteger(longestStreak),
+            AvailableBoolean(regressed));
+    }
+
+    private static bool IsUseful(
+        SearchStrategyResult result,
+        string truthRegionId,
+        int searchableCount)
+    {
+        return result.CandidateRegionIds.Contains(truthRegionId, StringComparer.Ordinal) &&
+            result.CandidateRegionIds.Distinct(StringComparer.Ordinal).Count() < searchableCount;
     }
 
     private static BooleanMetric AvailableBoolean(bool value) => new()
@@ -189,6 +266,18 @@ public sealed class PerRunEvaluator
         UnavailableReason = reason
     };
 
+    private static IntegerMetric AvailableInteger(int value) => new()
+    {
+        Available = true,
+        Value = value
+    };
+
+    private static IntegerMetric UnavailableInteger(string reason) => new()
+    {
+        Available = false,
+        UnavailableReason = reason
+    };
+
     private static void ValidateIdentifiers(
         GroundTruthEvaluationContext truth,
         SearchStrategyResult result,
@@ -215,6 +304,29 @@ public sealed class PerRunEvaluator
             throw new InvalidOperationException(
                 $"Strategy '{result.StrategyId}' classified unknown region '{unknownRegion}'.");
         }
+
+        var candidateSet = result.CandidateRegionIds.ToHashSet(StringComparer.Ordinal);
+        var invalidProvenance = result.CandidateRegionProvenance.FirstOrDefault(item =>
+            !candidateSet.Contains(item.RegionId) ||
+            item.AvailableAtTick > result.ProducedAtTick ||
+            item.AvailableAtTick < 0 ||
+            item.IsPersonEvidence && item.IsDeviceOnlyEvidence);
+        if (invalidProvenance is not null)
+        {
+            throw new InvalidOperationException(
+                $"Strategy '{result.StrategyId}' returned invalid candidate provenance.");
+        }
+
+        var missingProvenance = candidateSet.FirstOrDefault(regionId =>
+            !result.CandidateRegionProvenance.Any(item => string.Equals(
+                item.RegionId,
+                regionId,
+                StringComparison.Ordinal)));
+        if (missingProvenance is not null)
+        {
+            throw new InvalidOperationException(
+                $"Strategy '{result.StrategyId}' omitted provenance for '{missingProvenance}'.");
+        }
     }
 
     private static void ValidateTimeline(
@@ -237,13 +349,16 @@ public sealed class PerRunEvaluator
                 throw new ArgumentException("Timeline contains a result outside the evaluated tick range.");
             }
 
-            var unknownRegion = result.CandidateRegionIds.FirstOrDefault(regionId =>
-                !searchable.Contains(regionId));
-            if (unknownRegion is not null)
-            {
-                throw new InvalidOperationException(
-                    $"Strategy '{result.StrategyId}' returned unknown timeline region '{unknownRegion}'.");
-            }
+            ValidateResultRegions(result, searchable);
         }
     }
+
+    private sealed record GuidanceMetrics(
+        TickMetric TimeToUsefulGuidance,
+        BooleanMetric FinalGuidanceUseful,
+        IntegerMetric UsefulGuidanceTickCount,
+        IntegerMetric EvaluatedTickCount,
+        DecimalMetric PersistenceFraction,
+        IntegerMetric LongestStreak,
+        BooleanMetric RegressedAfterUseful);
 }

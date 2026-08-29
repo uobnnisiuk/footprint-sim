@@ -1,4 +1,5 @@
 using FootprintSim.Events;
+using FootprintSim.Hazards;
 using FootprintSim.Model;
 
 namespace FootprintSim.Scenarios;
@@ -9,7 +10,7 @@ public static class ScenarioValidator
     {
         ArgumentNullException.ThrowIfNull(scenario);
 
-        if (scenario.SchemaVersion != 1)
+        if (scenario.SchemaVersion is not (1 or 2))
         {
             throw new InvalidDataException($"Unsupported scenario schema version {scenario.SchemaVersion}.");
         }
@@ -91,6 +92,8 @@ public static class ScenarioValidator
             }
         }
 
+        ValidateStochasticHazard(scenario, regionIds);
+
         var stepIds = UniqueIds(scenario.Steps.Select(step => step.Id), "step");
         var stepsById = scenario.Steps.ToDictionary(step => step.Id, StringComparer.Ordinal);
         foreach (var step in scenario.Steps)
@@ -158,6 +161,91 @@ public static class ScenarioValidator
             }
 
             ValidateObservation(step, entityIds, regionIds);
+        }
+
+        ValidateStochasticSubjectTimeline(scenario);
+    }
+
+    private static void ValidateStochasticSubjectTimeline(ScenarioDefinition scenario)
+    {
+        var hazard = scenario.StochasticHazard;
+        if (hazard is null)
+        {
+            return;
+        }
+
+        var transportedIds = new HashSet<string>(StringComparer.Ordinal)
+        {
+            scenario.TargetPersonId
+        };
+        if (hazard.DeviceId is not null)
+        {
+            transportedIds.Add(hazard.DeviceId);
+        }
+
+        var positions = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [scenario.TargetPersonId] = scenario.Entities.Persons.Single(person =>
+                person.Id == scenario.TargetPersonId).InitialPosition.RegionId
+        };
+        if (hazard.DeviceId is not null)
+        {
+            positions[hazard.DeviceId] = scenario.Entities.Devices.Single(device =>
+                device.Id == hazard.DeviceId).InitialPosition.RegionId;
+        }
+
+        foreach (var step in scenario.Steps
+            .Select((value, index) => (value, index))
+            .OrderBy(item => item.value.Tick)
+            .ThenBy(item => item.index))
+        {
+            var movesSubjects = step.value.Kind is EventKind.RegionEntered
+                or EventKind.RegionExited
+                or EventKind.VoluntaryMovement
+                or EventKind.CarrierMovement
+                or EventKind.HazardTransportStarted
+                or EventKind.HazardTransported
+                or EventKind.PersonDeviceSeparated
+                or EventKind.Deposited
+                or EventKind.Trapped
+                or EventKind.SecondaryTransported;
+            var affectsTransportedEntity = step.value.SubjectIds
+                .Concat(step.value.RelatedEntityIds)
+                .Any(transportedIds.Contains);
+            if (movesSubjects && affectsTransportedEntity && step.value.Tick >= hazard.StartTick)
+            {
+                throw new InvalidDataException(
+                    $"Step '{step.value.Id}' moves a stochastic-hazard subject at or after hazard start.");
+            }
+
+            if (!movesSubjects || step.value.Position is null)
+            {
+                continue;
+            }
+
+            foreach (var subjectId in step.value.SubjectIds.Where(transportedIds.Contains))
+            {
+                positions[subjectId] = step.value.Position.RegionId;
+            }
+
+            if (step.value.Kind == EventKind.PersonDeviceSeparated &&
+                step.value.RelatedPosition is not null)
+            {
+                foreach (var relatedId in step.value.RelatedEntityIds.Where(transportedIds.Contains))
+                {
+                    positions[relatedId] = step.value.RelatedPosition.RegionId;
+                }
+            }
+        }
+
+        var misplaced = positions.FirstOrDefault(item => !string.Equals(
+            item.Value,
+            hazard.SourceRegionId,
+            StringComparison.Ordinal));
+        if (!misplaced.Equals(default(KeyValuePair<string, string>)))
+        {
+            throw new InvalidDataException(
+                $"Stochastic-hazard subject '{misplaced.Key}' must be at the source before start.");
         }
     }
 
@@ -258,6 +346,383 @@ public static class ScenarioValidator
         }
 
         return result;
+    }
+
+    private static void ValidateStochasticHazard(
+        ScenarioDefinition scenario,
+        ISet<string> regionIds)
+    {
+        var hazard = scenario.StochasticHazard;
+        if (hazard is null)
+        {
+            if (scenario.SchemaVersion == 2)
+            {
+                throw new InvalidDataException(
+                    "Scenario schema version 2 requires a stochastic hazard definition.");
+            }
+
+            return;
+        }
+
+        if (scenario.SchemaVersion != 2)
+        {
+            throw new InvalidDataException(
+                "Stochastic hazard definitions require scenario schema version 2.");
+        }
+
+        RequireText(hazard.HazardId, "Stochastic hazard id");
+        RequireText(hazard.SourceRegionId, "Stochastic hazard source region");
+        if (!scenario.Entities.Hazards.Any(entity =>
+            string.Equals(entity.Id, hazard.HazardId, StringComparison.Ordinal)))
+        {
+            throw new InvalidDataException(
+                $"Stochastic hazard '{hazard.HazardId}' is not a declared hazard entity.");
+        }
+
+        if (!regionIds.Contains(hazard.SourceRegionId))
+        {
+            throw new InvalidDataException(
+                $"Stochastic hazard source '{hazard.SourceRegionId}' is not a declared region.");
+        }
+
+        if (hazard.StartTick < 0)
+        {
+            throw new InvalidDataException("Stochastic hazard start tick cannot be negative.");
+        }
+
+        RequireProbability(hazard.SeparationProbability, "Separation probability");
+        if (hazard.MaximumTransitionsPerEntity <= 0)
+        {
+            throw new InvalidDataException("Maximum transitions per entity must be positive.");
+        }
+
+        if (hazard.DeviceId is not null && !scenario.Entities.Devices.Any(device =>
+            string.Equals(device.Id, hazard.DeviceId, StringComparison.Ordinal)))
+        {
+            throw new InvalidDataException(
+                $"Stochastic hazard device '{hazard.DeviceId}' is not a declared device.");
+        }
+
+        var nodesByRegion = new Dictionary<string, HazardNodeDefinition>(StringComparer.Ordinal);
+        foreach (var node in hazard.Nodes)
+        {
+            RequireText(node.RegionId, "Hazard node region");
+            if (!regionIds.Contains(node.RegionId))
+            {
+                throw new InvalidDataException(
+                    $"Hazard node refers to unknown region '{node.RegionId}'.");
+            }
+
+            if (!nodesByRegion.TryAdd(node.RegionId, node))
+            {
+                throw new InvalidDataException($"Duplicate hazard node '{node.RegionId}'.");
+            }
+
+            if (node.MinimumArrivalTick < 0 ||
+                node.MaximumArrivalTick < node.MinimumArrivalTick)
+            {
+                throw new InvalidDataException(
+                    $"Hazard node '{node.RegionId}' has an invalid arrival window.");
+            }
+
+            RequireProbability(
+                node.DepositionProbability,
+                $"Hazard node '{node.RegionId}' deposition probability");
+            RequireProbability(
+                node.TrappingProbability,
+                $"Hazard node '{node.RegionId}' trapping probability");
+            RequireProbability(
+                node.ReleaseProbability,
+                $"Hazard node '{node.RegionId}' release probability");
+            if (node.MinimumReleaseDelayTicks < 0 ||
+                node.MaximumReleaseDelayTicks < node.MinimumReleaseDelayTicks)
+            {
+                throw new InvalidDataException(
+                    $"Hazard node '{node.RegionId}' has an invalid release delay range.");
+            }
+
+            if (node.IsRequiredTerminal && !node.IsTerminal)
+            {
+                throw new InvalidDataException(
+                    $"Required terminal '{node.RegionId}' must be marked terminal.");
+            }
+
+            if (node.PubliclyVisible)
+            {
+                RequireText(
+                    node.PublicProvenanceId,
+                    $"Public hazard node '{node.RegionId}' provenance");
+                if (node.PublishedAtTick < 0 || node.PublishedAtTick > node.MinimumArrivalTick)
+                {
+                    throw new InvalidDataException(
+                        $"Public hazard node '{node.RegionId}' has a contradictory publication tick.");
+                }
+            }
+        }
+
+        if (!nodesByRegion.TryGetValue(hazard.SourceRegionId, out var sourceNode))
+        {
+            throw new InvalidDataException("Stochastic hazard source must also be a hazard node.");
+        }
+
+        if (!sourceNode.PubliclyVisible)
+        {
+            throw new InvalidDataException("The public hazard source cannot be private.");
+        }
+
+        if (hazard.StartTick < sourceNode.MinimumArrivalTick ||
+            hazard.StartTick > sourceNode.MaximumArrivalTick)
+        {
+            throw new InvalidDataException("Hazard source arrival window must contain the start tick.");
+        }
+
+        if (sourceNode.IsTerminal ||
+            sourceNode.DepositionProbability != 0 ||
+            sourceNode.ReleaseProbability != 0)
+        {
+            throw new InvalidDataException(
+                "The shared hazard source must transport entities before deposition or release.");
+        }
+
+        var transitionIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var transition in hazard.Transitions)
+        {
+            RequireText(transition.Id, "Hazard transition id");
+            RequireText(transition.SourceRegionId, $"Hazard transition '{transition.Id}' source");
+            RequireText(
+                transition.DestinationRegionId,
+                $"Hazard transition '{transition.Id}' destination");
+            RequireText(transition.ProvenanceId, $"Hazard transition '{transition.Id}' provenance");
+            if (!transitionIds.Add(transition.Id))
+            {
+                throw new InvalidDataException($"Duplicate hazard transition '{transition.Id}'.");
+            }
+
+            if (!nodesByRegion.ContainsKey(transition.SourceRegionId) ||
+                !nodesByRegion.ContainsKey(transition.DestinationRegionId))
+            {
+                throw new InvalidDataException(
+                    $"Hazard transition '{transition.Id}' refers to an unknown node.");
+            }
+
+            if (!double.IsFinite(transition.Weight) || transition.Weight <= 0)
+            {
+                throw new InvalidDataException(
+                    $"Hazard transition '{transition.Id}' must have a finite positive weight.");
+            }
+
+            if (transition.MinimumTravelTicks <= 0 ||
+                transition.MaximumTravelTicks < transition.MinimumTravelTicks)
+            {
+                throw new InvalidDataException(
+                    $"Hazard transition '{transition.Id}' has an invalid travel tick range.");
+            }
+
+            if (!Enum.IsDefined(transition.TransportType) ||
+                !Enum.IsDefined(transition.Activation))
+            {
+                throw new InvalidDataException(
+                    $"Hazard transition '{transition.Id}' has an unsupported enum value.");
+            }
+
+            if (transition.PubliclyVisible &&
+                (!nodesByRegion[transition.SourceRegionId].PubliclyVisible ||
+                 !nodesByRegion[transition.DestinationRegionId].PubliclyVisible))
+            {
+                throw new InvalidDataException(
+                    $"Public transition '{transition.Id}' cannot expose a private node.");
+            }
+
+            var source = nodesByRegion[transition.SourceRegionId];
+            var destination = nodesByRegion[transition.DestinationRegionId];
+            var minimumReleaseDelay = transition.TransportType == HazardTransportType.SecondaryTransport
+                ? source.MinimumReleaseDelayTicks
+                : 0;
+            var maximumReleaseDelay = transition.TransportType == HazardTransportType.SecondaryTransport
+                ? source.MaximumReleaseDelayTicks
+                : 0;
+            long earliestArrival;
+            long latestArrival;
+            try
+            {
+                earliestArrival = checked(source.MinimumArrivalTick + minimumReleaseDelay +
+                    transition.MinimumTravelTicks);
+                latestArrival = checked(source.MaximumArrivalTick + maximumReleaseDelay +
+                    transition.MaximumTravelTicks);
+            }
+            catch (OverflowException exception)
+            {
+                throw new InvalidDataException(
+                    $"Hazard transition '{transition.Id}' arrival ticks overflow.",
+                    exception);
+            }
+            if (destination.MinimumArrivalTick > earliestArrival ||
+                destination.MaximumArrivalTick < latestArrival)
+            {
+                throw new InvalidDataException(
+                    $"Hazard transition '{transition.Id}' can arrive outside the destination window.");
+            }
+        }
+
+        foreach (var node in hazard.Nodes)
+        {
+            var outgoing = hazard.Transitions
+                .Where(transition => string.Equals(
+                    transition.SourceRegionId,
+                    node.RegionId,
+                    StringComparison.Ordinal))
+                .ToArray();
+            var primary = outgoing
+                .Where(transition => transition.TransportType == HazardTransportType.HazardDriven)
+                .ToArray();
+            var secondary = outgoing
+                .Where(transition => transition.TransportType == HazardTransportType.SecondaryTransport)
+                .ToArray();
+
+            if (!node.IsTerminal && primary.Length == 0 && node.DepositionProbability < 1)
+            {
+                throw new InvalidDataException(
+                    $"Non-terminal hazard node '{node.RegionId}' has no primary destination.");
+            }
+
+            if (node.ReleaseProbability > 0 && secondary.Length == 0)
+            {
+                throw new InvalidDataException(
+                    $"Hazard node '{node.RegionId}' can release but has no secondary destination.");
+            }
+
+            if (node.ReleaseProbability == 0 && secondary.Length > 0)
+            {
+                throw new InvalidDataException(
+                    $"Hazard node '{node.RegionId}' has an inactive secondary transition.");
+            }
+
+            foreach (var group in outgoing.GroupBy(transition => transition.TransportType))
+            {
+                var weightSum = group.Sum(transition => transition.Weight);
+                if (!double.IsFinite(weightSum) || weightSum <= 0)
+                {
+                    throw new InvalidDataException(
+                        $"Hazard node '{node.RegionId}' has non-normalizable transition weights.");
+                }
+            }
+        }
+
+
+        if (!hazard.Transitions.Any(transition =>
+            transition.TransportType == HazardTransportType.HazardDriven &&
+            transition.Activation == HazardTransitionActivation.AnyEntity &&
+            string.Equals(
+                transition.SourceRegionId,
+                hazard.SourceRegionId,
+                StringComparison.Ordinal)))
+        {
+            throw new InvalidDataException(
+                "The hazard source requires a primary transition available to the shared entity group.");
+        }
+
+        RejectCycles(hazard, nodesByRegion.Keys);
+        var reachable = ReachableRegions(hazard);
+        foreach (var requiredTerminal in hazard.Nodes.Where(node => node.IsRequiredTerminal))
+        {
+            if (!reachable.Contains(requiredTerminal.RegionId))
+            {
+                throw new InvalidDataException(
+                    $"Required terminal '{requiredTerminal.RegionId}' is unreachable.");
+            }
+        }
+
+        var publicRegionIds = hazard.Nodes
+            .Where(node => node.PubliclyVisible)
+            .Select(node => node.RegionId)
+            .ToHashSet(StringComparer.Ordinal);
+        var publiclyReachable = ReachableRegions(hazard, publicOnly: true);
+        if (!publicRegionIds.IsSubsetOf(publiclyReachable))
+        {
+            throw new InvalidDataException(
+                "Every public hazard node must be reachable through public transitions.");
+        }
+
+        if (!publicRegionIds.SetEquals(scenario.HazardTransportEnvelopeRegionIds))
+        {
+            throw new InvalidDataException(
+                "Declared hazard envelope regions must exactly match the public stochastic nodes.");
+        }
+    }
+
+    private static void RejectCycles(
+        StochasticHazardDefinition hazard,
+        IEnumerable<string> regionIds)
+    {
+        var visiting = new HashSet<string>(StringComparer.Ordinal);
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var regionId in regionIds.OrderBy(value => value, StringComparer.Ordinal))
+        {
+            Visit(regionId);
+        }
+
+        void Visit(string regionId)
+        {
+            if (visited.Contains(regionId))
+            {
+                return;
+            }
+
+            if (!visiting.Add(regionId))
+            {
+                throw new InvalidDataException("Stochastic hazard transitions cannot contain cycles.");
+            }
+
+            foreach (var destination in hazard.Transitions
+                .Where(transition => string.Equals(
+                    transition.SourceRegionId,
+                    regionId,
+                    StringComparison.Ordinal))
+                .Select(transition => transition.DestinationRegionId)
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(value => value, StringComparer.Ordinal))
+            {
+                Visit(destination);
+            }
+
+            visiting.Remove(regionId);
+            visited.Add(regionId);
+        }
+    }
+
+    private static HashSet<string> ReachableRegions(
+        StochasticHazardDefinition hazard,
+        bool publicOnly = false)
+    {
+        var reachable = new HashSet<string>(StringComparer.Ordinal) { hazard.SourceRegionId };
+        var pending = new Queue<string>();
+        pending.Enqueue(hazard.SourceRegionId);
+        while (pending.TryDequeue(out var source))
+        {
+            foreach (var destination in hazard.Transitions
+                .Where(transition => !publicOnly || transition.PubliclyVisible)
+                .Where(transition => string.Equals(
+                    transition.SourceRegionId,
+                    source,
+                    StringComparison.Ordinal))
+                .Select(transition => transition.DestinationRegionId))
+            {
+                if (reachable.Add(destination))
+                {
+                    pending.Enqueue(destination);
+                }
+            }
+        }
+
+        return reachable;
+    }
+
+    private static void RequireProbability(double value, string field)
+    {
+        if (!double.IsFinite(value) || value is < 0 or > 1)
+        {
+            throw new InvalidDataException($"{field} must be finite and between 0 and 1.");
+        }
     }
 
     private static void RequireRegion(Position position, ISet<string> regionIds, string owner)

@@ -1,4 +1,5 @@
 using FootprintSim.Evidence;
+using FootprintSim.Hazards;
 using FootprintSim.Model;
 
 namespace FootprintSim.Inference;
@@ -14,6 +15,10 @@ public sealed record RescueContext
     public IReadOnlyList<RegionDefinition> PublicRegions { get; init; } = [];
 
     public IReadOnlyList<string> DeclaredHazardEnvelopeRegionIds { get; init; } = [];
+
+    public PublicHazardEnvelope? PublicHazardEnvelope { get; init; }
+
+    public IReadOnlyList<string> PublicDeviceIds { get; init; } = [];
 }
 
 public sealed record SearchZoneSummary

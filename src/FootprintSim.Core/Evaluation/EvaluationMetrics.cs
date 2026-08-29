@@ -48,7 +48,7 @@ public sealed record TickMetric
 
 public sealed record PerRunEvaluation
 {
-    public int SchemaVersion { get; init; } = 1;
+    public int SchemaVersion { get; init; } = 2;
 
     public required string ScenarioId { get; init; }
 
@@ -65,6 +65,8 @@ public sealed record PerRunEvaluation
     public IReadOnlyList<string> ExplicitlyExcludedRegionIds { get; init; } = [];
 
     public IReadOnlyList<string> RationaleCodes { get; init; } = [];
+
+    public IReadOnlyList<CandidateRegionProvenance> CandidateRegionProvenance { get; init; } = [];
 
     public required EvidenceState EvidenceBoundaryState { get; init; }
 
@@ -85,4 +87,25 @@ public sealed record PerRunEvaluation
     public required IntegerMetric DeviceOnlyPromotionViolation { get; init; }
 
     public required TickMetric TimeToUsefulGuidance { get; init; }
+
+    public required BooleanMetric FinalGuidanceUseful { get; init; }
+
+    public required IntegerMetric UsefulGuidanceTickCount { get; init; }
+
+    public required IntegerMetric EvaluatedTickCount { get; init; }
+
+    public required DecimalMetric UsefulGuidancePersistenceFraction { get; init; }
+
+    public required IntegerMetric LongestUsefulGuidanceStreak { get; init; }
+
+    public required BooleanMetric GuidanceRegressedAfterUseful { get; init; }
+
+    public string? RealizedPersonFinalRegionId { get; init; }
+
+    public IReadOnlyDictionary<string, string> RealizedDeviceFinalRegionIds { get; init; } =
+        new SortedDictionary<string, string>(StringComparer.Ordinal);
+
+    public required int SecondaryTransportEventCount { get; init; }
+
+    public required string TruthOutcomeIdentifier { get; init; }
 }

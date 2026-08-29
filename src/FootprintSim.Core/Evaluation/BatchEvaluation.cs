@@ -1,5 +1,7 @@
 using FootprintSim.Evidence;
 using FootprintSim.Evaluation.Truth;
+using FootprintSim.Events;
+using FootprintSim.Hazards;
 using FootprintSim.Inference;
 using FootprintSim.Scenarios;
 using FootprintSim.Simulation;
@@ -35,7 +37,7 @@ public sealed record ScenarioManifestEntry
 
 public sealed record EvaluationManifest
 {
-    public int OutputSchemaVersion { get; init; } = 1;
+    public int OutputSchemaVersion { get; init; } = 2;
 
     public IReadOnlyList<string> ScenarioIdentifiers { get; init; } = [];
 
@@ -87,18 +89,43 @@ public sealed class BatchEvaluationRunner
                 .Distinct(StringComparer.Ordinal)
                 .OrderBy(regionId => regionId, StringComparer.Ordinal)
                 .ToArray();
+            var publicHazardEnvelope = scenario.StochasticHazard is null
+                ? null
+                : PublicHazardEnvelopeBuilder.Create(scenario.StochasticHazard);
             var publicContext = new RescueContext
             {
                 ScenarioId = scenario.Id,
                 TargetPersonId = scenario.TargetPersonId,
                 NormalWalkingRadius = scenario.NormalWalkingRadius,
                 PublicRegions = scenario.Regions,
-                DeclaredHazardEnvelopeRegionIds = scenario.HazardTransportEnvelopeRegionIds
+                DeclaredHazardEnvelopeRegionIds = scenario.HazardTransportEnvelopeRegionIds,
+                PublicHazardEnvelope = publicHazardEnvelope,
+                PublicDeviceIds = scenario.Entities.Devices
+                    .Select(device => device.Id)
+                    .OrderBy(deviceId => deviceId, StringComparer.Ordinal)
+                    .ToArray()
             };
 
             foreach (var seed in seeds)
             {
                 var simulation = simulationEngine.Run(scenario, seed);
+                var deviceFinalRegions = new SortedDictionary<string, string>(StringComparer.Ordinal);
+                foreach (var deviceId in scenario.Entities.Devices
+                    .Select(device => device.Id)
+                    .OrderBy(deviceId => deviceId, StringComparer.Ordinal))
+                {
+                    var deviceRegion = simulation.GroundTruthFinalEntityStates
+                        .GetValueOrDefault(deviceId)?.Position.RegionId;
+                    if (deviceRegion is not null)
+                    {
+                        deviceFinalRegions.Add(deviceId, deviceRegion);
+                    }
+                }
+
+                var truePersonRegion = simulation.GroundTruthFinalEntityStates
+                    .GetValueOrDefault(scenario.TargetPersonId)?.Position.RegionId;
+                var secondaryTransportCount = simulation.GroundTruthEvents.Count(item =>
+                    item.Kind == EventKind.SecondaryTransported);
                 var finalTick = Math.Max(
                     simulation.GroundTruthEvents
                         .Select(simulationEvent => simulationEvent.Tick)
@@ -113,13 +140,18 @@ public sealed class BatchEvaluationRunner
                     ScenarioId = scenario.Id,
                     Seed = seed,
                     TargetPersonId = scenario.TargetPersonId,
-                    TruePersonRegionId = simulation.GroundTruthFinalEntityStates
-                        .GetValueOrDefault(scenario.TargetPersonId)?.Position.RegionId,
+                    TruePersonRegionId = truePersonRegion,
                     SearchableRegionIds = searchableRegionIds,
                     DeviceIds = scenario.Entities.Devices
                         .Select(device => device.Id)
                         .OrderBy(deviceId => deviceId, StringComparer.Ordinal)
-                        .ToArray()
+                        .ToArray(),
+                    TrueDeviceRegionIds = deviceFinalRegions,
+                    SecondaryTransportEventCount = secondaryTransportCount,
+                    TruthOutcomeIdentifier = CreateTruthOutcomeIdentifier(
+                        truePersonRegion,
+                        deviceFinalRegions,
+                        secondaryTransportCount)
                 };
 
                 foreach (var strategy in strategies)
@@ -169,6 +201,18 @@ public sealed class BatchEvaluationRunner
             Aggregate = aggregate,
             Manifest = manifest
         };
+    }
+
+    private static string CreateTruthOutcomeIdentifier(
+        string? personRegion,
+        IReadOnlyDictionary<string, string> deviceRegions,
+        int secondaryTransportCount)
+    {
+        return string.Join(
+            ";",
+            $"person={personRegion ?? "unavailable"}",
+            $"devices={string.Join('|', deviceRegions.Select(item => $"{item.Key}={item.Value}"))}",
+            $"secondary={secondaryTransportCount}");
     }
 
     private static IReadOnlyList<SearchStrategyResult> EvaluateTimeline(

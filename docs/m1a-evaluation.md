@@ -62,7 +62,7 @@ dotnet run --project src/FootprintSim.Cli -- evaluate \
 
 ## Output schemas
 
-The output schema version is currently `1`. The output directory contains:
+M1-A introduced output schema version `1`. M1-B adds fields without reusing the meaning of existing fields and makes the current schema version `2`; see [M1-B stochastic hazard](m1b-stochastic-hazard.md). The output directory contains:
 
 - `runs.jsonl`: one compact, valid JSON object for each scenario/seed/strategy run;
 - `runs.csv`: the same run identities, result fields, and metrics in a fixed analysis-oriented column order;

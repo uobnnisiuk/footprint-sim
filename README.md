@@ -54,6 +54,15 @@ dotnet run --project src/FootprintSim.Cli -- \
   --output results/s1
 ```
 
+S2（合成的な確率分岐・二次輸送）:
+
+```bash
+dotnet run --project src/FootprintSim.Cli -- \
+  --scenario scenarios/s2_branching_debris_transport/scenario.json \
+  --seed 42 \
+  --output results/s2
+```
+
 各出力ディレクトリには次が作られます。
 
 - `ground-truth.events.json`: シミュレーターだけが保持する真値イベント
@@ -72,9 +81,9 @@ diff -r results/s1 results/s1-repeat
 
 `results/` は生成物なので Git 管理外です。
 
-## 複数 run 評価（M1-A）
+## 複数 run 評価（M1-A / M1-B）
 
-S0/S1、seed 0..19、全4戦略をまとめて比較する例です。
+すべてのscenario、seed 0..19、全4戦略をまとめて比較する例です。
 
 ```bash
 dotnet run --project src/FootprintSim.Cli -- evaluate \
@@ -86,16 +95,26 @@ dotnet run --project src/FootprintSim.Cli -- evaluate \
 
 `--scenarios` には単一の scenario JSON または `scenario.json` を再帰検索するディレクトリ、`--seeds` には単一値・包含範囲（`0..19`）・カンマ区切り、`--strategies` には `all` または strategy ID のカンマ区切りを指定できます。
 
-出力は、1 strategy/run につき1行の `runs.jsonl` と `runs.csv`、scenario・strategy 別の `aggregate.json` と `aggregate.csv`、入力条件と schema を固定する `manifest.json` です。`GroundTruthContainment` は真の person region を候補に保持できたか、`SearchSpaceFraction` は全 scenario region に対する候補比率、`FalseExclusion` は真値を候補から落としたかを示します。算出不能値は `available: false` と `null` で表し、実測値 0 と区別します。
+S2だけを200 seedで評価する例です。`--scenario` は単一ファイル用の別名です。
 
-同じ入力と source 状態では5ファイルすべてが byte-for-byte で再現されます。設計境界、4戦略、各 metric と分母、schema の正確な定義は [M1-A evaluation harness](docs/m1a-evaluation.md) を参照してください。数値は合成 M0 scenario の比較値であり、現実の災害・救助性能を示しません。
+```bash
+dotnet run --project src/FootprintSim.Cli -- evaluate \
+  --scenario scenarios/s2_branching_debris_transport/scenario.json \
+  --seeds 0..199 \
+  --strategies all \
+  --output results/m1b-s2
+```
+
+出力は、1 strategy/run につき1行の `runs.jsonl` と `runs.csv`、scenario・strategy 別の `aggregate.json` と `aggregate.csv`、入力条件と schema を固定する `manifest.json` です。`GroundTruthContainment` は真の person region を候補に保持できたか、`SearchSpaceFraction` は全 scenario region に対する候補比率、`FalseExclusion` は真値を候補から落としたかを示します。M1-Bのschema version 2では、最終時点の有用性、持続率、最長連続tick、後退検出、candidate provenance、合成truth outcome分布も追加されます。算出不能値は `available: false` と `null` で表し、実測値 0 と区別します。
+
+同じ入力と source 状態では5ファイルすべてが byte-for-byte で再現されます。M1-Aの評価定義は [M1-A evaluation harness](docs/m1a-evaluation.md)、確率伝播、公開境界、追加metricは [M1-B stochastic hazard](docs/m1b-stochastic-hazard.md) を参照してください。数値は合成scenario内の比較値であり、現実の災害・救助性能を示しません。
 
 ## 構成
 
 - `src/FootprintSim.Core`: world/event/observation/inference/evaluation の契約と決定論エンジン
 - `src/FootprintSim.Cli`: 単一 run と複数 run 評価の入出力
-- `tests/FootprintSim.Core.Tests`: 決定性、truth 境界、S0/S1、評価 schema の自動テスト
-- `scenarios`: 小さく明示的な M0 scenario
+- `tests/FootprintSim.Core.Tests`: 決定性、truth 境界、S0/S1回帰、S2、評価 schema の自動テスト
+- `scenarios`: 小さく明示的な合成scenario
 - `docs`: アーキテクチャとモデル
 - `scripts`: SDK の準備・実測
 
@@ -103,8 +122,8 @@ dotnet run --project src/FootprintSim.Cli -- evaluate \
 
 ## 現段階の制限
 
-M0 の経路、速度、分岐、停止は scenario に明示した抽象イベントです。流体・土砂・建物倒壊の物理解析、実時間処理、GUI、完全な EBPC、高度な確率推論は実装していません。特定の実災害を再現するものでも、現実の位置・生存・危険度を予測できるものでもありません。
+S0/S1 の経路はscenarioに明示した抽象イベントです。S2の重みも研究用の合成値であり、校正済み確率ではありません。流体・土砂・建物倒壊の物理解析、観測チャネル校正、実時間処理、GUI、完全なEBPC、救助優先順位ポリシーは実装していません。特定の実災害を再現するものでも、現実の位置・生存・危険度を予測できるものでもありません。
 
 ## 次のマイルストーン
 
-M1-A では複数 run の比較・集計基盤までを追加しました。M1-B 以降では、経路グラフ上の確率的 hazard propagator、観測チャネル別の校正済み欠落・遅延モデル、より広い scenario fixture を検討します。完全な EBPC adapter は別工程であり、M0 の `ObservationSet` / `IRescueInference` 境界を維持したまま接続します。
+M1-Aは複数runの比較・集計基盤、M1-Bは安定PRNGによる合成hazard伝播、S2、公開envelope、region-level provenance、guidance持続性までを追加しました。M1-C以降では観測チャネルの校正、公開情報の時間変化、より広いscenario fixtureを検討します。完全なEBPC adapterは別工程であり、`ObservationSet` / `IRescueInference` 境界を維持したまま接続します。

@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using FootprintSim.Evidence;
 using FootprintSim.Events;
+using FootprintSim.Hazards;
 using FootprintSim.Model;
 using FootprintSim.Scenarios;
 
@@ -14,7 +15,7 @@ public sealed class SimulationEngine
     {
         ScenarioValidator.Validate(scenario);
 
-        var random = new DeterministicRandom(seed);
+        var random = new StableRandom(seed);
         var eventCandidates = new List<EventCandidate>();
         var observations = new List<ObservationRecord>();
         var entityStates = CreateInitialEntityStates(scenario.Entities);
@@ -68,6 +69,24 @@ public sealed class SimulationEngine
                     random,
                     observations,
                     eventCandidates);
+            }
+        }
+
+        if (scenario.StochasticHazard is not null)
+        {
+            var propagation = new StochasticHazardPropagator().Propagate(scenario, seed);
+            var stableOrderBase = ((long)scenario.Steps.Count) * 100;
+            foreach (var item in propagation.Events.Select((simulationEvent, index) =>
+                (simulationEvent, index)))
+            {
+                eventCandidates.Add(new EventCandidate(
+                    item.simulationEvent,
+                    stableOrderBase + item.index));
+            }
+
+            foreach (var finalPosition in propagation.FinalPositions)
+            {
+                UpdatePosition(entityStates, finalPosition.Key, finalPosition.Value);
             }
         }
 
@@ -175,7 +194,7 @@ public sealed class SimulationEngine
         long stableOrder,
         SimulationEvent sourceEvent,
         ObservationSpecification specification,
-        DeterministicRandom random,
+        StableRandom random,
         ICollection<ObservationRecord> observations,
         ICollection<EventCandidate> eventCandidates)
     {

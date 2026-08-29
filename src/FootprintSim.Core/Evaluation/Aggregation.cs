@@ -66,18 +66,74 @@ public sealed record StrategyScenarioAggregate
 
     public required DistributionAggregate TimeToUsefulGuidance { get; init; }
 
+    public required RateAggregate FinalGuidanceUseful { get; init; }
+
+    public required DistributionAggregate UsefulGuidanceTickCount { get; init; }
+
+    public required DistributionAggregate EvaluatedTickCount { get; init; }
+
+    public required DistributionAggregate UsefulGuidancePersistenceFraction { get; init; }
+
+    public required DistributionAggregate LongestUsefulGuidanceStreak { get; init; }
+
+    public required RateAggregate GuidanceRegressedAfterUseful { get; init; }
+
     public required EvidenceStateCounts EvidenceBoundaryStateCounts { get; init; }
+
+    public IReadOnlyList<ProvenanceSourceKindCount> ProvenanceSourceKindCounts { get; init; } = [];
 
     public required int UniqueOutcomeCount { get; init; }
 
     public required string SeedSensitivityNote { get; init; }
 }
 
+public sealed record ProvenanceSourceKindCount
+{
+    public required CandidateSourceKind SourceKind { get; init; }
+
+    public required int Count { get; init; }
+}
+
+public sealed record RegionOutcomeCount
+{
+    public required string RegionId { get; init; }
+
+    public required int Count { get; init; }
+}
+
+public sealed record DeviceRegionOutcomeCount
+{
+    public required string DeviceId { get; init; }
+
+    public required string RegionId { get; init; }
+
+    public required int Count { get; init; }
+}
+
+public sealed record ScenarioTruthAggregate
+{
+    public required string ScenarioId { get; init; }
+
+    public required int SeedCount { get; init; }
+
+    public IReadOnlyList<RegionOutcomeCount> PersonFinalRegionCounts { get; init; } = [];
+
+    public IReadOnlyList<DeviceRegionOutcomeCount> DeviceFinalRegionCounts { get; init; } = [];
+
+    public required int UniqueTruthOutcomeCount { get; init; }
+
+    public required int SecondaryTransportRunCount { get; init; }
+
+    public required int SecondaryTransportEventCount { get; init; }
+}
+
 public sealed record AggregateReport
 {
-    public int SchemaVersion { get; init; } = 1;
+    public int SchemaVersion { get; init; } = 2;
 
     public IReadOnlyList<StrategyScenarioAggregate> Groups { get; init; } = [];
+
+    public IReadOnlyList<ScenarioTruthAggregate> TruthGroups { get; init; } = [];
 }
 
 public sealed class AggregateEvaluator
@@ -94,7 +150,15 @@ public sealed class AggregateEvaluator
             .Select(CreateGroup)
             .ToArray();
 
-        return new AggregateReport { Groups = groups };
+        var truthGroups = evaluations
+            .GroupBy(run => (run.ScenarioId, run.Seed))
+            .Select(group => group.OrderBy(run => run.StrategyId, StringComparer.Ordinal).First())
+            .GroupBy(run => run.ScenarioId, StringComparer.Ordinal)
+            .OrderBy(group => group.Key, StringComparer.Ordinal)
+            .Select(CreateTruthGroup)
+            .ToArray();
+
+        return new AggregateReport { Groups = groups, TruthGroups = truthGroups };
     }
 
     private static StrategyScenarioAggregate CreateGroup(
@@ -131,6 +195,21 @@ public sealed class AggregateEvaluator
             TimeToUsefulGuidance = Distribution(runs
                 .Where(run => run.TimeToUsefulGuidance.Available)
                 .Select(run => (decimal)run.TimeToUsefulGuidance.Value!.Value)),
+            FinalGuidanceUseful = Rate(runs.Select(run => run.FinalGuidanceUseful)),
+            UsefulGuidanceTickCount = Distribution(runs
+                .Where(run => run.UsefulGuidanceTickCount.Available)
+                .Select(run => (decimal)run.UsefulGuidanceTickCount.Value!.Value)),
+            EvaluatedTickCount = Distribution(runs
+                .Where(run => run.EvaluatedTickCount.Available)
+                .Select(run => (decimal)run.EvaluatedTickCount.Value!.Value)),
+            UsefulGuidancePersistenceFraction = Distribution(runs
+                .Where(run => run.UsefulGuidancePersistenceFraction.Available)
+                .Select(run => run.UsefulGuidancePersistenceFraction.Value!.Value)),
+            LongestUsefulGuidanceStreak = Distribution(runs
+                .Where(run => run.LongestUsefulGuidanceStreak.Available)
+                .Select(run => (decimal)run.LongestUsefulGuidanceStreak.Value!.Value)),
+            GuidanceRegressedAfterUseful = Rate(runs.Select(run =>
+                run.GuidanceRegressedAfterUseful)),
             EvidenceBoundaryStateCounts = new EvidenceStateCounts
             {
                 Confirmed = runs.Count(run => run.EvidenceBoundaryState == EvidenceState.Confirmed),
@@ -141,12 +220,67 @@ public sealed class AggregateEvaluator
                 UnsupportedForQuery = runs.Count(run =>
                     run.EvidenceBoundaryState == EvidenceState.UnsupportedForQuery)
             },
+            ProvenanceSourceKindCounts = runs
+                .SelectMany(run => run.CandidateRegionProvenance)
+                .GroupBy(item => item.SourceKind)
+                .OrderBy(grouping => grouping.Key)
+                .Select(grouping => new ProvenanceSourceKindCount
+                {
+                    SourceKind = grouping.Key,
+                    Count = grouping.Count()
+                })
+                .ToArray(),
             UniqueOutcomeCount = uniqueOutcomes,
             SeedSensitivityNote = distinctSeedCount < 2
                 ? "seed sensitivity unavailable: fewer than two distinct seeds"
                 : uniqueOutcomes == 1
-                    ? "current M0 scenario is seed-insensitive for this strategy result"
-                    : "outcomes vary across seeds under current M0 observation timing"
+                    ? group.Key.ScenarioId.StartsWith("s2-", StringComparison.Ordinal)
+                        ? "current synthetic S2 strategy result is seed-insensitive"
+                        : "current M0 scenario is seed-insensitive for this strategy result"
+                    : group.Key.ScenarioId.StartsWith("s2-", StringComparison.Ordinal)
+                        ? "outcomes vary across seeds in the synthetic stochastic scenario"
+                        : "outcomes vary across seeds under current M0 observation timing"
+        };
+    }
+
+    private static ScenarioTruthAggregate CreateTruthGroup(
+        IGrouping<string, PerRunEvaluation> group)
+    {
+        var runs = group.OrderBy(run => run.Seed).ToArray();
+        return new ScenarioTruthAggregate
+        {
+            ScenarioId = group.Key,
+            SeedCount = runs.Length,
+            PersonFinalRegionCounts = runs
+                .Where(run => run.RealizedPersonFinalRegionId is not null)
+                .GroupBy(run => run.RealizedPersonFinalRegionId!, StringComparer.Ordinal)
+                .OrderBy(item => item.Key, StringComparer.Ordinal)
+                .Select(item => new RegionOutcomeCount
+                {
+                    RegionId = item.Key,
+                    Count = item.Count()
+                })
+                .ToArray(),
+            DeviceFinalRegionCounts = runs
+                .SelectMany(run => run.RealizedDeviceFinalRegionIds)
+                .GroupBy(item => (item.Key, item.Value))
+                .OrderBy(item => item.Key.Key, StringComparer.Ordinal)
+                .ThenBy(item => item.Key.Value, StringComparer.Ordinal)
+                .Select(item => new DeviceRegionOutcomeCount
+                {
+                    DeviceId = item.Key.Key,
+                    RegionId = item.Key.Value,
+                    Count = item.Count()
+                })
+                .ToArray(),
+            UniqueTruthOutcomeCount = runs
+                .Select(run => run.TruthOutcomeIdentifier)
+                .Distinct(StringComparer.Ordinal)
+                .Count(),
+            SecondaryTransportRunCount = runs.Count(run =>
+                run.SecondaryTransportEventCount > 0),
+            SecondaryTransportEventCount = runs.Sum(run =>
+                run.SecondaryTransportEventCount)
         };
     }
 
@@ -210,7 +344,14 @@ public sealed class AggregateEvaluator
             MetricText(run.SearchSpaceFraction.Available, run.SearchSpaceFraction.Value),
             MetricText(run.SearchSpaceReduction.Available, run.SearchSpaceReduction.Value),
             MetricText(run.DeviceOnlyPromotionViolation.Available, run.DeviceOnlyPromotionViolation.Value),
-            MetricText(run.TimeToUsefulGuidance.Available, run.TimeToUsefulGuidance.Value));
+            MetricText(run.TimeToUsefulGuidance.Available, run.TimeToUsefulGuidance.Value),
+            MetricText(run.FinalGuidanceUseful.Available, run.FinalGuidanceUseful.Value),
+            MetricText(
+                run.UsefulGuidancePersistenceFraction.Available,
+                run.UsefulGuidancePersistenceFraction.Value),
+            MetricText(
+                run.GuidanceRegressedAfterUseful.Available,
+                run.GuidanceRegressedAfterUseful.Value));
     }
 
     private static string MetricText<T>(bool available, T? value)

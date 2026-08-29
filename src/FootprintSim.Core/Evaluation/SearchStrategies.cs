@@ -28,7 +28,10 @@ public sealed class LastConfirmedOnlyStrategy : ISearchStrategy
             confirmed is null
                 ? ["no-confirmed-person-region"]
                 : ["last-confirmed-person-region"],
-            confirmed is null ? [] : [confirmed]);
+            confirmed is null ? [] : [confirmed],
+            confirmed is null
+                ? []
+                : StrategySupport.LastConfirmedProvenance(input, confirmed));
     }
 }
 
@@ -51,7 +54,8 @@ public sealed class VoluntaryReachabilityStrategy : ISearchStrategy
             candidates,
             summary.EvidenceState,
             rationale,
-            confirmed is null ? [] : [confirmed]);
+            confirmed is null ? [] : [confirmed],
+            StrategySupport.VoluntaryProvenance(input, candidates));
     }
 }
 
@@ -84,7 +88,8 @@ public sealed class HazardAwareStrategy : ISearchStrategy
                     "no-person-observation-in-declared-hazard-envelope",
                     "normal-movement-fallback"
                 ],
-                confirmed is null ? [] : [confirmed]);
+                confirmed is null ? [] : [confirmed],
+                StrategySupport.VoluntaryProvenance(input, summary.NormalMovementRegionIds));
         }
 
         var candidates = hazardRegions
@@ -104,7 +109,8 @@ public sealed class HazardAwareStrategy : ISearchStrategy
                 "person-observation-in-declared-hazard-envelope",
                 "declared-hazard-transport-envelope"
             ],
-            confirmed is null ? [] : [confirmed]);
+            confirmed is null ? [] : [confirmed],
+            StrategySupport.HazardAndObservationProvenance(input, candidates));
     }
 }
 
@@ -133,7 +139,11 @@ public sealed class EvidenceAwareCurrentStrategy : ISearchStrategy
             candidates,
             summary.EvidenceState,
             rationale,
-            confirmed is null ? [] : [confirmed]);
+            confirmed is null ? [] : [confirmed],
+            StrategySupport.EvidenceAwareProvenance(
+                input,
+                candidates,
+                summary.NormalMovementRegionIds));
     }
 }
 
@@ -193,7 +203,17 @@ internal static class StrategySupport
     public static SearchZoneSummary Infer(SearchStrategyInput input)
     {
         Validate(input);
-        return new BasicRescueInference().Infer(input.PublicContext, input.AvailableEvidence);
+        var publicContext = input.PublicContext.PublicHazardEnvelope is { } envelope
+            ? input.PublicContext with
+            {
+                DeclaredHazardEnvelopeRegionIds = envelope.Regions
+                    .Where(region => region.PublishedAtTick <= input.CurrentTick)
+                    .Select(region => region.RegionId)
+                    .OrderBy(regionId => regionId, StringComparer.Ordinal)
+                    .ToArray()
+            }
+            : input.PublicContext;
+        return new BasicRescueInference().Infer(publicContext, input.AvailableEvidence);
     }
 
     public static SearchStrategyResult Result(
@@ -202,7 +222,8 @@ internal static class StrategySupport
         IEnumerable<string> candidates,
         EvidenceState state,
         IEnumerable<string> rationaleCodes,
-        IEnumerable<string> confirmedPersonRegions)
+        IEnumerable<string> confirmedPersonRegions,
+        IEnumerable<CandidateRegionProvenance>? provenance = null)
     {
         var publicRegionIds = input.PublicContext.PublicRegions
             .Select(region => region.Id)
@@ -211,6 +232,39 @@ internal static class StrategySupport
             .Distinct(StringComparer.Ordinal)
             .Where(publicRegionIds.Contains)
             .ToArray();
+        var candidateIndex = orderedCandidates
+            .Select((regionId, index) => (regionId, index))
+            .ToDictionary(item => item.regionId, item => item.index, StringComparer.Ordinal);
+        var orderedProvenance = (provenance ?? [])
+            .Where(item => candidateIndex.ContainsKey(item.RegionId))
+            .Distinct()
+            .OrderBy(item => candidateIndex[item.RegionId])
+            .ThenBy(item => item.SourceKind)
+            .ThenBy(item => item.SourceIdentifier, StringComparer.Ordinal)
+            .ToList();
+        foreach (var candidate in orderedCandidates.Where(candidate =>
+            !orderedProvenance.Any(item => string.Equals(
+                item.RegionId,
+                candidate,
+                StringComparison.Ordinal))))
+        {
+            orderedProvenance.Add(new CandidateRegionProvenance
+            {
+                RegionId = candidate,
+                SourceKind = CandidateSourceKind.Unsupported,
+                SourceIdentifier = $"strategy:{strategy.Id}",
+                AvailableAtTick = input.CurrentTick,
+                IsPersonEvidence = false,
+                IsDeviceOnlyEvidence = false,
+                EvidenceBoundaryState = EvidenceState.UnsupportedForQuery
+            });
+        }
+
+        orderedProvenance = orderedProvenance
+            .OrderBy(item => candidateIndex[item.RegionId])
+            .ThenBy(item => item.SourceKind)
+            .ThenBy(item => item.SourceIdentifier, StringComparer.Ordinal)
+            .ToList();
 
         return new SearchStrategyResult
         {
@@ -225,7 +279,186 @@ internal static class StrategySupport
                 .Distinct(StringComparer.Ordinal)
                 .Where(publicRegionIds.Contains)
                 .OrderBy(regionId => regionId, StringComparer.Ordinal)
-                .ToArray()
+                .ToArray(),
+            CandidateRegionProvenance = orderedProvenance
+        };
+    }
+
+    public static IReadOnlyList<CandidateRegionProvenance> LastConfirmedProvenance(
+        SearchStrategyInput input,
+        string regionId)
+    {
+        var observation = LocatedPersonObservations(input)
+            .Where(item => item.State == EvidenceState.Confirmed)
+            .LastOrDefault();
+        return observation is null
+            ? []
+            : [FromObservation(
+                regionId,
+                observation,
+                CandidateSourceKind.LastConfirmed,
+                isPersonEvidence: true,
+                isDeviceOnlyEvidence: false)];
+    }
+
+    public static IReadOnlyList<CandidateRegionProvenance> VoluntaryProvenance(
+        SearchStrategyInput input,
+        IEnumerable<string> regions)
+    {
+        var anchor = LocatedPersonObservations(input)
+            .Where(item => item.State == EvidenceState.Confirmed)
+            .LastOrDefault() ?? LocatedPersonObservations(input).LastOrDefault();
+        return regions.Select(regionId => new CandidateRegionProvenance
+        {
+            RegionId = regionId,
+            SourceKind = CandidateSourceKind.VoluntaryReachability,
+            SourceIdentifier = anchor?.ObservationId ?? "no-person-anchor",
+            AvailableAtTick = anchor?.AvailableTick ?? input.CurrentTick,
+            IsPersonEvidence = anchor is not null,
+            IsDeviceOnlyEvidence = false,
+            EvidenceBoundaryState = anchor?.State ?? EvidenceState.Indeterminate
+        }).ToArray();
+    }
+
+    public static IReadOnlyList<CandidateRegionProvenance> HazardAndObservationProvenance(
+        SearchStrategyInput input,
+        IEnumerable<string> regions)
+    {
+        var result = HazardProvenance(input, regions).ToList();
+        var lastReported = LocatedPersonObservations(input).LastOrDefault();
+        if (lastReported?.ReportedRegionId is { } regionId && regions.Contains(
+            regionId,
+            StringComparer.Ordinal))
+        {
+            result.Add(FromObservation(
+                regionId,
+                lastReported,
+                lastReported.State == EvidenceState.Conflicting
+                    ? CandidateSourceKind.ConflictingObservation
+                    : CandidateSourceKind.PersonObservation,
+                isPersonEvidence: true,
+                isDeviceOnlyEvidence: false));
+        }
+
+        return result;
+    }
+
+    public static IReadOnlyList<CandidateRegionProvenance> EvidenceAwareProvenance(
+        SearchStrategyInput input,
+        IEnumerable<string> regions,
+        IEnumerable<string> voluntaryRegions)
+    {
+        var candidateSet = regions.ToHashSet(StringComparer.Ordinal);
+        var result = HazardProvenance(input, candidateSet)
+            .Concat(VoluntaryProvenance(
+                input,
+                voluntaryRegions.Where(candidateSet.Contains)))
+            .ToList();
+        foreach (var observation in input.AvailableEvidence.Observations
+            .Where(item => item.ReportedRegionId is not null)
+            .OrderBy(item => item.AvailableTick)
+            .ThenBy(item => item.ObservationId, StringComparer.Ordinal))
+        {
+            var regionId = observation.ReportedRegionId!;
+            if (!candidateSet.Contains(regionId))
+            {
+                continue;
+            }
+
+            var isPerson = observation.SubjectIds.Contains(
+                input.PublicContext.TargetPersonId,
+                StringComparer.Ordinal);
+            var isDeviceOnly = !isPerson && observation.SubjectIds.Any(subjectId =>
+                input.PublicContext.PublicDeviceIds.Contains(subjectId, StringComparer.Ordinal));
+            result.Add(FromObservation(
+                regionId,
+                observation,
+                observation.State == EvidenceState.Conflicting
+                    ? CandidateSourceKind.ConflictingObservation
+                    : isPerson
+                        ? CandidateSourceKind.PersonObservation
+                        : isDeviceOnly
+                            ? CandidateSourceKind.DeviceOnlyObservation
+                            : CandidateSourceKind.Unsupported,
+                isPerson,
+                isDeviceOnly));
+        }
+
+        return result;
+    }
+
+    private static IEnumerable<CandidateRegionProvenance> HazardProvenance(
+        SearchStrategyInput input,
+        IEnumerable<string> regions)
+    {
+        var candidateSet = regions.ToHashSet(StringComparer.Ordinal);
+        var envelope = input.PublicContext.PublicHazardEnvelope;
+        if (envelope is null)
+        {
+            return input.PublicContext.DeclaredHazardEnvelopeRegionIds
+                .Where(candidateSet.Contains)
+                .Select(regionId => new CandidateRegionProvenance
+                {
+                    RegionId = regionId,
+                    SourceKind = CandidateSourceKind.PublicHazardEnvelope,
+                    SourceIdentifier = "scenario-declared-hazard-envelope",
+                    AvailableAtTick = 0,
+                    IsPersonEvidence = false,
+                    IsDeviceOnlyEvidence = false,
+                    EvidenceBoundaryState = EvidenceState.SupportedButUncertain
+                });
+        }
+
+        if (envelope.PublishedAtTick > input.CurrentTick)
+        {
+            return [];
+        }
+
+        return envelope.Regions
+            .Where(region => region.PublishedAtTick <= input.CurrentTick)
+            .Where(region => candidateSet.Contains(region.RegionId))
+            .SelectMany(region => region.ProvenanceIds.Select(sourceId =>
+                new CandidateRegionProvenance
+                {
+                    RegionId = region.RegionId,
+                    SourceKind = CandidateSourceKind.PublicHazardEnvelope,
+                    SourceIdentifier = sourceId,
+                    AvailableAtTick = region.PublishedAtTick,
+                    IsPersonEvidence = false,
+                    IsDeviceOnlyEvidence = false,
+                    EvidenceBoundaryState = EvidenceState.SupportedButUncertain
+                }));
+    }
+
+    private static ObservationRecord[] LocatedPersonObservations(SearchStrategyInput input)
+    {
+        return input.AvailableEvidence.Observations
+            .Where(item => item.ReportedRegionId is not null)
+            .Where(item => item.SubjectIds.Contains(
+                input.PublicContext.TargetPersonId,
+                StringComparer.Ordinal))
+            .OrderBy(item => item.ObservedTick)
+            .ThenBy(item => item.AvailableTick)
+            .ThenBy(item => item.ObservationId, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static CandidateRegionProvenance FromObservation(
+        string regionId,
+        ObservationRecord observation,
+        CandidateSourceKind sourceKind,
+        bool isPersonEvidence,
+        bool isDeviceOnlyEvidence)
+    {
+        return new CandidateRegionProvenance
+        {
+            RegionId = regionId,
+            SourceKind = sourceKind,
+            SourceIdentifier = observation.ObservationId,
+            AvailableAtTick = observation.AvailableTick,
+            IsPersonEvidence = isPersonEvidence,
+            IsDeviceOnlyEvidence = isDeviceOnlyEvidence,
+            EvidenceBoundaryState = observation.State
         };
     }
 

@@ -12,9 +12,11 @@ This is a private research simulator, not an operational rescue or hazard-predic
 - Pass truth to `PerRunEvaluator` only after `ISearchStrategy` has returned; never add truth types to strategy input.
 - Keep evaluation JSON/CSV free of current time, absolute paths, random IDs, and unordered collections.
 - Treat `Person` and `Device` as independent physical entities after separation.
+- Strategies may consume `PublicHazardEnvelope`; never pass a realized transition, terminal, or PRNG draw through it.
+- Keep SplitMix64 test vectors and entity/purpose-derived random streams stable.
 - Keep scenario changes explicit and testable; do not imply real-world predictive accuracy.
 - Do not commit generated `results/`, `bin/`, `obj/`, or SDK artifacts.
 
 ## Before handing off
 
-Run `scripts/check-environment.sh`, `dotnet build FootprintSim.sln`, `dotnet test FootprintSim.sln`, `dotnet format --verify-no-changes`, both sample scenarios, and the README evaluation command. Review `git diff` for truth leakage and unrelated changes.
+Run `scripts/check-environment.sh`, `dotnet build FootprintSim.sln`, `dotnet test FootprintSim.sln`, `dotnet format --verify-no-changes`, all sample scenarios, and the relevant README evaluation command. Review `git diff` for truth leakage and unrelated changes.

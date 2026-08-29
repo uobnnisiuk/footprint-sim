@@ -1,6 +1,7 @@
 using System.Text.Json;
 using FootprintSim.Evidence;
 using FootprintSim.Events;
+using FootprintSim.Hazards;
 using FootprintSim.Model;
 
 namespace FootprintSim.Scenarios;
@@ -20,6 +21,8 @@ public sealed class ScenarioDefinition
     public required double NormalWalkingRadius { get; init; }
 
     public IReadOnlyList<string> HazardTransportEnvelopeRegionIds { get; init; } = [];
+
+    public StochasticHazardDefinition? StochasticHazard { get; init; }
 
     public IReadOnlyList<RegionDefinition> Regions { get; init; } = [];
 

@@ -28,6 +28,7 @@ public sealed class EvaluationOutputWriter
     public const string RunsCsvHeader =
         "schema_version,scenario_id,seed,strategy_id,produced_at_tick,evidence_boundary_state," +
         "candidate_regions,confirmed_person_regions,explicitly_excluded_regions,rationale_codes," +
+        "candidate_region_provenance," +
         "searchable_region_count,ground_truth_containment_available,ground_truth_containment_value," +
         "ground_truth_containment_numerator,ground_truth_containment_denominator," +
         "ground_truth_containment_unavailable_reason,candidate_region_count_available," +
@@ -43,7 +44,23 @@ public sealed class EvaluationOutputWriter
         "explicit_false_exclusion_unavailable_reason,device_only_promotion_violation_available," +
         "device_only_promotion_violation_value,device_only_promotion_violation_unavailable_reason," +
         "time_to_useful_guidance_available,time_to_useful_guidance_value," +
-        "time_to_useful_guidance_unavailable_reason";
+        "time_to_useful_guidance_unavailable_reason,final_guidance_useful_available," +
+        "final_guidance_useful_value,final_guidance_useful_numerator," +
+        "final_guidance_useful_denominator,final_guidance_useful_unavailable_reason," +
+        "useful_guidance_tick_count_available,useful_guidance_tick_count_value," +
+        "useful_guidance_tick_count_unavailable_reason,evaluated_tick_count_available," +
+        "evaluated_tick_count_value,evaluated_tick_count_unavailable_reason," +
+        "useful_guidance_persistence_fraction_available," +
+        "useful_guidance_persistence_fraction_value," +
+        "useful_guidance_persistence_fraction_numerator," +
+        "useful_guidance_persistence_fraction_denominator," +
+        "useful_guidance_persistence_fraction_unavailable_reason," +
+        "longest_useful_guidance_streak_available,longest_useful_guidance_streak_value," +
+        "longest_useful_guidance_streak_unavailable_reason," +
+        "guidance_regressed_after_useful_available,guidance_regressed_after_useful_value," +
+        "guidance_regressed_after_useful_numerator,guidance_regressed_after_useful_denominator," +
+        "guidance_regressed_after_useful_unavailable_reason,realized_person_final_region," +
+        "realized_device_final_regions,secondary_transport_event_count,truth_outcome_identifier";
 
     public const string AggregateCsvHeader =
         "schema_version,scenario_id,strategy_id,run_count,metric_complete_run_count," +
@@ -58,9 +75,21 @@ public sealed class EvaluationOutputWriter
         "search_reduction_available_count,search_reduction_mean,search_reduction_median," +
         "search_reduction_min,search_reduction_max,time_guidance_available_count," +
         "time_guidance_mean,time_guidance_median,time_guidance_min,time_guidance_max," +
+        "final_guidance_available_count,final_guidance_numerator,final_guidance_denominator," +
+        "final_guidance_rate,useful_tick_count_available_count,useful_tick_count_mean," +
+        "useful_tick_count_median,useful_tick_count_min,useful_tick_count_max," +
+        "evaluated_tick_count_available_count,evaluated_tick_count_mean," +
+        "evaluated_tick_count_median,evaluated_tick_count_min,evaluated_tick_count_max," +
+        "persistence_fraction_available_count,persistence_fraction_mean," +
+        "persistence_fraction_median,persistence_fraction_min,persistence_fraction_max," +
+        "longest_streak_available_count,longest_streak_mean,longest_streak_median," +
+        "longest_streak_min,longest_streak_max,regressed_available_count," +
+        "regressed_numerator,regressed_denominator,regressed_rate," +
         "evidence_confirmed_count,evidence_supported_but_uncertain_count,evidence_conflicting_count," +
         "evidence_indeterminate_count,evidence_unsupported_for_query_count,unique_outcome_count," +
-        "seed_sensitivity_note";
+        "seed_sensitivity_note,provenance_source_kind_counts,truth_seed_count," +
+        "person_final_region_counts,device_final_region_counts,unique_truth_outcome_count," +
+        "secondary_transport_run_count,secondary_transport_event_count";
 
     private static JsonSerializerOptions CompactJsonOptions { get; } =
         new(JsonDefaults.Options) { WriteIndented = false };
@@ -115,6 +144,7 @@ public sealed class EvaluationOutputWriter
                 Join(run.ConfirmedPersonRegionIds),
                 Join(run.ExplicitlyExcludedRegionIds),
                 Join(run.RationaleCodes),
+                JsonSerializer.Serialize(run.CandidateRegionProvenance, CompactJsonOptions),
                 run.SearchableRegionCount.ToString(CultureInfo.InvariantCulture),
                 Boolean(run.GroundTruthContainment.Available),
                 Boolean(run.GroundTruthContainment.Value),
@@ -149,7 +179,35 @@ public sealed class EvaluationOutputWriter
                 run.DeviceOnlyPromotionViolation.UnavailableReason,
                 Boolean(run.TimeToUsefulGuidance.Available),
                 Long(run.TimeToUsefulGuidance.Value),
-                run.TimeToUsefulGuidance.UnavailableReason
+                run.TimeToUsefulGuidance.UnavailableReason,
+                Boolean(run.FinalGuidanceUseful.Available),
+                Boolean(run.FinalGuidanceUseful.Value),
+                Integer(run.FinalGuidanceUseful.Numerator),
+                Integer(run.FinalGuidanceUseful.Denominator),
+                run.FinalGuidanceUseful.UnavailableReason,
+                Boolean(run.UsefulGuidanceTickCount.Available),
+                Integer(run.UsefulGuidanceTickCount.Value),
+                run.UsefulGuidanceTickCount.UnavailableReason,
+                Boolean(run.EvaluatedTickCount.Available),
+                Integer(run.EvaluatedTickCount.Value),
+                run.EvaluatedTickCount.UnavailableReason,
+                Boolean(run.UsefulGuidancePersistenceFraction.Available),
+                Decimal(run.UsefulGuidancePersistenceFraction.Value),
+                Integer(run.UsefulGuidancePersistenceFraction.Numerator),
+                Integer(run.UsefulGuidancePersistenceFraction.Denominator),
+                run.UsefulGuidancePersistenceFraction.UnavailableReason,
+                Boolean(run.LongestUsefulGuidanceStreak.Available),
+                Integer(run.LongestUsefulGuidanceStreak.Value),
+                run.LongestUsefulGuidanceStreak.UnavailableReason,
+                Boolean(run.GuidanceRegressedAfterUseful.Available),
+                Boolean(run.GuidanceRegressedAfterUseful.Value),
+                Integer(run.GuidanceRegressedAfterUseful.Numerator),
+                Integer(run.GuidanceRegressedAfterUseful.Denominator),
+                run.GuidanceRegressedAfterUseful.UnavailableReason,
+                run.RealizedPersonFinalRegionId,
+                Join(run.RealizedDeviceFinalRegionIds.Select(item => $"{item.Key}={item.Value}")),
+                run.SecondaryTransportEventCount.ToString(CultureInfo.InvariantCulture),
+                run.TruthOutcomeIdentifier
             ]);
         }
 
@@ -162,6 +220,10 @@ public sealed class EvaluationOutputWriter
         builder.Append(AggregateCsvHeader).Append('\n');
         foreach (var group in report.Groups)
         {
+            var truth = report.TruthGroups.Single(item => string.Equals(
+                item.ScenarioId,
+                group.ScenarioId,
+                StringComparison.Ordinal));
             AppendCsvRow(builder,
             [
                 report.SchemaVersion.ToString(CultureInfo.InvariantCulture),
@@ -202,6 +264,39 @@ public sealed class EvaluationOutputWriter
                 Decimal(group.TimeToUsefulGuidance.Median),
                 Decimal(group.TimeToUsefulGuidance.Minimum),
                 Decimal(group.TimeToUsefulGuidance.Maximum),
+                group.FinalGuidanceUseful.AvailableCount.ToString(CultureInfo.InvariantCulture),
+                group.FinalGuidanceUseful.Numerator.ToString(CultureInfo.InvariantCulture),
+                group.FinalGuidanceUseful.Denominator.ToString(CultureInfo.InvariantCulture),
+                Decimal(group.FinalGuidanceUseful.Rate),
+                group.UsefulGuidanceTickCount.AvailableCount.ToString(CultureInfo.InvariantCulture),
+                Decimal(group.UsefulGuidanceTickCount.Mean),
+                Decimal(group.UsefulGuidanceTickCount.Median),
+                Decimal(group.UsefulGuidanceTickCount.Minimum),
+                Decimal(group.UsefulGuidanceTickCount.Maximum),
+                group.EvaluatedTickCount.AvailableCount.ToString(CultureInfo.InvariantCulture),
+                Decimal(group.EvaluatedTickCount.Mean),
+                Decimal(group.EvaluatedTickCount.Median),
+                Decimal(group.EvaluatedTickCount.Minimum),
+                Decimal(group.EvaluatedTickCount.Maximum),
+                group.UsefulGuidancePersistenceFraction.AvailableCount.ToString(
+                    CultureInfo.InvariantCulture),
+                Decimal(group.UsefulGuidancePersistenceFraction.Mean),
+                Decimal(group.UsefulGuidancePersistenceFraction.Median),
+                Decimal(group.UsefulGuidancePersistenceFraction.Minimum),
+                Decimal(group.UsefulGuidancePersistenceFraction.Maximum),
+                group.LongestUsefulGuidanceStreak.AvailableCount.ToString(
+                    CultureInfo.InvariantCulture),
+                Decimal(group.LongestUsefulGuidanceStreak.Mean),
+                Decimal(group.LongestUsefulGuidanceStreak.Median),
+                Decimal(group.LongestUsefulGuidanceStreak.Minimum),
+                Decimal(group.LongestUsefulGuidanceStreak.Maximum),
+                group.GuidanceRegressedAfterUseful.AvailableCount.ToString(
+                    CultureInfo.InvariantCulture),
+                group.GuidanceRegressedAfterUseful.Numerator.ToString(
+                    CultureInfo.InvariantCulture),
+                group.GuidanceRegressedAfterUseful.Denominator.ToString(
+                    CultureInfo.InvariantCulture),
+                Decimal(group.GuidanceRegressedAfterUseful.Rate),
                 group.EvidenceBoundaryStateCounts.Confirmed.ToString(CultureInfo.InvariantCulture),
                 group.EvidenceBoundaryStateCounts.SupportedButUncertain.ToString(
                     CultureInfo.InvariantCulture),
@@ -210,7 +305,17 @@ public sealed class EvaluationOutputWriter
                 group.EvidenceBoundaryStateCounts.UnsupportedForQuery.ToString(
                     CultureInfo.InvariantCulture),
                 group.UniqueOutcomeCount.ToString(CultureInfo.InvariantCulture),
-                group.SeedSensitivityNote
+                group.SeedSensitivityNote,
+                Join(group.ProvenanceSourceKindCounts.Select(item =>
+                    $"{EnumText(item.SourceKind)}={item.Count.ToString(CultureInfo.InvariantCulture)}")),
+                truth.SeedCount.ToString(CultureInfo.InvariantCulture),
+                Join(truth.PersonFinalRegionCounts.Select(item =>
+                    $"{item.RegionId}={item.Count.ToString(CultureInfo.InvariantCulture)}")),
+                Join(truth.DeviceFinalRegionCounts.Select(item =>
+                    $"{item.DeviceId}:{item.RegionId}={item.Count.ToString(CultureInfo.InvariantCulture)}")),
+                truth.UniqueTruthOutcomeCount.ToString(CultureInfo.InvariantCulture),
+                truth.SecondaryTransportRunCount.ToString(CultureInfo.InvariantCulture),
+                truth.SecondaryTransportEventCount.ToString(CultureInfo.InvariantCulture)
             ]);
         }
 

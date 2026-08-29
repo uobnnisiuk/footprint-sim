@@ -92,6 +92,21 @@ public sealed class EvaluationHarnessTests
     }
 
     [Fact]
+    public void S1EvidenceAwareSeparatesFirstUsefulGuidanceFromFinalUsefulness()
+    {
+        var result = RunBatch(["s1_debris_transport"], [42]);
+        var evidenceAware = Assert.Single(result.Runs, run =>
+            run.StrategyId == SearchStrategyIds.EvidenceAwareCurrent);
+
+        Assert.True(evidenceAware.TimeToUsefulGuidance.Available);
+        Assert.Equal(0, evidenceAware.TimeToUsefulGuidance.Value);
+        Assert.Equal(6, evidenceAware.CandidateRegionCount.Value);
+        Assert.Equal(0m, evidenceAware.SearchSpaceReduction.Value);
+        Assert.Equal(false, evidenceAware.FinalGuidanceUseful.Value);
+        Assert.Equal(true, evidenceAware.GuidanceRegressedAfterUseful.Value);
+    }
+
+    [Fact]
     public void HandCalculatedPerRunMetricsAndTimeToGuidanceMatch()
     {
         var truth = Truth("region-b", ["region-a", "region-b", "region-c", "region-d"]);
@@ -434,7 +449,18 @@ public sealed class EvaluationHarnessTests
             ProducedAtTick = tick,
             CandidateRegionIds = candidates,
             EvidenceBoundaryState = EvidenceState.SupportedButUncertain,
-            RationaleCodes = ["fixture"]
+            RationaleCodes = ["fixture"],
+            CandidateRegionProvenance = candidates.Select(regionId =>
+                new CandidateRegionProvenance
+                {
+                    RegionId = regionId,
+                    SourceKind = CandidateSourceKind.Unsupported,
+                    SourceIdentifier = "fixture",
+                    AvailableAtTick = tick,
+                    IsPersonEvidence = false,
+                    IsDeviceOnlyEvidence = false,
+                    EvidenceBoundaryState = EvidenceState.UnsupportedForQuery
+                }).ToArray()
         };
     }
 
