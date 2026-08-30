@@ -14,6 +14,8 @@ public static class EvaluationOutputNames
     public const string ManifestJson = "manifest.json";
     public const string ConditionCsv = "conditions.csv";
     public const string PairedCsv = "paired.csv";
+    public const string CausalTracingJson = "causal-tracing.json";
+    public const string CausalTracingCsv = "causal-tracing.csv";
 
     public static IReadOnlyList<string> All { get; } =
     [
@@ -159,6 +161,15 @@ public sealed class EvaluationOutputWriter
         await WriteAsync(
             EvaluationOutputNames.ManifestJson,
             JsonDefaults.Serialize(result.Manifest) + "\n");
+        if (result.CausalTracing is not null)
+        {
+            await WriteAsync(
+                EvaluationOutputNames.CausalTracingJson,
+                JsonDefaults.Serialize(result.CausalTracing) + "\n");
+            await WriteAsync(
+                EvaluationOutputNames.CausalTracingCsv,
+                CreateCausalTracingCsv(result.CausalTracing));
+        }
 
         async Task WriteAsync(string fileName, string content)
         {
@@ -472,6 +483,49 @@ public sealed class EvaluationOutputWriter
         return builder.ToString();
     }
 
+    private static string CreateCausalTracingCsv(CausalTracingEvaluationReport report)
+    {
+        var builder = new StringBuilder();
+        builder.Append(
+            "schema_version,scenario_id,seed,strategy_id,condition,preferred_candidate_count," +
+            "outer_candidate_count,preferred_containment,outer_containment,preferred_reduction," +
+            "outer_reduction,preferred_persistence,applied_constraint_count," +
+            "applied_unique_source_group_count,supporting_source_group_count," +
+            "conflicting_source_group_count,tracing_step_count,forward_tracing_step_count," +
+            "backward_tracing_step_count,retained_alternative_count,causal_sandwich_applied," +
+            "constraint_order_invariant\n");
+        foreach (var run in report.Runs)
+        {
+            AppendCsvRow(builder,
+            [
+                run.SchemaVersion.ToString(CultureInfo.InvariantCulture),
+                run.ScenarioId,
+                run.Seed.ToString(CultureInfo.InvariantCulture),
+                run.StrategyId,
+                EnumText(run.Condition),
+                run.PreferredCandidateCount.ToString(CultureInfo.InvariantCulture),
+                run.OuterCandidateCount.ToString(CultureInfo.InvariantCulture),
+                Boolean(run.PreferredContainment),
+                Boolean(run.OuterContainment),
+                Decimal(run.PreferredReduction),
+                Decimal(run.OuterReduction),
+                Decimal(run.PreferredPersistence),
+                run.AppliedConstraintCount.ToString(CultureInfo.InvariantCulture),
+                run.AppliedUniqueSourceGroupCount.ToString(CultureInfo.InvariantCulture),
+                run.SupportingSourceGroupCount.ToString(CultureInfo.InvariantCulture),
+                run.ConflictingSourceGroupCount.ToString(CultureInfo.InvariantCulture),
+                run.TracingStepCount.ToString(CultureInfo.InvariantCulture),
+                run.ForwardTracingStepCount.ToString(CultureInfo.InvariantCulture),
+                run.BackwardTracingStepCount.ToString(CultureInfo.InvariantCulture),
+                run.RetainedAlternativeCount.ToString(CultureInfo.InvariantCulture),
+                Boolean(run.CausalSandwichApplied),
+                Boolean(run.ConstraintOrderInvariant)
+            ]);
+        }
+
+        return builder.ToString();
+    }
+
     private static void AppendCsvRow(StringBuilder builder, IEnumerable<string?> values)
     {
         builder.AppendJoin(',', values.Select(EscapeCsv)).Append('\n');
@@ -498,6 +552,9 @@ public sealed class EvaluationOutputWriter
         value?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
 
     private static string Decimal(decimal? value) =>
+        value?.ToString("0.############################", CultureInfo.InvariantCulture) ?? string.Empty;
+
+    private static string Decimal(double? value) =>
         value?.ToString("0.############################", CultureInfo.InvariantCulture) ?? string.Empty;
 
     private static string EnumText<T>(T value) where T : struct, Enum =>

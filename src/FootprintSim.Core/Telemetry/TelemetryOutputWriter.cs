@@ -13,8 +13,10 @@ public static class TelemetryOutputNames
     public const string Observations = "evidence/observations.jsonl";
     public const string InteractionObservations = "evidence/interaction-observations.jsonl";
     public const string Constraints = "evidence/constraints.jsonl";
+    public const string TracingConstraints = "evidence/tracing-constraints.jsonl";
     public const string ConstraintApplications = "evaluation/constraint-applications.jsonl";
     public const string CandidateTransitions = "evaluation/candidate-transitions.jsonl";
+    public const string CausalTracingSteps = "evaluation/causal-tracing-steps.jsonl";
     public const string Manifest = "telemetry-manifest.json";
 
     public static IReadOnlyList<string> JsonLines { get; } =
@@ -24,8 +26,10 @@ public static class TelemetryOutputNames
         Observations,
         InteractionObservations,
         Constraints,
+        TracingConstraints,
         ConstraintApplications,
-        CandidateTransitions
+        CandidateTransitions,
+        CausalTracingSteps
     ];
 
     public static IReadOnlyList<string> All { get; } = [.. JsonLines, Manifest];
@@ -64,12 +68,20 @@ public sealed class TelemetryOutputWriter
             telemetry.Evidence.Constraints,
             cancellationToken);
         await WriteJsonLinesAsync(
+            TelemetryOutputNames.TracingConstraints,
+            telemetry.Evidence.TracingConstraints,
+            cancellationToken);
+        await WriteJsonLinesAsync(
             TelemetryOutputNames.ConstraintApplications,
             telemetry.Evaluation.ConstraintApplications,
             cancellationToken);
         await WriteJsonLinesAsync(
             TelemetryOutputNames.CandidateTransitions,
             telemetry.Evaluation.CandidateTransitions,
+            cancellationToken);
+        await WriteJsonLinesAsync(
+            TelemetryOutputNames.CausalTracingSteps,
+            telemetry.Evaluation.CausalTracingSteps,
             cancellationToken);
         await WriteTextAsync(
             TelemetryOutputNames.Manifest,

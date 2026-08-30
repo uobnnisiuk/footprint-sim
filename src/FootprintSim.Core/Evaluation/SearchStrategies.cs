@@ -11,6 +11,8 @@ public static class SearchStrategyIds
     public const string EvidenceAwareCurrent = "evidence-aware-current";
     public const string OwnEvidenceConstrained = "own-evidence-constrained";
     public const string CrossThreadConstrained = "cross-thread-constrained";
+    public const string SingleWeft = "single-weft";
+    public const string MultiWeftTracing = "multi-weft-tracing";
 }
 
 public sealed class LastConfirmedOnlyStrategy : ISearchStrategy
@@ -156,8 +158,10 @@ public static class SearchStrategyRegistry
         new EvidenceAwareCurrentStrategy(),
         new HazardAwareStrategy(),
         new LastConfirmedOnlyStrategy(),
+        new MultiWeftTracingStrategy(),
         new OwnEvidenceConstrainedStrategy(),
         new CrossThreadConstrainedStrategy(),
+        new SingleWeftStrategy(),
         new VoluntaryReachabilityStrategy()
     ];
 

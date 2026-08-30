@@ -9,7 +9,9 @@ public sealed class OwnEvidenceConstrainedStrategy : ISearchStrategy
     public string Id => SearchStrategyIds.OwnEvidenceConstrained;
 
     public SearchStrategyResult Evaluate(SearchStrategyInput input) =>
-        WeftStrategySupport.Evaluate(this, input, applyCrossThread: false);
+        input.PublicContext.PublicCausalTracingModel is null
+            ? WeftStrategySupport.Evaluate(this, input, applyCrossThread: false)
+            : CausalTracingStrategySupport.Evaluate(this, input, CausalTracingStrategyMode.OwnEvidence);
 }
 
 public sealed class CrossThreadConstrainedStrategy : ISearchStrategy
@@ -137,7 +139,7 @@ internal static class WeftStrategySupport
         };
     }
 
-    private static IReadOnlyList<CandidateRegionProvenance> CandidateProvenance(
+    internal static IReadOnlyList<CandidateRegionProvenance> CandidateProvenance(
         CandidateWarpSet warps,
         long tick)
     {
@@ -172,6 +174,8 @@ internal static class WeftStrategySupport
                             CandidateWarpSourceKind.LastConfirmed => CandidateSourceKind.LastConfirmed,
                             CandidateWarpSourceKind.VoluntaryReachability => CandidateSourceKind.VoluntaryReachability,
                             CandidateWarpSourceKind.PublicHazardEnvelope => CandidateSourceKind.PublicHazardEnvelope,
+                            CandidateWarpSourceKind.PublicCausalModel => CandidateSourceKind.PublicCausalModel,
+                            CandidateWarpSourceKind.PublicEnvironmentalObservation => CandidateSourceKind.PublicEnvironmentalObservation,
                             CandidateWarpSourceKind.PersonObservation => CandidateSourceKind.PersonObservation,
                             CandidateWarpSourceKind.DeviceOnlyObservation => CandidateSourceKind.DeviceOnlyObservation,
                             CandidateWarpSourceKind.CrossThreadObservation => CandidateSourceKind.CrossThreadObservation,

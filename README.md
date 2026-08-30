@@ -83,7 +83,7 @@ diff -r results/s1 results/s1-repeat
 
 ## 複数 run 評価（M1-A / M1-B）
 
-すべてのscenario、seed 0..19、全6戦略をまとめて比較する例です。
+すべてのscenario、seed 0..19、全8戦略をまとめて比較する例です。
 
 ```bash
 dotnet run --project src/FootprintSim.Cli -- evaluate \
@@ -107,7 +107,7 @@ dotnet run --project src/FootprintSim.Cli -- evaluate \
 
 出力は、1 strategy/run につき1行の `runs.jsonl` と `runs.csv`、scenario・strategy 別の `aggregate.json` と `aggregate.csv`、condition別の`conditions.csv`、paired deltaの`paired.csv`、入力条件とschemaを固定する`manifest.json`です。`GroundTruthContainment`、`SearchSpaceFraction`、`FalseExclusion`などschema version 2までの意味は維持します。M1-C3のschema version 3はpreferred/outer plausible、condition、cross-thread audit、paired deltaを別fieldとして追加します。算出不能値は `available: false` と `null` で表し、実測値 0 と区別します。
 
-同じ入力とsource状態では7ファイルすべてがbyte-for-byteで再現されます。M1-Aの評価定義は [M1-A evaluation harness](docs/m1a-evaluation.md)、確率伝播と公開境界は [M1-B stochastic hazard](docs/m1b-stochastic-hazard.md)、S3比較は [M1-C3 weft evaluation](docs/m1c3-weft-evaluation.md) を参照してください。数値は合成scenario内の比較値であり、現実の災害・救助性能を示しません。
+同じ入力とsource状態では既存7ファイルすべてがbyte-for-byteで再現されます。S4では追加の`causal-tracing.json`と`causal-tracing.csv`も再現性対象です。M1-Aの評価定義は [M1-A evaluation harness](docs/m1a-evaluation.md)、確率伝播と公開境界は [M1-B stochastic hazard](docs/m1b-stochastic-hazard.md)、S3比較は [M1-C3 weft evaluation](docs/m1c3-weft-evaluation.md) を参照してください。数値は合成scenario内の比較値であり、現実の災害・救助性能を示しません。
 
 ## Cross-entity interaction（M1-C1）
 
@@ -133,7 +133,7 @@ dotnet run --project src/FootprintSim.Cli -- evaluate \
 
 ## Neutral telemetry（M1-T0）
 
-評価へ`--telemetry`を付けると、既存7ファイルを変えずに、private truth、public/evidence、evaluation transitionを分離した決定的JSONLを`telemetry/`以下へ追加します。telemetry schema version 1はevent/interval、interaction、constraint、application audit、preferred/outer candidateのbefore/after、provenanceとsource ancestryを中立記録として保持し、Good/Bad、Causal Shadow、Indexability、Nexus Resolution、救助優先度などのscoreは含めません。
+評価へ`--telemetry`を付けると、既存評価ファイルを変えずに、private truth、public/evidence、evaluation transitionを分離した決定的JSONLを`telemetry/`以下へ追加します。telemetry schema version 2はversion 1の意味を維持し、複数weftのtracing constraintとforward/backward/cross-thread stepを追加します。event/interval、relation、support/conflict lineage、candidate before/after、provenanceとsource ancestryを中立記録として保持し、Good/Bad、Causal Shadow、Indexability、Nexus Resolution、救助優先度などのscoreは含めません。
 
 ```bash
 dotnet run --project src/FootprintSim.Cli -- evaluate \
@@ -144,7 +144,22 @@ dotnet run --project src/FootprintSim.Cli -- evaluate \
   --telemetry
 ```
 
-S0〜S3で利用でき、未指定時は`telemetry/`を作りません。stream境界、schema、再現性、cross-domain SARの将来検証範囲は [M1-T0 neutral telemetry](docs/m1t0-neutral-telemetry.md) を参照してください。
+S0〜S4で利用でき、未指定時は`telemetry/`を作りません。stream境界、schema、再現性、cross-domain SARの将来検証範囲は [M1-T0 neutral telemetry](docs/m1t0-neutral-telemetry.md) を参照してください。
+
+## Operational Causal Tracing（M1-D）
+
+S4では同じsynthetic truthに対し、own evidenceのみ、単一weft、複数weftのOperational Causal Tracingを比較します。複数制約はsource ancestryでgroup化し、forward/backward traversal、upstream/local/downstreamのcausal sandwich、support/conflict lineageを保持します。これはknown public structureのtraversalであり、past reconstructionやIndex Accessではありません。
+
+```bash
+dotnet run --project src/FootprintSim.Cli -- evaluate \
+  --scenario scenarios/s4_multi_weft_tracing/scenario.json \
+  --seeds 0..199 \
+  --strategies own-evidence-constrained,single-weft,multi-weft-tracing \
+  --output results/m1d-s4 \
+  --telemetry
+```
+
+詳細は [M1-D Operational Causal Tracing](docs/m1d-causal-tracing.md) を参照してください。
 
 ## 構成
 

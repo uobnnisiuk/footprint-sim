@@ -384,7 +384,7 @@ public sealed class CandidateWarpTests
             });
         }
 
-        Assert.Equal(6, typeof(SearchStrategyInput).GetProperties().Length);
+        Assert.Equal(7, typeof(SearchStrategyInput).GetProperties().Length);
     }
 
     [Fact]

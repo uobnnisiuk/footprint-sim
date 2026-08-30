@@ -10,7 +10,7 @@ public static class ScenarioValidator
     {
         ArgumentNullException.ThrowIfNull(scenario);
 
-        if (scenario.SchemaVersion is not (1 or 2 or 3))
+        if (scenario.SchemaVersion is not (1 or 2 or 3 or 4))
         {
             throw new InvalidDataException($"Unsupported scenario schema version {scenario.SchemaVersion}.");
         }
@@ -94,6 +94,8 @@ public static class ScenarioValidator
 
 
         ValidateWeftEvaluation(scenario, regionIds);
+
+        ValidateCausalTracingEvaluation(scenario, regionIds, entityIds);
 
         ValidateStochasticHazard(scenario, regionIds);
 
@@ -358,7 +360,7 @@ public static class ScenarioValidator
         var hazard = scenario.StochasticHazard;
         if (hazard is null)
         {
-            if (scenario.SchemaVersion is 2 or 3)
+            if (scenario.SchemaVersion is 2 or 3 or 4)
             {
                 throw new InvalidDataException(
                     "Scenario schema version 2 requires a stochastic hazard definition.");
@@ -367,7 +369,7 @@ public static class ScenarioValidator
             return;
         }
 
-        if (scenario.SchemaVersion is not (2 or 3))
+        if (scenario.SchemaVersion is not (2 or 3 or 4))
         {
             throw new InvalidDataException(
                 "Stochastic hazard definitions require scenario schema version 2.");
@@ -667,7 +669,7 @@ public static class ScenarioValidator
                     "Scenario schema version 3 requires a weft evaluation definition.");
             }
 
-            if (scenario.EvaluationSearchableRegionIds.Count > 0)
+            if (scenario.EvaluationSearchableRegionIds.Count > 0 && scenario.SchemaVersion != 4)
             {
                 throw new InvalidDataException(
                     "A target-specific searchable region set requires scenario schema version 3.");
@@ -804,6 +806,134 @@ public static class ScenarioValidator
         {
             throw new InvalidDataException(
                 "M1-C3 condition cycle must contain every evidence condition at least once.");
+        }
+    }
+
+    private static void ValidateCausalTracingEvaluation(
+        ScenarioDefinition scenario,
+        ISet<string> regionIds,
+        ISet<string> entityIds)
+    {
+        var definition = scenario.CausalTracingEvaluation;
+        if (definition is null)
+        {
+            if (scenario.SchemaVersion == 4)
+            {
+                throw new InvalidDataException(
+                    "Scenario schema version 4 requires a causal tracing evaluation definition.");
+            }
+
+            return;
+        }
+
+        if (scenario.SchemaVersion != 4 || scenario.WeftEvaluation is not null)
+        {
+            throw new InvalidDataException(
+                "Causal tracing evaluation requires schema version 4 and cannot replace M1-C3 semantics.");
+        }
+
+        if (definition.EvaluationEndTick < 0 || definition.BaseCandidateStates.Count == 0 ||
+            scenario.EvaluationSearchableRegionIds.Count == 0)
+        {
+            throw new InvalidDataException(
+                "M1-D requires an evaluation end tick, public candidate states, and target-searchable regions.");
+        }
+
+        if (definition.ConditionCycle.Count == 0 ||
+            definition.ConditionCycle.Distinct().Count() != Enum.GetValues<CausalTracingCondition>().Length)
+        {
+            throw new InvalidDataException(
+                "M1-D condition cycle must contain every tracing condition at least once.");
+        }
+
+        foreach (var state in definition.BaseCandidateStates)
+        {
+            if (state.StartTick < 0 || state.EndTick < state.StartTick || state.RegionIds.Count == 0 ||
+                state.RegionIds.Any(regionId => !regionIds.Contains(regionId)))
+            {
+                throw new InvalidDataException("M1-D contains an invalid public candidate state.");
+            }
+
+            if (state.TemporalKind == Interactions.CandidateWarps.CandidateWarpTemporalKind.EventPoint &&
+                state.StartTick != state.EndTick)
+            {
+                throw new InvalidDataException("M1-D event-point candidate states require an exact tick.");
+            }
+        }
+
+        var definitionIds = UniqueIds(definition.Constraints.Select(item => item.Id), "tracing constraint");
+        _ = definitionIds;
+        foreach (var constraint in definition.Constraints)
+        {
+            RequireText(constraint.SourceObservationKey, "Tracing source observation key");
+            RequireText(constraint.DirectSourceId, "Tracing direct source id");
+            RequireText(constraint.RelationKind, "Tracing relation kind");
+            RequireText(constraint.DerivationKind, "Tracing derivation kind");
+            if (constraint.OtherEntityId is not null && !entityIds.Contains(constraint.OtherEntityId))
+            {
+                throw new InvalidDataException(
+                    $"Tracing constraint '{constraint.Id}' refers to unknown entity '{constraint.OtherEntityId}'.");
+            }
+
+            if (constraint.ObservedStartTick < 0 ||
+                constraint.ObservedEndTick < constraint.ObservedStartTick ||
+                constraint.ConstrainedStartTick < 0 ||
+                constraint.ConstrainedEndTick < constraint.ConstrainedStartTick ||
+                constraint.AvailableAtTick < constraint.ObservedEndTick ||
+                constraint.AllowedRegionIds.Count == 0 ||
+                constraint.AllowedRegionIds.Any(regionId => !regionIds.Contains(regionId)))
+            {
+                throw new InvalidDataException($"Tracing constraint '{constraint.Id}' is inconsistent.");
+            }
+
+            if (constraint.IsPersonEvidence && constraint.IsDeviceOnlyEvidence)
+            {
+                throw new InvalidDataException(
+                    $"Tracing constraint '{constraint.Id}' cannot cross the person/device boundary.");
+            }
+
+            if (constraint.OccurrenceStepId is not null && !scenario.Steps.Any(step =>
+                string.Equals(step.Id, constraint.OccurrenceStepId, StringComparison.Ordinal)))
+            {
+                throw new InvalidDataException(
+                    $"Tracing constraint '{constraint.Id}' refers to unknown occurrence step.");
+            }
+
+            if (constraint.AppliesToConditions.Count == 0)
+            {
+                throw new InvalidDataException(
+                    $"Tracing constraint '{constraint.Id}' must identify at least one synthetic condition.");
+            }
+        }
+
+        foreach (var sourceGroup in definition.Constraints
+            .Where(item => item.SourceKind == Interactions.Tracing.TracingConstraintSourceKind.CrossThreadObservation)
+            .GroupBy(item => item.SourceObservationKey, StringComparer.Ordinal))
+        {
+            var sourceDescriptions = sourceGroup.Select(item => (
+                    item.DirectSourceId,
+                    item.OtherEntityId,
+                    item.ObservedStartTick,
+                    item.ObservedEndTick,
+                    item.EvidenceState,
+                    item.IsPersonEvidence,
+                    item.IsDeviceOnlyEvidence,
+                    item.Visibility))
+                .Distinct()
+                .Count();
+            if (sourceDescriptions != 1)
+            {
+                throw new InvalidDataException(
+                    $"Tracing source observation '{sourceGroup.Key}' has inconsistent source semantics.");
+            }
+        }
+
+        var searchable = scenario.EvaluationSearchableRegionIds.ToHashSet(StringComparer.Ordinal);
+        if (scenario.StochasticHazard?.Nodes
+            .Where(node => node.IsRequiredTerminal)
+            .Any(node => !searchable.Contains(node.RegionId)) == true)
+        {
+            throw new InvalidDataException("M1-D searchable regions omit a required terminal.");
         }
     }
 

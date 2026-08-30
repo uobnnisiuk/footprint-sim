@@ -3,6 +3,7 @@ using FootprintSim.Events;
 using FootprintSim.Model;
 using FootprintSim.Interactions;
 using FootprintSim.Interactions.Truth;
+using FootprintSim.Interactions.Tracing;
 using FootprintSim.Scenarios;
 
 namespace FootprintSim.Simulation;
@@ -27,4 +28,8 @@ public sealed record SimulationRun
     public CrossThreadConstraintSet? CrossThreadConstraints { get; init; }
 
     public WeftEvidenceCondition? WeftEvidenceCondition { get; init; }
+
+    public CausalTracingConstraintSet? CausalTracingConstraints { get; init; }
+
+    public CausalTracingCondition? CausalTracingCondition { get; init; }
 }

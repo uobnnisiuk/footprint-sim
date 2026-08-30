@@ -2,12 +2,13 @@ using System.Text.Json;
 using FootprintSim.Evidence;
 using FootprintSim.Interactions;
 using FootprintSim.Interactions.CandidateWarps;
+using FootprintSim.Interactions.Tracing;
 
 namespace FootprintSim.Telemetry;
 
 public static class TelemetrySchema
 {
-    public const int Version = 1;
+    public const int Version = 2;
 }
 
 public enum TelemetryStreamKind
@@ -296,6 +297,120 @@ public sealed record ConstraintApplicationTelemetryRecord
     public TelemetryVisibility Visibility { get; init; } = TelemetryVisibility.EvaluationContext;
 }
 
+public sealed record TracingConstraintTelemetryRecord
+{
+    public int TelemetrySchemaVersion { get; init; } = TelemetrySchema.Version;
+
+    public string RecordType { get; init; } = "causalTracingConstraint";
+
+    public required string ScenarioId { get; init; }
+
+    public required int Seed { get; init; }
+
+    public required string ConstraintId { get; init; }
+
+    public required string SourceObservationId { get; init; }
+
+    public required string DirectSourceId { get; init; }
+
+    public IReadOnlyList<string> SourceAncestryIds { get; init; } = [];
+
+    public required string TargetEntityId { get; init; }
+
+    public required string SourceKind { get; init; }
+
+    public required string RelationKind { get; init; }
+
+    public IReadOnlyList<TelemetryEntityReference> Participants { get; init; } = [];
+
+    public required string TracingRole { get; init; }
+
+    public required TelemetryTimeWindow ObservedTimeWindow { get; init; }
+
+    public required TelemetryTimeWindow ConstrainedTimeWindow { get; init; }
+
+    public IReadOnlyList<string> AllowedRegionIds { get; init; } = [];
+
+    public required long AvailableAtTick { get; init; }
+
+    public required EvidenceState EvidenceState { get; init; }
+
+    public required bool IsPersonEvidence { get; init; }
+
+    public required bool IsDeviceOnlyEvidence { get; init; }
+
+    public required string DerivationKind { get; init; }
+
+    public required TelemetryVisibility Visibility { get; init; }
+
+    public IReadOnlyList<TelemetryProvenanceReference> Provenance { get; init; } = [];
+}
+
+public sealed record CausalTracingStepTelemetryRecord
+{
+    public int TelemetrySchemaVersion { get; init; } = TelemetrySchema.Version;
+
+    public string RecordType { get; init; } = "causalTracingStep";
+
+    public required string ScenarioId { get; init; }
+
+    public required int Seed { get; init; }
+
+    public required string StrategyId { get; init; }
+
+    public required string SessionId { get; init; }
+
+    public required string QueryContextId { get; init; }
+
+    public required string StepId { get; init; }
+
+    public required int StepNumber { get; init; }
+
+    public required CausalTracingDirection Direction { get; init; }
+
+    public required TracingConstraintRole Role { get; init; }
+
+    public required TelemetryTimeWindow TimeWindow { get; init; }
+
+    public required string TargetEntityId { get; init; }
+
+    public string? ConstraintId { get; init; }
+
+    public string? SourceObservationId { get; init; }
+
+    public string? SourceGroupId { get; init; }
+
+    public required string RelationKind { get; init; }
+
+    public required EvidenceState EvidenceState { get; init; }
+
+    public required TracingStepDisposition Disposition { get; init; }
+
+    public required TracingStepReason Reason { get; init; }
+
+    public IReadOnlyList<string> CandidateInputRegionIds { get; init; } = [];
+
+    public IReadOnlyList<string> CandidateOutputRegionIds { get; init; } = [];
+
+    public IReadOnlyList<string> AppliedConstraintIds { get; init; } = [];
+
+    public IReadOnlyList<string> SkippedConstraintIds { get; init; } = [];
+
+    public IReadOnlyList<string> SupportingSourceGroupIds { get; init; } = [];
+
+    public IReadOnlyList<string> ConflictingSourceGroupIds { get; init; } = [];
+
+    public required bool AlternativesRetained { get; init; }
+
+    public required bool ConflictDetected { get; init; }
+
+    public IReadOnlyList<string> SourceAncestryIds { get; init; } = [];
+
+    public IReadOnlyList<TelemetryProvenanceReference> Provenance { get; init; } = [];
+
+    public TelemetryVisibility Visibility { get; init; } = TelemetryVisibility.EvaluationContext;
+}
+
 public sealed record CandidateProvenanceTelemetryRecord
 {
     public required string RegionId { get; init; }
@@ -406,6 +521,10 @@ public sealed record TelemetryManifest
 
     public required int UniqueConstraintSourceObservationCount { get; init; }
 
+    public required int RawTracingConstraintRecordCount { get; init; }
+
+    public required int UniqueTracingSourceObservationCount { get; init; }
+
     public IReadOnlyList<string> DeterministicOrderContract { get; init; } = [];
 
     public string NewlinePolicy { get; init; } = "UTF-8 without BOM; LF; one JSON object per line";
@@ -425,6 +544,8 @@ public sealed record EvidenceTelemetryStream
     public IReadOnlyList<InteractionObservationTelemetryRecord> InteractionObservations { get; init; } = [];
 
     public IReadOnlyList<ConstraintTelemetryRecord> Constraints { get; init; } = [];
+
+    public IReadOnlyList<TracingConstraintTelemetryRecord> TracingConstraints { get; init; } = [];
 }
 
 public sealed record EvaluationTelemetryStream
@@ -432,6 +553,8 @@ public sealed record EvaluationTelemetryStream
     public IReadOnlyList<ConstraintApplicationTelemetryRecord> ConstraintApplications { get; init; } = [];
 
     public IReadOnlyList<CandidateTransitionTelemetryRecord> CandidateTransitions { get; init; } = [];
+
+    public IReadOnlyList<CausalTracingStepTelemetryRecord> CausalTracingSteps { get; init; } = [];
 }
 
 public sealed record NeutralTelemetryBundle

@@ -4,6 +4,8 @@ using FootprintSim.Events;
 using FootprintSim.Hazards;
 using FootprintSim.Inference;
 using FootprintSim.Interactions;
+using FootprintSim.Interactions.CandidateWarps;
+using FootprintSim.Interactions.Tracing;
 using FootprintSim.Scenarios;
 using FootprintSim.Simulation;
 using FootprintSim.Telemetry;
@@ -67,6 +69,8 @@ public sealed record BatchEvaluationResult
     public required EvaluationManifest Manifest { get; init; }
 
     public NeutralTelemetryBundle? Telemetry { get; init; }
+
+    public CausalTracingEvaluationReport? CausalTracing { get; init; }
 }
 
 public sealed class BatchEvaluationRunner
@@ -87,6 +91,10 @@ public sealed class BatchEvaluationRunner
         var simulationEngine = new SimulationEngine();
         var perRunEvaluator = new PerRunEvaluator();
         var telemetry = request.CollectTelemetry ? new NeutralTelemetryCollector() : null;
+        var tracingInputs = new List<(
+            PerRunEvaluation Evaluation,
+            SearchStrategyResult Result,
+            CausalTracingCondition? Condition)>();
 
         foreach (var scenarioInput in scenarios)
         {
@@ -122,6 +130,30 @@ public sealed class BatchEvaluationRunner
                         AvailableAtTick = scenario.WeftEvaluation.NormalAvailableAtTick,
                         HistoricalCandidateRegionIds = scenario.WeftEvaluation
                             .HistoricalCandidateRegionIds
+                    },
+                PublicCausalTracingModel = scenario.CausalTracingEvaluation is null
+                    ? null
+                    : new PublicCausalTracingModel
+                    {
+                        CandidateStates = scenario.CausalTracingEvaluation.BaseCandidateStates
+                            .OrderBy(item => item.StartTick)
+                            .ThenBy(item => item.EndTick)
+                            .Select(item => new PublicCandidateWarpStateDefinition
+                            {
+                                TimeWindow = new InteractionTimeWindow(item.StartTick, item.EndTick),
+                                TemporalKind = item.TemporalKind,
+                                RegionIds = item.RegionIds,
+                                EvidenceBoundaryState = EvidenceState.SupportedButUncertain,
+                                Provenance = [CandidateWarpProvenance.Create(
+                                    CandidateWarpSourceKind.PublicCausalModel,
+                                    $"s4-public-candidate-state:{item.StartTick}:{item.EndTick}",
+                                    availableAtTick: 0,
+                                    isPersonEvidence: true,
+                                    isDeviceOnlyEvidence: false,
+                                    EvidenceState.SupportedButUncertain,
+                                    item.RegionIds)]
+                            })
+                            .ToArray()
                     }
             };
 
@@ -155,7 +187,9 @@ public sealed class BatchEvaluationRunner
                         .Select(observation => observation.AvailableTick)
                         .DefaultIfEmpty(0)
                         .Max());
-                var finalTick = scenario.WeftEvaluation?.EvaluationEndTick ?? inferredFinalTick;
+                var finalTick = scenario.CausalTracingEvaluation?.EvaluationEndTick ??
+                    scenario.WeftEvaluation?.EvaluationEndTick ??
+                    inferredFinalTick;
                 var truth = new GroundTruthEvaluationContext
                 {
                     ScenarioId = scenario.Id,
@@ -185,13 +219,16 @@ public sealed class BatchEvaluationRunner
                         finalTick,
                         publicContext,
                         simulation.ObservationSet,
-                        simulation.CrossThreadConstraints);
+                        simulation.CrossThreadConstraints,
+                        simulation.CausalTracingConstraints);
                     telemetry?.AddEvaluation(scenario.TargetPersonId, timeline);
-                    evaluations.Add(perRunEvaluator.Evaluate(
+                    var evaluation = perRunEvaluator.Evaluate(
                         truth,
                         timeline[^1],
                         timeline,
-                        simulation.ObservationSet));
+                        simulation.ObservationSet);
+                    evaluations.Add(evaluation);
+                    tracingInputs.Add((evaluation, timeline[^1], simulation.CausalTracingCondition));
                 }
             }
         }
@@ -224,6 +261,7 @@ public sealed class BatchEvaluationRunner
             Runs = orderedEvaluations,
             Aggregate = aggregate,
             Manifest = manifest,
+            CausalTracing = CausalTracingEvaluationBuilder.Build(tracingInputs),
             Telemetry = telemetry?.Build(
                 scenarios,
                 seeds,
@@ -253,7 +291,8 @@ public sealed class BatchEvaluationRunner
         long finalTick,
         RescueContext publicContext,
         ObservationSet completeEvidence,
-        CrossThreadConstraintSet? completeCrossThreadConstraints)
+        CrossThreadConstraintSet? completeCrossThreadConstraints,
+        CausalTracingConstraintSet? completeCausalTracingConstraints)
     {
         var results = new List<SearchStrategyResult>();
         for (long tick = 0; tick <= finalTick; tick++)
@@ -274,6 +313,8 @@ public sealed class BatchEvaluationRunner
                 PublicContext = publicContext,
                 AvailableEvidence = availableEvidence,
                 AvailableCrossThreadConstraints = completeCrossThreadConstraints?
+                    .PubliclyAvailableAt(tick),
+                AvailableCausalTracingConstraints = completeCausalTracingConstraints?
                     .PubliclyAvailableAt(tick)
             }));
         }

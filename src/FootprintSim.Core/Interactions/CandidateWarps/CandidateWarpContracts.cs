@@ -21,6 +21,8 @@ public enum CandidateWarpSourceKind
     LastConfirmed,
     VoluntaryReachability,
     PublicHazardEnvelope,
+    PublicCausalModel,
+    PublicEnvironmentalObservation,
     PersonObservation,
     DeviceOnlyObservation,
     CrossThreadObservation,

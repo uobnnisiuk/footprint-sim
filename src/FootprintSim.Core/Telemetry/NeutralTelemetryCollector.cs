@@ -3,6 +3,7 @@ using FootprintSim.Evaluation;
 using FootprintSim.Events;
 using FootprintSim.Interactions;
 using FootprintSim.Interactions.CandidateWarps;
+using FootprintSim.Interactions.Tracing;
 using FootprintSim.Interactions.Truth;
 using FootprintSim.Scenarios;
 using FootprintSim.Simulation;
@@ -18,6 +19,8 @@ internal sealed class NeutralTelemetryCollector
     private readonly List<ConstraintTelemetryRecord> _constraints = [];
     private readonly List<ConstraintApplicationTelemetryRecord> _applications = [];
     private readonly List<CandidateTransitionTelemetryRecord> _candidateTransitions = [];
+    private readonly List<TracingConstraintTelemetryRecord> _tracingConstraints = [];
+    private readonly List<CausalTracingStepTelemetryRecord> _tracingSteps = [];
 
     public void AddSimulation(ScenarioDefinition scenario, SimulationRun run)
     {
@@ -35,6 +38,8 @@ internal sealed class NeutralTelemetryCollector
             (run.InteractionObservations?.Observations ?? []).Select(InteractionObservation));
         _constraints.AddRange(
             (run.CrossThreadConstraints?.Constraints ?? []).Select(Constraint));
+        _tracingConstraints.AddRange(
+            (run.CausalTracingConstraints?.Constraints ?? []).Select(TracingConstraint));
     }
 
     public void AddEvaluation(
@@ -50,6 +55,11 @@ internal sealed class NeutralTelemetryCollector
             _applications.AddRange(result.CrossThreadConstraintAudits.Select(audit =>
                 ConstraintApplication(result, audit)));
             _candidateTransitions.Add(CandidateTransition(targetEntityId, previous, result));
+            if (result.CausalTracingResult is { } tracing)
+            {
+                _tracingSteps.AddRange(tracing.Steps.Select(step =>
+                    CausalTracingStep(result, step)));
+            }
             previous = result;
         }
     }
@@ -117,6 +127,25 @@ internal sealed class NeutralTelemetryCollector
             .ThenBy(record => record.CandidateWarpId, StringComparer.Ordinal)
             .ThenBy(record => record.ApplicationId, StringComparer.Ordinal)
             .ToArray();
+        var tracingConstraints = _tracingConstraints
+            .DistinctBy(record => (record.ScenarioId, record.Seed, record.ConstraintId))
+            .OrderBy(record => record.ScenarioId, StringComparer.Ordinal)
+            .ThenBy(record => record.Seed)
+            .ThenBy(record => record.AvailableAtTick)
+            .ThenBy(record => record.ConstrainedTimeWindow.StartTick)
+            .ThenBy(record => record.SourceObservationId, StringComparer.Ordinal)
+            .ThenBy(record => record.ConstraintId, StringComparer.Ordinal)
+            .ToArray();
+        var tracingSteps = _tracingSteps
+            .DistinctBy(record =>
+                (record.ScenarioId, record.Seed, record.StrategyId, record.SessionId, record.StepId))
+            .OrderBy(record => record.ScenarioId, StringComparer.Ordinal)
+            .ThenBy(record => record.Seed)
+            .ThenBy(record => record.StrategyId, StringComparer.Ordinal)
+            .ThenBy(record => record.SessionId, StringComparer.Ordinal)
+            .ThenBy(record => record.StepNumber)
+            .ThenBy(record => record.StepId, StringComparer.Ordinal)
+            .ToArray();
         var transitions = _candidateTransitions
             .DistinctBy(record =>
                 (record.ScenarioId, record.Seed, record.StrategyId, record.TransitionId))
@@ -133,8 +162,10 @@ internal sealed class NeutralTelemetryCollector
             Category("observations", TelemetryStreamKind.Evidence, TelemetryOutputNames.Observations, observations.Length),
             Category("interactionObservations", TelemetryStreamKind.Evidence, TelemetryOutputNames.InteractionObservations, interactionObservations.Length),
             Category("constraints", TelemetryStreamKind.Evidence, TelemetryOutputNames.Constraints, constraints.Length),
+            Category("tracingConstraints", TelemetryStreamKind.Evidence, TelemetryOutputNames.TracingConstraints, tracingConstraints.Length),
             Category("constraintApplications", TelemetryStreamKind.Evaluation, TelemetryOutputNames.ConstraintApplications, applications.Length),
-            Category("candidateTransitions", TelemetryStreamKind.Evaluation, TelemetryOutputNames.CandidateTransitions, transitions.Length)
+            Category("candidateTransitions", TelemetryStreamKind.Evaluation, TelemetryOutputNames.CandidateTransitions, transitions.Length),
+            Category("causalTracingSteps", TelemetryStreamKind.Evaluation, TelemetryOutputNames.CausalTracingSteps, tracingSteps.Length)
         };
 
         return new NeutralTelemetryBundle
@@ -148,12 +179,14 @@ internal sealed class NeutralTelemetryCollector
             {
                 Observations = observations,
                 InteractionObservations = interactionObservations,
-                Constraints = constraints
+                Constraints = constraints,
+                TracingConstraints = tracingConstraints
             },
             Evaluation = new EvaluationTelemetryStream
             {
                 ConstraintApplications = applications,
-                CandidateTransitions = transitions
+                CandidateTransitions = transitions,
+                CausalTracingSteps = tracingSteps
             },
             Manifest = new TelemetryManifest
             {
@@ -176,6 +209,11 @@ internal sealed class NeutralTelemetryCollector
                 RecordCategories = categories,
                 RawConstraintRecordCount = constraints.Length,
                 UniqueConstraintSourceObservationCount = constraints
+                    .Select(record => (record.ScenarioId, record.Seed, record.SourceObservationId))
+                    .Distinct()
+                    .Count(),
+                RawTracingConstraintRecordCount = tracingConstraints.Length,
+                UniqueTracingSourceObservationCount = tracingConstraints
                     .Select(record => (record.ScenarioId, record.Seed, record.SourceObservationId))
                     .Distinct()
                     .Count(),
@@ -372,6 +410,32 @@ internal sealed class NeutralTelemetryCollector
         Provenance = Provenance(constraint.Provenance)
     };
 
+    private static TracingConstraintTelemetryRecord TracingConstraint(
+        CausalTracingConstraint constraint) => new()
+        {
+            ScenarioId = constraint.ScenarioId,
+            Seed = constraint.Seed,
+            ConstraintId = constraint.ConstraintId,
+            SourceObservationId = constraint.SourceObservationId,
+            DirectSourceId = constraint.DirectSourceId,
+            SourceAncestryIds = Ordered(constraint.SourceAncestryIds),
+            TargetEntityId = constraint.TargetEntityId,
+            SourceKind = constraint.SourceKind.ToString(),
+            RelationKind = constraint.RelationKind,
+            Participants = Participants(constraint.Participants),
+            TracingRole = constraint.Role.ToString(),
+            ObservedTimeWindow = Window(constraint.SourceObservedTimeWindow),
+            ConstrainedTimeWindow = Window(constraint.ConstrainedTimeWindow),
+            AllowedRegionIds = Ordered(constraint.AllowedRegionIds),
+            AvailableAtTick = constraint.AvailableAtTick,
+            EvidenceState = constraint.EvidenceBoundaryState,
+            IsPersonEvidence = constraint.IsPersonEvidence,
+            IsDeviceOnlyEvidence = constraint.IsDeviceOnlyEvidence,
+            DerivationKind = constraint.DerivationKind,
+            Visibility = Visibility(constraint.Visibility),
+            Provenance = Provenance(constraint.Provenance)
+        };
+
     private static ConstraintApplicationTelemetryRecord ConstraintApplication(
         SearchStrategyResult result,
         ConstraintApplicationAudit audit) => new()
@@ -399,6 +463,40 @@ internal sealed class NeutralTelemetryCollector
             ConflictDetected = audit.ConflictDetected,
             SourceAncestryIds = Ordered(audit.SourceAncestryIds),
             Provenance = Provenance(audit.Provenance)
+        };
+
+    private static CausalTracingStepTelemetryRecord CausalTracingStep(
+        SearchStrategyResult result,
+        CausalTracingStepAudit step) => new()
+        {
+            ScenarioId = result.ScenarioId,
+            Seed = result.Seed,
+            StrategyId = result.StrategyId,
+            SessionId = step.SessionId,
+            QueryContextId = step.QueryContextId,
+            StepId = step.StepId,
+            StepNumber = step.StepNumber,
+            Direction = step.Direction,
+            Role = step.Role,
+            TimeWindow = Window(step.TimeWindow),
+            TargetEntityId = step.TargetEntityId,
+            ConstraintId = step.ConstraintId,
+            SourceObservationId = step.SourceObservationId,
+            SourceGroupId = step.SourceGroupId,
+            RelationKind = step.RelationKind,
+            EvidenceState = step.EvidenceState,
+            Disposition = step.Disposition,
+            Reason = step.Reason,
+            CandidateInputRegionIds = Ordered(step.CandidateInputRegionIds),
+            CandidateOutputRegionIds = Ordered(step.CandidateOutputRegionIds),
+            AppliedConstraintIds = Ordered(step.AppliedConstraintIds),
+            SkippedConstraintIds = Ordered(step.SkippedConstraintIds),
+            SupportingSourceGroupIds = Ordered(step.SupportingSourceGroupIds),
+            ConflictingSourceGroupIds = Ordered(step.ConflictingSourceGroupIds),
+            AlternativesRetained = step.AlternativesRetained,
+            ConflictDetected = step.ConflictDetected,
+            SourceAncestryIds = Ordered(step.SourceAncestryIds),
+            Provenance = Provenance(step.Provenance)
         };
 
     private static CandidateTransitionTelemetryRecord CandidateTransition(

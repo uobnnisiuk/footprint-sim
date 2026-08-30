@@ -1,6 +1,6 @@
 # Architecture
 
-M0からM1-T0までは単一Core assembly内で型と依存方向を分けます。分割の目的は小さな基盤を保ちながら、後でworld engineやEBPC adapterを別assemblyに移せるようにすることです。
+M0からM1-Dまでは単一Core assembly内で型と依存方向を分けます。分割の目的は小さな基盤を保ちながら、後でworld engineやEBPC adapterを別assemblyに移せるようにすることです。
 
 ```text
 Scenario + seed
@@ -61,6 +61,10 @@ M1-C2は別のpublic-only研究経路として、public modelから作る`Candid
 
 M1-C3ではevidence-sideの`CrossThreadConstraintSet`だけをstrategy inputへ追加します。truth-side`InteractionOccurrence`は引き続き到達不能です。S3の`cross-thread-constrained`だけがApplicatorを使い、`own-evidence-constrained`との同一truth paired比較を行います。target-specific denominator、preferred/outer-safe候補、condition別集計、paired deltaをschema version 3で追加し、既存fieldの意味は変更しません。
 
+M1-Dは別のpublic-only `CausalTracingConstraintSet`と`OperationalCausalTracer`を追加します。Tracerはsource observation/direct source/ancestryの連結成分を独立source groupとして扱い、constraint入力順をcanonical化します。cross-thread constraintをhistorical stateへ適用した後、`PublicHazardEnvelope`だけでforward/backward consistencyをたどります。公開transitionがないことは不可能性とみなさず、realized parent chainも使用しません。
+
+`CausalTracingResult`はpreferred/outer/conflicted warpに加え、support/conflict lineage、relation、time window、upstream/local/downstreamのquery role、directionとstep auditを保持します。これはknown public structureのTraversalであり、present-state bundleからpast candidateを作るReconstruction/Index Accessではありません。S4は同じtruthに対してown/single/multi-weftを比較し、追加のtracing schema version 1でpaired deltaを出します。既存evaluation schema version 3のfield意味は変更しません。
+
 ## 4. Footprint/EBPC inference boundary
 
 `IRescueInference.Infer` が受け取れるのは `RescueContext` と `ObservationSet` だけです。`SimulationRun` や `SimulationEvent` を引数にしないため、推論実装が隠れた正解を参照する必要はありません。
@@ -85,4 +89,4 @@ M1-Aの`ISearchStrategy`はpublic context/evidence、clock、run identityを受�
 
 M1-T0の`NeutralTelemetryCollector`はbatch実行で既に生成された情報を、private truth/world、public/evidence、evaluation/search transitionの3 streamへ投影します。truth streamは`SimulationRun`からworld eventとtruth interactionだけを受け、evidence streamはpublic observation・interaction observation・derived constraintだけを受けます。evaluation streamはstrategy timelineとapplication auditからcandidate before/afterを記録し、truth occurrenceやrealized pathを参照しません。
 
-`TelemetryOutputWriter`はevaluation schemaとは独立したtelemetry schema version 1として、各streamを別directoryのJSONLへ出します。opt-inの`--telemetry`がない場合、collectorもdirectoryも作られず、既存evaluation出力は変わりません。exact event pointとinclusive interval、relation、participant role、source observation、ancestry、visibility、available/application tick、preferred/outer candidate、conflict、provenanceを保持しますが、holder network、complete observation pipeline、discovery provenance、Causal Nexus/Shadow/Index/Good-Badの解釈やscoreは構築しません。
+`TelemetryOutputWriter`はevaluation schemaとは独立したtelemetry schema version 2として、各streamを別directoryのJSONLへ出します。version 2はversion 1のfield意味を維持し、evidence-side tracing constraintとevaluation-side forward/backward/cross-thread stepを追加します。opt-inの`--telemetry`がない場合、collectorもdirectoryも作られず、既存evaluation出力は変わりません。exact event pointとinclusive interval、relation、participant role、source observation、ancestry、visibility、available/application tick、preferred/outer candidate、conflict、provenanceを保持しますが、holder network、complete observation pipeline、discovery provenance、Causal Nexus/Shadow/Index/Good-Badの解釈やscoreは構築しません。

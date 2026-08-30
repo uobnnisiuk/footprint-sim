@@ -242,7 +242,7 @@ public sealed class InteractionModelTests
     public void PublicInteractionContractsDoNotExposeTruthOccurrenceObjects()
     {
         var strategyProperties = typeof(SearchStrategyInput).GetProperties();
-        Assert.Equal(6, strategyProperties.Length);
+        Assert.Equal(7, strategyProperties.Length);
         Assert.DoesNotContain(strategyProperties, property =>
             property.PropertyType == typeof(InteractionOccurrence) ||
             property.PropertyType == typeof(InteractionObservationSet));
@@ -263,7 +263,7 @@ public sealed class InteractionModelTests
         AssertNoOccurrenceApi(typeof(CrossThreadConstraint));
         AssertNoOccurrenceApi(typeof(CrossThreadConstraintSet));
         AssertNoOccurrenceApi(typeof(CrossThreadConstraintDeriver));
-        Assert.Equal(6, SearchStrategyRegistry.All.Count);
+        Assert.Equal(8, SearchStrategyRegistry.All.Count);
     }
 
     [Fact]

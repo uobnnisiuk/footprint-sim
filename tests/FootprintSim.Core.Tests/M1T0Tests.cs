@@ -130,7 +130,7 @@ public sealed class M1T0Tests
 
         Assert.Equal(1, telemetry.Manifest.RawConstraintRecordCount);
         Assert.Equal(1, telemetry.Manifest.UniqueConstraintSourceObservationCount);
-        Assert.Equal(186, telemetry.Evaluation.CandidateTransitions.Count);
+        Assert.Equal(248, telemetry.Evaluation.CandidateTransitions.Count);
         Assert.Equal(21, telemetry.Evaluation.ConstraintApplications.Count);
         Assert.Single(telemetry.Truth.Interactions);
         Assert.Single(telemetry.Evidence.InteractionObservations);
@@ -255,7 +255,7 @@ public sealed class M1T0Tests
             collectTelemetry: true).Telemetry);
 
         Assert.Equal(4, telemetry.Manifest.ScenarioInputs.Count);
-        Assert.Equal(24, telemetry.Manifest.EvaluationRunCount);
+        Assert.Equal(32, telemetry.Manifest.EvaluationRunCount);
         Assert.NotEmpty(telemetry.Truth.WorldEvents);
         Assert.NotEmpty(telemetry.Evidence.Observations);
         Assert.NotEmpty(telemetry.Evaluation.CandidateTransitions);
