@@ -6,6 +6,7 @@ using FootprintSim.Inference;
 using FootprintSim.Interactions;
 using FootprintSim.Scenarios;
 using FootprintSim.Simulation;
+using FootprintSim.Telemetry;
 
 namespace FootprintSim.Evaluation;
 
@@ -27,6 +28,8 @@ public sealed record BatchEvaluationRequest
     public required string SourceCommitSha { get; init; }
 
     public required bool DirtyWorkingTree { get; init; }
+
+    public bool CollectTelemetry { get; init; }
 }
 
 public sealed record ScenarioManifestEntry
@@ -62,6 +65,8 @@ public sealed record BatchEvaluationResult
     public required AggregateReport Aggregate { get; init; }
 
     public required EvaluationManifest Manifest { get; init; }
+
+    public NeutralTelemetryBundle? Telemetry { get; init; }
 }
 
 public sealed class BatchEvaluationRunner
@@ -81,6 +86,7 @@ public sealed class BatchEvaluationRunner
         var evaluations = new List<PerRunEvaluation>();
         var simulationEngine = new SimulationEngine();
         var perRunEvaluator = new PerRunEvaluator();
+        var telemetry = request.CollectTelemetry ? new NeutralTelemetryCollector() : null;
 
         foreach (var scenarioInput in scenarios)
         {
@@ -122,6 +128,7 @@ public sealed class BatchEvaluationRunner
             foreach (var seed in seeds)
             {
                 var simulation = simulationEngine.Run(scenario, seed);
+                telemetry?.AddSimulation(scenario, simulation);
                 var deviceFinalRegions = new SortedDictionary<string, string>(StringComparer.Ordinal);
                 foreach (var deviceId in scenario.Entities.Devices
                     .Select(device => device.Id)
@@ -179,6 +186,7 @@ public sealed class BatchEvaluationRunner
                         publicContext,
                         simulation.ObservationSet,
                         simulation.CrossThreadConstraints);
+                    telemetry?.AddEvaluation(scenario.TargetPersonId, timeline);
                     evaluations.Add(perRunEvaluator.Evaluate(
                         truth,
                         timeline[^1],
@@ -215,7 +223,14 @@ public sealed class BatchEvaluationRunner
         {
             Runs = orderedEvaluations,
             Aggregate = aggregate,
-            Manifest = manifest
+            Manifest = manifest,
+            Telemetry = telemetry?.Build(
+                scenarios,
+                seeds,
+                strategies,
+                orderedEvaluations.Length,
+                request.SourceCommitSha,
+                request.DirtyWorkingTree)
         };
     }
 

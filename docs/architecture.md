@@ -1,6 +1,6 @@
 # Architecture
 
-M0からM1-C3までは単一Core assembly内で型と依存方向を分けます。分割の目的は小さな基盤を保ちながら、後でworld engineやEBPC adapterを別assemblyに移せるようにすることです。
+M0からM1-T0までは単一Core assembly内で型と依存方向を分けます。分割の目的は小さな基盤を保ちながら、後でworld engineやEBPC adapterを別assemblyに移せるようにすることです。
 
 ```text
 Scenario + seed
@@ -80,3 +80,9 @@ M1-Aの`ISearchStrategy`はpublic context/evidence、clock、run identityを受�
 ## Trust boundary
 
 `ground-truth.events.json`、in-memory final state、`InteractionOccurrence`はprivate truthです。`observations.json`と`InteractionObservation`は別のevidence表現です。新しい観測フィールドは、真値由来であるだけの属性を公開していないかレビューし、必要なprovenanceは観測側で独立した識別子として表します。`CrossThreadConstraint`もevidence-derived claimであってtruthではありません。評価時の真値は`FootprintSim.Evaluation.Truth`に閉じ、truth型をstrategy inputへ追加しません。
+
+## Neutral telemetry boundary
+
+M1-T0の`NeutralTelemetryCollector`はbatch実行で既に生成された情報を、private truth/world、public/evidence、evaluation/search transitionの3 streamへ投影します。truth streamは`SimulationRun`からworld eventとtruth interactionだけを受け、evidence streamはpublic observation・interaction observation・derived constraintだけを受けます。evaluation streamはstrategy timelineとapplication auditからcandidate before/afterを記録し、truth occurrenceやrealized pathを参照しません。
+
+`TelemetryOutputWriter`はevaluation schemaとは独立したtelemetry schema version 1として、各streamを別directoryのJSONLへ出します。opt-inの`--telemetry`がない場合、collectorもdirectoryも作られず、既存evaluation出力は変わりません。exact event pointとinclusive interval、relation、participant role、source observation、ancestry、visibility、available/application tick、preferred/outer candidate、conflict、provenanceを保持しますが、holder network、complete observation pipeline、discovery provenance、Causal Nexus/Shadow/Index/Good-Badの解釈やscoreは構築しません。

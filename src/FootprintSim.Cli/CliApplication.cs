@@ -8,6 +8,7 @@ using FootprintSim.Inference;
 using FootprintSim.Scenarios;
 using FootprintSim.Serialization;
 using FootprintSim.Simulation;
+using FootprintSim.Telemetry;
 
 namespace FootprintSim.Cli;
 
@@ -123,8 +124,22 @@ public static class CliApplication
             return 0;
         }
 
+        var telemetryFlagCount = args.Count(argument =>
+            string.Equals(argument, "--telemetry", StringComparison.Ordinal));
+        if (telemetryFlagCount > 1)
+        {
+            throw new ArgumentException("Option '--telemetry' was specified more than once.");
+        }
+
+        var telemetryEnabled = telemetryFlagCount == 1;
+        var optionArguments = args
+            .Where(argument => !string.Equals(
+                argument,
+                "--telemetry",
+                StringComparison.Ordinal))
+            .ToArray();
         var options = ParseOptions(
-            args,
+            optionArguments,
             new HashSet<string>(
                 ["--scenario", "--scenarios", "--seeds", "--strategies", "--output"],
                 StringComparer.Ordinal));
@@ -149,9 +164,18 @@ public static class CliApplication
             Seeds = seeds,
             Strategies = strategies,
             SourceCommitSha = git.CommitSha,
-            DirtyWorkingTree = git.DirtyWorkingTree
+            DirtyWorkingTree = git.DirtyWorkingTree,
+            CollectTelemetry = telemetryEnabled
         });
         await new EvaluationOutputWriter().WriteAsync(outputPath, result);
+        if (telemetryEnabled)
+        {
+            var telemetry = result.Telemetry ?? throw new InvalidOperationException(
+                "Telemetry collection was requested but produced no telemetry bundle.");
+            await new TelemetryOutputWriter().WriteAsync(
+                Path.Combine(outputPath, TelemetryOutputNames.RootDirectory),
+                telemetry);
+        }
 
         Console.WriteLine(
             $"Evaluation completed: {result.Manifest.RunCount} strategy runs across " +
@@ -248,7 +272,7 @@ public static class CliApplication
         Console.WriteLine(
             "Evaluation: dotnet run --project src/FootprintSim.Cli -- evaluate " +
             "--scenario <file> | --scenarios <file-or-directory> --seeds <n|a..b|list> " +
-            "--strategies <all|id-list> --output <directory>");
+            "--strategies <all|id-list> --output <directory> [--telemetry]");
     }
 }
 

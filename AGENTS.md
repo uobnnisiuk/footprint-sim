@@ -19,6 +19,8 @@ This is a private research simulator, not an operational rescue or hazard-predic
 - Preserve exact-tick versus interval semantics, relation/source-observation metadata, uncertain outer alternatives, and conflicts in CandidateWarp audits.
 - Keep S3 comparisons paired: generate truth once per scenario/seed, and allow only `cross-thread-constrained` to consume weft constraints.
 - Treat `candidateRegionIds` as the outer-safe schema-v2-compatible set; report preferred candidates separately and never count leaving preferred as hard exclusion while outer plausibility remains.
+- Keep neutral telemetry opt-in and split private truth, public/evidence, and evaluation-transition records; telemetry-off evaluation files must remain byte-identical.
+- Do not add interpretation scores to telemetry, and preserve exact-point/interval, relation, role, ancestry, access, and candidate before/after metadata with deterministic ordering.
 - Keep scenario changes explicit and testable; do not imply real-world predictive accuracy.
 - Do not commit generated `results/`, `bin/`, `obj/`, or SDK artifacts.
 

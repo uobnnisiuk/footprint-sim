@@ -131,6 +131,21 @@ dotnet run --project src/FootprintSim.Cli -- evaluate \
   --output results/m1c3-s3
 ```
 
+## Neutral telemetry（M1-T0）
+
+評価へ`--telemetry`を付けると、既存7ファイルを変えずに、private truth、public/evidence、evaluation transitionを分離した決定的JSONLを`telemetry/`以下へ追加します。telemetry schema version 1はevent/interval、interaction、constraint、application audit、preferred/outer candidateのbefore/after、provenanceとsource ancestryを中立記録として保持し、Good/Bad、Causal Shadow、Indexability、Nexus Resolution、救助優先度などのscoreは含めません。
+
+```bash
+dotnet run --project src/FootprintSim.Cli -- evaluate \
+  --scenario scenarios/s3_cross_thread_encounter/scenario.json \
+  --seeds 0..199 \
+  --strategies all \
+  --output results/m1t0-s3 \
+  --telemetry
+```
+
+S0〜S3で利用でき、未指定時は`telemetry/`を作りません。stream境界、schema、再現性、cross-domain SARの将来検証範囲は [M1-T0 neutral telemetry](docs/m1t0-neutral-telemetry.md) を参照してください。
+
 ## 構成
 
 - `src/FootprintSim.Core`: world/event/observation/interaction/inference/evaluation の契約と決定論エンジン
@@ -148,4 +163,4 @@ S0/S1 の経路はscenarioに明示した抽象イベントです。S2/S3の重�
 
 ## 次のマイルストーン
 
-M1-Aは複数run評価、M1-Bは確率分岐する経糸、M1-C1は横糸の表現境界、M1-C2はhistorical constraint意味論、M1-C3は正式S3 paired比較です。観測チャネル校正と深いEBPC統合はM2へ送り、`ObservationSet` / `IRescueInference` 境界を維持します。中立telemetryはM1-T0、複数weftのoperational tracingはM1-D、dynamic past indexはM1-Eで扱います。
+M1-Aは複数run評価、M1-Bは確率分岐する経糸、M1-C1は横糸の表現境界、M1-C2はhistorical constraint意味論、M1-C3は正式S3 paired比較、M1-T0は意味付け前の中立telemetryです。観測チャネル校正と深いEBPC統合はM2へ送り、`ObservationSet` / `IRescueInference` 境界を維持します。複数weftのoperational tracingはM1-D、dynamic past indexはM1-Eで扱います。
