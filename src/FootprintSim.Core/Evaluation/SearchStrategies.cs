@@ -9,6 +9,8 @@ public static class SearchStrategyIds
     public const string VoluntaryReachability = "voluntary-reachability";
     public const string HazardAware = "hazard-aware";
     public const string EvidenceAwareCurrent = "evidence-aware-current";
+    public const string OwnEvidenceConstrained = "own-evidence-constrained";
+    public const string CrossThreadConstrained = "cross-thread-constrained";
 }
 
 public sealed class LastConfirmedOnlyStrategy : ISearchStrategy
@@ -154,6 +156,8 @@ public static class SearchStrategyRegistry
         new EvidenceAwareCurrentStrategy(),
         new HazardAwareStrategy(),
         new LastConfirmedOnlyStrategy(),
+        new OwnEvidenceConstrainedStrategy(),
+        new CrossThreadConstrainedStrategy(),
         new VoluntaryReachabilityStrategy()
     ];
 
@@ -280,7 +284,10 @@ internal static class StrategySupport
                 .Where(publicRegionIds.Contains)
                 .OrderBy(regionId => regionId, StringComparer.Ordinal)
                 .ToArray(),
-            CandidateRegionProvenance = orderedProvenance
+            CandidateRegionProvenance = orderedProvenance,
+            PreferredCandidateRegionIds = orderedCandidates,
+            OuterPlausibleCandidateRegionIds = orderedCandidates,
+            HasCandidateStandingSets = true
         };
     }
 

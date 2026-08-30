@@ -264,7 +264,7 @@ public sealed class M1BTests
     }
 
     [Fact]
-    public async Task S2SingleRunAndBatchOutputsAreByteIdenticalAtSchemaVersionTwo()
+    public async Task S2SingleRunAndBatchOutputsAreByteIdenticalAtSchemaVersionThree()
     {
         var scenario = LoadS2();
         var firstRun = new SimulationEngine().Run(scenario, 91);
@@ -280,9 +280,9 @@ public sealed class M1BTests
             var writer = new EvaluationOutputWriter();
             await writer.WriteAsync(firstDirectory, first);
             await writer.WriteAsync(secondDirectory, second);
-            Assert.Equal(2, first.Manifest.OutputSchemaVersion);
-            Assert.All(first.Runs, run => Assert.Equal(2, run.SchemaVersion));
-            Assert.Equal(2, first.Aggregate.SchemaVersion);
+            Assert.Equal(3, first.Manifest.OutputSchemaVersion);
+            Assert.All(first.Runs, run => Assert.Equal(3, run.SchemaVersion));
+            Assert.Equal(3, first.Aggregate.SchemaVersion);
             foreach (var outputName in EvaluationOutputNames.All)
             {
                 Assert.Equal(

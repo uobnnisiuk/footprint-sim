@@ -1,4 +1,6 @@
 using FootprintSim.Evidence;
+using FootprintSim.Interactions.CandidateWarps;
+using FootprintSim.Scenarios;
 
 namespace FootprintSim.Evaluation.Truth;
 
@@ -22,6 +24,8 @@ public sealed record GroundTruthEvaluationContext
     public int SecondaryTransportEventCount { get; init; }
 
     public string TruthOutcomeIdentifier { get; init; } = "unavailable";
+
+    public WeftEvidenceCondition? WeftEvidenceCondition { get; init; }
 }
 
 public sealed class PerRunEvaluator
@@ -46,6 +50,12 @@ public sealed class PerRunEvaluator
         var candidates = finalResult.CandidateRegionIds
             .Distinct(StringComparer.Ordinal)
             .ToArray();
+        var preferredCandidates = finalResult.HasCandidateStandingSets
+            ? finalResult.PreferredCandidateRegionIds.Distinct(StringComparer.Ordinal).ToArray()
+            : candidates;
+        var outerCandidates = finalResult.HasCandidateStandingSets
+            ? finalResult.OuterPlausibleCandidateRegionIds.Distinct(StringComparer.Ordinal).ToArray()
+            : candidates;
         var unknownCandidate = candidates.FirstOrDefault(candidate => !searchableSet.Contains(candidate));
         if (unknownCandidate is not null)
         {
@@ -84,7 +94,26 @@ public sealed class PerRunEvaluator
         var guidance = EvaluateGuidance(
             truth,
             searchableSet,
-            timeline);
+            timeline,
+            CandidateSetKind.Legacy);
+        var preferredGuidance = EvaluateGuidance(
+            truth,
+            searchableSet,
+            timeline,
+            CandidateSetKind.Preferred);
+        var outerGuidance = EvaluateGuidance(
+            truth,
+            searchableSet,
+            timeline,
+            CandidateSetKind.OuterPlausible);
+        var preferredContainment = Containment(
+            truth,
+            searchableSet,
+            preferredCandidates);
+        var outerContainment = Containment(
+            truth,
+            searchableSet,
+            outerCandidates);
 
         return new PerRunEvaluation
         {
@@ -93,6 +122,9 @@ public sealed class PerRunEvaluator
             StrategyId = finalResult.StrategyId,
             ProducedAtTick = finalResult.ProducedAtTick,
             CandidateRegionIds = candidates,
+            PreferredCandidateRegionIds = preferredCandidates,
+            OuterPlausibleCandidateRegionIds = outerCandidates,
+            ConflictedCandidateRegionIds = finalResult.ConflictedCandidateRegionIds,
             ConfirmedPersonRegionIds = finalResult.ConfirmedPersonRegionIds,
             ExplicitlyExcludedRegionIds = finalResult.ExplicitlyExcludedRegionIds,
             RationaleCodes = finalResult.RationaleCodes,
@@ -103,6 +135,16 @@ public sealed class PerRunEvaluator
             CandidateRegionCount = new IntegerMetric { Available = true, Value = candidateCount },
             SearchSpaceFraction = fraction,
             SearchSpaceReduction = reduction,
+            PreferredCandidateRegionCount = AvailableInteger(preferredCandidates.Length),
+            OuterPlausibleCandidateRegionCount = AvailableInteger(outerCandidates.Length),
+            PreferredContainment = preferredContainment,
+            OuterPlausibleContainment = outerContainment,
+            PreferredReduction = searchable.Length == 0
+                ? UnavailableDecimal("no-searchable-regions")
+                : AvailableDecimal(searchable.Length - preferredCandidates.Length, searchable.Length),
+            OuterPlausibleReduction = searchable.Length == 0
+                ? UnavailableDecimal("no-searchable-regions")
+                : AvailableDecimal(searchable.Length - outerCandidates.Length, searchable.Length),
             FalseExclusion = falseExclusion,
             ExplicitFalseExclusion = explicitFalseExclusion,
             DeviceOnlyPromotionViolation = new IntegerMetric
@@ -117,6 +159,25 @@ public sealed class PerRunEvaluator
             UsefulGuidancePersistenceFraction = guidance.PersistenceFraction,
             LongestUsefulGuidanceStreak = guidance.LongestStreak,
             GuidanceRegressedAfterUseful = guidance.RegressedAfterUseful,
+            PreferredGuidance = preferredGuidance,
+            OuterSafeGuidance = outerGuidance,
+            CrossThreadConstraintAudits = finalResult.CrossThreadConstraintAudits,
+            CrossThreadConstraintAvailableCount = AvailableInteger(finalResult.CrossThreadConstraintAudits
+                .Select(audit => audit.ConstraintId).Distinct(StringComparer.Ordinal).Count()),
+            CrossThreadUniqueSourceObservationCount = AvailableInteger(finalResult.CrossThreadConstraintAudits
+                .Select(audit => audit.SourceObservationId).Distinct(StringComparer.Ordinal).Count()),
+            CrossThreadConstraintAppliedCount = AvailableInteger(finalResult.CrossThreadConstraintAudits
+                .Where(audit => audit.Disposition is not ConstraintApplicationDisposition.NoOp)
+                .Select(audit => audit.ConstraintId).Distinct(StringComparer.Ordinal).Count()),
+            CrossThreadConstraintConflictCount = AvailableInteger(finalResult.CrossThreadConstraintAudits
+                .Where(audit => audit.ConflictDetected)
+                .Select(audit => audit.SourceObservationId).Distinct(StringComparer.Ordinal).Count()),
+            CrossThreadConstraintBranchCount = AvailableInteger(finalResult.CrossThreadConstraintAudits
+                .Where(audit => audit.Disposition == ConstraintApplicationDisposition.Branch)
+                .Select(audit => audit.SourceObservationId).Distinct(StringComparer.Ordinal).Count()),
+            RetainedAlternativeCount = AvailableInteger(finalResult.CrossThreadConstraintAudits
+                .Count(audit => audit.AlternativesRetained)),
+            WeftEvidenceCondition = truth.WeftEvidenceCondition,
             RealizedPersonFinalRegionId = truth.TruePersonRegionId,
             RealizedDeviceFinalRegionIds = truth.TrueDeviceRegionIds,
             SecondaryTransportEventCount = truth.SecondaryTransportEventCount,
@@ -142,7 +203,8 @@ public sealed class PerRunEvaluator
     private static GuidanceMetrics EvaluateGuidance(
         GroundTruthEvaluationContext truth,
         IReadOnlySet<string> searchable,
-        IEnumerable<SearchStrategyResult> timeline)
+        IEnumerable<SearchStrategyResult> timeline,
+        CandidateSetKind candidateSetKind)
     {
         var ordered = timeline.OrderBy(result => result.ProducedAtTick).ToArray();
         var evaluatedTickCount = new IntegerMetric
@@ -187,7 +249,8 @@ public sealed class PerRunEvaluator
         var usefulByTick = ordered.Select(result => IsUseful(
             result,
             truth.TruePersonRegionId,
-            searchable.Count)).ToArray();
+            searchable.Count,
+            candidateSetKind)).ToArray();
         var firstUsefulIndex = Array.FindIndex(usefulByTick, value => value);
         var usefulCount = usefulByTick.Count(value => value);
         var longestStreak = 0;
@@ -226,11 +289,28 @@ public sealed class PerRunEvaluator
     private static bool IsUseful(
         SearchStrategyResult result,
         string truthRegionId,
-        int searchableCount)
+        int searchableCount,
+        CandidateSetKind candidateSetKind)
     {
-        return result.CandidateRegionIds.Contains(truthRegionId, StringComparer.Ordinal) &&
-            result.CandidateRegionIds.Distinct(StringComparer.Ordinal).Count() < searchableCount;
+        var candidates = candidateSetKind switch
+        {
+            CandidateSetKind.Preferred when result.HasCandidateStandingSets =>
+                result.PreferredCandidateRegionIds,
+            CandidateSetKind.OuterPlausible when result.HasCandidateStandingSets =>
+                result.OuterPlausibleCandidateRegionIds,
+            _ => result.CandidateRegionIds
+        };
+        return candidates.Contains(truthRegionId, StringComparer.Ordinal) &&
+            candidates.Distinct(StringComparer.Ordinal).Count() < searchableCount;
     }
+
+    private static BooleanMetric Containment(
+        GroundTruthEvaluationContext truth,
+        IReadOnlySet<string> searchable,
+        IReadOnlyList<string> candidates) =>
+        truth.TruePersonRegionId is not null && searchable.Contains(truth.TruePersonRegionId)
+            ? AvailableBoolean(candidates.Contains(truth.TruePersonRegionId, StringComparer.Ordinal))
+            : UnavailableBoolean("truth-region-unavailable-or-not-searchable");
 
     private static BooleanMetric AvailableBoolean(bool value) => new()
     {
@@ -298,6 +378,9 @@ public sealed class PerRunEvaluator
     {
         var unknownRegion = result.ConfirmedPersonRegionIds
             .Concat(result.ExplicitlyExcludedRegionIds)
+            .Concat(result.PreferredCandidateRegionIds)
+            .Concat(result.OuterPlausibleCandidateRegionIds)
+            .Concat(result.ConflictedCandidateRegionIds)
             .FirstOrDefault(regionId => !searchable.Contains(regionId));
         if (unknownRegion is not null)
         {
@@ -306,6 +389,18 @@ public sealed class PerRunEvaluator
         }
 
         var candidateSet = result.CandidateRegionIds.ToHashSet(StringComparer.Ordinal);
+        if (result.HasCandidateStandingSets)
+        {
+            var outerSet = result.OuterPlausibleCandidateRegionIds.ToHashSet(StringComparer.Ordinal);
+            if (!outerSet.SetEquals(candidateSet) ||
+                result.PreferredCandidateRegionIds.Any(regionId => !outerSet.Contains(regionId)) ||
+                result.ConflictedCandidateRegionIds.Any(regionId => !outerSet.Contains(regionId)))
+            {
+                throw new InvalidOperationException(
+                    $"Strategy '{result.StrategyId}' returned inconsistent candidate standings.");
+            }
+        }
+
         var invalidProvenance = result.CandidateRegionProvenance.FirstOrDefault(item =>
             !candidateSet.Contains(item.RegionId) ||
             item.AvailableAtTick > result.ProducedAtTick ||
@@ -360,5 +455,24 @@ public sealed class PerRunEvaluator
         IntegerMetric EvaluatedTickCount,
         DecimalMetric PersistenceFraction,
         IntegerMetric LongestStreak,
-        BooleanMetric RegressedAfterUseful);
+        BooleanMetric RegressedAfterUseful)
+    {
+        public static implicit operator GuidanceMetricSet(GuidanceMetrics metrics) => new()
+        {
+            TimeToUsefulGuidance = metrics.TimeToUsefulGuidance,
+            FinalGuidanceUseful = metrics.FinalGuidanceUseful,
+            UsefulGuidanceTickCount = metrics.UsefulGuidanceTickCount,
+            EvaluatedTickCount = metrics.EvaluatedTickCount,
+            PersistenceFraction = metrics.PersistenceFraction,
+            LongestStreak = metrics.LongestStreak,
+            RegressedAfterUseful = metrics.RegressedAfterUseful
+        };
+    }
+
+    private enum CandidateSetKind
+    {
+        Legacy,
+        Preferred,
+        OuterPlausible
+    }
 }

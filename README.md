@@ -83,7 +83,7 @@ diff -r results/s1 results/s1-repeat
 
 ## 複数 run 評価（M1-A / M1-B）
 
-すべてのscenario、seed 0..19、全4戦略をまとめて比較する例です。
+すべてのscenario、seed 0..19、全6戦略をまとめて比較する例です。
 
 ```bash
 dotnet run --project src/FootprintSim.Cli -- evaluate \
@@ -105,9 +105,9 @@ dotnet run --project src/FootprintSim.Cli -- evaluate \
   --output results/m1b-s2
 ```
 
-出力は、1 strategy/run につき1行の `runs.jsonl` と `runs.csv`、scenario・strategy 別の `aggregate.json` と `aggregate.csv`、入力条件と schema を固定する `manifest.json` です。`GroundTruthContainment` は真の person region を候補に保持できたか、`SearchSpaceFraction` は全 scenario region に対する候補比率、`FalseExclusion` は真値を候補から落としたかを示します。M1-Bのschema version 2では、最終時点の有用性、持続率、最長連続tick、後退検出、candidate provenance、合成truth outcome分布も追加されます。算出不能値は `available: false` と `null` で表し、実測値 0 と区別します。
+出力は、1 strategy/run につき1行の `runs.jsonl` と `runs.csv`、scenario・strategy 別の `aggregate.json` と `aggregate.csv`、condition別の`conditions.csv`、paired deltaの`paired.csv`、入力条件とschemaを固定する`manifest.json`です。`GroundTruthContainment`、`SearchSpaceFraction`、`FalseExclusion`などschema version 2までの意味は維持します。M1-C3のschema version 3はpreferred/outer plausible、condition、cross-thread audit、paired deltaを別fieldとして追加します。算出不能値は `available: false` と `null` で表し、実測値 0 と区別します。
 
-同じ入力と source 状態では5ファイルすべてが byte-for-byte で再現されます。M1-Aの評価定義は [M1-A evaluation harness](docs/m1a-evaluation.md)、確率伝播、公開境界、追加metricは [M1-B stochastic hazard](docs/m1b-stochastic-hazard.md) を参照してください。数値は合成scenario内の比較値であり、現実の災害・救助性能を示しません。
+同じ入力とsource状態では7ファイルすべてがbyte-for-byteで再現されます。M1-Aの評価定義は [M1-A evaluation harness](docs/m1a-evaluation.md)、確率伝播と公開境界は [M1-B stochastic hazard](docs/m1b-stochastic-hazard.md)、S3比較は [M1-C3 weft evaluation](docs/m1c3-weft-evaluation.md) を参照してください。数値は合成scenario内の比較値であり、現実の災害・救助性能を示しません。
 
 ## Cross-entity interaction（M1-C1）
 
@@ -117,7 +117,19 @@ M1-C1は因果の横糸を、private truthの`InteractionOccurrence`、観測さ
 
 M1-C2は、publicに利用可能になった`CrossThreadConstraint`を最終regionへ直接intersectionせず、`CandidateWarp`の対応するhistorical tickまたはinclusive intervalへ適用します。`Confirmed`、uncertain alternative、conflict、NoOpを区別し、生き残った候補は`PublicHazardEnvelope`だけで評価tickへ前方伝播します。exact tick、interval、relation kind、participant、source observation、provenanceはapplication auditへ保持します。
 
-これはconstraint意味論のfixture実装であり、既存4 strategyや評価schemaは変更しません。正式S3比較はM1-C3です。Causal Nexus / Causal Nexus Resolutionは将来仮説であり、M1-C2はformal schemaやscoreを実装しません。詳細は [M1-C2 cross-thread constraints](docs/m1c2-cross-thread-constraints.md) を参照してください。
+これはconstraint意味論のfixture実装であり、M1-C2時点の既存4 strategyや評価schemaは変更しません。Causal Nexus / Causal Nexus Resolutionは将来仮説であり、M1-C2はformal schemaやscoreを実装しません。詳細は [M1-C2 cross-thread constraints](docs/m1c2-cross-thread-constraints.md) を参照してください。
+
+## Paired weft evaluation（M1-C3）
+
+M1-C3は正式な合成S3を追加し、同じscenario/seed/truthに対して`own-evidence-constrained`と`cross-thread-constrained`をpaired比較します。後者だけが利用可能なcross-thread constraintをhistorical warpへ適用します。preferred縮約とouter-safe containment、遅延、uncertain alternative、conflict、unavailable、device-only境界をschema version 3で別々に評価します。
+
+```bash
+dotnet run --project src/FootprintSim.Cli -- evaluate \
+  --scenario scenarios/s3_cross_thread_encounter/scenario.json \
+  --seeds 0..199 \
+  --strategies all \
+  --output results/m1c3-s3
+```
 
 ## 構成
 
@@ -132,8 +144,8 @@ M1-C2は、publicに利用可能になった`CrossThreadConstraint`を最終regi
 
 ## 現段階の制限
 
-S0/S1 の経路はscenarioに明示した抽象イベントです。S2の重みも研究用の合成値であり、校正済み確率ではありません。M1-C2のCandidateWarpは手計算fixtureでconstraint意味論を固定する小さなpublic modelであり、strategy比較、formal Causal Nexus、belief engineではありません。流体・土砂・建物倒壊の物理解析、観測チャネル校正、実時間処理、GUI、完全なEBPC、救助優先順位ポリシーは実装していません。特定の実災害を再現するものでも、現実の位置・生存・危険度を予測できるものでもありません。
+S0/S1 の経路はscenarioに明示した抽象イベントです。S2/S3の重みも研究用の合成値であり、校正済み確率ではありません。M1-C3は境界付きcross-thread evidenceの合成比較であり、formal Causal Weave、Causal Nexus、belief engineではありません。流体・土砂・建物倒壊の物理解析、観測チャネル校正、実時間処理、GUI、完全なEBPC、救助優先順位ポリシーは実装していません。特定の実災害を再現するものでも、現実の位置・生存・危険度を予測できるものでもありません。
 
 ## 次のマイルストーン
 
-M1-Aは複数runの比較・集計基盤、M1-Bは確率分岐する経糸、M1-C1はtruth/evidenceを分離した横糸の表現contract、M1-C2はhistorical candidate warpへの証拠境界付きconstraint意味論です。M1-C3で正式scenarioとstrategy比較を扱います。観測チャネル校正と深いEBPC統合はM2へ送り、`ObservationSet` / `IRescueInference` 境界を維持します。中立telemetryは別milestone M1-T0、複数weftのoperational tracingはM1-Dで扱います。
+M1-Aは複数run評価、M1-Bは確率分岐する経糸、M1-C1は横糸の表現境界、M1-C2はhistorical constraint意味論、M1-C3は正式S3 paired比較です。観測チャネル校正と深いEBPC統合はM2へ送り、`ObservationSet` / `IRescueInference` 境界を維持します。中立telemetryはM1-T0、複数weftのoperational tracingはM1-D、dynamic past indexはM1-Eで扱います。

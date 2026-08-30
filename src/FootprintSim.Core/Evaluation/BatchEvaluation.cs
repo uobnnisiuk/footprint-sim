@@ -3,6 +3,7 @@ using FootprintSim.Evaluation.Truth;
 using FootprintSim.Events;
 using FootprintSim.Hazards;
 using FootprintSim.Inference;
+using FootprintSim.Interactions;
 using FootprintSim.Scenarios;
 using FootprintSim.Simulation;
 
@@ -37,7 +38,7 @@ public sealed record ScenarioManifestEntry
 
 public sealed record EvaluationManifest
 {
-    public int OutputSchemaVersion { get; init; } = 2;
+    public int OutputSchemaVersion { get; init; } = 3;
 
     public IReadOnlyList<string> ScenarioIdentifiers { get; init; } = [];
 
@@ -84,8 +85,9 @@ public sealed class BatchEvaluationRunner
         foreach (var scenarioInput in scenarios)
         {
             var scenario = scenarioInput.Scenario;
-            var searchableRegionIds = scenario.Regions
-                .Select(region => region.Id)
+            var searchableRegionIds = (scenario.EvaluationSearchableRegionIds.Count > 0
+                    ? scenario.EvaluationSearchableRegionIds
+                    : scenario.Regions.Select(region => region.Id))
                 .Distinct(StringComparer.Ordinal)
                 .OrderBy(regionId => regionId, StringComparer.Ordinal)
                 .ToArray();
@@ -103,7 +105,18 @@ public sealed class BatchEvaluationRunner
                 PublicDeviceIds = scenario.Entities.Devices
                     .Select(device => device.Id)
                     .OrderBy(deviceId => deviceId, StringComparer.Ordinal)
-                    .ToArray()
+                    .ToArray(),
+                PublicCandidateWarp = scenario.WeftEvaluation is null
+                    ? null
+                    : new PublicCandidateWarpDefinition
+                    {
+                        HistoricalTimeWindow = new InteractionTimeWindow(
+                            scenario.WeftEvaluation.HistoricalStartTick,
+                            scenario.WeftEvaluation.HistoricalEndTick),
+                        AvailableAtTick = scenario.WeftEvaluation.NormalAvailableAtTick,
+                        HistoricalCandidateRegionIds = scenario.WeftEvaluation
+                            .HistoricalCandidateRegionIds
+                    }
             };
 
             foreach (var seed in seeds)
@@ -126,7 +139,7 @@ public sealed class BatchEvaluationRunner
                     .GetValueOrDefault(scenario.TargetPersonId)?.Position.RegionId;
                 var secondaryTransportCount = simulation.GroundTruthEvents.Count(item =>
                     item.Kind == EventKind.SecondaryTransported);
-                var finalTick = Math.Max(
+                var inferredFinalTick = Math.Max(
                     simulation.GroundTruthEvents
                         .Select(simulationEvent => simulationEvent.Tick)
                         .DefaultIfEmpty(0)
@@ -135,6 +148,7 @@ public sealed class BatchEvaluationRunner
                         .Select(observation => observation.AvailableTick)
                         .DefaultIfEmpty(0)
                         .Max());
+                var finalTick = scenario.WeftEvaluation?.EvaluationEndTick ?? inferredFinalTick;
                 var truth = new GroundTruthEvaluationContext
                 {
                     ScenarioId = scenario.Id,
@@ -148,6 +162,7 @@ public sealed class BatchEvaluationRunner
                         .ToArray(),
                     TrueDeviceRegionIds = deviceFinalRegions,
                     SecondaryTransportEventCount = secondaryTransportCount,
+                    WeftEvidenceCondition = simulation.WeftEvidenceCondition,
                     TruthOutcomeIdentifier = CreateTruthOutcomeIdentifier(
                         truePersonRegion,
                         deviceFinalRegions,
@@ -162,7 +177,8 @@ public sealed class BatchEvaluationRunner
                         seed,
                         finalTick,
                         publicContext,
-                        simulation.ObservationSet);
+                        simulation.ObservationSet,
+                        simulation.CrossThreadConstraints);
                     evaluations.Add(perRunEvaluator.Evaluate(
                         truth,
                         timeline[^1],
@@ -221,7 +237,8 @@ public sealed class BatchEvaluationRunner
         int seed,
         long finalTick,
         RescueContext publicContext,
-        ObservationSet completeEvidence)
+        ObservationSet completeEvidence,
+        CrossThreadConstraintSet? completeCrossThreadConstraints)
     {
         var results = new List<SearchStrategyResult>();
         for (long tick = 0; tick <= finalTick; tick++)
@@ -240,7 +257,9 @@ public sealed class BatchEvaluationRunner
                 Seed = seed,
                 CurrentTick = tick,
                 PublicContext = publicContext,
-                AvailableEvidence = availableEvidence
+                AvailableEvidence = availableEvidence,
+                AvailableCrossThreadConstraints = completeCrossThreadConstraints?
+                    .PubliclyAvailableAt(tick)
             }));
         }
 

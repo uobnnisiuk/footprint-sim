@@ -1,0 +1,471 @@
+{
+  "schemaVersion": 3,
+  "id": "s3-cross-thread-encounter",
+  "title": "S3: Synthetic cross-thread encounter evaluation",
+  "description": "A synthetic paired-evaluation scenario for evidence-bounded person-person encounter constraints. Its topology, branch weights, and observations are uncalibrated and do not model a real disaster.",
+  "targetPersonId": "person-a",
+  "normalWalkingRadius": 28.0,
+  "evaluationSearchableRegionIds": [
+    "target-home",
+    "access-road",
+    "encounter-zone",
+    "alternate-zone",
+    "debris-fork",
+    "river-channel",
+    "deposition-north",
+    "deposition-central",
+    "deposition-south",
+    "downstream-bank"
+  ],
+  "hazardTransportEnvelopeRegionIds": [
+    "encounter-zone",
+    "debris-fork",
+    "river-channel",
+    "deposition-north",
+    "deposition-central",
+    "deposition-south",
+    "downstream-bank"
+  ],
+  "weftEvaluation": {
+    "encounterStepId": "person-encounter",
+    "otherPersonId": "person-b",
+    "targetDeviceId": "device-a",
+    "encounterRegionId": "encounter-zone",
+    "conflictingRegionId": "alternate-zone",
+    "historicalStartTick": 8,
+    "historicalEndTick": 9,
+    "normalAvailableAtTick": 10,
+    "delayedAvailableAtTick": 16,
+    "evaluationEndTick": 30,
+    "historicalCandidateRegionIds": ["encounter-zone", "alternate-zone"],
+    "conditionCycle": [
+      "confirmed",
+      "supportedButUncertain",
+      "delayed",
+      "conflicting",
+      "unavailable",
+      "deviceOnly"
+    ]
+  },
+  "stochasticHazard": {
+    "hazardId": "hazard-s3-synthetic-debris",
+    "sourceRegionId": "encounter-zone",
+    "startTick": 10,
+    "deviceId": "device-a",
+    "separationProbability": 0.8,
+    "maximumTransitionsPerEntity": 12,
+    "nodes": [
+      {
+        "regionId": "encounter-zone",
+        "minimumArrivalTick": 10,
+        "maximumArrivalTick": 10,
+        "depositionProbability": 0.0,
+        "trappingProbability": 0.0,
+        "releaseProbability": 0.0,
+        "minimumReleaseDelayTicks": 0,
+        "maximumReleaseDelayTicks": 0,
+        "isTerminal": false,
+        "isRequiredTerminal": false,
+        "publiclyVisible": true,
+        "publishedAtTick": 0,
+        "publicProvenanceId": "s3-public-source"
+      },
+      {
+        "regionId": "debris-fork",
+        "minimumArrivalTick": 11,
+        "maximumArrivalTick": 12,
+        "depositionProbability": 0.0,
+        "trappingProbability": 0.0,
+        "releaseProbability": 0.0,
+        "minimumReleaseDelayTicks": 0,
+        "maximumReleaseDelayTicks": 0,
+        "isTerminal": false,
+        "isRequiredTerminal": false,
+        "publiclyVisible": true,
+        "publishedAtTick": 0,
+        "publicProvenanceId": "s3-public-fork"
+      },
+      {
+        "regionId": "river-channel",
+        "minimumArrivalTick": 13,
+        "maximumArrivalTick": 16,
+        "depositionProbability": 0.0,
+        "trappingProbability": 0.0,
+        "releaseProbability": 0.0,
+        "minimumReleaseDelayTicks": 0,
+        "maximumReleaseDelayTicks": 0,
+        "isTerminal": false,
+        "isRequiredTerminal": false,
+        "publiclyVisible": true,
+        "publishedAtTick": 0,
+        "publicProvenanceId": "s3-public-river"
+      },
+      {
+        "regionId": "deposition-north",
+        "minimumArrivalTick": 15,
+        "maximumArrivalTick": 21,
+        "depositionProbability": 1.0,
+        "trappingProbability": 0.2,
+        "releaseProbability": 0.0,
+        "minimumReleaseDelayTicks": 0,
+        "maximumReleaseDelayTicks": 0,
+        "isTerminal": true,
+        "isRequiredTerminal": true,
+        "publiclyVisible": true,
+        "publishedAtTick": 0,
+        "publicProvenanceId": "s3-public-north"
+      },
+      {
+        "regionId": "deposition-central",
+        "minimumArrivalTick": 13,
+        "maximumArrivalTick": 17,
+        "depositionProbability": 1.0,
+        "trappingProbability": 0.3,
+        "releaseProbability": 0.0,
+        "minimumReleaseDelayTicks": 0,
+        "maximumReleaseDelayTicks": 0,
+        "isTerminal": true,
+        "isRequiredTerminal": true,
+        "publiclyVisible": true,
+        "publishedAtTick": 0,
+        "publicProvenanceId": "s3-public-central"
+      },
+      {
+        "regionId": "deposition-south",
+        "minimumArrivalTick": 13,
+        "maximumArrivalTick": 20,
+        "depositionProbability": 1.0,
+        "trappingProbability": 0.25,
+        "releaseProbability": 0.45,
+        "minimumReleaseDelayTicks": 1,
+        "maximumReleaseDelayTicks": 3,
+        "isTerminal": true,
+        "isRequiredTerminal": true,
+        "publiclyVisible": true,
+        "publishedAtTick": 0,
+        "publicProvenanceId": "s3-public-south"
+      },
+      {
+        "regionId": "downstream-bank",
+        "minimumArrivalTick": 17,
+        "maximumArrivalTick": 29,
+        "depositionProbability": 1.0,
+        "trappingProbability": 0.1,
+        "releaseProbability": 0.0,
+        "minimumReleaseDelayTicks": 0,
+        "maximumReleaseDelayTicks": 0,
+        "isTerminal": true,
+        "isRequiredTerminal": true,
+        "publiclyVisible": true,
+        "publishedAtTick": 0,
+        "publicProvenanceId": "s3-public-downstream"
+      }
+    ],
+    "transitions": [
+      {
+        "id": "source-to-fork",
+        "sourceRegionId": "encounter-zone",
+        "destinationRegionId": "debris-fork",
+        "weight": 1.0,
+        "minimumTravelTicks": 1,
+        "maximumTravelTicks": 2,
+        "transportType": "hazardDriven",
+        "activation": "anyEntity",
+        "publiclyVisible": true,
+        "provenanceId": "s3-public-trunk"
+      },
+      {
+        "id": "fork-to-river",
+        "sourceRegionId": "debris-fork",
+        "destinationRegionId": "river-channel",
+        "weight": 0.38,
+        "minimumTravelTicks": 2,
+        "maximumTravelTicks": 4,
+        "transportType": "hazardDriven",
+        "activation": "anyEntity",
+        "publiclyVisible": true,
+        "provenanceId": "s3-public-river-branch"
+      },
+      {
+        "id": "fork-to-central",
+        "sourceRegionId": "debris-fork",
+        "destinationRegionId": "deposition-central",
+        "weight": 0.32,
+        "minimumTravelTicks": 2,
+        "maximumTravelTicks": 5,
+        "transportType": "hazardDriven",
+        "activation": "anyEntity",
+        "publiclyVisible": true,
+        "provenanceId": "s3-public-central-branch"
+      },
+      {
+        "id": "fork-to-south",
+        "sourceRegionId": "debris-fork",
+        "destinationRegionId": "deposition-south",
+        "weight": 0.30,
+        "minimumTravelTicks": 2,
+        "maximumTravelTicks": 5,
+        "transportType": "hazardDriven",
+        "activation": "anyEntity",
+        "publiclyVisible": true,
+        "provenanceId": "s3-public-south-branch"
+      },
+      {
+        "id": "river-to-north",
+        "sourceRegionId": "river-channel",
+        "destinationRegionId": "deposition-north",
+        "weight": 0.55,
+        "minimumTravelTicks": 2,
+        "maximumTravelTicks": 5,
+        "transportType": "hazardDriven",
+        "activation": "anyEntity",
+        "publiclyVisible": true,
+        "provenanceId": "s3-public-north-terminal"
+      },
+      {
+        "id": "river-to-south",
+        "sourceRegionId": "river-channel",
+        "destinationRegionId": "deposition-south",
+        "weight": 0.45,
+        "minimumTravelTicks": 2,
+        "maximumTravelTicks": 4,
+        "transportType": "hazardDriven",
+        "activation": "anyEntity",
+        "publiclyVisible": true,
+        "provenanceId": "s3-public-river-south-terminal"
+      },
+      {
+        "id": "south-secondary-to-downstream",
+        "sourceRegionId": "deposition-south",
+        "destinationRegionId": "downstream-bank",
+        "weight": 1.0,
+        "minimumTravelTicks": 3,
+        "maximumTravelTicks": 6,
+        "transportType": "secondaryTransport",
+        "activation": "anyEntity",
+        "publiclyVisible": true,
+        "provenanceId": "s3-public-secondary"
+      }
+    ]
+  },
+  "regions": [
+    {
+      "id": "target-home",
+      "type": "building",
+      "center": { "x": 0.0, "y": 0.0, "elevation": 50.0, "regionId": "target-home" },
+      "passability": 0.8,
+      "connections": [{ "toRegionId": "access-road", "travelCost": 1.0, "passable": true }]
+    },
+    {
+      "id": "person-b-shelter",
+      "type": "building",
+      "center": { "x": -80.0, "y": 60.0, "elevation": 55.0, "regionId": "person-b-shelter" },
+      "passability": 0.8,
+      "connections": [{ "toRegionId": "encounter-zone", "travelCost": 2.0, "passable": true }]
+    },
+    {
+      "id": "access-road",
+      "type": "road",
+      "center": { "x": 24.0, "y": 0.0, "elevation": 44.0, "regionId": "access-road" },
+      "passability": 0.9,
+      "connections": [{ "toRegionId": "encounter-zone", "travelCost": 2.0, "passable": false }]
+    },
+    {
+      "id": "encounter-zone",
+      "type": "slope",
+      "center": { "x": 52.0, "y": -8.0, "elevation": 35.0, "regionId": "encounter-zone" },
+      "passability": 0.1,
+      "connections": [{ "toRegionId": "debris-fork", "travelCost": 1.0, "passable": false }]
+    },
+    {
+      "id": "alternate-zone",
+      "type": "road",
+      "center": { "x": 54.0, "y": 12.0, "elevation": 37.0, "regionId": "alternate-zone" },
+      "passability": 0.3,
+      "connections": []
+    },
+    {
+      "id": "debris-fork",
+      "type": "slope",
+      "center": { "x": 75.0, "y": -15.0, "elevation": 27.0, "regionId": "debris-fork" },
+      "passability": 0.0,
+      "connections": [
+        { "toRegionId": "river-channel", "travelCost": 1.0, "passable": false },
+        { "toRegionId": "deposition-central", "travelCost": 1.0, "passable": false },
+        { "toRegionId": "deposition-south", "travelCost": 1.0, "passable": false }
+      ]
+    },
+    {
+      "id": "river-channel",
+      "type": "river",
+      "center": { "x": 103.0, "y": -25.0, "elevation": 16.0, "regionId": "river-channel" },
+      "passability": 0.0,
+      "connections": [
+        { "toRegionId": "deposition-north", "travelCost": 1.0, "passable": false },
+        { "toRegionId": "deposition-south", "travelCost": 1.0, "passable": false }
+      ]
+    },
+    {
+      "id": "deposition-north",
+      "type": "outdoor",
+      "center": { "x": 132.0, "y": -12.0, "elevation": 10.0, "regionId": "deposition-north" },
+      "passability": 0.25,
+      "connections": []
+    },
+    {
+      "id": "deposition-central",
+      "type": "outdoor",
+      "center": { "x": 126.0, "y": -31.0, "elevation": 9.0, "regionId": "deposition-central" },
+      "passability": 0.25,
+      "connections": []
+    },
+    {
+      "id": "deposition-south",
+      "type": "outdoor",
+      "center": { "x": 119.0, "y": -52.0, "elevation": 8.0, "regionId": "deposition-south" },
+      "passability": 0.2,
+      "connections": [{ "toRegionId": "downstream-bank", "travelCost": 1.0, "passable": false }]
+    },
+    {
+      "id": "downstream-bank",
+      "type": "outdoor",
+      "center": { "x": 160.0, "y": -67.0, "elevation": 5.0, "regionId": "downstream-bank" },
+      "passability": 0.3,
+      "connections": []
+    }
+  ],
+  "entities": {
+    "persons": [
+      {
+        "id": "person-a",
+        "initialPosition": { "x": 0.0, "y": 0.0, "elevation": 50.0, "regionId": "target-home" }
+      },
+      {
+        "id": "person-b",
+        "initialPosition": { "x": -80.0, "y": 60.0, "elevation": 55.0, "regionId": "person-b-shelter" }
+      }
+    ],
+    "devices": [
+      {
+        "id": "device-a",
+        "initialPosition": { "x": 0.0, "y": 0.0, "elevation": 50.0, "regionId": "target-home" }
+      }
+    ],
+    "carriers": [],
+    "rescuers": [],
+    "hazards": [
+      {
+        "id": "hazard-s3-synthetic-debris",
+        "kind": "synthetic-branching-debris-flow",
+        "routeRegionIds": [
+          "encounter-zone",
+          "debris-fork",
+          "river-channel",
+          "deposition-north",
+          "deposition-central",
+          "deposition-south",
+          "downstream-bank"
+        ],
+        "minimumSpeedPerTick": 4.0,
+        "maximumSpeedPerTick": 16.0,
+        "stopProbability": 0.3
+      }
+    ]
+  },
+  "steps": [
+    {
+      "id": "associate-device",
+      "tick": 0,
+      "kind": "personDeviceAssociated",
+      "subjectIds": ["person-a"],
+      "relatedEntityIds": ["device-a"],
+      "regionId": "target-home",
+      "payload": { "relationship": "carried" }
+    },
+    {
+      "id": "target-last-confirmed",
+      "tick": 2,
+      "kind": "regionEntered",
+      "movementKind": "voluntary",
+      "subjectIds": ["person-a", "device-a"],
+      "position": { "x": 0.0, "y": 0.0, "elevation": 50.0, "regionId": "target-home" },
+      "observation": {
+        "evidenceType": "syntheticBuildingAccessRecord",
+        "reportedSubjectIds": ["person-a"],
+        "reportedPosition": { "x": 0.0, "y": 0.0, "elevation": 50.0, "regionId": "target-home" },
+        "reportedRegionId": "target-home",
+        "emissionProbability": 1.0,
+        "dropProbability": 0.0,
+        "minimumDelayTicks": 0,
+        "maximumDelayTicks": 0,
+        "state": "confirmed",
+        "conflictProbability": 0.0,
+        "publicPayload": { "source": "synthetic-building-log" }
+      }
+    },
+    {
+      "id": "target-to-road",
+      "tick": 5,
+      "kind": "voluntaryMovement",
+      "movementKind": "voluntary",
+      "subjectIds": ["person-a", "device-a"],
+      "position": { "x": 24.0, "y": 0.0, "elevation": 44.0, "regionId": "access-road" }
+    },
+    {
+      "id": "person-b-to-encounter",
+      "tick": 8,
+      "kind": "voluntaryMovement",
+      "movementKind": "voluntary",
+      "subjectIds": ["person-b"],
+      "position": { "x": 52.0, "y": -8.0, "elevation": 35.0, "regionId": "encounter-zone" }
+    },
+    {
+      "id": "target-to-encounter",
+      "tick": 9,
+      "kind": "regionEntered",
+      "movementKind": "voluntary",
+      "subjectIds": ["person-a", "device-a"],
+      "position": { "x": 52.0, "y": -8.0, "elevation": 35.0, "regionId": "encounter-zone" },
+      "observation": {
+        "evidenceType": "syntheticCoarseTargetSignal",
+        "reportedSubjectIds": ["person-a"],
+        "reportedRegionId": "encounter-zone",
+        "emissionProbability": 1.0,
+        "dropProbability": 0.0,
+        "minimumDelayTicks": 1,
+        "maximumDelayTicks": 1,
+        "state": "supportedButUncertain",
+        "conflictProbability": 0.0,
+        "publicPayload": { "source": "synthetic-own-evidence" }
+      }
+    },
+    {
+      "id": "person-encounter",
+      "tick": 9,
+      "kind": "encounter",
+      "subjectIds": ["person-a", "person-b"],
+      "causeStepId": "target-to-encounter",
+      "position": { "x": 52.0, "y": -8.0, "elevation": 35.0, "regionId": "encounter-zone" },
+      "regionId": "encounter-zone",
+      "payload": { "modality": "synthetic-co-presence" }
+    },
+    {
+      "id": "device-only-fix",
+      "tick": 18,
+      "kind": "communicationLost",
+      "subjectIds": ["device-a"],
+      "observation": {
+        "evidenceType": "syntheticDeviceRadioFix",
+        "reportedSubjectIds": ["device-a"],
+        "reportedRegionId": "downstream-bank",
+        "emissionProbability": 1.0,
+        "dropProbability": 0.0,
+        "minimumDelayTicks": 1,
+        "maximumDelayTicks": 1,
+        "state": "supportedButUncertain",
+        "conflictProbability": 0.0,
+        "publicPayload": { "source": "synthetic-device-only", "subjectType": "device" }
+      }
+    }
+  ]
+}

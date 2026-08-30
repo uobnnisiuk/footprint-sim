@@ -354,6 +354,7 @@ public sealed class CandidateWarpTests
         var publicTypes = new[]
         {
             typeof(PublicCandidateWarpFactory),
+            typeof(PublicCandidateWarpProjection),
             typeof(CrossThreadConstraintApplicator),
             typeof(CandidateWarp),
             typeof(CandidateWarpState),
@@ -383,7 +384,7 @@ public sealed class CandidateWarpTests
             });
         }
 
-        Assert.Equal(5, typeof(SearchStrategyInput).GetProperties().Length);
+        Assert.Equal(6, typeof(SearchStrategyInput).GetProperties().Length);
     }
 
     [Fact]

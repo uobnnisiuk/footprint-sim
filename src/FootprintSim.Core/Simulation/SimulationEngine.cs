@@ -4,6 +4,8 @@ using System.Text.Json;
 using FootprintSim.Evidence;
 using FootprintSim.Events;
 using FootprintSim.Hazards;
+using FootprintSim.Interactions;
+using FootprintSim.Interactions.Truth;
 using FootprintSim.Model;
 using FootprintSim.Scenarios;
 
@@ -103,6 +105,12 @@ public sealed class SimulationEngine
             .ThenBy(observation => observation.ObservationId, StringComparer.Ordinal)
             .ToArray();
 
+        var interactionProjection = CreateInteractionProjection(
+            scenario,
+            seed,
+            orderedEvents,
+            eventIdsByStep);
+
         return new SimulationRun
         {
             ScenarioId = scenario.Id,
@@ -116,8 +124,107 @@ public sealed class SimulationEngine
             },
             GroundTruthFinalEntityStates = new SortedDictionary<string, EntityState>(
                 entityStates,
-                StringComparer.Ordinal)
+                StringComparer.Ordinal),
+            GroundTruthInteractionOccurrences = interactionProjection.Occurrences,
+            InteractionObservations = interactionProjection.Observations,
+            CrossThreadConstraints = interactionProjection.Constraints,
+            WeftEvidenceCondition = interactionProjection.Condition
         };
+    }
+
+    private static InteractionProjection CreateInteractionProjection(
+        ScenarioDefinition scenario,
+        int seed,
+        IReadOnlyList<SimulationEvent> events,
+        IReadOnlyDictionary<string, string> eventIdsByStep)
+    {
+        var definition = scenario.WeftEvaluation;
+        if (definition is null)
+        {
+            return new InteractionProjection([], null, null, null);
+        }
+
+        var sourceEventId = eventIdsByStep[definition.EncounterStepId];
+        var sourceEvent = events.Single(item => string.Equals(
+            item.Id,
+            sourceEventId,
+            StringComparison.Ordinal));
+        var occurrence = InteractionOccurrenceProjector.FromPersonPersonEncounter(
+            scenario.Id,
+            seed,
+            sourceEvent,
+            scenario.Entities.Persons.Select(person => person.Id));
+        var condition = definition.ConditionCycle[(int)((uint)seed % definition.ConditionCycle.Count)];
+        InteractionObservation? observation = null;
+        if (condition != WeftEvidenceCondition.DeviceOnly)
+        {
+            var observedWindow = ((uint)seed / (uint)definition.ConditionCycle.Count) % 2 == 0
+                ? InteractionTimeWindow.At(definition.HistoricalEndTick)
+                : new InteractionTimeWindow(
+                    definition.HistoricalStartTick,
+                    definition.HistoricalEndTick);
+            var state = condition switch
+            {
+                WeftEvidenceCondition.SupportedButUncertain =>
+                    EvidenceState.SupportedButUncertain,
+                WeftEvidenceCondition.Conflicting => EvidenceState.Conflicting,
+                _ => EvidenceState.Confirmed
+            };
+            var availableAt = condition == WeftEvidenceCondition.Delayed
+                ? definition.DelayedAvailableAtTick
+                : definition.NormalAvailableAtTick;
+            var visibility = condition == WeftEvidenceCondition.Unavailable
+                ? InteractionVisibility.PrivateEvidence
+                : InteractionVisibility.PublicEvidence;
+            var regionId = condition == WeftEvidenceCondition.Conflicting
+                ? definition.ConflictingRegionId
+                : definition.EncounterRegionId;
+            observation = InteractionObservation.Create(
+                scenario.Id,
+                seed,
+                $"synthetic-encounter-evidence:{scenario.Id}:{seed}",
+                referencedInteractionId: null,
+                InteractionRelationKind.PersonPersonEncounter,
+                [
+                    new InteractionParticipant(
+                        scenario.TargetPersonId,
+                        InteractionEntityKind.Person,
+                        InteractionParticipantRole.EncounterParticipant),
+                    new InteractionParticipant(
+                        definition.OtherPersonId,
+                        InteractionEntityKind.Person,
+                        InteractionParticipantRole.EncounterParticipant)
+                ],
+                observedWindow,
+                [regionId],
+                availableAt,
+                state,
+                isPersonEvidence: true,
+                isDeviceOnlyEvidence: false,
+                visibility,
+                [new InteractionProvenance(
+                    InteractionProvenanceKind.ExternalSource,
+                    $"synthetic-s3-condition:{condition}")]);
+        }
+
+        var observationSet = new InteractionObservationSet(
+            scenario.Id,
+            seed,
+            observation is null ? [] : [observation]);
+        var constraint = observation is null
+            ? null
+            : CrossThreadConstraintDeriver.DerivePersonEncounterCoLocation(
+                observation,
+                scenario.TargetPersonId);
+        var constraintSet = new CrossThreadConstraintSet(
+            scenario.Id,
+            seed,
+            constraint is null ? [] : [constraint]);
+        return new InteractionProjection(
+            [occurrence],
+            observationSet,
+            constraintSet,
+            condition);
     }
 
     private static Dictionary<string, EntityState> CreateInitialEntityStates(ScenarioEntities entities)
@@ -398,4 +505,10 @@ public sealed class SimulationEngine
     private sealed record IndexedStep(ScenarioStep Step, int Index);
 
     private sealed record EventCandidate(SimulationEvent Event, long StableOrder);
+
+    private sealed record InteractionProjection(
+        IReadOnlyList<InteractionOccurrence> Occurrences,
+        InteractionObservationSet? Observations,
+        CrossThreadConstraintSet? Constraints,
+        WeftEvidenceCondition? Condition);
 }

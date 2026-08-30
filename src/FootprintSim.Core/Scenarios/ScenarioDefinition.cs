@@ -24,11 +24,52 @@ public sealed class ScenarioDefinition
 
     public StochasticHazardDefinition? StochasticHazard { get; init; }
 
+    public WeftEvaluationDefinition? WeftEvaluation { get; init; }
+
+    public IReadOnlyList<string> EvaluationSearchableRegionIds { get; init; } = [];
+
     public IReadOnlyList<RegionDefinition> Regions { get; init; } = [];
 
     public ScenarioEntities Entities { get; init; } = new();
 
     public IReadOnlyList<ScenarioStep> Steps { get; init; } = [];
+}
+
+public enum WeftEvidenceCondition
+{
+    Confirmed,
+    SupportedButUncertain,
+    Delayed,
+    Conflicting,
+    Unavailable,
+    DeviceOnly
+}
+
+public sealed class WeftEvaluationDefinition
+{
+    public required string EncounterStepId { get; init; }
+
+    public required string OtherPersonId { get; init; }
+
+    public required string TargetDeviceId { get; init; }
+
+    public required string EncounterRegionId { get; init; }
+
+    public required string ConflictingRegionId { get; init; }
+
+    public required long HistoricalStartTick { get; init; }
+
+    public required long HistoricalEndTick { get; init; }
+
+    public required long NormalAvailableAtTick { get; init; }
+
+    public required long DelayedAvailableAtTick { get; init; }
+
+    public required long EvaluationEndTick { get; init; }
+
+    public IReadOnlyList<string> HistoricalCandidateRegionIds { get; init; } = [];
+
+    public IReadOnlyList<WeftEvidenceCondition> ConditionCycle { get; init; } = [];
 }
 
 public sealed class ScenarioStep

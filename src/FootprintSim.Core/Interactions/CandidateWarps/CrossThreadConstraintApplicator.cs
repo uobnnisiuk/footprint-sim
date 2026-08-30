@@ -687,6 +687,16 @@ internal static class PublicCandidateWarpPropagator
             return [new ReachedRegion(regionId, [])];
         }
 
+        var publicRegion = envelope.Regions.SingleOrDefault(region => string.Equals(
+            region.RegionId,
+            regionId,
+            StringComparison.Ordinal));
+        if (publicRegion is not null)
+        {
+            earliestTick = Math.Max(earliestTick, publicRegion.MinimumArrivalTick);
+            latestTick = Math.Max(latestTick, publicRegion.MinimumArrivalTick);
+        }
+
         var branches = envelope.Branches
             .Where(branch => branch.PublishedAtTick <= currentTick)
             .Where(branch => string.Equals(
@@ -702,6 +712,12 @@ internal static class PublicCandidateWarpPropagator
         }
 
         var reached = new List<ReachedRegion>();
+        if (branches.Any(branch => branch.TransportType == HazardTransportType.SecondaryTransport))
+        {
+            // A public secondary route is possible, not proof that release/re-transport occurred.
+            reached.Add(new ReachedRegion(regionId, []));
+        }
+
         foreach (var branch in branches)
         {
             var arrivalEarliest = checked(earliestTick + branch.MinimumTravelTicks);

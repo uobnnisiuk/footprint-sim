@@ -1,4 +1,5 @@
 using FootprintSim.Evidence;
+using FootprintSim.Hazards;
 
 namespace FootprintSim.Interactions.CandidateWarps;
 
@@ -417,6 +418,65 @@ public static class PublicCandidateWarpFactory
             seed,
             normalizedTarget,
             [warp]);
+    }
+}
+
+public static class PublicCandidateWarpProjection
+{
+    public static CandidateWarpSet ForwardTo(
+        CandidateWarpSet candidateWarps,
+        long currentTick,
+        PublicHazardEnvelope? publicHazardEnvelope)
+    {
+        ArgumentNullException.ThrowIfNull(candidateWarps);
+        if (currentTick < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(currentTick));
+        }
+
+        var projected = candidateWarps.Warps.Select(warp =>
+        {
+            if (warp.States.Any(state =>
+                state.TimeWindow.StartTick <= currentTick &&
+                currentTick <= state.TimeWindow.EndTick))
+            {
+                return warp;
+            }
+
+            var sources = warp.States
+                .Where(state => state.TimeWindow.EndTick <= currentTick)
+                .OrderByDescending(state => state.TimeWindow.EndTick)
+                .ThenBy(state => state.StateId, StringComparer.Ordinal)
+                .ToArray();
+            if (sources.Length == 0)
+            {
+                return warp;
+            }
+
+            var latestTick = sources[0].TimeWindow.EndTick;
+            var latest = sources.Where(state => state.TimeWindow.EndTick == latestTick).ToArray();
+            var future = PublicCandidateWarpPropagator.Propagate(
+                warp.ScenarioId,
+                warp.Seed,
+                warp.TargetEntityId,
+                latest,
+                currentTick,
+                publicHazardEnvelope);
+            return CandidateWarpNormalization.CreateWarp(
+                warp.ScenarioId,
+                warp.Seed,
+                warp.TargetEntityId,
+                warp.Standing,
+                warp.WarpId,
+                warp.States.Append(future),
+                $"public-forward:{currentTick}");
+        });
+
+        return CandidateWarpNormalization.CreateSet(
+            candidateWarps.ScenarioId,
+            candidateWarps.Seed,
+            candidateWarps.TargetEntityId,
+            projected);
     }
 }
 

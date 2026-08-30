@@ -1,5 +1,6 @@
 using System.Globalization;
 using FootprintSim.Evidence;
+using FootprintSim.Scenarios;
 
 namespace FootprintSim.Evaluation;
 
@@ -64,6 +65,42 @@ public sealed record StrategyScenarioAggregate
 
     public required DistributionAggregate SearchSpaceReduction { get; init; }
 
+    public required RateAggregate PreferredContainment { get; init; }
+
+    public required RateAggregate OuterPlausibleContainment { get; init; }
+
+    public required DistributionAggregate PreferredCandidateRegionCount { get; init; }
+
+    public required DistributionAggregate OuterPlausibleCandidateRegionCount { get; init; }
+
+    public required DistributionAggregate PreferredReduction { get; init; }
+
+    public required DistributionAggregate OuterPlausibleReduction { get; init; }
+
+    public required DistributionAggregate PreferredPersistenceFraction { get; init; }
+
+    public required DistributionAggregate OuterSafePersistenceFraction { get; init; }
+
+    public required DistributionAggregate PreferredTimeToUsefulGuidance { get; init; }
+
+    public required RateAggregate PreferredFinalGuidanceUseful { get; init; }
+
+    public required RateAggregate PreferredGuidanceRegressedAfterUseful { get; init; }
+
+    public required DistributionAggregate OuterSafeTimeToUsefulGuidance { get; init; }
+
+    public required RateAggregate OuterSafeFinalGuidanceUseful { get; init; }
+
+    public required RateAggregate OuterSafeGuidanceRegressedAfterUseful { get; init; }
+
+    public required int CrossThreadConstraintAppliedCount { get; init; }
+
+    public required int CrossThreadConstraintConflictCount { get; init; }
+
+    public required int CrossThreadConstraintBranchCount { get; init; }
+
+    public required int RetainedAlternativeCount { get; init; }
+
     public required DistributionAggregate TimeToUsefulGuidance { get; init; }
 
     public required RateAggregate FinalGuidanceUseful { get; init; }
@@ -125,15 +162,62 @@ public sealed record ScenarioTruthAggregate
     public required int SecondaryTransportRunCount { get; init; }
 
     public required int SecondaryTransportEventCount { get; init; }
+
+    public required int PersonDeviceDifferentTerminalCount { get; init; }
+
+    public IReadOnlyList<WeftEvidenceConditionCount> WeftEvidenceConditionCounts { get; init; } = [];
+}
+
+public sealed record WeftEvidenceConditionCount
+{
+    public required WeftEvidenceCondition Condition { get; init; }
+
+    public required int Count { get; init; }
+}
+
+public sealed record ConditionStrategyAggregate
+{
+    public required WeftEvidenceCondition Condition { get; init; }
+
+    public required StrategyScenarioAggregate Metrics { get; init; }
+}
+
+public sealed record PairedWeftAggregate
+{
+    public required string ScenarioId { get; init; }
+
+    public WeftEvidenceCondition? Condition { get; init; }
+
+    public required int PairCount { get; init; }
+
+    public required DistributionAggregate PreferredCandidateCountDelta { get; init; }
+
+    public required DistributionAggregate OuterPlausibleCandidateCountDelta { get; init; }
+
+    public required DistributionAggregate PreferredReductionDelta { get; init; }
+
+    public required DistributionAggregate OuterPlausibleReductionDelta { get; init; }
+
+    public required DistributionAggregate PreferredContainmentDelta { get; init; }
+
+    public required DistributionAggregate OuterPlausibleContainmentDelta { get; init; }
+
+    public required DistributionAggregate TimeToGuidanceDelta { get; init; }
+
+    public required DistributionAggregate PersistenceDelta { get; init; }
 }
 
 public sealed record AggregateReport
 {
-    public int SchemaVersion { get; init; } = 2;
+    public int SchemaVersion { get; init; } = 3;
 
     public IReadOnlyList<StrategyScenarioAggregate> Groups { get; init; } = [];
 
     public IReadOnlyList<ScenarioTruthAggregate> TruthGroups { get; init; } = [];
+
+    public IReadOnlyList<ConditionStrategyAggregate> ConditionGroups { get; init; } = [];
+
+    public IReadOnlyList<PairedWeftAggregate> PairedWeftGroups { get; init; } = [];
 }
 
 public sealed class AggregateEvaluator
@@ -158,13 +242,44 @@ public sealed class AggregateEvaluator
             .Select(CreateTruthGroup)
             .ToArray();
 
-        return new AggregateReport { Groups = groups, TruthGroups = truthGroups };
+        var conditionGroups = evaluations
+            .Where(run => run.WeftEvidenceCondition is not null)
+            .GroupBy(run => (run.ScenarioId, run.StrategyId, run.WeftEvidenceCondition!.Value))
+            .OrderBy(group => group.Key.ScenarioId, StringComparer.Ordinal)
+            .ThenBy(group => group.Key.StrategyId, StringComparer.Ordinal)
+            .ThenBy(group => group.Key.Value)
+            .Select(group => new ConditionStrategyAggregate
+            {
+                Condition = group.Key.Value,
+                Metrics = CreateGroupFromRuns(
+                    group.Key.ScenarioId,
+                    group.Key.StrategyId,
+                    group.OrderBy(run => run.Seed).ToArray())
+            })
+            .ToArray();
+        var paired = CreatePairedGroups(evaluations);
+
+        return new AggregateReport
+        {
+            Groups = groups,
+            TruthGroups = truthGroups,
+            ConditionGroups = conditionGroups,
+            PairedWeftGroups = paired
+        };
     }
 
     private static StrategyScenarioAggregate CreateGroup(
         IGrouping<(string ScenarioId, string StrategyId), PerRunEvaluation> group)
     {
         var runs = group.OrderBy(run => run.Seed).ToArray();
+        return CreateGroupFromRuns(group.Key.ScenarioId, group.Key.StrategyId, runs);
+    }
+
+    private static StrategyScenarioAggregate CreateGroupFromRuns(
+        string scenarioId,
+        string strategyId,
+        IReadOnlyList<PerRunEvaluation> runs)
+    {
         var uniqueOutcomes = runs
             .Select(OutcomeFingerprint)
             .Distinct(StringComparer.Ordinal)
@@ -173,9 +288,9 @@ public sealed class AggregateEvaluator
 
         return new StrategyScenarioAggregate
         {
-            ScenarioId = group.Key.ScenarioId,
-            StrategyId = group.Key.StrategyId,
-            RunCount = runs.Length,
+            ScenarioId = scenarioId,
+            StrategyId = strategyId,
+            RunCount = runs.Count,
             MetricCompleteRunCount = runs.Count(HasCompleteCoreMetrics),
             GroundTruthContainment = Rate(runs.Select(run => run.GroundTruthContainment)),
             FalseExclusion = Rate(runs.Select(run => run.FalseExclusion)),
@@ -192,6 +307,47 @@ public sealed class AggregateEvaluator
             SearchSpaceReduction = Distribution(runs
                 .Where(run => run.SearchSpaceReduction.Available)
                 .Select(run => run.SearchSpaceReduction.Value!.Value)),
+            PreferredContainment = Rate(runs.Select(run => run.PreferredContainment)),
+            OuterPlausibleContainment = Rate(runs.Select(run => run.OuterPlausibleContainment)),
+            PreferredCandidateRegionCount = Distribution(runs
+                .Where(run => run.PreferredCandidateRegionCount.Available)
+                .Select(run => (decimal)run.PreferredCandidateRegionCount.Value!.Value)),
+            OuterPlausibleCandidateRegionCount = Distribution(runs
+                .Where(run => run.OuterPlausibleCandidateRegionCount.Available)
+                .Select(run => (decimal)run.OuterPlausibleCandidateRegionCount.Value!.Value)),
+            PreferredReduction = Distribution(runs
+                .Where(run => run.PreferredReduction.Available)
+                .Select(run => run.PreferredReduction.Value!.Value)),
+            OuterPlausibleReduction = Distribution(runs
+                .Where(run => run.OuterPlausibleReduction.Available)
+                .Select(run => run.OuterPlausibleReduction.Value!.Value)),
+            PreferredPersistenceFraction = Distribution(runs
+                .Where(run => run.PreferredGuidance.PersistenceFraction.Available)
+                .Select(run => run.PreferredGuidance.PersistenceFraction.Value!.Value)),
+            OuterSafePersistenceFraction = Distribution(runs
+                .Where(run => run.OuterSafeGuidance.PersistenceFraction.Available)
+                .Select(run => run.OuterSafeGuidance.PersistenceFraction.Value!.Value)),
+            PreferredTimeToUsefulGuidance = Distribution(runs
+                .Where(run => run.PreferredGuidance.TimeToUsefulGuidance.Available)
+                .Select(run => (decimal)run.PreferredGuidance.TimeToUsefulGuidance.Value!.Value)),
+            PreferredFinalGuidanceUseful = Rate(runs.Select(run =>
+                run.PreferredGuidance.FinalGuidanceUseful)),
+            PreferredGuidanceRegressedAfterUseful = Rate(runs.Select(run =>
+                run.PreferredGuidance.RegressedAfterUseful)),
+            OuterSafeTimeToUsefulGuidance = Distribution(runs
+                .Where(run => run.OuterSafeGuidance.TimeToUsefulGuidance.Available)
+                .Select(run => (decimal)run.OuterSafeGuidance.TimeToUsefulGuidance.Value!.Value)),
+            OuterSafeFinalGuidanceUseful = Rate(runs.Select(run =>
+                run.OuterSafeGuidance.FinalGuidanceUseful)),
+            OuterSafeGuidanceRegressedAfterUseful = Rate(runs.Select(run =>
+                run.OuterSafeGuidance.RegressedAfterUseful)),
+            CrossThreadConstraintAppliedCount = runs.Sum(run =>
+                run.CrossThreadConstraintAppliedCount.Value ?? 0),
+            CrossThreadConstraintConflictCount = runs.Sum(run =>
+                run.CrossThreadConstraintConflictCount.Value ?? 0),
+            CrossThreadConstraintBranchCount = runs.Sum(run =>
+                run.CrossThreadConstraintBranchCount.Value ?? 0),
+            RetainedAlternativeCount = runs.Sum(run => run.RetainedAlternativeCount.Value ?? 0),
             TimeToUsefulGuidance = Distribution(runs
                 .Where(run => run.TimeToUsefulGuidance.Available)
                 .Select(run => (decimal)run.TimeToUsefulGuidance.Value!.Value)),
@@ -234,10 +390,13 @@ public sealed class AggregateEvaluator
             SeedSensitivityNote = distinctSeedCount < 2
                 ? "seed sensitivity unavailable: fewer than two distinct seeds"
                 : uniqueOutcomes == 1
-                    ? group.Key.ScenarioId.StartsWith("s2-", StringComparison.Ordinal)
+                    ? scenarioId.StartsWith("s2-", StringComparison.Ordinal)
                         ? "current synthetic S2 strategy result is seed-insensitive"
-                        : "current M0 scenario is seed-insensitive for this strategy result"
-                    : group.Key.ScenarioId.StartsWith("s2-", StringComparison.Ordinal)
+                        : scenarioId.StartsWith("s3-", StringComparison.Ordinal)
+                            ? "current synthetic S3 strategy result is seed-insensitive"
+                            : "current M0 scenario is seed-insensitive for this strategy result"
+                    : scenarioId.StartsWith("s2-", StringComparison.Ordinal) ||
+                        scenarioId.StartsWith("s3-", StringComparison.Ordinal)
                         ? "outcomes vary across seeds in the synthetic stochastic scenario"
                         : "outcomes vary across seeds under current M0 observation timing"
         };
@@ -280,9 +439,115 @@ public sealed class AggregateEvaluator
             SecondaryTransportRunCount = runs.Count(run =>
                 run.SecondaryTransportEventCount > 0),
             SecondaryTransportEventCount = runs.Sum(run =>
-                run.SecondaryTransportEventCount)
+                run.SecondaryTransportEventCount),
+            PersonDeviceDifferentTerminalCount = runs.Count(run =>
+                run.RealizedPersonFinalRegionId is not null &&
+                run.RealizedDeviceFinalRegionIds.Values.Any(regionId => !string.Equals(
+                    regionId,
+                    run.RealizedPersonFinalRegionId,
+                    StringComparison.Ordinal))),
+            WeftEvidenceConditionCounts = runs
+                .Where(run => run.WeftEvidenceCondition is not null)
+                .GroupBy(run => run.WeftEvidenceCondition!.Value)
+                .OrderBy(grouping => grouping.Key)
+                .Select(grouping => new WeftEvidenceConditionCount
+                {
+                    Condition = grouping.Key,
+                    Count = grouping.Count()
+                })
+                .ToArray()
         };
     }
+
+    private static IReadOnlyList<PairedWeftAggregate> CreatePairedGroups(
+        IEnumerable<PerRunEvaluation> evaluations)
+    {
+        var pairs = evaluations
+            .Where(run => run.StrategyId is SearchStrategyIds.OwnEvidenceConstrained or
+                SearchStrategyIds.CrossThreadConstrained)
+            .GroupBy(run => (run.ScenarioId, run.Seed))
+            .Select(group => new
+            {
+                group.Key.ScenarioId,
+                group.Key.Seed,
+                Own = group.SingleOrDefault(run =>
+                    run.StrategyId == SearchStrategyIds.OwnEvidenceConstrained),
+                Cross = group.SingleOrDefault(run =>
+                    run.StrategyId == SearchStrategyIds.CrossThreadConstrained)
+            })
+            .Where(item => item.Own is not null && item.Cross is not null)
+            .Select(item => new Pair(item.ScenarioId, item.Seed, item.Own!, item.Cross!))
+            .OrderBy(item => item.ScenarioId, StringComparer.Ordinal)
+            .ThenBy(item => item.Seed)
+            .ToArray();
+
+        var result = new List<PairedWeftAggregate>();
+        foreach (var scenarioGroup in pairs.GroupBy(pair => pair.ScenarioId, StringComparer.Ordinal)
+            .OrderBy(group => group.Key, StringComparer.Ordinal))
+        {
+            result.Add(CreatePairedGroup(scenarioGroup.Key, null, scenarioGroup.ToArray()));
+            result.AddRange(scenarioGroup
+                .Where(pair => pair.Cross.WeftEvidenceCondition is not null)
+                .GroupBy(pair => pair.Cross.WeftEvidenceCondition!.Value)
+                .OrderBy(group => group.Key)
+                .Select(group => CreatePairedGroup(
+                    scenarioGroup.Key,
+                    group.Key,
+                    group.ToArray())));
+        }
+
+        return result;
+    }
+
+    private static PairedWeftAggregate CreatePairedGroup(
+        string scenarioId,
+        WeftEvidenceCondition? condition,
+        IReadOnlyList<Pair> pairs) => new()
+        {
+            ScenarioId = scenarioId,
+            Condition = condition,
+            PairCount = pairs.Count,
+            PreferredCandidateCountDelta = Distribution(pairs.Select(pair =>
+                (decimal)(pair.Cross.PreferredCandidateRegionCount.Value!.Value -
+                    pair.Own.PreferredCandidateRegionCount.Value!.Value))),
+            OuterPlausibleCandidateCountDelta = Distribution(pairs.Select(pair =>
+                (decimal)(pair.Cross.OuterPlausibleCandidateRegionCount.Value!.Value -
+                    pair.Own.OuterPlausibleCandidateRegionCount.Value!.Value))),
+            PreferredReductionDelta = Distribution(pairs.Select(pair =>
+                pair.Cross.PreferredReduction.Value!.Value - pair.Own.PreferredReduction.Value!.Value)),
+            OuterPlausibleReductionDelta = Distribution(pairs.Select(pair =>
+                pair.Cross.OuterPlausibleReduction.Value!.Value -
+                    pair.Own.OuterPlausibleReduction.Value!.Value)),
+            PreferredContainmentDelta = Distribution(pairs
+            .Where(pair => pair.Cross.PreferredContainment.Available &&
+                pair.Own.PreferredContainment.Available)
+            .Select(pair => BoolDecimal(pair.Cross.PreferredContainment.Value) -
+                BoolDecimal(pair.Own.PreferredContainment.Value))),
+            OuterPlausibleContainmentDelta = Distribution(pairs
+            .Where(pair => pair.Cross.OuterPlausibleContainment.Available &&
+                pair.Own.OuterPlausibleContainment.Available)
+            .Select(pair => BoolDecimal(pair.Cross.OuterPlausibleContainment.Value) -
+                BoolDecimal(pair.Own.OuterPlausibleContainment.Value))),
+            TimeToGuidanceDelta = Distribution(pairs
+            .Where(pair => pair.Cross.PreferredGuidance.TimeToUsefulGuidance.Available &&
+                pair.Own.PreferredGuidance.TimeToUsefulGuidance.Available)
+            .Select(pair => (decimal)(
+                pair.Cross.PreferredGuidance.TimeToUsefulGuidance.Value!.Value -
+                pair.Own.PreferredGuidance.TimeToUsefulGuidance.Value!.Value))),
+            PersistenceDelta = Distribution(pairs
+            .Where(pair => pair.Cross.PreferredGuidance.PersistenceFraction.Available &&
+                pair.Own.PreferredGuidance.PersistenceFraction.Available)
+            .Select(pair => pair.Cross.PreferredGuidance.PersistenceFraction.Value!.Value -
+                pair.Own.PreferredGuidance.PersistenceFraction.Value!.Value))
+        };
+
+    private static decimal BoolDecimal(bool? value) => value == true ? 1m : 0m;
+
+    private sealed record Pair(
+        string ScenarioId,
+        int Seed,
+        PerRunEvaluation Own,
+        PerRunEvaluation Cross);
 
     private static RateAggregate Rate(IEnumerable<BooleanMetric> metrics)
     {
@@ -337,10 +602,15 @@ public sealed class AggregateEvaluator
         return string.Join(
             "\n",
             string.Join("|", run.CandidateRegionIds),
+            string.Join("|", run.PreferredCandidateRegionIds),
+            string.Join("|", run.OuterPlausibleCandidateRegionIds),
+            string.Join("|", run.ConflictedCandidateRegionIds),
             string.Join("|", run.ConfirmedPersonRegionIds),
             string.Join("|", run.ExplicitlyExcludedRegionIds),
             run.EvidenceBoundaryState.ToString(),
             MetricText(run.GroundTruthContainment.Available, run.GroundTruthContainment.Value),
+            MetricText(run.PreferredContainment.Available, run.PreferredContainment.Value),
+            MetricText(run.OuterPlausibleContainment.Available, run.OuterPlausibleContainment.Value),
             MetricText(run.SearchSpaceFraction.Available, run.SearchSpaceFraction.Value),
             MetricText(run.SearchSpaceReduction.Available, run.SearchSpaceReduction.Value),
             MetricText(run.DeviceOnlyPromotionViolation.Available, run.DeviceOnlyPromotionViolation.Value),
@@ -351,7 +621,10 @@ public sealed class AggregateEvaluator
                 run.UsefulGuidancePersistenceFraction.Value),
             MetricText(
                 run.GuidanceRegressedAfterUseful.Available,
-                run.GuidanceRegressedAfterUseful.Value));
+                run.GuidanceRegressedAfterUseful.Value),
+            run.WeftEvidenceCondition?.ToString() ?? "no-weft-condition",
+            string.Join("|", run.CrossThreadConstraintAudits.Select(audit =>
+                $"{audit.SourceObservationId}:{audit.Disposition}:{audit.Reason}")));
     }
 
     private static string MetricText<T>(bool available, T? value)

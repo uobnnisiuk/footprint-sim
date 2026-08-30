@@ -10,7 +10,7 @@ public static class ScenarioValidator
     {
         ArgumentNullException.ThrowIfNull(scenario);
 
-        if (scenario.SchemaVersion is not (1 or 2))
+        if (scenario.SchemaVersion is not (1 or 2 or 3))
         {
             throw new InvalidDataException($"Unsupported scenario schema version {scenario.SchemaVersion}.");
         }
@@ -91,6 +91,9 @@ public static class ScenarioValidator
                 throw new InvalidDataException($"Unknown hazard envelope region '{envelopeRegionId}'.");
             }
         }
+
+
+        ValidateWeftEvaluation(scenario, regionIds);
 
         ValidateStochasticHazard(scenario, regionIds);
 
@@ -355,7 +358,7 @@ public static class ScenarioValidator
         var hazard = scenario.StochasticHazard;
         if (hazard is null)
         {
-            if (scenario.SchemaVersion == 2)
+            if (scenario.SchemaVersion is 2 or 3)
             {
                 throw new InvalidDataException(
                     "Scenario schema version 2 requires a stochastic hazard definition.");
@@ -364,7 +367,7 @@ public static class ScenarioValidator
             return;
         }
 
-        if (scenario.SchemaVersion != 2)
+        if (scenario.SchemaVersion is not (2 or 3))
         {
             throw new InvalidDataException(
                 "Stochastic hazard definitions require scenario schema version 2.");
@@ -647,6 +650,160 @@ public static class ScenarioValidator
         {
             throw new InvalidDataException(
                 "Declared hazard envelope regions must exactly match the public stochastic nodes.");
+        }
+    }
+
+
+    private static void ValidateWeftEvaluation(
+        ScenarioDefinition scenario,
+        ISet<string> regionIds)
+    {
+        var definition = scenario.WeftEvaluation;
+        if (definition is null)
+        {
+            if (scenario.SchemaVersion == 3)
+            {
+                throw new InvalidDataException(
+                    "Scenario schema version 3 requires a weft evaluation definition.");
+            }
+
+            if (scenario.EvaluationSearchableRegionIds.Count > 0)
+            {
+                throw new InvalidDataException(
+                    "A target-specific searchable region set requires scenario schema version 3.");
+            }
+
+            return;
+        }
+
+        if (scenario.SchemaVersion != 3)
+        {
+            throw new InvalidDataException(
+                "Weft evaluation definitions require scenario schema version 3.");
+        }
+
+        RequireText(definition.EncounterStepId, "Weft encounter step id");
+        RequireText(definition.OtherPersonId, "Weft other person id");
+        RequireText(definition.TargetDeviceId, "Weft target device id");
+        if (!scenario.Steps.Any(step => string.Equals(
+            step.Id,
+            definition.EncounterStepId,
+            StringComparison.Ordinal)))
+        {
+            throw new InvalidDataException(
+                $"Unknown weft encounter step '{definition.EncounterStepId}'.");
+        }
+
+        var encounterStep = scenario.Steps.Single(step => string.Equals(
+            step.Id,
+            definition.EncounterStepId,
+            StringComparison.Ordinal));
+        if (encounterStep.Kind != EventKind.Encounter ||
+            encounterStep.Tick != definition.HistoricalEndTick ||
+            !string.Equals(
+                encounterStep.RegionId ?? encounterStep.Position?.RegionId,
+                definition.EncounterRegionId,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                "The M1-C3 encounter step must match the configured encounter region and window end.");
+        }
+
+        if (!scenario.Entities.Persons.Any(person => string.Equals(
+            person.Id,
+            definition.OtherPersonId,
+            StringComparison.Ordinal)))
+        {
+            throw new InvalidDataException(
+                $"Unknown weft participant '{definition.OtherPersonId}'.");
+        }
+
+        if (!scenario.Entities.Devices.Any(device => string.Equals(
+            device.Id,
+            definition.TargetDeviceId,
+            StringComparison.Ordinal)))
+        {
+            throw new InvalidDataException(
+                $"Unknown weft target device '{definition.TargetDeviceId}'.");
+        }
+
+
+        if (!string.Equals(
+            scenario.StochasticHazard?.DeviceId,
+            definition.TargetDeviceId,
+            StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                "The M1-C3 target device must match the stochastic-hazard device.");
+        }
+
+        foreach (var regionId in definition.HistoricalCandidateRegionIds
+            .Append(definition.EncounterRegionId)
+            .Append(definition.ConflictingRegionId)
+            .Concat(scenario.EvaluationSearchableRegionIds))
+        {
+            if (!regionIds.Contains(regionId))
+            {
+                throw new InvalidDataException($"Unknown M1-C3 region '{regionId}'.");
+            }
+        }
+
+        if (definition.HistoricalCandidateRegionIds.Count == 0 ||
+            scenario.EvaluationSearchableRegionIds.Count == 0)
+        {
+            throw new InvalidDataException(
+                "M1-C3 historical candidates and searchable regions cannot be empty.");
+        }
+
+
+        if (!definition.HistoricalCandidateRegionIds.Contains(
+                definition.EncounterRegionId,
+                StringComparer.Ordinal) ||
+            !definition.HistoricalCandidateRegionIds.Contains(
+                definition.ConflictingRegionId,
+                StringComparer.Ordinal))
+        {
+            throw new InvalidDataException(
+                "M1-C3 encounter and conflicting regions must be public historical candidates.");
+        }
+
+        if (definition.HistoricalStartTick < 0 ||
+            definition.HistoricalEndTick < definition.HistoricalStartTick ||
+            definition.NormalAvailableAtTick < definition.HistoricalEndTick ||
+            definition.DelayedAvailableAtTick <= definition.NormalAvailableAtTick ||
+            definition.EvaluationEndTick < definition.DelayedAvailableAtTick)
+        {
+            throw new InvalidDataException("M1-C3 tick boundaries are inconsistent.");
+        }
+
+
+        var maximumHazardTick = scenario.StochasticHazard?.Nodes
+            .Select(node => node.MaximumArrivalTick)
+            .DefaultIfEmpty(0)
+            .Max() ?? 0;
+        if (definition.EvaluationEndTick < maximumHazardTick)
+        {
+            throw new InvalidDataException(
+                "M1-C3 evaluation end must cover the declared hazard arrival windows.");
+        }
+
+        var searchable = scenario.EvaluationSearchableRegionIds.ToHashSet(StringComparer.Ordinal);
+        var missingTerminal = scenario.StochasticHazard?.Nodes
+            .Where(node => node.IsRequiredTerminal)
+            .Select(node => node.RegionId)
+            .FirstOrDefault(regionId => !searchable.Contains(regionId));
+        if (missingTerminal is not null)
+        {
+            throw new InvalidDataException(
+                $"M1-C3 searchable regions omit required terminal '{missingTerminal}'.");
+        }
+
+        if (definition.ConditionCycle.Count == 0 ||
+            definition.ConditionCycle.Distinct().Count() !=
+            Enum.GetValues<WeftEvidenceCondition>().Length)
+        {
+            throw new InvalidDataException(
+                "M1-C3 condition cycle must contain every evidence condition at least once.");
         }
     }
 

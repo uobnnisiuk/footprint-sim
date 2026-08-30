@@ -17,6 +17,8 @@ This is a private research simulator, not an operational rescue or hazard-predic
 - Keep truth-side `InteractionOccurrence` out of observation, constraint, inference, and strategy contracts; an interaction observation or derived constraint is not an occurrence.
 - Apply cross-thread constraints to matching historical candidate-warp ticks/windows, then propagate with the public model; never intersect an encounter region directly with final candidates.
 - Preserve exact-tick versus interval semantics, relation/source-observation metadata, uncertain outer alternatives, and conflicts in CandidateWarp audits.
+- Keep S3 comparisons paired: generate truth once per scenario/seed, and allow only `cross-thread-constrained` to consume weft constraints.
+- Treat `candidateRegionIds` as the outer-safe schema-v2-compatible set; report preferred candidates separately and never count leaving preferred as hard exclusion while outer plausibility remains.
 - Keep scenario changes explicit and testable; do not imply real-world predictive accuracy.
 - Do not commit generated `results/`, `bin/`, `obj/`, or SDK artifacts.
 
