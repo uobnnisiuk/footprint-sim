@@ -10,7 +10,7 @@ This is a synthetic research simulator. Telemetry records its model execution; i
 
 ## Schema and stream boundary
 
-Telemetry has an independent `telemetrySchemaVersion`; M1-T0 introduced version `1`, and M1-D writes version `2` with additional tracing-constraint and tracing-step categories. Version-1 field meanings are unchanged. Telemetry versioning does not change evaluation schema version 3; field meanings are never silently repurposed.
+Telemetry has an independent `telemetrySchemaVersion`; M1-T0 introduced version `1`, M1-D introduced version `2` tracing records, M1-E introduced version `3` reconstruction records, and the M1-E method-composition correction writes version `4` with evidence-usage and actual-transition diagnostics. Earlier field meanings are unchanged. Telemetry versioning does not change the general evaluation schema version 3; field meanings are never silently repurposed. The separate past-state evaluation report is version 2 after adding disaggregated work fields.
 
 Three streams are physically separated under `telemetry/`:
 

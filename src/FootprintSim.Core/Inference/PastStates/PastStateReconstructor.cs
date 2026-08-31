@@ -29,31 +29,74 @@ public sealed class PastStateReconstructor
             PastStateMethod.BackwardTraversal,
             context,
             evidenceSet,
-            context.PublicCandidateStates);
+            context.PublicCandidateStates,
+            reconstruction.Candidates);
         var localStates = BuildLocalStates(context, reconstruction.Candidates);
-        var local = RunTraversal(
+        var localTraversal = RunTraversal(
             PastStateMethod.ReconstructionWithLocalTraversal,
             context,
             evidenceSet,
-            localStates);
+            localStates,
+            reconstruction.Candidates);
+        var local = localTraversal with
+        {
+            CandidateGenerationSteps = reconstruction.CandidateGenerationSteps
+        };
+        var reconstructionMethodId = MethodId(context.Query, PastStateMethod.ConstraintBasedReconstruction);
+        var generationSources = context.GenerationDirectSourceIds.ToHashSet(StringComparer.Ordinal);
+        var verificationSources = context.VerificationDirectSourceIds.ToHashSet(StringComparer.Ordinal);
+        var reconstructionUsages = evidenceSet.Constraints
+            .Where(item => Overlaps(item.ConstrainedTimeWindow, context.Query.TargetTimeWindow))
+            .Where(item => generationSources.Contains(item.DirectSourceId) ||
+                verificationSources.Contains(item.DirectSourceId))
+            .Select(item => CreateUsage(
+                context,
+                evidenceSet,
+                item,
+                generationSources.Contains(item.DirectSourceId)
+                    ? PastStateEvidenceUsageRole.CandidateGeneration
+                    : PastStateEvidenceUsageRole.CandidateVerification,
+                reconstructionMethodId))
+            .OrderBy(item => item.ConstraintId, StringComparer.Ordinal)
+            .ToArray();
+        var baseCandidateRegions = context.PublicCandidateStates
+            .Where(item => Overlaps(item.TimeWindow, context.Query.TargetTimeWindow))
+            .SelectMany(item => item.RegionIds)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(item => item, StringComparer.Ordinal)
+            .ToArray();
         var reconstructionMethod = new PastStateMethodResult
         {
+            MethodId = reconstructionMethodId,
             Method = PastStateMethod.ConstraintBasedReconstruction,
+            CandidateRegionIdsBefore = baseCandidateRegions,
             CandidateRegionIds = reconstruction.Candidates
                 .Select(item => item.RegionId)
                 .OrderBy(item => item, StringComparer.Ordinal)
                 .ToArray(),
             Steps = reconstruction.ReconstructionSteps,
+            CandidateGenerationSteps = reconstruction.CandidateGenerationSteps,
+            CandidateVerificationSteps = reconstruction.CandidateVerificationSteps,
+            ForwardTransitionSteps = 0,
+            BackwardTransitionSteps = 0,
             PublicRelationsInspected = reconstruction.PublicRelationsInspected,
             EvidenceRecordsInspected = reconstruction.EvidenceRecordsInspected,
-            SourceGroupsInspected = reconstruction.SourceGroupsInspected
+            SourceGroupsInspected = reconstruction.SourceGroupsInspected,
+            Diagnostics = new PastStateMethodDiagnostics
+            {
+                MethodId = reconstructionMethodId,
+                ConstraintUsages = reconstructionUsages
+            }
         };
+
+        var methods = new[] { backward, reconstructionMethod, local };
 
         return new PastStateComparisonResult
         {
             Query = context.Query,
             Reconstruction = reconstruction,
-            Methods = [backward, reconstructionMethod, local]
+            Methods = methods,
+            EvidenceUsage = BuildEvidenceUsage(context, evidenceSet, methods)
         };
     }
 
@@ -255,7 +298,9 @@ public sealed class PastStateReconstructor
             .SelectMany(item => item.VerificationSourceGroupIds.Concat(item.SharedAncestrySourceGroupIds))
             .Distinct(StringComparer.Ordinal)
             .Count();
-        var reconstructionSteps = 1 + generationGroups.Count + candidates.Length + verificationGroupsInspected;
+        var candidateGenerationSteps = 1 + generationGroups.Count + candidates.Length;
+        var candidateVerificationSteps = verificationGroupsInspected;
+        var reconstructionSteps = candidateGenerationSteps + candidateVerificationSteps;
         var reconstructionId = InteractionStableIdentifier.Create(
             "psr",
             query.QueryId,
@@ -271,6 +316,8 @@ public sealed class PastStateReconstructor
             Candidates = candidates,
             Verification = verification,
             ReconstructionSteps = reconstructionSteps,
+            CandidateGenerationSteps = candidateGenerationSteps,
+            CandidateVerificationSteps = candidateVerificationSteps,
             EvidenceRecordsInspected = evidenceSet.ObservationIds.Count + generation.Length +
                 availableVerificationConstraintCount,
             SourceGroupsInspected = generationGroups.Count + verificationGroupsInspected,
@@ -369,31 +416,96 @@ public sealed class PastStateReconstructor
         PastStateMethod method,
         PastStatePublicContext context,
         PublicEvidenceSet evidenceSet,
-        IReadOnlyList<PublicCandidateWarpStateDefinition> states)
+        IReadOnlyList<PublicCandidateWarpStateDefinition> states,
+        IReadOnlyList<PastStateCandidate> candidates)
     {
         var warps = PublicCandidateWarpFactory.Create(
             context.Query.ScenarioId,
             context.Query.Seed,
             context.Query.TargetEntityId,
             states);
-        var selectedConstraints = method == PastStateMethod.BackwardTraversal
-            ? evidenceSet.Constraints.Where(item =>
-                !Overlaps(item.ConstrainedTimeWindow, context.Query.TargetTimeWindow)).ToArray()
-            : evidenceSet.Constraints.Where(item => states.Any(state =>
-                Overlaps(item.ConstrainedTimeWindow, state.TimeWindow))).ToArray();
+        var methodId = MethodId(context.Query, method);
+        var traversalSources = context.TraversalDirectSourceIds.ToHashSet(StringComparer.Ordinal);
+        var selectedConstraints = evidenceSet.Constraints
+            .Where(item => traversalSources.Contains(item.DirectSourceId))
+            .Where(item => states.Any(state => Overlaps(item.ConstrainedTimeWindow, state.TimeWindow)))
+            .Where(item => method != PastStateMethod.BackwardTraversal ||
+                !Overlaps(item.ConstrainedTimeWindow, context.Query.TargetTimeWindow))
+            .OrderBy(item => item.ConstraintId, StringComparer.Ordinal)
+            .ToArray();
+        var sourceWarp = warps.Warps
+            .OrderBy(item => item.Standing)
+            .ThenBy(item => item.WarpId, StringComparer.Ordinal)
+            .First();
+        var candidateIdsByRegion = candidates.ToDictionary(
+            item => item.RegionId,
+            item => item.CandidateId,
+            StringComparer.Ordinal);
+        var localStateMembership = sourceWarp.States
+            .OrderBy(item => item.TimeWindow.StartTick)
+            .ThenBy(item => item.TimeWindow.EndTick)
+            .ThenBy(item => item.StateId, StringComparer.Ordinal)
+            .Select(item => new PastStateLocalStateMembership
+            {
+                StateId = item.StateId,
+                TimeWindow = item.TimeWindow,
+                IsTargetWindowState = Overlaps(item.TimeWindow, context.Query.TargetTimeWindow),
+                RegionIds = item.RegionIds,
+                CandidateIds = Overlaps(item.TimeWindow, context.Query.TargetTimeWindow)
+                    ? item.RegionIds
+                        .Where(candidateIdsByRegion.ContainsKey)
+                        .Select(region => candidateIdsByRegion[region])
+                        .Distinct(StringComparer.Ordinal)
+                        .OrderBy(item => item, StringComparer.Ordinal)
+                        .ToArray()
+                    : []
+            })
+            .ToArray();
         var tracing = new OperationalCausalTracer().Trace(
             warps,
             selectedConstraints,
             AccessContext(context.Query),
             context.PublicHazardEnvelope);
+        var forwardTransitionSteps = tracing.Steps.Count(item =>
+            item.Direction == CausalTracingDirection.Forward &&
+            item.RealTransitionTraversalOccurred);
+        var backwardTransitionSteps = tracing.Steps.Count(item =>
+            item.Direction == CausalTracingDirection.Backward &&
+            item.RealTransitionTraversalOccurred);
+        var constraintUsages = selectedConstraints
+            .Select(item => CreateUsage(
+                context,
+                evidenceSet,
+                item,
+                PastStateEvidenceUsageRole.Traversal,
+                methodId,
+                tracing.SourceGroups))
+            .OrderBy(item => item.ConstraintId, StringComparer.Ordinal)
+            .ToArray();
         return new PastStateMethodResult
         {
+            MethodId = methodId,
             Method = method,
+            CandidateRegionIdsBefore = sourceWarp.States
+                .Where(item => Overlaps(item.TimeWindow, context.Query.TargetTimeWindow))
+                .SelectMany(item => item.RegionIds)
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(item => item, StringComparer.Ordinal)
+                .ToArray(),
             CandidateRegionIds = tracing.CandidateWarps
                 .OuterPlausibleRegionIdsAt(context.Query.TargetTimeWindow.StartTick),
             Steps = method == PastStateMethod.BackwardTraversal
                 ? tracing.Steps.Count(item => item.Direction == CausalTracingDirection.Backward)
                 : tracing.Steps.Count,
+            CandidateGenerationSteps = 0,
+            CandidateVerificationSteps = 0,
+            ForwardTransitionSteps = forwardTransitionSteps,
+            BackwardTransitionSteps = backwardTransitionSteps,
+            TransitionIds = tracing.Steps
+                .SelectMany(item => item.TransitionIds)
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(item => item, StringComparer.Ordinal)
+                .ToArray(),
             PublicRelationsInspected = tracing.Steps.Count,
             EvidenceRecordsInspected = tracing.Steps
                 .Select(item => item.SourceObservationId)
@@ -401,7 +513,14 @@ public sealed class PastStateReconstructor
                 .Distinct(StringComparer.Ordinal)
                 .Count(),
             SourceGroupsInspected = tracing.SourceGroups.Count,
-            TracingSessionId = tracing.SessionId
+            TracingSessionId = tracing.SessionId,
+            Diagnostics = new PastStateMethodDiagnostics
+            {
+                MethodId = methodId,
+                ConstraintUsages = constraintUsages,
+                LocalStates = localStateMembership,
+                TracingSteps = tracing.Steps
+            }
         };
     }
 
@@ -409,14 +528,48 @@ public sealed class PastStateReconstructor
         PastStatePublicContext context,
         IReadOnlyList<PastStateCandidate> candidates)
     {
-        var minimum = Math.Max(0, context.Query.TargetTimeWindow.StartTick - context.LocalTraversalWindowPaddingTicks);
-        var maximum = checked(context.Query.TargetTimeWindow.EndTick + context.LocalTraversalWindowPaddingTicks);
-        var local = context.PublicCandidateStates
-            .Where(item => item.TimeWindow.StartTick <= maximum && minimum <= item.TimeWindow.EndTick)
+        var minimum = Math.Max(
+            0,
+            context.Query.TargetTimeWindow.StartTick - context.LocalTraversalWindowPaddingTicks);
+        var maximum = checked(
+            context.Query.TargetTimeWindow.EndTick + context.LocalTraversalWindowPaddingTicks);
+        var ordered = context.PublicCandidateStates
             .OrderBy(item => item.TimeWindow.StartTick)
             .ThenBy(item => item.TimeWindow.EndTick)
-            .Select(item => Overlaps(item.TimeWindow, context.Query.TargetTimeWindow)
-                ? item with
+            .ToArray();
+        var targetIndices = ordered
+            .Select((item, index) => (item, index))
+            .Where(pair => Overlaps(pair.item.TimeWindow, context.Query.TargetTimeWindow))
+            .Select(pair => pair.index)
+            .ToArray();
+        if (targetIndices.Length == 0)
+        {
+            throw new InvalidOperationException("No public candidate states cover the target window.");
+        }
+
+        var selectedIndices = ordered
+            .Select((item, index) => (item, index))
+            .Where(pair => pair.item.TimeWindow.StartTick <= maximum &&
+                minimum <= pair.item.TimeWindow.EndTick)
+            .Select(pair => pair.index)
+            .ToHashSet();
+        var firstTarget = targetIndices.Min();
+        var lastTarget = targetIndices.Max();
+        if (firstTarget > 0)
+        {
+            selectedIndices.Add(firstTarget - 1);
+        }
+
+        if (lastTarget < ordered.Length - 1)
+        {
+            selectedIndices.Add(lastTarget + 1);
+        }
+
+        var local = ordered
+            .Select((item, index) => (item, index))
+            .Where(pair => selectedIndices.Contains(pair.index))
+            .Select(pair => Overlaps(pair.item.TimeWindow, context.Query.TargetTimeWindow)
+                ? pair.item with
                 {
                     RegionIds = candidates
                         .Select(candidate => candidate.RegionId)
@@ -424,12 +577,111 @@ public sealed class PastStateReconstructor
                         .OrderBy(region => region, StringComparer.Ordinal)
                         .ToArray()
                 }
-                : item)
+                : pair.item)
             .ToArray();
         return local.Length == 0
             ? throw new InvalidOperationException("No public candidate states are available for local traversal.")
             : local;
     }
+
+    private static IReadOnlyList<PastStateConstraintUsage> BuildEvidenceUsage(
+        PastStatePublicContext context,
+        PublicEvidenceSet evidenceSet,
+        IReadOnlyList<PastStateMethodResult> methods)
+    {
+        var generationSources = context.GenerationDirectSourceIds.ToHashSet(StringComparer.Ordinal);
+        var verificationSources = context.VerificationDirectSourceIds.ToHashSet(StringComparer.Ordinal);
+        var traversalSources = context.TraversalDirectSourceIds.ToHashSet(StringComparer.Ordinal);
+        var usedByConstraint = methods
+            .SelectMany(item => item.Diagnostics?.ConstraintUsages ?? [])
+            .GroupBy(item => item.ConstraintId, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => group.SelectMany(item => item.MethodIds)
+                    .Distinct(StringComparer.Ordinal)
+                    .OrderBy(item => item, StringComparer.Ordinal)
+                    .ToArray(),
+                StringComparer.Ordinal);
+
+        return evidenceSet.Constraints
+            .Select(constraint =>
+            {
+                var roles = new List<PastStateEvidenceUsageRole>();
+                if (generationSources.Contains(constraint.DirectSourceId))
+                {
+                    roles.Add(PastStateEvidenceUsageRole.CandidateGeneration);
+                }
+
+                if (verificationSources.Contains(constraint.DirectSourceId))
+                {
+                    roles.Add(PastStateEvidenceUsageRole.CandidateVerification);
+                }
+
+                if (traversalSources.Contains(constraint.DirectSourceId))
+                {
+                    roles.Add(PastStateEvidenceUsageRole.Traversal);
+                }
+
+                if (roles.Count == 0)
+                {
+                    roles.Add(PastStateEvidenceUsageRole.EvaluationOnly);
+                }
+
+                var methodIds = usedByConstraint.GetValueOrDefault(constraint.ConstraintId) ?? [];
+                var usage = CreateUsage(
+                    context,
+                    evidenceSet,
+                    constraint,
+                    roles[0],
+                    methodIds.FirstOrDefault());
+                return usage with
+                {
+                    UsageRoles = roles.Distinct().OrderBy(item => item).ToArray(),
+                    MethodIds = methodIds,
+                    Disposition = methodIds.Length > 0
+                        ? PastStateEvidenceUsageDisposition.Used
+                        : PastStateEvidenceUsageDisposition.NotUsedForMethod
+                };
+            })
+            .OrderBy(item => item.ConstraintId, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static PastStateConstraintUsage CreateUsage(
+        PastStatePublicContext context,
+        PublicEvidenceSet evidenceSet,
+        CausalTracingConstraint constraint,
+        PastStateEvidenceUsageRole role,
+        string? methodId,
+        IReadOnlyList<TracingSourceGroup>? sourceGroups = null)
+    {
+        var group = (sourceGroups ?? evidenceSet.SourceGroups).FirstOrDefault(item =>
+            item.ConstraintIds.Contains(constraint.ConstraintId, StringComparer.Ordinal));
+        return new PastStateConstraintUsage
+        {
+            ConstraintId = constraint.ConstraintId,
+            SourceObservationId = constraint.SourceObservationId,
+            SourceObservationResolved = context.AvailableObservationIds.Contains(
+                constraint.SourceObservationId,
+                StringComparer.Ordinal),
+            DirectSourceId = constraint.DirectSourceId,
+            SourceGroupId = group?.SourceGroupId,
+            SourceAncestryIds = group?.SourceAncestryIds ?? constraint.SourceAncestryIds,
+            RelationKind = constraint.RelationKind,
+            EvidenceState = constraint.EvidenceBoundaryState,
+            UsageRoles = [role],
+            MethodIds = string.IsNullOrWhiteSpace(methodId) ? [] : [methodId],
+            Disposition = string.IsNullOrWhiteSpace(methodId)
+                ? PastStateEvidenceUsageDisposition.NotUsedForMethod
+                : PastStateEvidenceUsageDisposition.Used
+        };
+    }
+
+    private static string MethodId(PastStateQuery query, PastStateMethod method) =>
+        InteractionStableIdentifier.Create(
+            "psm",
+            query.QueryId,
+            method.ToString());
 
     private static PastStateCandidateDisposition DetermineCandidateDisposition(
         IReadOnlyList<CausalTracingConstraint> generation,

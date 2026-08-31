@@ -21,6 +21,12 @@ public sealed class M1ETests
     private static readonly Lazy<BatchEvaluationResult> SixConditionBatch =
         new(() => RunBatch(Enumerable.Range(0, 6).ToArray(), collectTelemetry: true));
 
+    private static readonly int[] FormerlyFailingSeeds =
+        [24, 36, 78, 90, 96, 120, 132, 138, 150, 162, 180];
+
+    private static readonly Lazy<BatchEvaluationResult> MethodCompositionBatch =
+        new(() => RunBatch([0, .. FormerlyFailingSeeds], collectTelemetry: true));
+
     [Fact]
     public void S5ExercisesEveryDeclaredConditionAndKeepsDistributedPublicSources()
     {
@@ -251,6 +257,196 @@ public sealed class M1ETests
                 verification.VerificationEvidenceIds,
                 comparison.Reconstruction.Candidates.Single(candidate =>
                     candidate.CandidateId == verification.CandidateId).GenerationEvidenceIds.Contains));
+
+        var usage = comparison.EvidenceUsage;
+        Assert.Contains(usage, item => item.UsageRoles.SequenceEqual(
+            [PastStateEvidenceUsageRole.CandidateGeneration]));
+        Assert.Contains(usage, item => item.UsageRoles.SequenceEqual(
+            [PastStateEvidenceUsageRole.CandidateVerification]));
+        Assert.Contains(usage, item => item.UsageRoles.SequenceEqual(
+            [PastStateEvidenceUsageRole.Traversal]));
+        Assert.All(
+            comparison.Methods.Single(item =>
+                item.Method == PastStateMethod.ReconstructionWithLocalTraversal)
+                .Diagnostics!.ConstraintUsages,
+            item => Assert.Equal([PastStateEvidenceUsageRole.Traversal], item.UsageRoles));
+    }
+
+    [Fact]
+    public void Seed24RecordsTheLegacyCompositionDefectAndUsesTheCorrectedContract()
+    {
+        var run = RunBySeed(24);
+        var comparison = run.PublicComparison;
+        var reconstruction = comparison.Methods.Single(item =>
+            item.Method == PastStateMethod.ConstraintBasedReconstruction);
+        var local = comparison.Methods.Single(item =>
+            item.Method == PastStateMethod.ReconstructionWithLocalTraversal);
+        var verificationConstraint = comparison.Reconstruction.EvidenceSet.Constraints.Single(item =>
+            string.Equals(item.DirectSourceId, "source-verification-west", StringComparison.Ordinal));
+
+        Assert.Equal("fork-east", run.TruthPersonRegionId);
+        Assert.Equal(["fork-east", "fork-west"], reconstruction.CandidateRegionIds);
+        Assert.Equal(EvidenceState.Confirmed, verificationConstraint.EvidenceBoundaryState);
+        Assert.Equal(["fork-west"], verificationConstraint.AllowedRegionIds);
+
+        // Historical characterization: the former method passed this verification-only
+        // constraint to the tracer, so its confirmed intersection produced only west.
+        Assert.Equal(
+            ["fork-west"],
+            reconstruction.CandidateRegionIds
+                .Intersect(verificationConstraint.AllowedRegionIds, StringComparer.Ordinal)
+                .OrderBy(item => item, StringComparer.Ordinal)
+                .ToArray());
+
+        Assert.Equal(["fork-east", "fork-west"], local.CandidateRegionIdsBefore);
+        Assert.Equal(["fork-east", "fork-west"], local.CandidateRegionIds);
+        Assert.True(local.ForwardTransitionSteps >= 1);
+        Assert.True(local.BackwardTransitionSteps >= 1);
+        Assert.NotEmpty(local.TransitionIds);
+        Assert.DoesNotContain(local.Diagnostics!.ConstraintUsages, item =>
+            item.UsageRoles.Contains(PastStateEvidenceUsageRole.CandidateVerification));
+
+        var east = comparison.Reconstruction.Candidates.Single(item => item.RegionId == "fork-east");
+        Assert.Equal(
+            CandidateVerificationDisposition.IndependentlyRefuted,
+            comparison.Reconstruction.Verification.Single(item => item.CandidateId == east.CandidateId).Disposition);
+    }
+
+    [Theory]
+    [InlineData(24)]
+    [InlineData(36)]
+    [InlineData(78)]
+    [InlineData(90)]
+    [InlineData(96)]
+    [InlineData(120)]
+    [InlineData(132)]
+    [InlineData(138)]
+    [InlineData(150)]
+    [InlineData(162)]
+    [InlineData(180)]
+    public void FormerFalseExclusionsRemainContainedAfterUsageSeparation(int seed)
+    {
+        var run = RunBySeed(seed);
+        var reconstruction = run.PublicComparison.Methods.Single(item =>
+            item.Method == PastStateMethod.ConstraintBasedReconstruction);
+        var local = run.PublicComparison.Methods.Single(item =>
+            item.Method == PastStateMethod.ReconstructionWithLocalTraversal);
+
+        Assert.Equal(PastStateEvidenceCondition.DistributedPublicEvidence, run.Condition);
+        Assert.Equal("fork-east", run.TruthPersonRegionId);
+        Assert.Contains(run.TruthPersonRegionId, reconstruction.CandidateRegionIds);
+        Assert.Contains(run.TruthPersonRegionId, local.CandidateRegionIds);
+        Assert.True(local.ForwardTransitionSteps + local.BackwardTransitionSteps >= 1);
+        Assert.DoesNotContain(local.Diagnostics!.ConstraintUsages, item =>
+            item.UsageRoles.Contains(PastStateEvidenceUsageRole.CandidateVerification));
+    }
+
+    [Fact]
+    public void TruthWestUsesTheSamePublicMethodContractAsTruthEast()
+    {
+        var west = RunBySeed(0);
+        var east = RunBySeed(24);
+        var westLocal = west.PublicComparison.Methods.Single(item =>
+            item.Method == PastStateMethod.ReconstructionWithLocalTraversal);
+        var eastLocal = east.PublicComparison.Methods.Single(item =>
+            item.Method == PastStateMethod.ReconstructionWithLocalTraversal);
+
+        Assert.Equal("fork-west", west.TruthPersonRegionId);
+        Assert.Equal("fork-east", east.TruthPersonRegionId);
+        Assert.Equal(westLocal.CandidateRegionIds, eastLocal.CandidateRegionIds);
+        Assert.Equal(westLocal.ForwardTransitionSteps, eastLocal.ForwardTransitionSteps);
+        Assert.Equal(westLocal.BackwardTransitionSteps, eastLocal.BackwardTransitionSteps);
+        Assert.Equal(
+            westLocal.Diagnostics!.ConstraintUsages.Select(item => item.UsageRoles),
+            eastLocal.Diagnostics!.ConstraintUsages.Select(item => item.UsageRoles));
+    }
+
+    [Fact]
+    public void VerificationOnlyReportsDispositionWithoutMutatingCandidates()
+    {
+        var comparison = VerificationOnlyFixture();
+        var reconstruction = comparison.Methods.Single(item =>
+            item.Method == PastStateMethod.ConstraintBasedReconstruction);
+        var local = comparison.Methods.Single(item =>
+            item.Method == PastStateMethod.ReconstructionWithLocalTraversal);
+
+        Assert.Equal(["east", "west"], reconstruction.CandidateRegionIds);
+        Assert.Equal(reconstruction.CandidateRegionIds, local.CandidateRegionIds);
+        Assert.Equal(0, local.ForwardTransitionSteps);
+        Assert.Equal(0, local.BackwardTransitionSteps);
+        var candidates = comparison.Reconstruction.Candidates.ToDictionary(
+            item => item.RegionId,
+            StringComparer.Ordinal);
+        Assert.Equal(
+            CandidateVerificationDisposition.IndependentlyRefuted,
+            comparison.Reconstruction.Verification.Single(item =>
+                item.CandidateId == candidates["east"].CandidateId).Disposition);
+        Assert.Equal(
+            CandidateVerificationDisposition.IndependentlySupported,
+            comparison.Reconstruction.Verification.Single(item =>
+                item.CandidateId == candidates["west"].CandidateId).Disposition);
+        var evaluationOnly = comparison.EvidenceUsage.Single(item =>
+            string.Equals(item.DirectSourceId, "unused-source", StringComparison.Ordinal));
+        Assert.Equal([PastStateEvidenceUsageRole.EvaluationOnly], evaluationOnly.UsageRoles);
+        Assert.Equal(PastStateEvidenceUsageDisposition.NotUsedForMethod, evaluationOnly.Disposition);
+    }
+
+    [Fact]
+    public void LocalTraversalUsesPublicTransitionsWithoutTruthParents()
+    {
+        var comparison = TransitionFixture();
+        var local = comparison.Methods.Single(item =>
+            item.Method == PastStateMethod.ReconstructionWithLocalTraversal);
+
+        Assert.Equal(["A", "X"], local.CandidateRegionIdsBefore);
+        Assert.Equal(["A"], local.CandidateRegionIds);
+        Assert.True(local.ForwardTransitionSteps >= 1);
+        Assert.True(local.BackwardTransitionSteps >= 1);
+        Assert.NotEmpty(local.TransitionIds);
+        Assert.Equal(2, local.Diagnostics!.LocalStates.Count);
+        Assert.Contains(local.Diagnostics.TracingSteps, item =>
+            item.RealTransitionTraversalOccurred && item.TransitionIds.Count > 0);
+        Assert.Contains(local.Diagnostics.TracingSteps, item =>
+            item.Direction == CausalTracingDirection.Backward &&
+            item.CandidateInputRegionIds.SequenceEqual(["A", "X"]) &&
+            item.CandidateOutputRegionIds.SequenceEqual(["A"]));
+        Assert.DoesNotContain(typeof(CausalTracingStepAudit).GetProperties(), property =>
+            property.Name.Contains("Truth", StringComparison.OrdinalIgnoreCase) ||
+            property.Name.Contains("Parent", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void S5ConstraintSourcesReportResolvedAndUnresolvedObservationReferences()
+    {
+        var comparison = RunBySeed(24).PublicComparison;
+        var simulation = new SimulationEngine().Run(Scenario(), 24);
+        var environmental = comparison.EvidenceUsage.Single(item =>
+            string.Equals(item.DirectSourceId, "source-verification-west", StringComparison.Ordinal));
+        var traversal = comparison.EvidenceUsage.Single(item =>
+            string.Equals(item.DirectSourceId, "source-known-later-state", StringComparison.Ordinal));
+
+        Assert.True(environmental.SourceObservationResolved);
+        Assert.True(traversal.SourceObservationResolved);
+        var environmentalObservation = simulation.ObservationSet.Observations.Single(item =>
+            string.Equals(item.EvidenceType, "public-environment-west", StringComparison.Ordinal));
+        Assert.Equal(environmentalObservation.ObservationId, environmental.SourceObservationId);
+        Assert.Equal(EvidenceState.Confirmed, environmentalObservation.State);
+        Assert.Equal("fork-west", environmentalObservation.ReportedRegionId);
+        var generated = simulation.GroundTruthEvents.Single(item =>
+            item.Kind == FootprintSim.Events.EventKind.ObservationGenerated &&
+            item.Payload.TryGetValue("observationId", out var observationId) &&
+            string.Equals(
+                observationId.GetString(),
+                environmentalObservation.ObservationId,
+                StringComparison.Ordinal));
+        Assert.Contains(simulation.GroundTruthEvents, item =>
+            string.Equals(item.Id, generated.CauseEventId, StringComparison.Ordinal) &&
+            item.Kind == FootprintSim.Events.EventKind.EvidenceExchanged);
+        Assert.Equal("fork-east", RunBySeed(24).TruthPersonRegionId);
+        Assert.Contains(
+            SixConditionBatch.Value.Telemetry!.Evaluation.PastStateQueries
+                .SelectMany(item => item.EvidenceUsage),
+            item => !item.SourceObservationResolved);
     }
 
     [Fact]
@@ -333,15 +529,30 @@ public sealed class M1ETests
     }
 
     [Fact]
-    public async Task TelemetryVersionThreeSeparatesQueryCandidateVerificationAndMethodRecords()
+    public async Task TelemetryVersionFourAuditsEvidenceUsageAndLocalTraversal()
     {
         var result = RunBatch([0], collectTelemetry: true);
         var telemetry = result.Telemetry!;
-        Assert.Equal(3, telemetry.Manifest.TelemetrySchemaVersion);
+        Assert.Equal(4, telemetry.Manifest.TelemetrySchemaVersion);
         Assert.Single(telemetry.Evaluation.PastStateQueries);
         Assert.NotEmpty(telemetry.Evaluation.PastStateCandidates);
         Assert.NotEmpty(telemetry.Evaluation.CandidateVerifications);
         Assert.Equal(3, telemetry.Evaluation.PastStateMethods.Count);
+        Assert.Contains(telemetry.Evaluation.PastStateQueries.Single().EvidenceUsage, item =>
+            item.UsageRoles.Contains(PastStateEvidenceUsageRole.CandidateVerification));
+        var local = telemetry.Evaluation.PastStateMethods.Single(item =>
+            item.Method == PastStateMethod.ReconstructionWithLocalTraversal);
+        Assert.True(local.ForwardTransitionSteps >= 1);
+        Assert.True(local.BackwardTransitionSteps >= 1);
+        Assert.NotEmpty(local.LocalStates);
+        Assert.NotEmpty(local.TransitionIds);
+        Assert.Equal(
+            local.Steps,
+            telemetry.Evaluation.CausalTracingSteps.Count(item =>
+                string.Equals(item.MethodId, local.MethodId, StringComparison.Ordinal)));
+        Assert.Contains(telemetry.Evaluation.CausalTracingSteps, item =>
+            item.PastStateMethod == PastStateMethod.ReconstructionWithLocalTraversal &&
+            item.RealTransitionTraversalOccurred);
         Assert.DoesNotContain(typeof(PastStateCandidateTelemetryRecord).GetProperties(), property =>
             property.Name.Contains("Truth", StringComparison.OrdinalIgnoreCase));
 
@@ -380,6 +591,137 @@ public sealed class M1ETests
 
     private static PastStateRunEvaluation Run(PastStateEvidenceCondition condition) =>
         SixConditionBatch.Value.PastStateReconstruction!.Runs.Single(item => item.Condition == condition);
+
+    private static PastStateRunEvaluation RunBySeed(int seed) =>
+        MethodCompositionBatch.Value.PastStateReconstruction!.Runs.Single(item => item.Seed == seed);
+
+    private static PastStateComparisonResult VerificationOnlyFixture()
+    {
+        const string scenarioId = "verification-only-fixture";
+        const int seed = 5;
+        var query = PastStateQuery.Create(
+            scenarioId,
+            seed,
+            "person-a",
+            InteractionTimeWindow.At(5),
+            "verification-only-query",
+            10);
+        var verification = CausalTracingConstraint.Create(
+            scenarioId,
+            seed,
+            "verification-observation",
+            "verification-source",
+            ["verification-ancestry"],
+            "person-a",
+            TracingConstraintSourceKind.PublicEnvironmentalObservation,
+            "fixture-verification",
+            [new InteractionParticipant(
+                "person-a",
+                InteractionEntityKind.Person,
+                InteractionParticipantRole.EncounterParticipant)],
+            TracingConstraintRole.Local,
+            InteractionTimeWindow.At(8),
+            InteractionTimeWindow.At(5),
+            ["west"],
+            9,
+            EvidenceState.Confirmed,
+            isPersonEvidence: true,
+            isDeviceOnlyEvidence: false,
+            InteractionVisibility.PublicEvidence,
+            "fixture-verification-derivation",
+            [new InteractionProvenance(
+                InteractionProvenanceKind.ExternalSource,
+                "verification-source")]);
+
+        return new PastStateReconstructor().Compare(
+            new PastStatePublicContext
+            {
+                Query = query,
+                PublicCandidateStates = [PublicState(5, ["east", "west"])],
+                VerificationDirectSourceIds = ["verification-source"],
+                AvailableObservationIds = ["verification-observation"],
+                LocalTraversalWindowPaddingTicks = 0
+            },
+            new ObservationSet { ScenarioId = scenarioId, Seed = seed, Observations = [] },
+            new CausalTracingConstraintSet(
+                scenarioId,
+                seed,
+                [
+                    verification,
+                    FixtureConstraint(
+                        scenarioId,
+                        seed,
+                        "unused-observation",
+                        "unused-source",
+                        EvidenceState.UnsupportedForQuery)
+                ]));
+    }
+
+    private static PastStateComparisonResult TransitionFixture()
+    {
+        const string scenarioId = "transition-only-fixture";
+        const int seed = 7;
+        var query = PastStateQuery.Create(
+            scenarioId,
+            seed,
+            "person-a",
+            InteractionTimeWindow.At(0),
+            "transition-only-query",
+            10);
+        return new PastStateReconstructor().Compare(
+            new PastStatePublicContext
+            {
+                Query = query,
+                PublicCandidateStates =
+                [
+                    PublicState(0, ["A", "X"]),
+                    PublicState(5, ["B"])
+                ],
+                LocalTraversalWindowPaddingTicks = 0,
+                PublicHazardEnvelope = new FootprintSim.Hazards.PublicHazardEnvelope
+                {
+                    HazardId = "public-transition-fixture",
+                    SourceRegionId = "A",
+                    PublishedAtTick = 0,
+                    Branches =
+                    [
+                        new FootprintSim.Hazards.PublicHazardBranch
+                        {
+                            SourceRegionId = "A",
+                            DestinationRegionId = "B",
+                            MinimumTravelTicks = 5,
+                            MaximumTravelTicks = 5,
+                            TransportType = FootprintSim.Hazards.HazardTransportType.HazardDriven,
+                            ProvenanceId = "public-a-b",
+                            PublishedAtTick = 0
+                        }
+                    ]
+                }
+            },
+            new ObservationSet { ScenarioId = scenarioId, Seed = seed, Observations = [] },
+            new CausalTracingConstraintSet(scenarioId, seed, []));
+    }
+
+    private static PublicCandidateWarpStateDefinition PublicState(
+        long tick,
+        IReadOnlyList<string> regions) => new()
+        {
+            TimeWindow = InteractionTimeWindow.At(tick),
+            TemporalKind = CandidateWarpTemporalKind.EventPoint,
+            RegionIds = regions,
+            EvidenceBoundaryState = EvidenceState.SupportedButUncertain,
+            Provenance =
+            [
+                CandidateWarpProvenance.Create(
+                    CandidateWarpSourceKind.PublicCausalModel,
+                    $"fixture-public-state-{tick}",
+                    availableAtTick: 0,
+                    isPersonEvidence: true,
+                    isDeviceOnlyEvidence: false,
+                    EvidenceState.SupportedButUncertain,
+                    regions)
+            ]
+        };
 
     private static PastStateReconstructionResult ReconstructFixture(
         EvidenceState? evidenceState,

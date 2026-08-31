@@ -349,6 +349,10 @@ public sealed record CausalTracingStepAudit
 
     public required string TargetEntityId { get; init; }
 
+    public string? SourceStateId { get; init; }
+
+    public string? DestinationStateId { get; init; }
+
     public string? ConstraintId { get; init; }
 
     public string? SourceObservationId { get; init; }
@@ -366,6 +370,10 @@ public sealed record CausalTracingStepAudit
     public IReadOnlyList<string> CandidateInputRegionIds { get; init; } = [];
 
     public IReadOnlyList<string> CandidateOutputRegionIds { get; init; } = [];
+
+    public IReadOnlyList<string> TransitionIds { get; init; } = [];
+
+    public required bool RealTransitionTraversalOccurred { get; init; }
 
     public IReadOnlyList<string> AppliedConstraintIds { get; init; } = [];
 

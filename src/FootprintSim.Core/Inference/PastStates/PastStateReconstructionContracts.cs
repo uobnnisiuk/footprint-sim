@@ -3,6 +3,7 @@ using FootprintSim.Hazards;
 using FootprintSim.Interactions;
 using FootprintSim.Interactions.CandidateWarps;
 using FootprintSim.Interactions.Tracing;
+using System.Text.Json.Serialization;
 
 namespace FootprintSim.Inference.PastStates;
 
@@ -30,6 +31,69 @@ public enum PastStateMethod
     BackwardTraversal,
     ConstraintBasedReconstruction,
     ReconstructionWithLocalTraversal
+}
+
+public enum PastStateEvidenceUsageRole
+{
+    CandidateGeneration,
+    CandidateVerification,
+    Traversal,
+    EvaluationOnly
+}
+
+public enum PastStateEvidenceUsageDisposition
+{
+    Used,
+    NotUsedForMethod
+}
+
+public sealed record PastStateConstraintUsage
+{
+    public required string ConstraintId { get; init; }
+
+    public required string SourceObservationId { get; init; }
+
+    public required bool SourceObservationResolved { get; init; }
+
+    public required string DirectSourceId { get; init; }
+
+    public string? SourceGroupId { get; init; }
+
+    public IReadOnlyList<string> SourceAncestryIds { get; init; } = [];
+
+    public required string RelationKind { get; init; }
+
+    public required EvidenceState EvidenceState { get; init; }
+
+    public IReadOnlyList<PastStateEvidenceUsageRole> UsageRoles { get; init; } = [];
+
+    public IReadOnlyList<string> MethodIds { get; init; } = [];
+
+    public required PastStateEvidenceUsageDisposition Disposition { get; init; }
+}
+
+public sealed record PastStateLocalStateMembership
+{
+    public required string StateId { get; init; }
+
+    public required InteractionTimeWindow TimeWindow { get; init; }
+
+    public required bool IsTargetWindowState { get; init; }
+
+    public IReadOnlyList<string> RegionIds { get; init; } = [];
+
+    public IReadOnlyList<string> CandidateIds { get; init; } = [];
+}
+
+public sealed record PastStateMethodDiagnostics
+{
+    public required string MethodId { get; init; }
+
+    public IReadOnlyList<PastStateConstraintUsage> ConstraintUsages { get; init; } = [];
+
+    public IReadOnlyList<PastStateLocalStateMembership> LocalStates { get; init; } = [];
+
+    public IReadOnlyList<CausalTracingStepAudit> TracingSteps { get; init; } = [];
 }
 
 public sealed record PastStateQuery
@@ -224,6 +288,10 @@ public sealed record PastStateReconstructionResult
 
     public required int ReconstructionSteps { get; init; }
 
+    public required int CandidateGenerationSteps { get; init; }
+
+    public required int CandidateVerificationSteps { get; init; }
+
     public required int EvidenceRecordsInspected { get; init; }
 
     public required int SourceGroupsInspected { get; init; }
@@ -233,11 +301,25 @@ public sealed record PastStateReconstructionResult
 
 public sealed record PastStateMethodResult
 {
+    public required string MethodId { get; init; }
+
     public required PastStateMethod Method { get; init; }
+
+    public IReadOnlyList<string> CandidateRegionIdsBefore { get; init; } = [];
 
     public IReadOnlyList<string> CandidateRegionIds { get; init; } = [];
 
     public required int Steps { get; init; }
+
+    public required int CandidateGenerationSteps { get; init; }
+
+    public required int CandidateVerificationSteps { get; init; }
+
+    public required int ForwardTransitionSteps { get; init; }
+
+    public required int BackwardTransitionSteps { get; init; }
+
+    public IReadOnlyList<string> TransitionIds { get; init; } = [];
 
     public required int PublicRelationsInspected { get; init; }
 
@@ -246,6 +328,9 @@ public sealed record PastStateMethodResult
     public required int SourceGroupsInspected { get; init; }
 
     public string? TracingSessionId { get; init; }
+
+    [JsonIgnore]
+    public PastStateMethodDiagnostics? Diagnostics { get; init; }
 }
 
 public sealed record PastStateComparisonResult
@@ -255,6 +340,9 @@ public sealed record PastStateComparisonResult
     public required PastStateReconstructionResult Reconstruction { get; init; }
 
     public IReadOnlyList<PastStateMethodResult> Methods { get; init; } = [];
+
+    [JsonIgnore]
+    public IReadOnlyList<PastStateConstraintUsage> EvidenceUsage { get; init; } = [];
 }
 
 public sealed record PastStatePublicContext
@@ -266,6 +354,10 @@ public sealed record PastStatePublicContext
     public IReadOnlyList<string> GenerationDirectSourceIds { get; init; } = [];
 
     public IReadOnlyList<string> VerificationDirectSourceIds { get; init; } = [];
+
+    public IReadOnlyList<string> TraversalDirectSourceIds { get; init; } = [];
+
+    public IReadOnlyList<string> AvailableObservationIds { get; init; } = [];
 
     public required int LocalTraversalWindowPaddingTicks { get; init; }
 

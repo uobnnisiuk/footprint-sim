@@ -18,6 +18,14 @@ public sealed record PastStateMethodEvaluation
 
     public required int Steps { get; init; }
 
+    public required int CandidateGenerationSteps { get; init; }
+
+    public required int CandidateVerificationSteps { get; init; }
+
+    public required int ForwardTransitionSteps { get; init; }
+
+    public required int BackwardTransitionSteps { get; init; }
+
     public required int PublicRelationsInspected { get; init; }
 
     public required int EvidenceRecordsInspected { get; init; }
@@ -131,6 +139,14 @@ public sealed record PastStateMethodAggregate
 
     public required decimal MeanSteps { get; init; }
 
+    public required decimal MeanCandidateGenerationSteps { get; init; }
+
+    public required decimal MeanCandidateVerificationSteps { get; init; }
+
+    public required decimal MeanForwardTransitionSteps { get; init; }
+
+    public required decimal MeanBackwardTransitionSteps { get; init; }
+
     public required decimal MeanPublicRelationsInspected { get; init; }
 
     public required decimal MeanEvidenceRecordsInspected { get; init; }
@@ -138,7 +154,7 @@ public sealed record PastStateMethodAggregate
 
 public sealed record PastStateReconstructionEvaluationReport
 {
-    public int SchemaVersion { get; init; } = 1;
+    public int SchemaVersion { get; init; } = 2;
 
     public required int SeedCount { get; init; }
 
@@ -180,6 +196,10 @@ public static class PastStateReconstructionEvaluationBuilder
                 ? 0m
                 : 1m - ((decimal)method.CandidateRegionIds.Count / reconstruction.InitialCandidateCount),
             Steps = method.Steps,
+            CandidateGenerationSteps = method.CandidateGenerationSteps,
+            CandidateVerificationSteps = method.CandidateVerificationSteps,
+            ForwardTransitionSteps = method.ForwardTransitionSteps,
+            BackwardTransitionSteps = method.BackwardTransitionSteps,
             PublicRelationsInspected = method.PublicRelationsInspected,
             EvidenceRecordsInspected = method.EvidenceRecordsInspected,
             SourceGroupsInspected = method.SourceGroupsInspected
@@ -302,6 +322,10 @@ public static class PastStateReconstructionEvaluationBuilder
                     MeanCandidateCount = Mean(group.Select(item => item.CandidateCount)),
                     MeanCandidateReduction = Mean(group.Select(item => item.CandidateReduction)),
                     MeanSteps = Mean(group.Select(item => item.Steps)),
+                    MeanCandidateGenerationSteps = Mean(group.Select(item => item.CandidateGenerationSteps)),
+                    MeanCandidateVerificationSteps = Mean(group.Select(item => item.CandidateVerificationSteps)),
+                    MeanForwardTransitionSteps = Mean(group.Select(item => item.ForwardTransitionSteps)),
+                    MeanBackwardTransitionSteps = Mean(group.Select(item => item.BackwardTransitionSteps)),
                     MeanPublicRelationsInspected = Mean(group.Select(item => item.PublicRelationsInspected)),
                     MeanEvidenceRecordsInspected = Mean(group.Select(item => item.EvidenceRecordsInspected))
                 };

@@ -110,7 +110,8 @@ public sealed class SimulationEngine
             scenario,
             seed,
             orderedEvents,
-            eventIdsByStep);
+            eventIdsByStep,
+            orderedObservations);
 
         return new SimulationRun
         {
@@ -140,11 +141,12 @@ public sealed class SimulationEngine
         ScenarioDefinition scenario,
         int seed,
         IReadOnlyList<SimulationEvent> events,
-        IReadOnlyDictionary<string, string> eventIdsByStep)
+        IReadOnlyDictionary<string, string> eventIdsByStep,
+        IReadOnlyList<ObservationRecord> observations)
     {
         if (scenario.PastStateReconstruction is not null)
         {
-            return CreatePastStateProjection(scenario, seed);
+            return CreatePastStateProjection(scenario, seed, observations);
         }
 
         if (scenario.CausalTracingEvaluation is not null)
@@ -395,7 +397,8 @@ public sealed class SimulationEngine
 
     private static InteractionProjection CreatePastStateProjection(
         ScenarioDefinition scenario,
-        int seed)
+        int seed,
+        IReadOnlyList<ObservationRecord> publicObservations)
     {
         var definition = scenario.PastStateReconstruction!;
         var condition = definition.ConditionCycle[(int)((uint)seed % definition.ConditionCycle.Count)];
@@ -405,6 +408,12 @@ public sealed class SimulationEngine
             .ToArray();
         var observations = new List<InteractionObservation>();
         var observationsByKey = new Dictionary<string, InteractionObservation>(StringComparer.Ordinal);
+        var publicObservationsByKey = publicObservations
+            .GroupBy(item => item.EvidenceType, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => group.OrderBy(item => item.ObservationId, StringComparer.Ordinal).First(),
+                StringComparer.Ordinal);
         foreach (var sourceGroup in active
             .Where(item => item.SourceKind == TracingConstraintSourceKind.CrossThreadObservation)
             .GroupBy(item => item.SourceObservationKey, StringComparer.Ordinal)
@@ -449,8 +458,13 @@ public sealed class SimulationEngine
             var hasObservation = observationsByKey.TryGetValue(
                 item.SourceObservationKey,
                 out var observation);
+            var hasPublicObservation = publicObservationsByKey.TryGetValue(
+                item.SourceObservationKey,
+                out var publicObservation);
             var sourceObservationId = hasObservation
                 ? observation!.ObservationId
+                : hasPublicObservation
+                    ? publicObservation!.ObservationId
                 : InteractionStableIdentifier.Create(
                     "iobs",
                     scenario.Id,
@@ -458,9 +472,13 @@ public sealed class SimulationEngine
                     item.SourceObservationKey);
             var sourceObservedWindow = hasObservation
                 ? observation!.ObservedTimeWindow
+                : hasPublicObservation
+                    ? InteractionTimeWindow.At(publicObservation!.ObservedTick)
                 : new InteractionTimeWindow(item.ObservedStartTick, item.ObservedEndTick);
             var availableAtTick = hasObservation
                 ? Math.Max(item.AvailableAtTick, observation!.AvailableAtTick)
+                : hasPublicObservation
+                    ? Math.Max(item.AvailableAtTick, publicObservation!.AvailableTick)
                 : item.AvailableAtTick;
             var otherEntity = item.OtherEntityId ?? scenario.TargetPersonId;
             var otherKind = item.SourceKind == TracingConstraintSourceKind.DeviceOnlyObservation

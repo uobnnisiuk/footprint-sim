@@ -133,7 +133,7 @@ dotnet run --project src/FootprintSim.Cli -- evaluate \
 
 ## Neutral telemetry（M1-T0）
 
-評価へ`--telemetry`を付けると、既存評価ファイルを変えずに、private truth、public/evidence、evaluation transitionを分離した決定的JSONLを`telemetry/`以下へ追加します。telemetry schema version 3はversion 2までの意味を維持し、past-state query、candidate、verification、method workを別recordとして追加します。event/interval、relation、support/conflict lineage、candidate before/after、provenanceとsource ancestryを中立記録として保持し、Good/Bad、Causal Shadow、Indexability、Nexus Resolution、救助優先度などのscoreは含めません。
+評価へ`--telemetry`を付けると、既存評価ファイルを変えずに、private truth、public/evidence、evaluation transitionを分離した決定的JSONLを`telemetry/`以下へ追加します。telemetry schema version 4はversion 3までの意味を維持し、M1-E method ID、evidence usage、source-observation resolution、local state、実際のforward/backward transitionとpublic transition referenceを追加します。past-state query、candidate、verification、method workは引き続き別recordです。event/interval、relation、support/conflict lineage、candidate before/after、provenanceとsource ancestryを中立記録として保持し、Good/Bad、Causal Shadow、Indexability、Nexus Resolution、救助優先度などのscoreは含めません。
 
 ```bash
 dotnet run --project src/FootprintSim.Cli -- evaluate \
@@ -174,7 +174,7 @@ dotnet run --project src/FootprintSim.Cli -- evaluate \
   --telemetry
 ```
 
-出力はbackward traversal、constraint-based reconstruction、reconstruction後のlocal traversalを同じseed/query/public inputで比較します。Addressabilityはtruth likelihoodではなく、Verifiabilityはgenerationとは別のlineage検査です。設計、preregistration、仏教方法論との限定的比較、命名監査は [M1-E past-state reconstruction](docs/m1e-past-state-reconstruction.md) を参照してください。
+出力はbackward traversal、constraint-based reconstruction、reconstruction後のlocal traversalを同じseed/query/public inputで比較します。Addressabilityはtruth likelihoodではなく、Verifiabilityはgenerationとは別のlineage検査です。設計、preregistration、仏教方法論との限定的比較、命名監査は [M1-E past-state reconstruction](docs/m1e-past-state-reconstruction.md)、verificationとtraversalの用途分離および修正版比較は [M1-E method-composition correction](docs/m1e-method-composition-fix.md) を参照してください。
 
 ## 構成
 

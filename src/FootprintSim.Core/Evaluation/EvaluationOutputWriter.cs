@@ -546,6 +546,7 @@ public sealed class EvaluationOutputWriter
             "schema_version,scenario_id,seed,condition,query_id,target_start_tick,target_end_tick," +
             "evidence_cutoff,truth_person_region,truth_device_region,method,initial_candidate_count," +
             "candidate_count,contains_truth,false_exclusion,candidate_reduction,steps," +
+            "candidate_generation_steps,candidate_verification_steps,forward_transition_steps,backward_transition_steps," +
             "public_relations_inspected,evidence_records_inspected,source_groups_inspected," +
             "addressable_candidate_count,deterministic_identity_rate,target_candidate_represented," +
             "supported_candidates,uncertain_candidates,unresolved_candidates,conflicted_candidates,unsupported_candidates," +
@@ -578,6 +579,10 @@ public sealed class EvaluationOutputWriter
                     Boolean(method.FalseExclusion),
                     Decimal(method.CandidateReduction),
                     method.Steps.ToString(CultureInfo.InvariantCulture),
+                    method.CandidateGenerationSteps.ToString(CultureInfo.InvariantCulture),
+                    method.CandidateVerificationSteps.ToString(CultureInfo.InvariantCulture),
+                    method.ForwardTransitionSteps.ToString(CultureInfo.InvariantCulture),
+                    method.BackwardTransitionSteps.ToString(CultureInfo.InvariantCulture),
                     method.PublicRelationsInspected.ToString(CultureInfo.InvariantCulture),
                     method.EvidenceRecordsInspected.ToString(CultureInfo.InvariantCulture),
                     method.SourceGroupsInspected.ToString(CultureInfo.InvariantCulture),

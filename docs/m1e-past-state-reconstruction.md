@@ -296,3 +296,13 @@ M1-E does not implement a twenty-four-condition engine, full Causal Weave, belie
 probabilistic source independence, complete observation pipeline, holder-specific record transport,
 active probing, Causal Nexus formalism, Causal Shadow metric, Good/Bad State-Space interpretation,
 rescue prioritization, real topology/physics, real-world calibration, or predictive validity.
+
+## Subsequent method-composition correction
+
+The original M1-E result for reconstruction with local traversal was 94.5% containment with 11/200
+false exclusions. Subsequent analysis found that verification-only evidence had been reused for
+candidate pruning and that the S5 local sessions performed zero actual transition traversals. The
+historical result is retained, but it cannot be interpreted as pure local-traversal performance.
+The preregistered corrected contract, evidence-use audit, and corrected experiment are recorded in
+[M1-E method-composition correction](m1e-method-composition-fix.md). Telemetry schema version 4 adds
+the corresponding diagnostics without changing version-3 field meanings.

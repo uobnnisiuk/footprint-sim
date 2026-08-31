@@ -9,7 +9,7 @@ namespace FootprintSim.Telemetry;
 
 public static class TelemetrySchema
 {
-    public const int Version = 3;
+    public const int Version = 4;
 }
 
 public enum TelemetryStreamKind
@@ -363,6 +363,12 @@ public sealed record CausalTracingStepTelemetryRecord
 
     public required string QueryContextId { get; init; }
 
+    public string? QueryId { get; init; }
+
+    public string? MethodId { get; init; }
+
+    public PastStateMethod? PastStateMethod { get; init; }
+
     public required string StepId { get; init; }
 
     public required int StepNumber { get; init; }
@@ -375,11 +381,21 @@ public sealed record CausalTracingStepTelemetryRecord
 
     public required string TargetEntityId { get; init; }
 
+    public string? SourceStateId { get; init; }
+
+    public string? DestinationStateId { get; init; }
+
+    public IReadOnlyList<string> CandidateIds { get; init; } = [];
+
     public string? ConstraintId { get; init; }
 
     public string? SourceObservationId { get; init; }
 
     public string? SourceGroupId { get; init; }
+
+    public bool? SourceObservationResolved { get; init; }
+
+    public IReadOnlyList<PastStateEvidenceUsageRole> EvidenceUsageRoles { get; init; } = [];
 
     public required string RelationKind { get; init; }
 
@@ -392,6 +408,10 @@ public sealed record CausalTracingStepTelemetryRecord
     public IReadOnlyList<string> CandidateInputRegionIds { get; init; } = [];
 
     public IReadOnlyList<string> CandidateOutputRegionIds { get; init; } = [];
+
+    public IReadOnlyList<string> TransitionIds { get; init; } = [];
+
+    public required bool RealTransitionTraversalOccurred { get; init; }
 
     public IReadOnlyList<string> AppliedConstraintIds { get; init; } = [];
 
@@ -514,7 +534,47 @@ public sealed record PastStateQueryTelemetryRecord
 
     public required int ExcludedFutureEvidenceCount { get; init; }
 
+    public IReadOnlyList<PastStateConstraintUsageTelemetryRecord> EvidenceUsage { get; init; } = [];
+
     public TelemetryVisibility Visibility { get; init; } = TelemetryVisibility.EvaluationContext;
+}
+
+public sealed record PastStateConstraintUsageTelemetryRecord
+{
+    public required string ConstraintId { get; init; }
+
+    public required string SourceObservationId { get; init; }
+
+    public required bool SourceObservationResolved { get; init; }
+
+    public required string DirectSourceId { get; init; }
+
+    public string? SourceGroupId { get; init; }
+
+    public IReadOnlyList<string> SourceAncestryIds { get; init; } = [];
+
+    public required string RelationKind { get; init; }
+
+    public required EvidenceState EvidenceState { get; init; }
+
+    public IReadOnlyList<PastStateEvidenceUsageRole> UsageRoles { get; init; } = [];
+
+    public IReadOnlyList<string> MethodIds { get; init; } = [];
+
+    public required PastStateEvidenceUsageDisposition Disposition { get; init; }
+}
+
+public sealed record PastStateLocalStateTelemetryRecord
+{
+    public required string StateId { get; init; }
+
+    public required TelemetryTimeWindow TimeWindow { get; init; }
+
+    public required bool IsTargetWindowState { get; init; }
+
+    public IReadOnlyList<string> RegionIds { get; init; } = [];
+
+    public IReadOnlyList<string> CandidateIds { get; init; } = [];
 }
 
 public sealed record PastStateCandidateTelemetryRecord
@@ -603,11 +663,25 @@ public sealed record PastStateMethodTelemetryRecord
 
     public required string QueryId { get; init; }
 
+    public required string MethodId { get; init; }
+
     public required PastStateMethod Method { get; init; }
+
+    public IReadOnlyList<string> CandidateRegionIdsBefore { get; init; } = [];
 
     public IReadOnlyList<string> CandidateRegionIds { get; init; } = [];
 
     public required int Steps { get; init; }
+
+    public required int CandidateGenerationSteps { get; init; }
+
+    public required int CandidateVerificationSteps { get; init; }
+
+    public required int ForwardTransitionSteps { get; init; }
+
+    public required int BackwardTransitionSteps { get; init; }
+
+    public IReadOnlyList<string> TransitionIds { get; init; } = [];
 
     public required int PublicRelationsInspected { get; init; }
 
@@ -616,6 +690,10 @@ public sealed record PastStateMethodTelemetryRecord
     public required int SourceGroupsInspected { get; init; }
 
     public string? TracingSessionId { get; init; }
+
+    public IReadOnlyList<PastStateConstraintUsageTelemetryRecord> ConstraintUsages { get; init; } = [];
+
+    public IReadOnlyList<PastStateLocalStateTelemetryRecord> LocalStates { get; init; } = [];
 
     public TelemetryVisibility Visibility { get; init; } = TelemetryVisibility.EvaluationContext;
 }

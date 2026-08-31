@@ -216,6 +216,8 @@ public sealed class BatchEvaluationRunner
                         .ToHashSet(StringComparer.Ordinal);
                     var verificationDefinitionIds = definition.VerificationConstraintDefinitionIds
                         .ToHashSet(StringComparer.Ordinal);
+                    var traversalDefinitionIds = definition.TraversalConstraintDefinitionIds
+                        .ToHashSet(StringComparer.Ordinal);
                     var comparison = new PastStateReconstructor().Compare(
                         new PastStatePublicContext
                         {
@@ -230,6 +232,19 @@ public sealed class BatchEvaluationRunner
                             VerificationDirectSourceIds = definition.Constraints
                                 .Where(item => verificationDefinitionIds.Contains(item.Id))
                                 .Select(item => item.DirectSourceId)
+                                .Distinct(StringComparer.Ordinal)
+                                .OrderBy(item => item, StringComparer.Ordinal)
+                                .ToArray(),
+                            TraversalDirectSourceIds = definition.Constraints
+                                .Where(item => traversalDefinitionIds.Contains(item.Id))
+                                .Select(item => item.DirectSourceId)
+                                .Distinct(StringComparer.Ordinal)
+                                .OrderBy(item => item, StringComparer.Ordinal)
+                                .ToArray(),
+                            AvailableObservationIds = simulation.ObservationSet.Observations
+                                .Select(item => item.ObservationId)
+                                .Concat((simulation.InteractionObservations?.Observations ?? [])
+                                    .Select(item => item.ObservationId))
                                 .Distinct(StringComparer.Ordinal)
                                 .OrderBy(item => item, StringComparer.Ordinal)
                                 .ToArray(),

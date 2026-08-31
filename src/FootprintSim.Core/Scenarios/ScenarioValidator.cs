@@ -1014,18 +1014,46 @@ public static class ScenarioValidator
         if (definition.GenerationConstraintDefinitionIds.Count == 0 ||
             definition.GenerationConstraintDefinitionIds.Any(item => !definitionIds.Contains(item)) ||
             definition.VerificationConstraintDefinitionIds.Count == 0 ||
-            definition.VerificationConstraintDefinitionIds.Any(item => !definitionIds.Contains(item)))
+            definition.VerificationConstraintDefinitionIds.Any(item => !definitionIds.Contains(item)) ||
+            definition.TraversalConstraintDefinitionIds.Count == 0 ||
+            definition.TraversalConstraintDefinitionIds.Any(item => !definitionIds.Contains(item)))
         {
             throw new InvalidDataException(
-                "M1-E generation and verification constraint identifiers must be declared separately.");
+                "M1-E generation, verification, and traversal constraint identifiers must be declared explicitly.");
         }
 
         if (definition.GenerationConstraintDefinitionIds.Intersect(
-            definition.VerificationConstraintDefinitionIds,
-            StringComparer.Ordinal).Any())
+                definition.VerificationConstraintDefinitionIds,
+                StringComparer.Ordinal).Any() ||
+            definition.GenerationConstraintDefinitionIds.Intersect(
+                definition.TraversalConstraintDefinitionIds,
+                StringComparer.Ordinal).Any() ||
+            definition.VerificationConstraintDefinitionIds.Intersect(
+                definition.TraversalConstraintDefinitionIds,
+                StringComparer.Ordinal).Any())
         {
             throw new InvalidDataException(
-                "M1-E generation and verification definition identifiers cannot overlap.");
+                "M1-E generation, verification, and traversal definition identifiers cannot overlap.");
+        }
+
+        var generationSources = definition.Constraints
+            .Where(item => definition.GenerationConstraintDefinitionIds.Contains(item.Id, StringComparer.Ordinal))
+            .Select(item => item.DirectSourceId)
+            .ToHashSet(StringComparer.Ordinal);
+        var verificationSources = definition.Constraints
+            .Where(item => definition.VerificationConstraintDefinitionIds.Contains(item.Id, StringComparer.Ordinal))
+            .Select(item => item.DirectSourceId)
+            .ToHashSet(StringComparer.Ordinal);
+        var traversalSources = definition.Constraints
+            .Where(item => definition.TraversalConstraintDefinitionIds.Contains(item.Id, StringComparer.Ordinal))
+            .Select(item => item.DirectSourceId)
+            .ToHashSet(StringComparer.Ordinal);
+        if (generationSources.Overlaps(verificationSources) ||
+            generationSources.Overlaps(traversalSources) ||
+            verificationSources.Overlaps(traversalSources))
+        {
+            throw new InvalidDataException(
+                "M1-E direct sources cannot cross usage roles without an explicit per-constraint usage contract.");
         }
 
         foreach (var constraint in definition.Constraints)

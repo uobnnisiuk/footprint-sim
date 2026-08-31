@@ -75,6 +75,8 @@ public sealed class PastStateReconstructionDefinition
     public IReadOnlyList<string> GenerationConstraintDefinitionIds { get; init; } = [];
 
     public IReadOnlyList<string> VerificationConstraintDefinitionIds { get; init; } = [];
+
+    public IReadOnlyList<string> TraversalConstraintDefinitionIds { get; init; } = [];
 }
 
 public enum CausalTracingCondition

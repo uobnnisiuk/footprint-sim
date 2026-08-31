@@ -394,18 +394,25 @@ public sealed class OperationalCausalTracer
         }
 
         var before = destination.Outer.ToArray();
-        var allowedOuter = destination.Outer
-            .Where(destinationRegion => source.Outer.Any(sourceRegion =>
-                direction == CausalTracingDirection.Forward
-                    ? CanReach(sourceRegion, source.Source.TimeWindow, destinationRegion, destination.Source.TimeWindow, envelope, context.CurrentTick)
-                    : CanReach(destinationRegion, destination.Source.TimeWindow, sourceRegion, source.Source.TimeWindow, envelope, context.CurrentTick)))
-            .ToHashSet(StringComparer.Ordinal);
-        var allowedPreferred = destination.Preferred
-            .Where(destinationRegion => source.Preferred.Any(sourceRegion =>
-                direction == CausalTracingDirection.Forward
-                    ? CanReach(sourceRegion, source.Source.TimeWindow, destinationRegion, destination.Source.TimeWindow, envelope, context.CurrentTick)
-                    : CanReach(destinationRegion, destination.Source.TimeWindow, sourceRegion, source.Source.TimeWindow, envelope, context.CurrentTick)))
-            .ToHashSet(StringComparer.Ordinal);
+        var transitionIds = new SortedSet<string>(StringComparer.Ordinal);
+        var allowedOuter = ReachableDestinationRegions(
+            source.Outer,
+            source.Source.TimeWindow,
+            destination.Outer,
+            destination.Source.TimeWindow,
+            envelope,
+            context.CurrentTick,
+            direction,
+            transitionIds);
+        var allowedPreferred = ReachableDestinationRegions(
+            source.Preferred,
+            source.Source.TimeWindow,
+            destination.Preferred,
+            destination.Source.TimeWindow,
+            envelope,
+            context.CurrentTick,
+            direction,
+            transitionIds);
         var conflict = allowedOuter.Count == 0;
         var changed = false;
         if (!conflict)
@@ -434,6 +441,7 @@ public sealed class OperationalCausalTracer
                 direction.ToString(),
                 source.Source.StateId,
                 destination.Source.StateId,
+                stepNumber.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 string.Join("|", before),
                 string.Join("|", destination.Outer));
         steps.Add(new CausalTracingStepAudit
@@ -448,6 +456,8 @@ public sealed class OperationalCausalTracer
                     : TracingConstraintRole.Downstream,
             TimeWindow = destination.Source.TimeWindow,
             TargetEntityId = context.TargetEntityId,
+            SourceStateId = source.Source.StateId,
+            DestinationStateId = destination.Source.StateId,
             RelationKind = relation,
             EvidenceState = EvidenceState.SupportedButUncertain,
             Disposition = conflict
@@ -458,6 +468,8 @@ public sealed class OperationalCausalTracer
                     : TracingStepReason.PublicTransitionConsistency,
             CandidateInputRegionIds = before,
             CandidateOutputRegionIds = destination.Outer.ToArray(),
+            TransitionIds = transitionIds.ToArray(),
+            RealTransitionTraversalOccurred = transitionIds.Count > 0,
             AlternativesRetained = conflict,
             ConflictDetected = conflict,
             Provenance = [new InteractionProvenance(
@@ -468,21 +480,69 @@ public sealed class OperationalCausalTracer
         return changed;
     }
 
-    private static bool CanReach(
+    private static HashSet<string> ReachableDestinationRegions(
+        IEnumerable<string> sourceRegions,
+        InteractionTimeWindow sourceWindow,
+        IEnumerable<string> destinationRegions,
+        InteractionTimeWindow destinationWindow,
+        PublicHazardEnvelope envelope,
+        long currentTick,
+        CausalTracingDirection direction,
+        ISet<string> transitionIds)
+    {
+        var allowed = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var destinationRegion in destinationRegions)
+        {
+            foreach (var sourceRegion in sourceRegions)
+            {
+                var reachable = direction == CausalTracingDirection.Forward
+                    ? TryFindPath(
+                        sourceRegion,
+                        sourceWindow,
+                        destinationRegion,
+                        destinationWindow,
+                        envelope,
+                        currentTick,
+                        out var path)
+                    : TryFindPath(
+                        destinationRegion,
+                        destinationWindow,
+                        sourceRegion,
+                        sourceWindow,
+                        envelope,
+                        currentTick,
+                        out path);
+                if (!reachable)
+                {
+                    continue;
+                }
+
+                allowed.Add(destinationRegion);
+                transitionIds.UnionWith(path);
+                break;
+            }
+        }
+
+        return allowed;
+    }
+
+    private static bool TryFindPath(
         string sourceRegion,
         InteractionTimeWindow sourceWindow,
         string destinationRegion,
         InteractionTimeWindow destinationWindow,
         PublicHazardEnvelope envelope,
-        long currentTick)
+        long currentTick,
+        out IReadOnlyList<string> transitionIds)
     {
         if (string.Equals(sourceRegion, destinationRegion, StringComparison.Ordinal))
         {
+            transitionIds = [];
             return sourceWindow.StartTick <= destinationWindow.EndTick;
         }
 
-        var queue = new Queue<(string Region, long MinimumTick, long MaximumTick, int Depth)>();
-        queue.Enqueue((sourceRegion, sourceWindow.StartTick, sourceWindow.EndTick, 0));
+        var queue = new Queue<(string Region, long MinimumTick, long MaximumTick, int Depth, IReadOnlyList<string> Path)>();
+        queue.Enqueue((sourceRegion, sourceWindow.StartTick, sourceWindow.EndTick, 0, []));
         var visited = new HashSet<string>(StringComparer.Ordinal);
         while (queue.Count > 0)
         {
@@ -500,19 +560,31 @@ public sealed class OperationalCausalTracer
             {
                 var minimum = checked(current.MinimumTick + branch.MinimumTravelTicks);
                 var maximum = checked(current.MaximumTick + branch.MaximumTravelTicks);
+                var transitionId = InteractionStableIdentifier.Create(
+                    "ptr",
+                    branch.SourceRegionId,
+                    branch.DestinationRegionId,
+                    InteractionStableIdentifier.Tick(branch.MinimumTravelTicks),
+                    InteractionStableIdentifier.Tick(branch.MaximumTravelTicks),
+                    branch.TransportType.ToString(),
+                    branch.ProvenanceId,
+                    InteractionStableIdentifier.Tick(branch.PublishedAtTick));
+                var path = current.Path.Append(transitionId).ToArray();
                 if (string.Equals(branch.DestinationRegionId, destinationRegion, StringComparison.Ordinal) &&
                     minimum <= destinationWindow.EndTick && destinationWindow.StartTick <= maximum)
                 {
+                    transitionIds = path;
                     return true;
                 }
 
                 if (current.Depth < envelope.Branches.Count && minimum <= destinationWindow.EndTick)
                 {
-                    queue.Enqueue((branch.DestinationRegionId, minimum, maximum, current.Depth + 1));
+                    queue.Enqueue((branch.DestinationRegionId, minimum, maximum, current.Depth + 1, path));
                 }
             }
         }
 
+        transitionIds = [];
         return false;
     }
 
@@ -551,6 +623,8 @@ public sealed class OperationalCausalTracer
             Role = constraint.Role,
             TimeWindow = constraint.ConstrainedTimeWindow,
             TargetEntityId = context.TargetEntityId,
+            SourceStateId = state.Source.StateId,
+            DestinationStateId = state.Source.StateId,
             ConstraintId = constraint.ConstraintId,
             SourceObservationId = constraint.SourceObservationId,
             SourceGroupId = sourceGroup.SourceGroupId,
@@ -560,6 +634,7 @@ public sealed class OperationalCausalTracer
             Reason = reason,
             CandidateInputRegionIds = input,
             CandidateOutputRegionIds = outputRegions,
+            RealTransitionTraversalOccurred = false,
             AppliedConstraintIds = (disposition is TracingStepDisposition.Applied or TracingStepDisposition.Branch)
                 ? [constraint.ConstraintId]
                 : [],
