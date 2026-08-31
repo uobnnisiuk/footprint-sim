@@ -153,6 +153,11 @@ derivations from one source family remain one structural group. Shared ancestry 
 counted as independent support. Verification can be independently supported, independently refuted,
 conflicting, unresolved, shared-ancestry-only, or unavailable.
 
+Generation and verification constraints are grouped within their respective subsets before ancestry
+comparison. A shared verification record therefore cannot change the candidate's generation group
+identifier, generation ancestry, or candidate address; only the overlap audit records the shared
+lineage.
+
 Candidate construction and candidate verification are evaluated independently. Candidate generation
 does not imply verification, and verification does not retroactively change candidate identity.
 

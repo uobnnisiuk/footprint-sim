@@ -126,10 +126,7 @@ public sealed class PastStateReconstructor
             throw new ArgumentException("Candidate and evidence query identifiers do not match.");
         }
 
-        var groupByConstraint = evidenceSet.SourceGroups
-            .SelectMany(group => group.ConstraintIds.Select(id => (id, group)))
-            .ToDictionary(item => item.id, item => item.group, StringComparer.Ordinal);
-        return Verify(context, evidenceSet, candidates, groupByConstraint);
+        return Verify(context, evidenceSet, candidates);
     }
 
     private PastStateReconstructionResult Reconstruct(
@@ -154,14 +151,8 @@ public sealed class PastStateReconstructor
             .Where(item => Overlaps(item.ConstrainedTimeWindow, query.TargetTimeWindow))
             .OrderBy(item => item.ConstraintId, StringComparer.Ordinal)
             .ToArray();
-        var groupByConstraint = evidenceSet.SourceGroups
-            .SelectMany(group => group.ConstraintIds.Select(id => (id, group)))
-            .ToDictionary(item => item.id, item => item.group, StringComparer.Ordinal);
-        var generationGroups = generation
-            .Select(item => groupByConstraint[item.ConstraintId])
-            .DistinctBy(item => item.SourceGroupId, StringComparer.Ordinal)
-            .OrderBy(item => item.SourceGroupId, StringComparer.Ordinal)
-            .ToArray();
+        var generationGroups = new OperationalCausalTracer()
+            .GroupSources(generation, AccessContext(query));
         var confirmedGroupRegions = generationGroups
             .Select(group => generation
                 .Where(item => group.ConstraintIds.Contains(item.ConstraintId, StringComparer.Ordinal))
@@ -264,7 +255,7 @@ public sealed class PastStateReconstructor
             .SelectMany(item => item.VerificationSourceGroupIds.Concat(item.SharedAncestrySourceGroupIds))
             .Distinct(StringComparer.Ordinal)
             .Count();
-        var reconstructionSteps = 1 + generationGroups.Length + candidates.Length + verificationGroupsInspected;
+        var reconstructionSteps = 1 + generationGroups.Count + candidates.Length + verificationGroupsInspected;
         var reconstructionId = InteractionStableIdentifier.Create(
             "psr",
             query.QueryId,
@@ -282,7 +273,7 @@ public sealed class PastStateReconstructor
             ReconstructionSteps = reconstructionSteps,
             EvidenceRecordsInspected = evidenceSet.ObservationIds.Count + generation.Length +
                 availableVerificationConstraintCount,
-            SourceGroupsInspected = generationGroups.Length + verificationGroupsInspected,
+            SourceGroupsInspected = generationGroups.Count + verificationGroupsInspected,
             PublicRelationsInspected = generation.Length + availableVerificationConstraintCount
         };
     }
@@ -290,8 +281,7 @@ public sealed class PastStateReconstructor
     private static IReadOnlyList<CandidateVerification> Verify(
         PastStatePublicContext context,
         PublicEvidenceSet evidenceSet,
-        IReadOnlyList<PastStateCandidate> candidates,
-        IReadOnlyDictionary<string, TracingSourceGroup> groupByConstraint)
+        IReadOnlyList<PastStateCandidate> candidates)
     {
         var verificationSources = context.VerificationDirectSourceIds.ToHashSet(StringComparer.Ordinal);
         var constraints = evidenceSet.Constraints
@@ -299,11 +289,11 @@ public sealed class PastStateReconstructor
             .Where(item => Overlaps(item.ConstrainedTimeWindow, context.Query.TargetTimeWindow))
             .OrderBy(item => item.ConstraintId, StringComparer.Ordinal)
             .ToArray();
-        var groups = constraints
-            .Select(item => groupByConstraint[item.ConstraintId])
-            .DistinctBy(item => item.SourceGroupId, StringComparer.Ordinal)
-            .OrderBy(item => item.SourceGroupId, StringComparer.Ordinal)
-            .ToArray();
+        var groups = new OperationalCausalTracer()
+            .GroupSources(constraints, AccessContext(context.Query));
+        var groupByConstraint = groups
+            .SelectMany(group => group.ConstraintIds.Select(id => (id, group)))
+            .ToDictionary(item => item.id, item => item.group, StringComparer.Ordinal);
 
         return candidates.Select(candidate =>
         {

@@ -196,6 +196,27 @@ public sealed class M1ETests
     }
 
     [Fact]
+    public void SharedVerificationDoesNotChangeGenerationGroupsOrCandidateAddresses()
+    {
+        var withoutVerification = ReconstructFixture(EvidenceState.Confirmed);
+        var withVerification = ReconstructFixture(
+            EvidenceState.Confirmed,
+            includeSharedVerification: true);
+
+        Assert.Equal(
+            withoutVerification.Candidates.Select(item => item.CandidateId),
+            withVerification.Candidates.Select(item => item.CandidateId));
+        Assert.Equal(
+            withoutVerification.Candidates.SelectMany(item => item.GenerationSourceGroupIds),
+            withVerification.Candidates.SelectMany(item => item.GenerationSourceGroupIds));
+        Assert.DoesNotContain(
+            withVerification.Candidates.SelectMany(item => item.SourceAncestryIds),
+            item => item.Contains("verification", StringComparison.Ordinal));
+        Assert.All(withVerification.Verification, item =>
+            Assert.Equal(CandidateVerificationDisposition.SharedAncestryOnly, item.Disposition));
+    }
+
+    [Fact]
     public void ObservationAndOccurrenceAreExaminedInBothDirections()
     {
         var observedWithoutOccurrence = new SimulationEngine().Run(Scenario(), 0);
@@ -360,7 +381,9 @@ public sealed class M1ETests
     private static PastStateRunEvaluation Run(PastStateEvidenceCondition condition) =>
         SixConditionBatch.Value.PastStateReconstruction!.Runs.Single(item => item.Condition == condition);
 
-    private static PastStateReconstructionResult ReconstructFixture(EvidenceState? evidenceState)
+    private static PastStateReconstructionResult ReconstructFixture(
+        EvidenceState? evidenceState,
+        bool includeSharedVerification = false)
     {
         const string scenarioId = "past-state-evidence-fixture";
         const int seed = 11;
@@ -371,37 +394,27 @@ public sealed class M1ETests
             new InteractionTimeWindow(5, 5),
             "fixture-query",
             10);
-        IReadOnlyList<CausalTracingConstraint> constraints = evidenceState is null
-            ? []
-            : new[]
-            {
-                CausalTracingConstraint.Create(
-                    scenarioId,
-                    seed,
-                    "fixture-observation",
-                    "fixture-generation-source",
-                    ["fixture-ancestry"],
-                    "person-a",
-                    TracingConstraintSourceKind.CrossThreadObservation,
-                    "fixture-relation",
-                    [new InteractionParticipant(
-                        "person-a",
-                        InteractionEntityKind.Person,
-                        InteractionParticipantRole.EncounterParticipant)],
-                    TracingConstraintRole.Local,
-                    InteractionTimeWindow.At(8),
-                    InteractionTimeWindow.At(5),
-                    ["region-a"],
-                    9,
-                    evidenceState.Value,
-                    isPersonEvidence: true,
-                    isDeviceOnlyEvidence: false,
-                    InteractionVisibility.PublicEvidence,
-                    "fixture-derivation",
-                    [new InteractionProvenance(
-                        InteractionProvenanceKind.ExternalSource,
-                        "fixture-generation-source")])
-            };
+        var constraints = new List<CausalTracingConstraint>();
+        if (evidenceState is not null)
+        {
+            constraints.Add(FixtureConstraint(
+                scenarioId,
+                seed,
+                "fixture-observation",
+                "fixture-generation-source",
+                evidenceState.Value));
+        }
+
+        if (includeSharedVerification)
+        {
+            constraints.Add(FixtureConstraint(
+                scenarioId,
+                seed,
+                "fixture-verification-observation",
+                "fixture-verification-source",
+                EvidenceState.Confirmed));
+        }
+
         return new PastStateReconstructor().Compare(
             new PastStatePublicContext
             {
@@ -428,12 +441,46 @@ public sealed class M1ETests
                     }
                 ],
                 GenerationDirectSourceIds = ["fixture-generation-source"],
-                VerificationDirectSourceIds = [],
+                VerificationDirectSourceIds = includeSharedVerification
+                    ? ["fixture-verification-source"]
+                    : [],
                 LocalTraversalWindowPaddingTicks = 0
             },
             new ObservationSet { ScenarioId = scenarioId, Seed = seed, Observations = [] },
             new CausalTracingConstraintSet(scenarioId, seed, constraints)).Reconstruction;
     }
+
+    private static CausalTracingConstraint FixtureConstraint(
+        string scenarioId,
+        int seed,
+        string observationId,
+        string directSourceId,
+        EvidenceState evidenceState) => CausalTracingConstraint.Create(
+            scenarioId,
+            seed,
+            observationId,
+            directSourceId,
+            ["fixture-ancestry"],
+            "person-a",
+            TracingConstraintSourceKind.CrossThreadObservation,
+            "fixture-relation",
+            [new InteractionParticipant(
+                "person-a",
+                InteractionEntityKind.Person,
+                InteractionParticipantRole.EncounterParticipant)],
+            TracingConstraintRole.Local,
+            InteractionTimeWindow.At(8),
+            InteractionTimeWindow.At(5),
+            ["region-a"],
+            9,
+            evidenceState,
+            isPersonEvidence: true,
+            isDeviceOnlyEvidence: false,
+            InteractionVisibility.PublicEvidence,
+            "fixture-derivation",
+            [new InteractionProvenance(
+                InteractionProvenanceKind.ExternalSource,
+                directSourceId)]);
 
     private static BatchEvaluationResult RunBatch(
         IReadOnlyList<int> seeds,
