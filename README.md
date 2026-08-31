@@ -174,7 +174,7 @@ dotnet run --project src/FootprintSim.Cli -- evaluate \
   --telemetry
 ```
 
-出力はbackward traversal、constraint-based reconstruction、reconstruction後のlocal traversalを同じseed/query/public inputで比較します。Addressabilityはtruth likelihoodではなく、Verifiabilityはgenerationとは別のlineage検査です。設計、preregistration、仏教方法論との限定的比較、命名監査は [M1-E past-state reconstruction](docs/m1e-past-state-reconstruction.md)、verificationとtraversalの用途分離および修正版比較は [M1-E method-composition correction](docs/m1e-method-composition-fix.md) を参照してください。
+出力はbackward traversal、constraint-based reconstruction、reconstruction後のlocal traversalを同じseed/query/public inputで比較します。Addressabilityはtruth likelihoodではなく、Verifiabilityはgenerationとは別のlineage検査です。設計、preregistration、仏教方法論との限定的比較、命名監査は [M1-E past-state reconstruction](docs/m1e-past-state-reconstruction.md)、verificationとtraversalの用途分離および修正版比較は [M1-E method-composition correction](docs/m1e-method-composition-fix.md)、S5の観測lineage・時間・局所state・公開topologyの前提監査は [M1-E2 synthetic-world representation validity](docs/m1e2-world-representation-validity.md) を参照してください。
 
 ## 構成
 

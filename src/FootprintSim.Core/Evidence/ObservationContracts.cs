@@ -5,10 +5,30 @@ namespace FootprintSim.Evidence;
 
 public enum EvidenceState
 {
+    /// <summary>
+    /// The evidence record is asserted without an uncertainty qualifier at the evidence boundary.
+    /// This is not a claim that the record matches simulation truth or has calibrated accuracy.
+    /// </summary>
     Confirmed,
+
+    /// <summary>
+    /// The evidence record carries an explicit uncertainty qualifier.
+    /// </summary>
     SupportedButUncertain,
+
+    /// <summary>
+    /// The evidence record explicitly conflicts with another claim or the query basis.
+    /// </summary>
     Conflicting,
+
+    /// <summary>
+    /// The evidence record does not determine the queried proposition.
+    /// </summary>
     Indeterminate,
+
+    /// <summary>
+    /// The evidence record exists but does not support this query.
+    /// </summary>
     UnsupportedForQuery
 }
 public sealed record ObservationRecord

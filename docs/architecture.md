@@ -69,6 +69,8 @@ M1-Eの`PastStateReconstructor`は、target entity/window/cutoffを持つ`PastSt
 
 比較は既存M1-D tracerによるpublic backward traversal、target windowでのconstraint-based reconstruction、reconstruction後のlocal public traversalの3操作です。public comparisonが完成した後だけ、`PastStateReconstructionEvaluationBuilder`がtruth historical stateを受けてcontainment/false exclusionを採点します。`PastStateCandidate`、query、public context、telemetry candidate recordにはtruth fieldがありません。
 
+M1-E2ではschema-v5のcutoff内record-backed sourceについて、source evidence typeの一意解決、observed tick、EvidenceState、availability、target-person/device-only subject境界をscenario validationで確認します。cross-thread sourceは明示的synthetic `InteractionObservation`として生成し、future/private sourceはpublic method inputから除外します。constraintのallowed regionとderivationは引き続きscenario-declared transformationであり、observation payloadから自動推定した事実ではありません。S5のpublic hazard topologyはmodel化したwest/east routeについて完全という人工scenario前提であり、現実のmissing edgeを不可能性へ変換する契約ではありません。
+
 ## 4. Footprint/EBPC inference boundary
 
 `IRescueInference.Infer` が受け取れるのは `RescueContext` と `ObservationSet` だけです。`SimulationRun` や `SimulationEvent` を引数にしないため、推論実装が隠れた正解を参照する必要はありません。

@@ -1,4 +1,6 @@
 using System.Reflection;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using FootprintSim.Evaluation;
 using FootprintSim.Evaluation.Truth;
 using FootprintSim.Evidence;
@@ -346,6 +348,8 @@ public sealed class M1ETests
     {
         var west = RunBySeed(0);
         var east = RunBySeed(24);
+        var westSimulation = new SimulationEngine().Run(Scenario(), 0);
+        var eastSimulation = new SimulationEngine().Run(Scenario(), 24);
         var westLocal = west.PublicComparison.Methods.Single(item =>
             item.Method == PastStateMethod.ReconstructionWithLocalTraversal);
         var eastLocal = east.PublicComparison.Methods.Single(item =>
@@ -359,6 +363,15 @@ public sealed class M1ETests
         Assert.Equal(
             westLocal.Diagnostics!.ConstraintUsages.Select(item => item.UsageRoles),
             eastLocal.Diagnostics!.ConstraintUsages.Select(item => item.UsageRoles));
+        Assert.Equal(
+            JsonDefaults.Serialize(westSimulation.ObservationSet.Observations
+                .OrderBy(item => item.EvidenceType, StringComparer.Ordinal)
+                .ThenBy(item => item.ObservedTick)
+                .Select(item => item with { ObservationId = "seed-independent-for-test" })),
+            JsonDefaults.Serialize(eastSimulation.ObservationSet.Observations
+                .OrderBy(item => item.EvidenceType, StringComparer.Ordinal)
+                .ThenBy(item => item.ObservedTick)
+                .Select(item => item with { ObservationId = "seed-independent-for-test" })));
     }
 
     [Fact]
@@ -416,7 +429,7 @@ public sealed class M1ETests
     }
 
     [Fact]
-    public void S5ConstraintSourcesReportResolvedAndUnresolvedObservationReferences()
+    public void S5UsedConstraintSourcesResolveToObservationsWithPreservedEvidenceState()
     {
         var comparison = RunBySeed(24).PublicComparison;
         var simulation = new SimulationEngine().Run(Scenario(), 24);
@@ -443,10 +456,180 @@ public sealed class M1ETests
             string.Equals(item.Id, generated.CauseEventId, StringComparison.Ordinal) &&
             item.Kind == FootprintSim.Events.EventKind.EvidenceExchanged);
         Assert.Equal("fork-east", RunBySeed(24).TruthPersonRegionId);
-        Assert.Contains(
+        Assert.All(
             SixConditionBatch.Value.Telemetry!.Evaluation.PastStateQueries
                 .SelectMany(item => item.EvidenceUsage),
-            item => !item.SourceObservationResolved);
+            item => Assert.True(item.SourceObservationResolved));
+
+        var shared = new SimulationEngine().Run(Scenario(), 1);
+        var conflicting = new SimulationEngine().Run(Scenario(), 2);
+        Assert.Contains(shared.ObservationSet.Observations, item =>
+            item.EvidenceType == "shared-record-check" &&
+            item.SubjectIds.SequenceEqual(["person-a"]) &&
+            item.State == EvidenceState.Confirmed);
+        Assert.Contains(conflicting.ObservationSet.Observations, item =>
+            item.EvidenceType == "independent-conflicting-check" &&
+            item.SubjectIds.SequenceEqual(["person-a"]) &&
+            item.State == EvidenceState.Conflicting);
+    }
+
+    [Fact]
+    public void UnresolvedSourceReferenceRemainsExplicitWithoutBecomingAbsence()
+    {
+        var resolved = VerificationOnlyFixture();
+        var unresolved = VerificationOnlyFixture(sourceObservationResolved: false);
+        var usage = unresolved.EvidenceUsage.Single(item =>
+            item.UsageRoles.Contains(PastStateEvidenceUsageRole.CandidateVerification));
+
+        Assert.False(usage.SourceObservationResolved);
+        Assert.Equal(
+            resolved.Reconstruction.Candidates.Select(item => item.RegionId),
+            unresolved.Reconstruction.Candidates.Select(item => item.RegionId));
+        Assert.Equal(
+            resolved.Reconstruction.Verification.Select(item => item.Disposition),
+            unresolved.Reconstruction.Verification.Select(item => item.Disposition));
+        Assert.DoesNotContain(typeof(PastStateConstraintUsage).GetProperties(), property =>
+            property.Name.Contains("Absent", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void S5ValidationRejectsMissingOrSemanticallyMismatchedRecordedSources()
+    {
+        Assert.Throws<InvalidDataException>(() => MutatedScenario(root =>
+        {
+            var steps = root["steps"]!.AsArray();
+            var source = steps.Single(item => item!["id"]!.GetValue<string>() == "shared-record-check-source");
+            steps.Remove(source);
+        }));
+        Assert.Throws<InvalidDataException>(() => MutatedScenario(root =>
+            root["steps"]!.AsArray()
+                .Single(item => item!["id"]!.GetValue<string>() == "public-environment-west-record")!["observation"]!["state"] =
+                    "supportedButUncertain"));
+        Assert.Throws<InvalidDataException>(() => MutatedScenario(root =>
+            root["steps"]!.AsArray()
+                .Single(item => item!["id"]!.GetValue<string>() == "device-later-fix")!["observation"]!["reportedSubjectIds"] =
+                    new JsonArray("person-a")));
+    }
+
+    [Fact]
+    public void ClosedIntervalsIncludeEqualBoundariesAndCutoffEquality()
+    {
+        const string scenarioId = "closed-interval-fixture";
+        const int seed = 17;
+        var query = PastStateQuery.Create(
+            scenarioId,
+            seed,
+            "person-a",
+            new InteractionTimeWindow(10, 12),
+            "closed-interval-query",
+            20);
+        var atBoundary = CausalTracingConstraint.Create(
+            scenarioId,
+            seed,
+            "boundary-observation",
+            "boundary-source",
+            ["boundary-ancestry"],
+            "person-a",
+            TracingConstraintSourceKind.CrossThreadObservation,
+            "boundary-relation",
+            [new InteractionParticipant(
+                "person-a",
+                InteractionEntityKind.Person,
+                InteractionParticipantRole.EncounterParticipant)],
+            TracingConstraintRole.Local,
+            InteractionTimeWindow.At(20),
+            new InteractionTimeWindow(12, 13),
+            ["A"],
+            20,
+            EvidenceState.Confirmed,
+            isPersonEvidence: true,
+            isDeviceOnlyEvidence: false,
+            InteractionVisibility.PublicEvidence,
+            "boundary-derivation",
+            [new InteractionProvenance(InteractionProvenanceKind.ExternalSource, "boundary-source")]);
+
+        var comparison = new PastStateReconstructor().Compare(
+            new PastStatePublicContext
+            {
+                Query = query,
+                PublicCandidateStates = [PublicState(10, 12, ["A", "B"])],
+                GenerationDirectSourceIds = ["boundary-source"],
+                AvailableObservationIds = ["boundary-observation"],
+                LocalTraversalWindowPaddingTicks = 0
+            },
+            new ObservationSet { ScenarioId = scenarioId, Seed = seed, Observations = [] },
+            new CausalTracingConstraintSet(scenarioId, seed, [atBoundary]));
+
+        Assert.Equal(["A"], comparison.Reconstruction.Candidates.Select(item => item.RegionId));
+        Assert.Contains(comparison.Reconstruction.EvidenceSet.Constraints, item =>
+            item.AvailableAtTick == query.EvidenceAvailabilityCutoff);
+    }
+
+    [Fact]
+    public void LocalNeighborhoodSelectionIsChronologicalAndDeterministic()
+    {
+        var ordered = LocalNeighborhoodFixture(
+        [
+            PublicState(0, 8, ["old"]),
+            PublicState(9, 9, ["previous"]),
+            PublicState(10, 12, ["A", "B"]),
+            PublicState(13, 13, ["next"]),
+            PublicState(14, 20, ["later"])
+        ]);
+        var reversed = LocalNeighborhoodFixture(
+        [
+            PublicState(14, 20, ["later"]),
+            PublicState(13, 13, ["next"]),
+            PublicState(10, 12, ["A", "B"]),
+            PublicState(9, 9, ["previous"]),
+            PublicState(0, 8, ["old"])
+        ]);
+        var expected = new[]
+        {
+            new InteractionTimeWindow(9, 9),
+            new InteractionTimeWindow(10, 12),
+            new InteractionTimeWindow(13, 13)
+        };
+
+        Assert.Equal(expected, ordered);
+        Assert.Equal(expected, reversed);
+    }
+
+    [Fact]
+    public void NoPublishedPublicEdgeLeavesCandidatesUnknownRatherThanAbsent()
+    {
+        var comparison = TransitionFixture(includePublicTransition: false);
+        var local = comparison.Methods.Single(item =>
+            item.Method == PastStateMethod.ReconstructionWithLocalTraversal);
+
+        Assert.Equal(["A", "X"], local.CandidateRegionIds);
+        Assert.Equal(0, local.ForwardTransitionSteps);
+        Assert.Equal(0, local.BackwardTransitionSteps);
+        Assert.Empty(local.TransitionIds);
+        Assert.DoesNotContain(typeof(PastStateMethodResult).GetProperties(), property =>
+            property.Name.Contains("Absent", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void S5PublicTopologyIsSeedIndependentScenarioDataWithoutRealizedSelections()
+    {
+        var scenario = Scenario();
+        var envelope = FootprintSim.Hazards.PublicHazardEnvelopeBuilder.Create(
+            scenario.StochasticHazard!);
+        var serialized = JsonDefaults.Serialize(envelope);
+
+        Assert.Equal(
+            scenario.StochasticHazard!.Transitions.Count(item => item.PubliclyVisible),
+            envelope.Branches.Count);
+        Assert.Equal(4, envelope.Branches.Count);
+        Assert.Contains(envelope.Branches, item =>
+            item.SourceRegionId == "release" && item.DestinationRegionId == "fork-east");
+        Assert.Contains(envelope.Branches, item =>
+            item.SourceRegionId == "release" && item.DestinationRegionId == "fork-west");
+        Assert.DoesNotContain("truth", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("realized", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("random", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("parent", serialized, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -595,7 +778,8 @@ public sealed class M1ETests
     private static PastStateRunEvaluation RunBySeed(int seed) =>
         MethodCompositionBatch.Value.PastStateReconstruction!.Runs.Single(item => item.Seed == seed);
 
-    private static PastStateComparisonResult VerificationOnlyFixture()
+    private static PastStateComparisonResult VerificationOnlyFixture(
+        bool sourceObservationResolved = true)
     {
         const string scenarioId = "verification-only-fixture";
         const int seed = 5;
@@ -639,7 +823,7 @@ public sealed class M1ETests
                 Query = query,
                 PublicCandidateStates = [PublicState(5, ["east", "west"])],
                 VerificationDirectSourceIds = ["verification-source"],
-                AvailableObservationIds = ["verification-observation"],
+                AvailableObservationIds = sourceObservationResolved ? ["verification-observation"] : [],
                 LocalTraversalWindowPaddingTicks = 0
             },
             new ObservationSet { ScenarioId = scenarioId, Seed = seed, Observations = [] },
@@ -657,7 +841,7 @@ public sealed class M1ETests
                 ]));
     }
 
-    private static PastStateComparisonResult TransitionFixture()
+    private static PastStateComparisonResult TransitionFixture(bool includePublicTransition = true)
     {
         const string scenarioId = "transition-only-fixture";
         const int seed = 7;
@@ -683,8 +867,9 @@ public sealed class M1ETests
                     HazardId = "public-transition-fixture",
                     SourceRegionId = "A",
                     PublishedAtTick = 0,
-                    Branches =
-                    [
+                    Branches = includePublicTransition
+                        ?
+                        [
                         new FootprintSim.Hazards.PublicHazardBranch
                         {
                             SourceRegionId = "A",
@@ -695,7 +880,8 @@ public sealed class M1ETests
                             ProvenanceId = "public-a-b",
                             PublishedAtTick = 0
                         }
-                    ]
+                        ]
+                        : []
                 }
             },
             new ObservationSet { ScenarioId = scenarioId, Seed = seed, Observations = [] },
@@ -722,6 +908,70 @@ public sealed class M1ETests
                     regions)
             ]
         };
+
+    private static PublicCandidateWarpStateDefinition PublicState(
+        long startTick,
+        long endTick,
+        IReadOnlyList<string> regions) => new()
+        {
+            TimeWindow = new InteractionTimeWindow(startTick, endTick),
+            TemporalKind = CandidateWarpTemporalKind.StateInterval,
+            RegionIds = regions,
+            EvidenceBoundaryState = EvidenceState.SupportedButUncertain,
+            Provenance =
+            [
+                CandidateWarpProvenance.Create(
+                    CandidateWarpSourceKind.PublicCausalModel,
+                    $"fixture-public-state-{startTick}-{endTick}",
+                    availableAtTick: 0,
+                    isPersonEvidence: true,
+                    isDeviceOnlyEvidence: false,
+                    EvidenceState.SupportedButUncertain,
+                    regions)
+            ]
+        };
+
+    private static IReadOnlyList<InteractionTimeWindow> LocalNeighborhoodFixture(
+        IReadOnlyList<PublicCandidateWarpStateDefinition> states)
+    {
+        const string scenarioId = "local-neighborhood-fixture";
+        const int seed = 19;
+        var comparison = new PastStateReconstructor().Compare(
+            new PastStatePublicContext
+            {
+                Query = PastStateQuery.Create(
+                    scenarioId,
+                    seed,
+                    "person-a",
+                    new InteractionTimeWindow(10, 12),
+                    "local-neighborhood-query",
+                    20),
+                PublicCandidateStates = states,
+                LocalTraversalWindowPaddingTicks = 1
+            },
+            new ObservationSet { ScenarioId = scenarioId, Seed = seed, Observations = [] },
+            new CausalTracingConstraintSet(scenarioId, seed, []));
+        return comparison.Methods.Single(item =>
+                item.Method == PastStateMethod.ReconstructionWithLocalTraversal)
+            .Diagnostics!.LocalStates
+            .Select(item => item.TimeWindow)
+            .ToArray();
+    }
+
+    private static ScenarioDefinition MutatedScenario(Action<JsonObject> mutate)
+    {
+        var root = JsonNode.Parse(File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "scenarios",
+            "s5_distributed_past_evidence",
+            "scenario.json")))!.AsObject();
+        mutate(root);
+        var scenario = JsonSerializer.Deserialize<ScenarioDefinition>(
+            root.ToJsonString(),
+            JsonDefaults.Options)!;
+        ScenarioValidator.Validate(scenario);
+        return scenario;
+    }
 
     private static PastStateReconstructionResult ReconstructFixture(
         EvidenceState? evidenceState,

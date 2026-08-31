@@ -178,3 +178,7 @@ actions, new-observation feedback, and case dependence.
 Generation is not verification, implication is not its converse, and missing evidence is not absence.
 Those boundaries may inform later Buddhist-methodology comparison, but no Buddhist term is introduced
 into production code by this correction.
+
+The subsequent source-lineage, time, local-neighborhood, and public-topology audit is recorded in
+[M1-E2 synthetic-world representation validity](m1e2-world-representation-validity.md). The E1 count
+of 67 unresolved used verification references is retained here as the historical baseline.

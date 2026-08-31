@@ -1087,6 +1087,8 @@ public static class ScenarioValidator
             }
         }
 
+        ValidatePastStateRecordedSources(scenario, definition);
+
         foreach (var sourceGroup in definition.Constraints
             .Where(item => item.SourceKind == Interactions.Tracing.TracingConstraintSourceKind.CrossThreadObservation)
             .GroupBy(item => item.SourceObservationKey, StringComparer.Ordinal))
@@ -1115,6 +1117,84 @@ public static class ScenarioValidator
             .Any(item => !searchable.Contains(item)))
         {
             throw new InvalidDataException("M1-E searchable regions omit a public candidate region.");
+        }
+    }
+
+    private static void ValidatePastStateRecordedSources(
+        ScenarioDefinition scenario,
+        PastStateReconstructionDefinition definition)
+    {
+        var recordedSourcesByKey = scenario.Steps
+            .Where(step => !string.IsNullOrWhiteSpace(step.Observation?.EvidenceType))
+            .GroupBy(step => step.Observation!.EvidenceType, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => group
+                    .OrderBy(step => step.Tick)
+                    .ThenBy(step => step.Id, StringComparer.Ordinal)
+                    .ToArray(),
+                StringComparer.Ordinal);
+        var personIds = scenario.Entities.Persons
+            .Select(person => person.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        var deviceIds = scenario.Entities.Devices
+            .Select(device => device.Id)
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var constraint in definition.Constraints.Where(item =>
+            item.SourceKind != Interactions.Tracing.TracingConstraintSourceKind.CrossThreadObservation &&
+            item.Visibility == Interactions.InteractionVisibility.PublicEvidence &&
+            item.AvailableAtTick <= definition.EvidenceAvailabilityCutoff))
+        {
+            if (!recordedSourcesByKey.TryGetValue(constraint.SourceObservationKey, out var sourceSteps) ||
+                sourceSteps.Length != 1)
+            {
+                throw new InvalidDataException(
+                    $"Past-state constraint '{constraint.Id}' requires exactly one recorded public source " +
+                    $"with evidence type '{constraint.SourceObservationKey}'.");
+            }
+
+            var sourceStep = sourceSteps[0];
+            var source = sourceStep.Observation!;
+            if (sourceStep.Tick != constraint.ObservedStartTick ||
+                sourceStep.Tick != constraint.ObservedEndTick)
+            {
+                throw new InvalidDataException(
+                    $"Past-state constraint '{constraint.Id}' recorded source time does not match its observed window.");
+            }
+
+            if (source.State != constraint.EvidenceState)
+            {
+                throw new InvalidDataException(
+                    $"Past-state constraint '{constraint.Id}' changes the recorded source evidence state.");
+            }
+
+            if (source.EmissionProbability != 1 ||
+                source.DropProbability != 0 ||
+                source.ConflictProbability != 0 ||
+                source.MaximumDelayTicks < 0 ||
+                sourceStep.Tick > constraint.AvailableAtTick - source.MaximumDelayTicks)
+            {
+                throw new InvalidDataException(
+                    $"Past-state constraint '{constraint.Id}' requires a deterministically materialized source " +
+                    "available no later than the constraint.");
+            }
+
+            if (constraint.IsPersonEvidence &&
+                !source.ReportedSubjectIds.Contains(scenario.TargetPersonId, StringComparer.Ordinal))
+            {
+                throw new InvalidDataException(
+                    $"Past-state constraint '{constraint.Id}' person evidence does not report the target person.");
+            }
+
+            if (constraint.IsDeviceOnlyEvidence &&
+                (source.ReportedSubjectIds.Count == 0 ||
+                    source.ReportedSubjectIds.Any(subjectId =>
+                        personIds.Contains(subjectId) || !deviceIds.Contains(subjectId))))
+            {
+                throw new InvalidDataException(
+                    $"Past-state constraint '{constraint.Id}' device-only source crosses the subject-type boundary.");
+            }
         }
     }
 
