@@ -14,9 +14,13 @@ public static class TelemetryOutputNames
     public const string InteractionObservations = "evidence/interaction-observations.jsonl";
     public const string Constraints = "evidence/constraints.jsonl";
     public const string TracingConstraints = "evidence/tracing-constraints.jsonl";
+    public const string PastStateQueries = "evaluation/past-state-queries.jsonl";
     public const string ConstraintApplications = "evaluation/constraint-applications.jsonl";
     public const string CandidateTransitions = "evaluation/candidate-transitions.jsonl";
     public const string CausalTracingSteps = "evaluation/causal-tracing-steps.jsonl";
+    public const string PastStateCandidates = "evaluation/past-state-candidates.jsonl";
+    public const string CandidateVerifications = "evaluation/candidate-verifications.jsonl";
+    public const string PastStateMethods = "evaluation/past-state-methods.jsonl";
     public const string Manifest = "telemetry-manifest.json";
 
     public static IReadOnlyList<string> JsonLines { get; } =
@@ -27,9 +31,13 @@ public static class TelemetryOutputNames
         InteractionObservations,
         Constraints,
         TracingConstraints,
+        PastStateQueries,
         ConstraintApplications,
         CandidateTransitions,
-        CausalTracingSteps
+        CausalTracingSteps,
+        PastStateCandidates,
+        CandidateVerifications,
+        PastStateMethods
     ];
 
     public static IReadOnlyList<string> All { get; } = [.. JsonLines, Manifest];
@@ -72,6 +80,10 @@ public sealed class TelemetryOutputWriter
             telemetry.Evidence.TracingConstraints,
             cancellationToken);
         await WriteJsonLinesAsync(
+            TelemetryOutputNames.PastStateQueries,
+            telemetry.Evaluation.PastStateQueries,
+            cancellationToken);
+        await WriteJsonLinesAsync(
             TelemetryOutputNames.ConstraintApplications,
             telemetry.Evaluation.ConstraintApplications,
             cancellationToken);
@@ -82,6 +94,18 @@ public sealed class TelemetryOutputWriter
         await WriteJsonLinesAsync(
             TelemetryOutputNames.CausalTracingSteps,
             telemetry.Evaluation.CausalTracingSteps,
+            cancellationToken);
+        await WriteJsonLinesAsync(
+            TelemetryOutputNames.PastStateCandidates,
+            telemetry.Evaluation.PastStateCandidates,
+            cancellationToken);
+        await WriteJsonLinesAsync(
+            TelemetryOutputNames.CandidateVerifications,
+            telemetry.Evaluation.CandidateVerifications,
+            cancellationToken);
+        await WriteJsonLinesAsync(
+            TelemetryOutputNames.PastStateMethods,
+            telemetry.Evaluation.PastStateMethods,
             cancellationToken);
         await WriteTextAsync(
             TelemetryOutputNames.Manifest,

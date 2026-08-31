@@ -31,6 +31,8 @@ public sealed class ScenarioDefinition
 
     public CausalTracingEvaluationDefinition? CausalTracingEvaluation { get; init; }
 
+    public PastStateReconstructionDefinition? PastStateReconstruction { get; init; }
+
     public IReadOnlyList<string> EvaluationSearchableRegionIds { get; init; } = [];
 
     public IReadOnlyList<RegionDefinition> Regions { get; init; } = [];
@@ -38,6 +40,41 @@ public sealed class ScenarioDefinition
     public ScenarioEntities Entities { get; init; } = new();
 
     public IReadOnlyList<ScenarioStep> Steps { get; init; } = [];
+}
+
+public enum PastStateEvidenceCondition
+{
+    DistributedPublicEvidence,
+    SharedAncestryVerification,
+    ConflictingVerification,
+    DelayedVerification,
+    UnavailableVerification,
+    DeviceOnlyEvidence
+}
+
+public sealed class PastStateReconstructionDefinition
+{
+    public required long EvaluationEndTick { get; init; }
+
+    public required long TargetStartTick { get; init; }
+
+    public required long TargetEndTick { get; init; }
+
+    public required long EvidenceAvailabilityCutoff { get; init; }
+
+    public required string QueryContextId { get; init; }
+
+    public required int LocalTraversalWindowPaddingTicks { get; init; }
+
+    public IReadOnlyList<PastStateEvidenceCondition> ConditionCycle { get; init; } = [];
+
+    public IReadOnlyList<CausalTracingCandidateStateDefinition> PublicCandidateStates { get; init; } = [];
+
+    public IReadOnlyList<CausalTracingConstraintDefinition> Constraints { get; init; } = [];
+
+    public IReadOnlyList<string> GenerationConstraintDefinitionIds { get; init; } = [];
+
+    public IReadOnlyList<string> VerificationConstraintDefinitionIds { get; init; } = [];
 }
 
 public enum CausalTracingCondition
@@ -119,6 +156,8 @@ public sealed class CausalTracingConstraintDefinition
     public string? OccurrenceStepId { get; init; }
 
     public IReadOnlyList<CausalTracingCondition> AppliesToConditions { get; init; } = [];
+
+    public IReadOnlyList<PastStateEvidenceCondition> AppliesToPastStateConditions { get; init; } = [];
 }
 
 public enum WeftEvidenceCondition

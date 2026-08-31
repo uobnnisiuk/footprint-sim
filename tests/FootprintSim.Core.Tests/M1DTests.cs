@@ -361,7 +361,7 @@ public sealed class M1DTests
         var second = RunBatch(Enumerable.Range(0, 10).Reverse().ToArray(), collectTelemetry: true);
         Assert.Equal(JsonDefaults.Serialize(first.CausalTracing), JsonDefaults.Serialize(second.CausalTracing));
         Assert.Equal(JsonDefaults.Serialize(first.Telemetry), JsonDefaults.Serialize(second.Telemetry));
-        Assert.Equal(2, first.Telemetry!.Manifest.TelemetrySchemaVersion);
+        Assert.Equal(TelemetrySchema.Version, first.Telemetry!.Manifest.TelemetrySchemaVersion);
         Assert.NotEmpty(first.Telemetry.Evidence.TracingConstraints);
         Assert.NotEmpty(first.Telemetry.Evaluation.CausalTracingSteps);
         Assert.All(first.Telemetry.Evaluation.CausalTracingSteps, step =>

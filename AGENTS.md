@@ -22,7 +22,8 @@ This is a private research simulator, not an operational rescue or hazard-predic
 - Keep neutral telemetry opt-in and split private truth, public/evidence, and evaluation-transition records; telemetry-off evaluation files must remain byte-identical.
 - Do not add interpretation scores to telemetry, and preserve exact-point/interval, relation, role, ancestry, access, and candidate before/after metadata with deterministic ordering.
 - Keep Operational Causal Tracing on known public structure: canonicalize multiple constraints, group shared source ancestry, preserve support/conflict alternatives, and never use realized parents for backward tracing.
-- Treat missing public transitions as unavailable knowledge rather than absence; keep Traversal distinct from Reconstruction/Index Access.
+- Treat missing public transitions as unavailable knowledge rather than absence; keep known-relation traversal distinct from candidate reconstruction.
+- For past-state reconstruction, keep query formation, public evidence selection, candidate construction, deterministic addressing, independent verification, and optional local traversal separate; exclude future/private evidence and generation ancestry from independent verification.
 - Keep scenario changes explicit and testable; do not imply real-world predictive accuracy.
 - Do not commit generated `results/`, `bin/`, `obj/`, or SDK artifacts.
 

@@ -32,4 +32,6 @@ public sealed record SimulationRun
     public CausalTracingConstraintSet? CausalTracingConstraints { get; init; }
 
     public CausalTracingCondition? CausalTracingCondition { get; init; }
+
+    public PastStateEvidenceCondition? PastStateEvidenceCondition { get; init; }
 }

@@ -5,6 +5,7 @@ using FootprintSim.Interactions;
 using FootprintSim.Interactions.CandidateWarps;
 using FootprintSim.Interactions.Tracing;
 using FootprintSim.Interactions.Truth;
+using FootprintSim.Inference.PastStates;
 using FootprintSim.Scenarios;
 using FootprintSim.Simulation;
 
@@ -21,6 +22,10 @@ internal sealed class NeutralTelemetryCollector
     private readonly List<CandidateTransitionTelemetryRecord> _candidateTransitions = [];
     private readonly List<TracingConstraintTelemetryRecord> _tracingConstraints = [];
     private readonly List<CausalTracingStepTelemetryRecord> _tracingSteps = [];
+    private readonly List<PastStateQueryTelemetryRecord> _pastStateQueries = [];
+    private readonly List<PastStateCandidateTelemetryRecord> _pastStateCandidates = [];
+    private readonly List<CandidateVerificationTelemetryRecord> _candidateVerifications = [];
+    private readonly List<PastStateMethodTelemetryRecord> _pastStateMethods = [];
 
     public void AddSimulation(ScenarioDefinition scenario, SimulationRun run)
     {
@@ -62,6 +67,39 @@ internal sealed class NeutralTelemetryCollector
             }
             previous = result;
         }
+    }
+
+    public void AddPastState(PastStateComparisonResult comparison)
+    {
+        ArgumentNullException.ThrowIfNull(comparison);
+        var query = comparison.Query;
+        var reconstruction = comparison.Reconstruction;
+        _pastStateQueries.Add(new PastStateQueryTelemetryRecord
+        {
+            ScenarioId = query.ScenarioId,
+            Seed = query.Seed,
+            QueryId = query.QueryId,
+            QueryContextId = query.QueryContextId,
+            TargetEntityId = query.TargetEntityId,
+            TargetTimeWindow = Window(query.TargetTimeWindow),
+            EvidenceAvailabilityCutoff = query.EvidenceAvailabilityCutoff,
+            EvidenceSetId = reconstruction.EvidenceSet.EvidenceSetId,
+            ObservationIds = Ordered(reconstruction.EvidenceSet.ObservationIds),
+            ConstraintIds = Ordered(reconstruction.EvidenceSet.Constraints.Select(item => item.ConstraintId)),
+            SourceGroupIds = Ordered(reconstruction.EvidenceSet.SourceGroups.Select(item => item.SourceGroupId)),
+            PublicRelationReferences = Ordered(reconstruction.EvidenceSet.PublicRelationReferences),
+            ExcludedFutureEvidenceCount = reconstruction.EvidenceSet.ExcludedFutureEvidenceCount
+        });
+        _pastStateCandidates.AddRange(reconstruction.Candidates.Select(candidate =>
+            PastStateCandidate(query, reconstruction, candidate)));
+        var candidateIds = reconstruction.Candidates
+            .Select(item => item.CandidateId)
+            .ToHashSet(StringComparer.Ordinal);
+        _candidateVerifications.AddRange(reconstruction.Verification
+            .Where(item => candidateIds.Contains(item.CandidateId))
+            .Select(item => CandidateVerification(query, item)));
+        _pastStateMethods.AddRange(comparison.Methods.Select(item =>
+            PastStateMethodRecord(query, item)));
     }
 
     public NeutralTelemetryBundle Build(
@@ -155,6 +193,33 @@ internal sealed class NeutralTelemetryCollector
             .ThenBy(record => record.TransitionTimeWindow.StartTick)
             .ThenBy(record => record.TransitionId, StringComparer.Ordinal)
             .ToArray();
+        var pastStateQueries = _pastStateQueries
+            .DistinctBy(record => (record.ScenarioId, record.Seed, record.QueryId))
+            .OrderBy(record => record.ScenarioId, StringComparer.Ordinal)
+            .ThenBy(record => record.Seed)
+            .ThenBy(record => record.QueryId, StringComparer.Ordinal)
+            .ToArray();
+        var pastStateCandidates = _pastStateCandidates
+            .DistinctBy(record => (record.ScenarioId, record.Seed, record.QueryId, record.CandidateId))
+            .OrderBy(record => record.ScenarioId, StringComparer.Ordinal)
+            .ThenBy(record => record.Seed)
+            .ThenBy(record => record.QueryId, StringComparer.Ordinal)
+            .ThenBy(record => record.CandidateId, StringComparer.Ordinal)
+            .ToArray();
+        var candidateVerifications = _candidateVerifications
+            .DistinctBy(record => (record.ScenarioId, record.Seed, record.QueryId, record.CandidateId))
+            .OrderBy(record => record.ScenarioId, StringComparer.Ordinal)
+            .ThenBy(record => record.Seed)
+            .ThenBy(record => record.QueryId, StringComparer.Ordinal)
+            .ThenBy(record => record.CandidateId, StringComparer.Ordinal)
+            .ToArray();
+        var pastStateMethods = _pastStateMethods
+            .DistinctBy(record => (record.ScenarioId, record.Seed, record.QueryId, record.Method))
+            .OrderBy(record => record.ScenarioId, StringComparer.Ordinal)
+            .ThenBy(record => record.Seed)
+            .ThenBy(record => record.QueryId, StringComparer.Ordinal)
+            .ThenBy(record => record.Method)
+            .ToArray();
         var categories = new[]
         {
             Category("worldEvents", TelemetryStreamKind.TruthWorld, TelemetryOutputNames.WorldEvents, truthEvents.Length),
@@ -163,9 +228,13 @@ internal sealed class NeutralTelemetryCollector
             Category("interactionObservations", TelemetryStreamKind.Evidence, TelemetryOutputNames.InteractionObservations, interactionObservations.Length),
             Category("constraints", TelemetryStreamKind.Evidence, TelemetryOutputNames.Constraints, constraints.Length),
             Category("tracingConstraints", TelemetryStreamKind.Evidence, TelemetryOutputNames.TracingConstraints, tracingConstraints.Length),
+            Category("pastStateQueries", TelemetryStreamKind.Evaluation, TelemetryOutputNames.PastStateQueries, pastStateQueries.Length),
             Category("constraintApplications", TelemetryStreamKind.Evaluation, TelemetryOutputNames.ConstraintApplications, applications.Length),
             Category("candidateTransitions", TelemetryStreamKind.Evaluation, TelemetryOutputNames.CandidateTransitions, transitions.Length),
-            Category("causalTracingSteps", TelemetryStreamKind.Evaluation, TelemetryOutputNames.CausalTracingSteps, tracingSteps.Length)
+            Category("causalTracingSteps", TelemetryStreamKind.Evaluation, TelemetryOutputNames.CausalTracingSteps, tracingSteps.Length),
+            Category("pastStateCandidates", TelemetryStreamKind.Evaluation, TelemetryOutputNames.PastStateCandidates, pastStateCandidates.Length),
+            Category("candidateVerifications", TelemetryStreamKind.Evaluation, TelemetryOutputNames.CandidateVerifications, candidateVerifications.Length),
+            Category("pastStateMethods", TelemetryStreamKind.Evaluation, TelemetryOutputNames.PastStateMethods, pastStateMethods.Length)
         };
 
         return new NeutralTelemetryBundle
@@ -184,9 +253,13 @@ internal sealed class NeutralTelemetryCollector
             },
             Evaluation = new EvaluationTelemetryStream
             {
+                PastStateQueries = pastStateQueries,
                 ConstraintApplications = applications,
                 CandidateTransitions = transitions,
-                CausalTracingSteps = tracingSteps
+                CausalTracingSteps = tracingSteps,
+                PastStateCandidates = pastStateCandidates,
+                CandidateVerifications = candidateVerifications,
+                PastStateMethods = pastStateMethods
             },
             Manifest = new TelemetryManifest
             {
@@ -497,6 +570,64 @@ internal sealed class NeutralTelemetryCollector
             ConflictDetected = step.ConflictDetected,
             SourceAncestryIds = Ordered(step.SourceAncestryIds),
             Provenance = Provenance(step.Provenance)
+        };
+
+    private static PastStateCandidateTelemetryRecord PastStateCandidate(
+        PastStateQuery query,
+        PastStateReconstructionResult reconstruction,
+        Inference.PastStates.PastStateCandidate candidate) => new()
+        {
+            ScenarioId = query.ScenarioId,
+            Seed = query.Seed,
+            QueryId = query.QueryId,
+            ReconstructionId = reconstruction.ReconstructionId,
+            CandidateId = candidate.CandidateId,
+            TargetEntityId = candidate.TargetEntityId,
+            TargetTimeWindow = Window(candidate.TargetTimeWindow),
+            RegionId = candidate.RegionId,
+            GenerationEvidenceIds = Ordered(candidate.GenerationEvidenceIds),
+            GenerationSourceGroupIds = Ordered(candidate.GenerationSourceGroupIds),
+            SourceAncestryIds = Ordered(candidate.SourceAncestryIds),
+            AppliedConstraintIds = Ordered(candidate.AppliedConstraintIds),
+            UnresolvedConstraintIds = Ordered(candidate.UnresolvedConstraintIds),
+            ConflictingConstraintIds = Ordered(candidate.ConflictingConstraintIds),
+            PublicRelationReferences = Ordered(candidate.PublicRelationReferences),
+            Disposition = candidate.Disposition
+        };
+
+    private static CandidateVerificationTelemetryRecord CandidateVerification(
+        PastStateQuery query,
+        Inference.PastStates.CandidateVerification verification) => new()
+        {
+            ScenarioId = query.ScenarioId,
+            Seed = query.Seed,
+            QueryId = query.QueryId,
+            CandidateId = verification.CandidateId,
+            VerificationEvidenceIds = Ordered(verification.VerificationEvidenceIds),
+            VerificationSourceGroupIds = Ordered(verification.VerificationSourceGroupIds),
+            SharedAncestrySourceGroupIds = Ordered(verification.SharedAncestrySourceGroupIds),
+            SupportingConstraintIds = Ordered(verification.SupportingConstraintIds),
+            RefutingConstraintIds = Ordered(verification.RefutingConstraintIds),
+            ConflictingConstraintIds = Ordered(verification.ConflictingConstraintIds),
+            GenerationVerificationAncestryOverlap = Ordered(
+                verification.GenerationVerificationAncestryOverlap),
+            Disposition = verification.Disposition
+        };
+
+    private static PastStateMethodTelemetryRecord PastStateMethodRecord(
+        PastStateQuery query,
+        PastStateMethodResult method) => new()
+        {
+            ScenarioId = query.ScenarioId,
+            Seed = query.Seed,
+            QueryId = query.QueryId,
+            Method = method.Method,
+            CandidateRegionIds = Ordered(method.CandidateRegionIds),
+            Steps = method.Steps,
+            PublicRelationsInspected = method.PublicRelationsInspected,
+            EvidenceRecordsInspected = method.EvidenceRecordsInspected,
+            SourceGroupsInspected = method.SourceGroupsInspected,
+            TracingSessionId = method.TracingSessionId
         };
 
     private static CandidateTransitionTelemetryRecord CandidateTransition(

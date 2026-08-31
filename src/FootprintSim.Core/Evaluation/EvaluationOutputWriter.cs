@@ -16,6 +16,8 @@ public static class EvaluationOutputNames
     public const string PairedCsv = "paired.csv";
     public const string CausalTracingJson = "causal-tracing.json";
     public const string CausalTracingCsv = "causal-tracing.csv";
+    public const string PastStateReconstructionJson = "past-state-reconstruction.json";
+    public const string PastStateReconstructionCsv = "past-state-reconstruction.csv";
 
     public static IReadOnlyList<string> All { get; } =
     [
@@ -169,6 +171,16 @@ public sealed class EvaluationOutputWriter
             await WriteAsync(
                 EvaluationOutputNames.CausalTracingCsv,
                 CreateCausalTracingCsv(result.CausalTracing));
+        }
+
+        if (result.PastStateReconstruction is not null)
+        {
+            await WriteAsync(
+                EvaluationOutputNames.PastStateReconstructionJson,
+                JsonDefaults.Serialize(result.PastStateReconstruction) + "\n");
+            await WriteAsync(
+                EvaluationOutputNames.PastStateReconstructionCsv,
+                CreatePastStateReconstructionCsv(result.PastStateReconstruction));
         }
 
         async Task WriteAsync(string fileName, string content)
@@ -521,6 +533,81 @@ public sealed class EvaluationOutputWriter
                 Boolean(run.CausalSandwichApplied),
                 Boolean(run.ConstraintOrderInvariant)
             ]);
+        }
+
+        return builder.ToString();
+    }
+
+    private static string CreatePastStateReconstructionCsv(
+        PastStateReconstructionEvaluationReport report)
+    {
+        var builder = new StringBuilder();
+        builder.Append(
+            "schema_version,scenario_id,seed,condition,query_id,target_start_tick,target_end_tick," +
+            "evidence_cutoff,truth_person_region,truth_device_region,method,initial_candidate_count," +
+            "candidate_count,contains_truth,false_exclusion,candidate_reduction,steps," +
+            "public_relations_inspected,evidence_records_inspected,source_groups_inspected," +
+            "addressable_candidate_count,deterministic_identity_rate,target_candidate_represented," +
+            "supported_candidates,uncertain_candidates,unresolved_candidates,conflicted_candidates,unsupported_candidates," +
+            "unavailable_candidates,independently_supported,independently_refuted," +
+            "conflicting_verification,unresolved_verification,shared_ancestry_only," +
+            "unavailable_verification,generation_source_groups,verification_source_groups," +
+            "shared_ancestry_source_groups,ancestry_overlap,present_evidence_source_groups," +
+            "redundant_same_source_records,conflicting_evidence,uncertain_evidence," +
+            "unavailable_evidence,excluded_future_evidence\n");
+        foreach (var run in report.Runs)
+        {
+            foreach (var method in run.Methods)
+            {
+                AppendCsvRow(builder,
+                [
+                    report.SchemaVersion.ToString(CultureInfo.InvariantCulture),
+                    run.ScenarioId,
+                    run.Seed.ToString(CultureInfo.InvariantCulture),
+                    EnumText(run.Condition),
+                    run.QueryId,
+                    run.TargetStartTick.ToString(CultureInfo.InvariantCulture),
+                    run.TargetEndTick.ToString(CultureInfo.InvariantCulture),
+                    run.EvidenceAvailabilityCutoff.ToString(CultureInfo.InvariantCulture),
+                    run.TruthPersonRegionId,
+                    run.TruthDeviceRegionId,
+                    EnumText(method.Method),
+                    run.InitialCandidateCount.ToString(CultureInfo.InvariantCulture),
+                    method.CandidateCount.ToString(CultureInfo.InvariantCulture),
+                    Boolean(method.ContainsTruth),
+                    Boolean(method.FalseExclusion),
+                    Decimal(method.CandidateReduction),
+                    method.Steps.ToString(CultureInfo.InvariantCulture),
+                    method.PublicRelationsInspected.ToString(CultureInfo.InvariantCulture),
+                    method.EvidenceRecordsInspected.ToString(CultureInfo.InvariantCulture),
+                    method.SourceGroupsInspected.ToString(CultureInfo.InvariantCulture),
+                    run.AddressableCandidateCount.ToString(CultureInfo.InvariantCulture),
+                    Decimal(run.DeterministicCandidateIdentityRate),
+                    Boolean(run.TargetCandidateRepresented),
+                    run.SupportedCandidateCount.ToString(CultureInfo.InvariantCulture),
+                    run.UncertainCandidateCount.ToString(CultureInfo.InvariantCulture),
+                    run.UnresolvedCandidateCount.ToString(CultureInfo.InvariantCulture),
+                    run.ConflictedCandidateCount.ToString(CultureInfo.InvariantCulture),
+                    run.UnsupportedCandidateCount.ToString(CultureInfo.InvariantCulture),
+                    run.UnavailableCandidateCount.ToString(CultureInfo.InvariantCulture),
+                    run.IndependentlySupportedCandidateCount.ToString(CultureInfo.InvariantCulture),
+                    run.IndependentlyRefutedCandidateCount.ToString(CultureInfo.InvariantCulture),
+                    run.ConflictingVerificationCandidateCount.ToString(CultureInfo.InvariantCulture),
+                    run.UnresolvedVerificationCandidateCount.ToString(CultureInfo.InvariantCulture),
+                    run.SharedAncestryOnlyCandidateCount.ToString(CultureInfo.InvariantCulture),
+                    run.UnavailableVerificationCandidateCount.ToString(CultureInfo.InvariantCulture),
+                    run.GenerationSourceGroupCount.ToString(CultureInfo.InvariantCulture),
+                    run.VerificationSourceGroupCount.ToString(CultureInfo.InvariantCulture),
+                    run.SharedAncestrySourceGroupCount.ToString(CultureInfo.InvariantCulture),
+                    run.GenerationVerificationAncestryOverlapCount.ToString(CultureInfo.InvariantCulture),
+                    run.PresentEvidenceSourceGroupCount.ToString(CultureInfo.InvariantCulture),
+                    run.RedundantSameSourceRecordCount.ToString(CultureInfo.InvariantCulture),
+                    run.ConflictingEvidenceCount.ToString(CultureInfo.InvariantCulture),
+                    run.UncertainEvidenceCount.ToString(CultureInfo.InvariantCulture),
+                    run.UnavailableEvidenceCount.ToString(CultureInfo.InvariantCulture),
+                    run.ExcludedFutureEvidenceCount.ToString(CultureInfo.InvariantCulture)
+                ]);
+            }
         }
 
         return builder.ToString();

@@ -3,6 +3,7 @@ using FootprintSim.Evaluation.Truth;
 using FootprintSim.Events;
 using FootprintSim.Hazards;
 using FootprintSim.Inference;
+using FootprintSim.Inference.PastStates;
 using FootprintSim.Interactions;
 using FootprintSim.Interactions.CandidateWarps;
 using FootprintSim.Interactions.Tracing;
@@ -71,6 +72,8 @@ public sealed record BatchEvaluationResult
     public NeutralTelemetryBundle? Telemetry { get; init; }
 
     public CausalTracingEvaluationReport? CausalTracing { get; init; }
+
+    public PastStateReconstructionEvaluationReport? PastStateReconstruction { get; init; }
 }
 
 public sealed class BatchEvaluationRunner
@@ -95,6 +98,7 @@ public sealed class BatchEvaluationRunner
             PerRunEvaluation Evaluation,
             SearchStrategyResult Result,
             CausalTracingCondition? Condition)>();
+        var pastStateInputs = new List<PastStateRunEvaluation>();
 
         foreach (var scenarioInput in scenarios)
         {
@@ -131,11 +135,12 @@ public sealed class BatchEvaluationRunner
                         HistoricalCandidateRegionIds = scenario.WeftEvaluation
                             .HistoricalCandidateRegionIds
                     },
-                PublicCausalTracingModel = scenario.CausalTracingEvaluation is null
-                    ? null
-                    : new PublicCausalTracingModel
+                PublicCausalTracingModel = scenario.CausalTracingEvaluation is not null ||
+                    scenario.PastStateReconstruction is not null
+                    ? new PublicCausalTracingModel
                     {
-                        CandidateStates = scenario.CausalTracingEvaluation.BaseCandidateStates
+                        CandidateStates = (scenario.CausalTracingEvaluation?.BaseCandidateStates ??
+                                scenario.PastStateReconstruction!.PublicCandidateStates)
                             .OrderBy(item => item.StartTick)
                             .ThenBy(item => item.EndTick)
                             .Select(item => new PublicCandidateWarpStateDefinition
@@ -155,6 +160,7 @@ public sealed class BatchEvaluationRunner
                             })
                             .ToArray()
                     }
+                    : null
             };
 
             foreach (var seed in seeds)
@@ -187,9 +193,86 @@ public sealed class BatchEvaluationRunner
                         .Select(observation => observation.AvailableTick)
                         .DefaultIfEmpty(0)
                         .Max());
-                var finalTick = scenario.CausalTracingEvaluation?.EvaluationEndTick ??
+                var finalTick = scenario.PastStateReconstruction?.EvaluationEndTick ??
+                    scenario.CausalTracingEvaluation?.EvaluationEndTick ??
                     scenario.WeftEvaluation?.EvaluationEndTick ??
                     inferredFinalTick;
+
+                if (scenario.PastStateReconstruction is not null)
+                {
+                    var definition = scenario.PastStateReconstruction;
+                    var condition = simulation.PastStateEvidenceCondition ??
+                        throw new InvalidOperationException("S5 simulation did not select an evidence condition.");
+                    var constraintSet = simulation.CausalTracingConstraints ??
+                        throw new InvalidOperationException("S5 simulation produced no public constraint set.");
+                    var query = PastStateQuery.Create(
+                        scenario.Id,
+                        seed,
+                        scenario.TargetPersonId,
+                        new InteractionTimeWindow(definition.TargetStartTick, definition.TargetEndTick),
+                        definition.QueryContextId,
+                        definition.EvidenceAvailabilityCutoff);
+                    var generationDefinitionIds = definition.GenerationConstraintDefinitionIds
+                        .ToHashSet(StringComparer.Ordinal);
+                    var verificationDefinitionIds = definition.VerificationConstraintDefinitionIds
+                        .ToHashSet(StringComparer.Ordinal);
+                    var comparison = new PastStateReconstructor().Compare(
+                        new PastStatePublicContext
+                        {
+                            Query = query,
+                            PublicCandidateStates = publicContext.PublicCausalTracingModel!.CandidateStates,
+                            GenerationDirectSourceIds = definition.Constraints
+                                .Where(item => generationDefinitionIds.Contains(item.Id))
+                                .Select(item => item.DirectSourceId)
+                                .Distinct(StringComparer.Ordinal)
+                                .OrderBy(item => item, StringComparer.Ordinal)
+                                .ToArray(),
+                            VerificationDirectSourceIds = definition.Constraints
+                                .Where(item => verificationDefinitionIds.Contains(item.Id))
+                                .Select(item => item.DirectSourceId)
+                                .Distinct(StringComparer.Ordinal)
+                                .OrderBy(item => item, StringComparer.Ordinal)
+                                .ToArray(),
+                            LocalTraversalWindowPaddingTicks = definition.LocalTraversalWindowPaddingTicks,
+                            PublicHazardEnvelope = publicHazardEnvelope
+                        },
+                        simulation.ObservationSet,
+                        constraintSet);
+                    telemetry?.AddPastState(comparison);
+                    var truePastPersonRegion = HistoricalRegion(
+                        scenario,
+                        simulation.GroundTruthEvents,
+                        scenario.TargetPersonId,
+                        definition.TargetEndTick);
+                    var targetDeviceId = scenario.Entities.Devices
+                        .Select(item => item.Id)
+                        .OrderBy(item => item, StringComparer.Ordinal)
+                        .FirstOrDefault();
+                    var truePastDeviceRegion = targetDeviceId is null
+                        ? null
+                        : HistoricalRegion(
+                            scenario,
+                            simulation.GroundTruthEvents,
+                            targetDeviceId,
+                            definition.TargetEndTick);
+                    var activeDefinitions = definition.Constraints
+                        .Where(item => item.AppliesToPastStateConditions.Contains(condition))
+                        .ToArray();
+                    var unavailableEvidenceCount = activeDefinitions.Count(item =>
+                        (generationDefinitionIds.Contains(item.Id) || verificationDefinitionIds.Contains(item.Id)) &&
+                        (item.Visibility != InteractionVisibility.PublicEvidence ||
+                            item.AvailableAtTick > definition.EvidenceAvailabilityCutoff));
+                    pastStateInputs.Add(PastStateReconstructionEvaluationBuilder.Evaluate(
+                        comparison,
+                        new PastStateTruthEvaluation
+                        {
+                            PersonRegionId = truePastPersonRegion,
+                            DeviceRegionId = truePastDeviceRegion,
+                            OutcomeIdentifier = $"person={truePastPersonRegion ?? "unavailable"};device={truePastDeviceRegion ?? "unavailable"}"
+                        },
+                        condition,
+                        unavailableEvidenceCount));
+                }
                 var truth = new GroundTruthEvaluationContext
                 {
                     ScenarioId = scenario.Id,
@@ -262,6 +345,7 @@ public sealed class BatchEvaluationRunner
             Aggregate = aggregate,
             Manifest = manifest,
             CausalTracing = CausalTracingEvaluationBuilder.Build(tracingInputs),
+            PastStateReconstruction = PastStateReconstructionEvaluationBuilder.Build(pastStateInputs),
             Telemetry = telemetry?.Build(
                 scenarios,
                 seeds,
@@ -270,6 +354,36 @@ public sealed class BatchEvaluationRunner
                 request.SourceCommitSha,
                 request.DirtyWorkingTree)
         };
+    }
+
+    private static string? HistoricalRegion(
+        ScenarioDefinition scenario,
+        IReadOnlyList<SimulationEvent> events,
+        string entityId,
+        long targetEndTick)
+    {
+        var eventRegion = events
+            .Where(item => item.Tick <= targetEndTick)
+            .Where(item => item.SubjectIds.Contains(entityId, StringComparer.Ordinal))
+            .Where(item => item.Position is not null)
+            .OrderBy(item => item.Tick)
+            .ThenBy(item => item.Sequence)
+            .ThenBy(item => item.Id, StringComparer.Ordinal)
+            .LastOrDefault()?
+            .Position?
+            .RegionId;
+        if (eventRegion is not null)
+        {
+            return eventRegion;
+        }
+
+        return scenario.Entities.Persons
+            .Where(item => string.Equals(item.Id, entityId, StringComparison.Ordinal))
+            .Select(item => item.InitialPosition.RegionId)
+            .Concat(scenario.Entities.Devices
+                .Where(item => string.Equals(item.Id, entityId, StringComparison.Ordinal))
+                .Select(item => item.InitialPosition.RegionId))
+            .FirstOrDefault();
     }
 
     private static string CreateTruthOutcomeIdentifier(

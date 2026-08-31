@@ -9,6 +9,26 @@ namespace FootprintSim.Interactions.Tracing;
 /// </summary>
 public sealed class OperationalCausalTracer
 {
+    public IReadOnlyList<TracingSourceGroup> GroupSources(
+        IEnumerable<CausalTracingConstraint> constraints,
+        CandidateWarpAccessContext accessContext)
+    {
+        ArgumentNullException.ThrowIfNull(constraints);
+        ArgumentNullException.ThrowIfNull(accessContext);
+        var available = constraints
+            .Where(item => string.Equals(item.ScenarioId, accessContext.ScenarioId, StringComparison.Ordinal))
+            .Where(item => item.Seed == accessContext.Seed)
+            .Where(item => string.Equals(item.TargetEntityId, accessContext.TargetEntityId, StringComparison.Ordinal))
+            .Where(item => item.Visibility == InteractionVisibility.PublicEvidence)
+            .Where(item => item.AvailableAtTick <= accessContext.CurrentTick)
+            .OrderBy(item => item.ConstrainedTimeWindow.StartTick)
+            .ThenBy(item => item.ConstrainedTimeWindow.EndTick)
+            .ThenBy(item => item.SourceObservationId, StringComparer.Ordinal)
+            .ThenBy(item => item.ConstraintId, StringComparer.Ordinal)
+            .ToArray();
+        return BuildSourceGroups(available, accessContext);
+    }
+
     public CausalTracingResult Trace(
         CandidateWarpSet candidateWarps,
         IEnumerable<CausalTracingConstraint> constraints,

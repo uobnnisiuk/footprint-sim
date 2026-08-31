@@ -107,7 +107,7 @@ dotnet run --project src/FootprintSim.Cli -- evaluate \
 
 出力は、1 strategy/run につき1行の `runs.jsonl` と `runs.csv`、scenario・strategy 別の `aggregate.json` と `aggregate.csv`、condition別の`conditions.csv`、paired deltaの`paired.csv`、入力条件とschemaを固定する`manifest.json`です。`GroundTruthContainment`、`SearchSpaceFraction`、`FalseExclusion`などschema version 2までの意味は維持します。M1-C3のschema version 3はpreferred/outer plausible、condition、cross-thread audit、paired deltaを別fieldとして追加します。算出不能値は `available: false` と `null` で表し、実測値 0 と区別します。
 
-同じ入力とsource状態では既存7ファイルすべてがbyte-for-byteで再現されます。S4では追加の`causal-tracing.json`と`causal-tracing.csv`も再現性対象です。M1-Aの評価定義は [M1-A evaluation harness](docs/m1a-evaluation.md)、確率伝播と公開境界は [M1-B stochastic hazard](docs/m1b-stochastic-hazard.md)、S3比較は [M1-C3 weft evaluation](docs/m1c3-weft-evaluation.md) を参照してください。数値は合成scenario内の比較値であり、現実の災害・救助性能を示しません。
+同じ入力とsource状態では既存7ファイルすべてがbyte-for-byteで再現されます。S4では追加の`causal-tracing.json`と`causal-tracing.csv`、S5では`past-state-reconstruction.json`と`past-state-reconstruction.csv`も再現性対象です。M1-Aの評価定義は [M1-A evaluation harness](docs/m1a-evaluation.md)、確率伝播と公開境界は [M1-B stochastic hazard](docs/m1b-stochastic-hazard.md)、S3比較は [M1-C3 weft evaluation](docs/m1c3-weft-evaluation.md) を参照してください。数値は合成scenario内の比較値であり、現実の災害・救助性能を示しません。
 
 ## Cross-entity interaction（M1-C1）
 
@@ -133,7 +133,7 @@ dotnet run --project src/FootprintSim.Cli -- evaluate \
 
 ## Neutral telemetry（M1-T0）
 
-評価へ`--telemetry`を付けると、既存評価ファイルを変えずに、private truth、public/evidence、evaluation transitionを分離した決定的JSONLを`telemetry/`以下へ追加します。telemetry schema version 2はversion 1の意味を維持し、複数weftのtracing constraintとforward/backward/cross-thread stepを追加します。event/interval、relation、support/conflict lineage、candidate before/after、provenanceとsource ancestryを中立記録として保持し、Good/Bad、Causal Shadow、Indexability、Nexus Resolution、救助優先度などのscoreは含めません。
+評価へ`--telemetry`を付けると、既存評価ファイルを変えずに、private truth、public/evidence、evaluation transitionを分離した決定的JSONLを`telemetry/`以下へ追加します。telemetry schema version 3はversion 2までの意味を維持し、past-state query、candidate、verification、method workを別recordとして追加します。event/interval、relation、support/conflict lineage、candidate before/after、provenanceとsource ancestryを中立記録として保持し、Good/Bad、Causal Shadow、Indexability、Nexus Resolution、救助優先度などのscoreは含めません。
 
 ```bash
 dotnet run --project src/FootprintSim.Cli -- evaluate \
@@ -148,7 +148,7 @@ S0〜S4で利用でき、未指定時は`telemetry/`を作りません。stream�
 
 ## Operational Causal Tracing（M1-D）
 
-S4では同じsynthetic truthに対し、own evidenceのみ、単一weft、複数weftのOperational Causal Tracingを比較します。複数制約はsource ancestryでgroup化し、forward/backward traversal、upstream/local/downstreamのcausal sandwich、support/conflict lineageを保持します。これはknown public structureのtraversalであり、past reconstructionやIndex Accessではありません。
+S4では同じsynthetic truthに対し、own evidenceのみ、単一weft、複数weftのOperational Causal Tracingを比較します。複数制約はsource ancestryでgroup化し、forward/backward traversal、upstream/local/downstreamの接続（M1-Dでは`causal sandwich`というlegacy working label）、support/conflict lineageを保持します。これはknown public structureのtraversalであり、past candidate reconstructionではありません。
 
 ```bash
 dotnet run --project src/FootprintSim.Cli -- evaluate \
@@ -160,6 +160,21 @@ dotnet run --project src/FootprintSim.Cli -- evaluate \
 ```
 
 詳細は [M1-D Operational Causal Tracing](docs/m1d-causal-tracing.md) を参照してください。
+
+## Past-state reconstruction（M1-E）
+
+S5では、target entity/window/cutoffを明示したqueryに対し、cutoffまでに利用可能なpublic evidenceとconstraintからhistorical candidateを構築します。candidate生成、stable machine-readable IDによるaddressing、別source lineageによるverification、既存M1-D tracerによるbackward/local traversalは別操作です。同じsource ancestryをindependent verificationへ再利用せず、future/private evidence、truth occurrence、realized path、truth parentをpublic comparisonへ渡しません。
+
+```bash
+dotnet run --project src/FootprintSim.Cli -- evaluate \
+  --scenario scenarios/s5_distributed_past_evidence/scenario.json \
+  --seeds 0..199 \
+  --strategies all \
+  --output results/m1e-s5 \
+  --telemetry
+```
+
+出力はbackward traversal、constraint-based reconstruction、reconstruction後のlocal traversalを同じseed/query/public inputで比較します。Addressabilityはtruth likelihoodではなく、Verifiabilityはgenerationとは別のlineage検査です。設計、preregistration、仏教方法論との限定的比較、命名監査は [M1-E past-state reconstruction](docs/m1e-past-state-reconstruction.md) を参照してください。
 
 ## 構成
 
@@ -174,8 +189,8 @@ dotnet run --project src/FootprintSim.Cli -- evaluate \
 
 ## 現段階の制限
 
-S0/S1 の経路はscenarioに明示した抽象イベントです。S2/S3の重みも研究用の合成値であり、校正済み確率ではありません。M1-C3は境界付きcross-thread evidenceの合成比較であり、formal Causal Weave、Causal Nexus、belief engineではありません。流体・土砂・建物倒壊の物理解析、観測チャネル校正、実時間処理、GUI、完全なEBPC、救助優先順位ポリシーは実装していません。特定の実災害を再現するものでも、現実の位置・生存・危険度を予測できるものでもありません。
+S0/S1 の経路はscenarioに明示した抽象イベントです。S2〜S5の重み・evidence conditionも研究用の合成値であり、校正済み確率ではありません。M1-C3〜M1-Eは境界付きpublic evidenceの合成比較であり、formal Causal Weave、Causal Nexus、24縁engine、belief engineではありません。流体・土砂・建物倒壊の物理解析、観測チャネル校正、実時間処理、GUI、完全なEBPC、救助優先順位ポリシーは実装していません。特定の実災害を再現するものでも、現実の位置・生存・危険度を予測できるものでもありません。
 
 ## 次のマイルストーン
 
-M1-Aは複数run評価、M1-Bは確率分岐する経糸、M1-C1は横糸の表現境界、M1-C2はhistorical constraint意味論、M1-C3は正式S3 paired比較、M1-T0は意味付け前の中立telemetryです。観測チャネル校正と深いEBPC統合はM2へ送り、`ObservationSet` / `IRescueInference` 境界を維持します。複数weftのoperational tracingはM1-D、dynamic past indexはM1-Eで扱います。
+M1-Aは複数run評価、M1-Bは確率分岐する経糸、M1-C1は横糸の表現境界、M1-C2はhistorical constraint意味論、M1-C3は正式S3 paired比較、M1-T0は意味付け前の中立telemetryです。複数weftのoperational tracingはM1-D、public evidenceからのpast-state candidate reconstructionはM1-Eです。観測チャネル校正、動的index、24縁とのprimitive relation照合、深いEBPC統合は将来へ送り、`ObservationSet` / `IRescueInference` 境界を維持します。

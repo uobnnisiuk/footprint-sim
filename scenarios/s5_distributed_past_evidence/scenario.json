@@ -1,0 +1,206 @@
+{
+  "schemaVersion": 5,
+  "id": "s5-distributed-past-evidence",
+  "title": "S5: Synthetic distributed evidence for a past state",
+  "description": "An uncalibrated synthetic comparison of public backward traversal, constraint-based reconstruction, and reconstruction with local traversal. It does not model real Search and Rescue performance.",
+  "targetPersonId": "person-a",
+  "normalWalkingRadius": 20.0,
+  "evaluationSearchableRegionIds": [
+    "release", "alternate-route", "fork-west", "fork-east", "terminal-west", "terminal-east"
+  ],
+  "hazardTransportEnvelopeRegionIds": [
+    "release", "fork-west", "fork-east", "terminal-west", "terminal-east"
+  ],
+  "pastStateReconstruction": {
+    "evaluationEndTick": 32,
+    "targetStartTick": 13,
+    "targetEndTick": 14,
+    "evidenceAvailabilityCutoff": 28,
+    "queryContextId": "s5-public-historical-window-query",
+    "localTraversalWindowPaddingTicks": 1,
+    "conditionCycle": [
+      "distributedPublicEvidence", "sharedAncestryVerification", "conflictingVerification",
+      "delayedVerification", "unavailableVerification", "deviceOnlyEvidence"
+    ],
+    "publicCandidateStates": [
+      { "startTick": 8, "endTick": 10, "temporalKind": "stateInterval", "regionIds": ["release", "alternate-route"] },
+      { "startTick": 13, "endTick": 14, "temporalKind": "stateInterval", "regionIds": ["fork-west", "fork-east", "alternate-route"] },
+      { "startTick": 18, "endTick": 32, "temporalKind": "stateInterval", "regionIds": ["terminal-west", "terminal-east"] }
+    ],
+    "generationConstraintDefinitionIds": [
+      "generation-a", "generation-a-redundant", "generation-b-uncertain", "generation-conflict"
+    ],
+    "verificationConstraintDefinitionIds": [
+      "verification-independent", "verification-shared", "verification-conflicting",
+      "verification-delayed", "verification-private", "verification-device"
+    ],
+    "constraints": [
+      {
+        "id": "generation-a", "sourceObservationKey": "later-trace-a", "directSourceId": "source-a",
+        "sourceAncestryIds": ["record-family-a"], "sourceKind": "crossThreadObservation",
+        "relationKind": "later-public-trace", "otherEntityId": "person-b", "role": "downstream",
+        "observedStartTick": 24, "observedEndTick": 24, "constrainedStartTick": 13,
+        "constrainedEndTick": 14, "allowedRegionIds": ["fork-west", "fork-east"],
+        "availableAtTick": 25, "evidenceState": "confirmed", "isPersonEvidence": true,
+        "isDeviceOnlyEvidence": false, "derivationKind": "later-trace-to-target-window",
+        "appliesToPastStateConditions": [
+          "distributedPublicEvidence", "sharedAncestryVerification", "conflictingVerification",
+          "delayedVerification", "unavailableVerification", "deviceOnlyEvidence"
+        ]
+      },
+      {
+        "id": "generation-a-redundant", "sourceObservationKey": "later-trace-a", "directSourceId": "source-a",
+        "sourceAncestryIds": ["record-family-a"], "sourceKind": "crossThreadObservation",
+        "relationKind": "later-public-trace-derived", "otherEntityId": "person-b", "role": "downstream",
+        "observedStartTick": 24, "observedEndTick": 24, "constrainedStartTick": 13,
+        "constrainedEndTick": 14, "allowedRegionIds": ["fork-west", "fork-east"],
+        "availableAtTick": 25, "evidenceState": "confirmed", "isPersonEvidence": true,
+        "isDeviceOnlyEvidence": false, "derivationKind": "same-record-secondary-derivation",
+        "appliesToPastStateConditions": [
+          "distributedPublicEvidence", "sharedAncestryVerification", "conflictingVerification",
+          "delayedVerification", "unavailableVerification", "deviceOnlyEvidence"
+        ]
+      },
+      {
+        "id": "generation-b-uncertain", "sourceObservationKey": "later-trace-b", "directSourceId": "source-b",
+        "sourceAncestryIds": ["record-family-b"], "sourceKind": "crossThreadObservation",
+        "relationKind": "later-public-trace", "otherEntityId": "person-c", "role": "downstream",
+        "observedStartTick": 26, "observedEndTick": 26, "constrainedStartTick": 13,
+        "constrainedEndTick": 14, "allowedRegionIds": ["fork-west"], "availableAtTick": 27,
+        "evidenceState": "supportedButUncertain", "isPersonEvidence": true,
+        "isDeviceOnlyEvidence": false, "derivationKind": "uncertain-later-trace-to-target-window",
+        "appliesToPastStateConditions": [
+          "distributedPublicEvidence", "sharedAncestryVerification", "conflictingVerification",
+          "delayedVerification", "unavailableVerification", "deviceOnlyEvidence"
+        ]
+      },
+      {
+        "id": "generation-conflict", "sourceObservationKey": "later-trace-conflict", "directSourceId": "source-conflict",
+        "sourceAncestryIds": ["record-family-conflict"], "sourceKind": "crossThreadObservation",
+        "relationKind": "later-public-trace", "otherEntityId": "person-c", "role": "downstream",
+        "observedStartTick": 25, "observedEndTick": 25, "constrainedStartTick": 13,
+        "constrainedEndTick": 14, "allowedRegionIds": ["alternate-route"], "availableAtTick": 26,
+        "evidenceState": "conflicting", "isPersonEvidence": true, "isDeviceOnlyEvidence": false,
+        "derivationKind": "conflicting-later-trace",
+        "appliesToPastStateConditions": ["conflictingVerification"]
+      },
+      {
+        "id": "traversal-later-state", "sourceObservationKey": "known-later-public-state", "directSourceId": "source-known-later-state",
+        "sourceAncestryIds": ["later-state-record"], "sourceKind": "publicEnvironmentalObservation",
+        "relationKind": "known-later-public-state", "otherEntityId": "person-b", "role": "downstream",
+        "observedStartTick": 27, "observedEndTick": 27, "constrainedStartTick": 18,
+        "constrainedEndTick": 32, "allowedRegionIds": ["terminal-west", "terminal-east"],
+        "availableAtTick": 27, "evidenceState": "confirmed", "isPersonEvidence": true,
+        "isDeviceOnlyEvidence": false, "derivationKind": "known-later-state-for-traversal",
+        "appliesToPastStateConditions": [
+          "distributedPublicEvidence", "sharedAncestryVerification", "conflictingVerification",
+          "delayedVerification", "unavailableVerification", "deviceOnlyEvidence"
+        ]
+      },
+      {
+        "id": "verification-independent", "sourceObservationKey": "public-environment-west", "directSourceId": "source-verification-west",
+        "sourceAncestryIds": ["environment-record-west"], "sourceKind": "publicEnvironmentalObservation",
+        "relationKind": "public-environment-window-constraint", "otherEntityId": "person-b", "role": "local",
+        "observedStartTick": 27, "observedEndTick": 27, "constrainedStartTick": 13,
+        "constrainedEndTick": 14, "allowedRegionIds": ["fork-west"], "availableAtTick": 27,
+        "evidenceState": "confirmed", "isPersonEvidence": true, "isDeviceOnlyEvidence": false,
+        "derivationKind": "independent-environment-verification",
+        "appliesToPastStateConditions": ["distributedPublicEvidence", "conflictingVerification"]
+      },
+      {
+        "id": "verification-shared", "sourceObservationKey": "shared-record-check", "directSourceId": "source-verification-shared",
+        "sourceAncestryIds": ["record-family-a"], "sourceKind": "publicEnvironmentalObservation",
+        "relationKind": "derived-record-window-check", "otherEntityId": "person-b", "role": "local",
+        "observedStartTick": 27, "observedEndTick": 27, "constrainedStartTick": 13,
+        "constrainedEndTick": 14, "allowedRegionIds": ["fork-west", "fork-east"], "availableAtTick": 27,
+        "evidenceState": "confirmed", "isPersonEvidence": true, "isDeviceOnlyEvidence": false,
+        "derivationKind": "shared-ancestry-verification",
+        "appliesToPastStateConditions": ["sharedAncestryVerification"]
+      },
+      {
+        "id": "verification-conflicting", "sourceObservationKey": "independent-conflicting-check", "directSourceId": "source-verification-conflict",
+        "sourceAncestryIds": ["independent-record-conflict"], "sourceKind": "publicEnvironmentalObservation",
+        "relationKind": "public-environment-window-constraint", "otherEntityId": "person-c", "role": "local",
+        "observedStartTick": 27, "observedEndTick": 27, "constrainedStartTick": 13,
+        "constrainedEndTick": 14, "allowedRegionIds": ["fork-east"], "availableAtTick": 27,
+        "evidenceState": "conflicting", "isPersonEvidence": true, "isDeviceOnlyEvidence": false,
+        "derivationKind": "independent-conflicting-verification",
+        "appliesToPastStateConditions": ["conflictingVerification"]
+      },
+      {
+        "id": "verification-delayed", "sourceObservationKey": "delayed-check", "directSourceId": "source-verification-delayed",
+        "sourceAncestryIds": ["independent-record-delayed"], "sourceKind": "publicEnvironmentalObservation",
+        "relationKind": "delayed-public-window-constraint", "otherEntityId": "person-b", "role": "local",
+        "observedStartTick": 27, "observedEndTick": 27, "constrainedStartTick": 13,
+        "constrainedEndTick": 14, "allowedRegionIds": ["fork-west"], "availableAtTick": 30,
+        "evidenceState": "confirmed", "isPersonEvidence": true, "isDeviceOnlyEvidence": false,
+        "derivationKind": "delayed-independent-verification",
+        "appliesToPastStateConditions": ["delayedVerification"]
+      },
+      {
+        "id": "verification-private", "sourceObservationKey": "private-check", "directSourceId": "source-verification-private",
+        "sourceAncestryIds": ["private-record"], "sourceKind": "publicEnvironmentalObservation",
+        "relationKind": "private-window-constraint", "otherEntityId": "person-b", "role": "local",
+        "observedStartTick": 27, "observedEndTick": 27, "constrainedStartTick": 13,
+        "constrainedEndTick": 14, "allowedRegionIds": ["fork-east"], "availableAtTick": 27,
+        "evidenceState": "confirmed", "isPersonEvidence": true, "isDeviceOnlyEvidence": false,
+        "visibility": "privateEvidence", "derivationKind": "private-independent-verification",
+        "appliesToPastStateConditions": ["unavailableVerification"]
+      },
+      {
+        "id": "verification-device", "sourceObservationKey": "device-fix", "directSourceId": "source-device",
+        "sourceAncestryIds": ["device-record"], "sourceKind": "deviceOnlyObservation",
+        "relationKind": "device-location-observation", "otherEntityId": "device-d", "role": "local",
+        "observedStartTick": 26, "observedEndTick": 26, "constrainedStartTick": 13,
+        "constrainedEndTick": 14, "allowedRegionIds": ["fork-west"], "availableAtTick": 27,
+        "evidenceState": "confirmed", "isPersonEvidence": false, "isDeviceOnlyEvidence": true,
+        "derivationKind": "device-only-verification",
+        "appliesToPastStateConditions": ["deviceOnlyEvidence"]
+      }
+    ]
+  },
+  "stochasticHazard": {
+    "hazardId": "hazard-s5-synthetic-transport", "sourceRegionId": "release", "startTick": 10,
+    "deviceId": "device-d", "separationProbability": 0.75, "maximumTransitionsPerEntity": 4,
+    "nodes": [
+      { "regionId": "release", "minimumArrivalTick": 8, "maximumArrivalTick": 10, "depositionProbability": 0.0, "trappingProbability": 0.0, "releaseProbability": 0.0, "minimumReleaseDelayTicks": 0, "maximumReleaseDelayTicks": 0, "isTerminal": false, "isRequiredTerminal": false, "publiclyVisible": true, "publishedAtTick": 0, "publicProvenanceId": "s5-public-release" },
+      { "regionId": "fork-west", "minimumArrivalTick": 10, "maximumArrivalTick": 14, "depositionProbability": 0.0, "trappingProbability": 0.0, "releaseProbability": 0.0, "minimumReleaseDelayTicks": 0, "maximumReleaseDelayTicks": 0, "isTerminal": false, "isRequiredTerminal": false, "publiclyVisible": true, "publishedAtTick": 0, "publicProvenanceId": "s5-public-west" },
+      { "regionId": "fork-east", "minimumArrivalTick": 10, "maximumArrivalTick": 14, "depositionProbability": 0.0, "trappingProbability": 0.0, "releaseProbability": 0.0, "minimumReleaseDelayTicks": 0, "maximumReleaseDelayTicks": 0, "isTerminal": false, "isRequiredTerminal": false, "publiclyVisible": true, "publishedAtTick": 0, "publicProvenanceId": "s5-public-east" },
+      { "regionId": "terminal-west", "minimumArrivalTick": 13, "maximumArrivalTick": 22, "depositionProbability": 1.0, "trappingProbability": 0.25, "releaseProbability": 0.0, "minimumReleaseDelayTicks": 0, "maximumReleaseDelayTicks": 0, "isTerminal": true, "isRequiredTerminal": true, "publiclyVisible": true, "publishedAtTick": 0, "publicProvenanceId": "s5-public-terminal-west" },
+      { "regionId": "terminal-east", "minimumArrivalTick": 13, "maximumArrivalTick": 22, "depositionProbability": 1.0, "trappingProbability": 0.25, "releaseProbability": 0.0, "minimumReleaseDelayTicks": 0, "maximumReleaseDelayTicks": 0, "isTerminal": true, "isRequiredTerminal": true, "publiclyVisible": true, "publishedAtTick": 0, "publicProvenanceId": "s5-public-terminal-east" }
+    ],
+    "transitions": [
+      { "id": "release-west", "sourceRegionId": "release", "destinationRegionId": "fork-west", "weight": 0.5, "minimumTravelTicks": 2, "maximumTravelTicks": 4, "transportType": "hazardDriven", "activation": "anyEntity", "publiclyVisible": true, "provenanceId": "s5-public-release-west" },
+      { "id": "release-east", "sourceRegionId": "release", "destinationRegionId": "fork-east", "weight": 0.5, "minimumTravelTicks": 2, "maximumTravelTicks": 4, "transportType": "hazardDriven", "activation": "anyEntity", "publiclyVisible": true, "provenanceId": "s5-public-release-east" },
+      { "id": "west-terminal", "sourceRegionId": "fork-west", "destinationRegionId": "terminal-west", "weight": 1.0, "minimumTravelTicks": 3, "maximumTravelTicks": 6, "transportType": "hazardDriven", "activation": "anyEntity", "publiclyVisible": true, "provenanceId": "s5-public-west-terminal" },
+      { "id": "east-terminal", "sourceRegionId": "fork-east", "destinationRegionId": "terminal-east", "weight": 1.0, "minimumTravelTicks": 3, "maximumTravelTicks": 6, "transportType": "hazardDriven", "activation": "anyEntity", "publiclyVisible": true, "provenanceId": "s5-public-east-terminal" }
+    ]
+  },
+  "regions": [
+    { "id": "home", "type": "building", "center": { "x": 0, "y": 0, "elevation": 30, "regionId": "home" }, "passability": 0.8, "connections": [{ "toRegionId": "release", "travelCost": 1, "passable": true }] },
+    { "id": "person-b-home", "type": "building", "center": { "x": -10, "y": 5, "elevation": 31, "regionId": "person-b-home" }, "passability": 0.8, "connections": [] },
+    { "id": "person-c-home", "type": "building", "center": { "x": -10, "y": -5, "elevation": 29, "regionId": "person-c-home" }, "passability": 0.8, "connections": [] },
+    { "id": "release", "type": "other", "center": { "x": 30, "y": 0, "elevation": 20, "regionId": "release" }, "passability": 0.2, "connections": [] },
+    { "id": "alternate-route", "type": "other", "center": { "x": 45, "y": 18, "elevation": 18, "regionId": "alternate-route" }, "passability": 0.2, "connections": [] },
+    { "id": "fork-west", "type": "other", "center": { "x": 60, "y": -15, "elevation": 12, "regionId": "fork-west" }, "passability": 0.0, "connections": [] },
+    { "id": "fork-east", "type": "other", "center": { "x": 60, "y": 15, "elevation": 12, "regionId": "fork-east" }, "passability": 0.0, "connections": [] },
+    { "id": "terminal-west", "type": "other", "center": { "x": 95, "y": -20, "elevation": 5, "regionId": "terminal-west" }, "passability": 0.2, "connections": [] },
+    { "id": "terminal-east", "type": "other", "center": { "x": 95, "y": 20, "elevation": 5, "regionId": "terminal-east" }, "passability": 0.2, "connections": [] }
+  ],
+  "entities": {
+    "persons": [
+      { "id": "person-a", "initialPosition": { "x": 0, "y": 0, "elevation": 30, "regionId": "home" } },
+      { "id": "person-b", "initialPosition": { "x": -10, "y": 5, "elevation": 31, "regionId": "person-b-home" } },
+      { "id": "person-c", "initialPosition": { "x": -10, "y": -5, "elevation": 29, "regionId": "person-c-home" } }
+    ],
+    "devices": [{ "id": "device-d", "initialPosition": { "x": 0, "y": 0, "elevation": 30, "regionId": "home" } }],
+    "carriers": [], "rescuers": [],
+    "hazards": [{ "id": "hazard-s5-synthetic-transport", "kind": "synthetic-generic-passive-transport", "routeRegionIds": ["release", "fork-west", "fork-east", "terminal-west", "terminal-east"], "minimumSpeedPerTick": 1, "maximumSpeedPerTick": 10, "stopProbability": 0.2 }]
+  },
+  "steps": [
+    { "id": "associate-device", "tick": 0, "kind": "personDeviceAssociated", "subjectIds": ["person-a"], "relatedEntityIds": ["device-d"], "regionId": "home", "payload": { "relationship": "carried" } },
+    { "id": "last-confirmed", "tick": 1, "kind": "regionEntered", "movementKind": "voluntary", "subjectIds": ["person-a"], "position": { "x": 0, "y": 0, "elevation": 30, "regionId": "home" }, "observation": { "evidenceType": "syntheticAccessRecord", "reportedSubjectIds": ["person-a"], "reportedRegionId": "home", "emissionProbability": 1, "dropProbability": 0, "minimumDelayTicks": 0, "maximumDelayTicks": 0, "state": "confirmed", "conflictProbability": 0, "publicPayload": { "source": "synthetic-own-record" } } },
+    { "id": "enter-release", "tick": 8, "kind": "voluntaryMovement", "movementKind": "voluntary", "subjectIds": ["person-a", "device-d"], "position": { "x": 30, "y": 0, "elevation": 20, "regionId": "release" } },
+    { "id": "device-later-fix", "tick": 26, "kind": "communicationLost", "subjectIds": ["device-d"], "observation": { "evidenceType": "syntheticDeviceOnlyFix", "reportedSubjectIds": ["device-d"], "reportedRegionId": "terminal-west", "emissionProbability": 1, "dropProbability": 0, "minimumDelayTicks": 1, "maximumDelayTicks": 1, "state": "supportedButUncertain", "conflictProbability": 0, "publicPayload": { "source": "synthetic-device-only", "subjectType": "device" } } }
+  ]
+}

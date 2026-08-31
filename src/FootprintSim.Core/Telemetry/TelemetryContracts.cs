@@ -3,12 +3,13 @@ using FootprintSim.Evidence;
 using FootprintSim.Interactions;
 using FootprintSim.Interactions.CandidateWarps;
 using FootprintSim.Interactions.Tracing;
+using FootprintSim.Inference.PastStates;
 
 namespace FootprintSim.Telemetry;
 
 public static class TelemetrySchema
 {
-    public const int Version = 2;
+    public const int Version = 3;
 }
 
 public enum TelemetryStreamKind
@@ -481,6 +482,144 @@ public sealed record CandidateTransitionTelemetryRecord
     public TelemetryVisibility Visibility { get; init; } = TelemetryVisibility.EvaluationContext;
 }
 
+public sealed record PastStateQueryTelemetryRecord
+{
+    public int TelemetrySchemaVersion { get; init; } = TelemetrySchema.Version;
+
+    public string RecordType { get; init; } = "pastStateQuery";
+
+    public required string ScenarioId { get; init; }
+
+    public required int Seed { get; init; }
+
+    public required string QueryId { get; init; }
+
+    public required string QueryContextId { get; init; }
+
+    public required string TargetEntityId { get; init; }
+
+    public required TelemetryTimeWindow TargetTimeWindow { get; init; }
+
+    public required long EvidenceAvailabilityCutoff { get; init; }
+
+    public required string EvidenceSetId { get; init; }
+
+    public IReadOnlyList<string> ObservationIds { get; init; } = [];
+
+    public IReadOnlyList<string> ConstraintIds { get; init; } = [];
+
+    public IReadOnlyList<string> SourceGroupIds { get; init; } = [];
+
+    public IReadOnlyList<string> PublicRelationReferences { get; init; } = [];
+
+    public required int ExcludedFutureEvidenceCount { get; init; }
+
+    public TelemetryVisibility Visibility { get; init; } = TelemetryVisibility.EvaluationContext;
+}
+
+public sealed record PastStateCandidateTelemetryRecord
+{
+    public int TelemetrySchemaVersion { get; init; } = TelemetrySchema.Version;
+
+    public string RecordType { get; init; } = "pastStateCandidate";
+
+    public required string ScenarioId { get; init; }
+
+    public required int Seed { get; init; }
+
+    public required string QueryId { get; init; }
+
+    public required string ReconstructionId { get; init; }
+
+    public required string CandidateId { get; init; }
+
+    public required string TargetEntityId { get; init; }
+
+    public required TelemetryTimeWindow TargetTimeWindow { get; init; }
+
+    public required string RegionId { get; init; }
+
+    public IReadOnlyList<string> GenerationEvidenceIds { get; init; } = [];
+
+    public IReadOnlyList<string> GenerationSourceGroupIds { get; init; } = [];
+
+    public IReadOnlyList<string> SourceAncestryIds { get; init; } = [];
+
+    public IReadOnlyList<string> AppliedConstraintIds { get; init; } = [];
+
+    public IReadOnlyList<string> UnresolvedConstraintIds { get; init; } = [];
+
+    public IReadOnlyList<string> ConflictingConstraintIds { get; init; } = [];
+
+    public IReadOnlyList<string> PublicRelationReferences { get; init; } = [];
+
+    public required PastStateCandidateDisposition Disposition { get; init; }
+
+    public TelemetryVisibility Visibility { get; init; } = TelemetryVisibility.EvaluationContext;
+}
+
+public sealed record CandidateVerificationTelemetryRecord
+{
+    public int TelemetrySchemaVersion { get; init; } = TelemetrySchema.Version;
+
+    public string RecordType { get; init; } = "candidateVerification";
+
+    public required string ScenarioId { get; init; }
+
+    public required int Seed { get; init; }
+
+    public required string QueryId { get; init; }
+
+    public required string CandidateId { get; init; }
+
+    public IReadOnlyList<string> VerificationEvidenceIds { get; init; } = [];
+
+    public IReadOnlyList<string> VerificationSourceGroupIds { get; init; } = [];
+
+    public IReadOnlyList<string> SharedAncestrySourceGroupIds { get; init; } = [];
+
+    public IReadOnlyList<string> SupportingConstraintIds { get; init; } = [];
+
+    public IReadOnlyList<string> RefutingConstraintIds { get; init; } = [];
+
+    public IReadOnlyList<string> ConflictingConstraintIds { get; init; } = [];
+
+    public IReadOnlyList<string> GenerationVerificationAncestryOverlap { get; init; } = [];
+
+    public required CandidateVerificationDisposition Disposition { get; init; }
+
+    public TelemetryVisibility Visibility { get; init; } = TelemetryVisibility.EvaluationContext;
+}
+
+public sealed record PastStateMethodTelemetryRecord
+{
+    public int TelemetrySchemaVersion { get; init; } = TelemetrySchema.Version;
+
+    public string RecordType { get; init; } = "pastStateMethod";
+
+    public required string ScenarioId { get; init; }
+
+    public required int Seed { get; init; }
+
+    public required string QueryId { get; init; }
+
+    public required PastStateMethod Method { get; init; }
+
+    public IReadOnlyList<string> CandidateRegionIds { get; init; } = [];
+
+    public required int Steps { get; init; }
+
+    public required int PublicRelationsInspected { get; init; }
+
+    public required int EvidenceRecordsInspected { get; init; }
+
+    public required int SourceGroupsInspected { get; init; }
+
+    public string? TracingSessionId { get; init; }
+
+    public TelemetryVisibility Visibility { get; init; } = TelemetryVisibility.EvaluationContext;
+}
+
 public sealed record TelemetryRecordCategoryManifest
 {
     public required string Category { get; init; }
@@ -546,15 +685,24 @@ public sealed record EvidenceTelemetryStream
     public IReadOnlyList<ConstraintTelemetryRecord> Constraints { get; init; } = [];
 
     public IReadOnlyList<TracingConstraintTelemetryRecord> TracingConstraints { get; init; } = [];
+
 }
 
 public sealed record EvaluationTelemetryStream
 {
+    public IReadOnlyList<PastStateQueryTelemetryRecord> PastStateQueries { get; init; } = [];
+
     public IReadOnlyList<ConstraintApplicationTelemetryRecord> ConstraintApplications { get; init; } = [];
 
     public IReadOnlyList<CandidateTransitionTelemetryRecord> CandidateTransitions { get; init; } = [];
 
     public IReadOnlyList<CausalTracingStepTelemetryRecord> CausalTracingSteps { get; init; } = [];
+
+    public IReadOnlyList<PastStateCandidateTelemetryRecord> PastStateCandidates { get; init; } = [];
+
+    public IReadOnlyList<CandidateVerificationTelemetryRecord> CandidateVerifications { get; init; } = [];
+
+    public IReadOnlyList<PastStateMethodTelemetryRecord> PastStateMethods { get; init; } = [];
 }
 
 public sealed record NeutralTelemetryBundle
