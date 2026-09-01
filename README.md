@@ -209,6 +209,17 @@ dotnet run --project src/FootprintSim.Cli -- evaluate-location-resolution \
 
 これは現実距離やsensor精度を決める実験ではありません。location level、partial-observation semantics、事前登録、結果の表現依存性は [M1-F2 location resolution](docs/m1f2-location-resolution.md) を参照してください。
 
+M1-F3ではlocation/subject/relation/availabilityを固定し、`later-trace-a`のobserved-timeだけをS5の既存state境界に沿って段階的に広げます。広いwindowはrelationの持続ではなく、区間内のどこか1 tickで観測されたという不確実性です。現在のscenario-declared historical windowがobserved tickを実際に使用するかも明示的に監査します。
+
+```bash
+dotnet run --project src/FootprintSim.Cli -- evaluate-time-resolution \
+  --experiment experiments/m1f3_time_resolution/experiment.json \
+  --seeds 0..199 \
+  --output results/m1f3-s5
+```
+
+これは現実の時間精度要件を決める実験ではありません。time level、occurrence uncertainty、既存transformationの境界、事前登録と結果は [M1-F3 time resolution](docs/m1f3-time-resolution.md) を参照してください。
+
 ## 構成
 
 - `src/FootprintSim.Core`: world/event/observation/interaction/inference/evaluation の契約と決定論エンジン

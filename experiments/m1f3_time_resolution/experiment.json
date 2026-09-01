@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "id": "m1f3-s5-later-trace-a-time-resolution",
+  "scenarioPath": "../../scenarios/s5_distributed_past_evidence/scenario.json",
+  "scenarioId": "s5-distributed-past-evidence",
+  "sourceObservationKey": "later-trace-a",
+  "timeWindowMeaning": "occursAtOnePossibleTick",
+  "levels": [
+    {
+      "id": "current",
+      "informationOrder": 0,
+      "description": "The unchanged later-trace-a exact observed tick.",
+      "observedStartTick": 24,
+      "observedEndTick": 24,
+      "generateConstraint": true,
+      "boundaryRationale": "Exact baseline inside the fixed later public candidate-state interval."
+    },
+    {
+      "id": "narrow",
+      "informationOrder": 1,
+      "description": "Two possible adjacent observed ticks within the same later public state.",
+      "observedStartTick": 23,
+      "observedEndTick": 24,
+      "generateConstraint": true,
+      "boundaryRationale": "Adds one adjacent tick without crossing a public candidate-state boundary."
+    },
+    {
+      "id": "later-state-broad",
+      "informationOrder": 2,
+      "description": "Any observed tick from the start of the later public state through the baseline tick.",
+      "observedStartTick": 18,
+      "observedEndTick": 24,
+      "generateConstraint": true,
+      "boundaryRationale": "Reaches the fixed start boundary of the public state interval [18,32]."
+    },
+    {
+      "id": "target-crossing-broad",
+      "informationOrder": 3,
+      "description": "Any observed tick from the target-state start through the baseline tick.",
+      "observedStartTick": 13,
+      "observedEndTick": 24,
+      "generateConstraint": true,
+      "boundaryRationale": "Crosses from the later state into the fixed target interval [13,14]."
+    },
+    {
+      "id": "scenario-history-broad",
+      "informationOrder": 4,
+      "description": "Any observed tick from the earliest public candidate-state start through the baseline tick.",
+      "observedStartTick": 8,
+      "observedEndTick": 24,
+      "generateConstraint": true,
+      "boundaryRationale": "Spans all fixed S5 public candidate-state start boundaries used by the comparison."
+    },
+    {
+      "id": "unknown",
+      "informationOrder": 5,
+      "description": "Subject, location, relation, availability, evidence state, and ancestry remain, but observed time is unavailable.",
+      "observedStartTick": null,
+      "observedEndTick": null,
+      "generateConstraint": false,
+      "boundaryRationale": "No possible observed tick is supplied and no hidden/default tick may be substituted."
+    }
+  ]
+}

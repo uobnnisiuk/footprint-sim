@@ -20,6 +20,14 @@ public static class CliApplication
         {
             if (args.Length > 0 && string.Equals(
                 args[0],
+                "evaluate-time-resolution",
+                StringComparison.Ordinal))
+            {
+                return await RunTimeResolutionAsync(args[1..]);
+            }
+
+            if (args.Length > 0 && string.Equals(
+                args[0],
                 "evaluate-location-resolution",
                 StringComparison.Ordinal))
             {
@@ -224,6 +232,47 @@ public static class CliApplication
             $"Later-trace field ablation completed: {result.Manifest.ProfileRunCount} paired profile runs, " +
             $"{result.Manifest.MethodRunCount} method runs, {result.Manifest.Seeds.Count} seeds, " +
             $"and {result.Manifest.ProfileIds.Count} profiles.");
+        Console.WriteLine($"Results: {outputPath}");
+        return 0;
+    }
+
+    private static async Task<int> RunTimeResolutionAsync(string[] args)
+    {
+        if (args.Contains("--help", StringComparer.Ordinal))
+        {
+            PrintTimeResolutionUsage();
+            return 0;
+        }
+
+        var options = ParseOptions(
+            args,
+            new HashSet<string>(["--experiment", "--seeds", "--output"], StringComparer.Ordinal));
+        var experimentPath = Path.GetFullPath(Require(options, "--experiment"));
+        var experiment = TimeResolutionExperimentLoader.Load(experimentPath);
+        var experimentDirectory = Path.GetDirectoryName(experimentPath) ??
+            throw new InvalidOperationException("Experiment path has no containing directory.");
+        var scenarioPath = Path.GetFullPath(experiment.ScenarioPath, experimentDirectory);
+        var scenario = ScenarioLoader.Load(scenarioPath);
+        var seeds = SeedExpressionParser.Parse(Require(options, "--seeds"));
+        var outputPath = Path.GetFullPath(Require(options, "--output"));
+        var git = GitMetadataReader.Read(Directory.GetCurrentDirectory());
+        var result = new TimeResolutionEvaluationRunner().Run(
+            new TimeResolutionEvaluationRequest
+            {
+                Experiment = experiment,
+                Scenario = scenario,
+                Seeds = seeds,
+                ExperimentContentSha256 = HashFile(experimentPath),
+                ScenarioContentSha256 = HashFile(scenarioPath),
+                SourceCommitSha = git.CommitSha,
+                DirtyWorkingTree = git.DirtyWorkingTree
+            });
+        await new TimeResolutionOutputWriter().WriteAsync(outputPath, result);
+
+        Console.WriteLine(
+            $"Time-resolution evaluation completed: {result.Manifest.ProfileRunCount} paired profile runs, " +
+            $"{result.Manifest.MethodRunCount} method runs, {result.Manifest.Seeds.Count} seeds, " +
+            $"and {result.Manifest.LevelIds.Count} levels.");
         Console.WriteLine($"Results: {outputPath}");
         return 0;
     }
@@ -452,6 +501,15 @@ public static class CliApplication
         Console.WriteLine(
             "Location resolution: dotnet run --project src/FootprintSim.Cli -- " +
             "evaluate-location-resolution --experiment <experiment.json> " +
+            "--seeds <n|a..b|list> --output <directory>");
+        PrintTimeResolutionUsage();
+    }
+
+    private static void PrintTimeResolutionUsage()
+    {
+        Console.WriteLine(
+            "Time resolution: dotnet run --project src/FootprintSim.Cli -- " +
+            "evaluate-time-resolution --experiment <experiment.json> " +
             "--seeds <n|a..b|list> --output <directory>");
     }
 }
