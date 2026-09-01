@@ -230,6 +230,17 @@ dotnet run --project src/FootprintSim.Cli -- evaluate-observation-constraint-der
 
 式、provenance、unknown-time failure、CandidateGeneration用途境界、受入結果とS5未移行理由は [M1-F8 observation-to-constraint derivation](docs/m1f8-observation-constraint-derivation.md) を参照してください。
 
+M1-F9ではF8 ruleを変更せず、seedごとにcandidate layer、later tick、duration bound、truth candidateを生成し、Exact / Medium / Broad / Unknownを同一world上でpaired評価します。登録seedは`0..199`に固定されています。
+
+```bash
+dotnet run --project src/FootprintSim.Cli -- evaluate-time-resolution-paired \
+  --experiment experiments/m1f9_time_resolution_paired/experiment.json \
+  --seeds 0..199 \
+  --output results/m1f9-time-resolution
+```
+
+generator範囲、per-seed set inclusion、candidate plateau、結果と解釈境界は [M1-F9 paired time-resolution evaluation](docs/m1f9-time-resolution-paired-evaluation.md) を参照してください。
+
 ## 構成
 
 - `src/FootprintSim.Core`: world/event/observation/interaction/inference/evaluation の契約と決定論エンジン

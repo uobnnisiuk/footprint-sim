@@ -20,6 +20,14 @@ public static class CliApplication
         {
             if (args.Length > 0 && string.Equals(
                 args[0],
+                "evaluate-time-resolution-paired",
+                StringComparison.Ordinal))
+            {
+                return await RunTimeResolutionPairedAsync(args[1..]);
+            }
+
+            if (args.Length > 0 && string.Equals(
+                args[0],
                 "evaluate-observation-constraint-derivation",
                 StringComparison.Ordinal))
             {
@@ -72,6 +80,41 @@ public static class CliApplication
             Console.Error.WriteLine($"error: {exception.Message}");
             return 2;
         }
+    }
+
+    private static async Task<int> RunTimeResolutionPairedAsync(string[] args)
+    {
+        if (args.Contains("--help", StringComparer.Ordinal))
+        {
+            PrintTimeResolutionPairedUsage();
+            return 0;
+        }
+
+        var options = ParseOptions(
+            args,
+            new HashSet<string>(["--experiment", "--seeds", "--output"], StringComparer.Ordinal));
+        var experimentPath = Path.GetFullPath(Require(options, "--experiment"));
+        var experiment = TimeResolutionPairedExperimentLoader.Load(experimentPath);
+        var seeds = SeedExpressionParser.Parse(Require(options, "--seeds"));
+        var outputPath = Path.GetFullPath(Require(options, "--output"));
+        var git = GitMetadataReader.Read(Directory.GetCurrentDirectory());
+        var result = new TimeResolutionPairedEvaluationRunner().Run(
+            new TimeResolutionPairedEvaluationRequest
+            {
+                Experiment = experiment,
+                Seeds = seeds,
+                ExperimentContentSha256 = HashFile(experimentPath),
+                SourceCommitSha = git.CommitSha,
+                DirtyWorkingTree = git.DirtyWorkingTree
+            });
+        await new TimeResolutionPairedOutputWriter().WriteAsync(outputPath, result);
+
+        Console.WriteLine(
+            $"Paired time-resolution evaluation completed: {result.Summary.WorldCount} worlds, " +
+            $"{result.Summary.PairedProfileRunCount} profile runs, " +
+            $"{result.Summary.CandidateSetMonotonicityViolationCount} candidate-set violations.");
+        Console.WriteLine($"Results: {outputPath}");
+        return 0;
     }
 
     private static async Task<int> RunObservationConstraintDerivationAsync(string[] args)
@@ -560,6 +603,15 @@ public static class CliApplication
             "Observation-to-constraint derivation: dotnet run --project src/FootprintSim.Cli -- " +
             "evaluate-observation-constraint-derivation --fixture <fixture.json> " +
             "--output <directory>");
+        PrintTimeResolutionPairedUsage();
+    }
+
+    private static void PrintTimeResolutionPairedUsage()
+    {
+        Console.WriteLine(
+            "Paired time resolution: dotnet run --project src/FootprintSim.Cli -- " +
+            "evaluate-time-resolution-paired --experiment <experiment.json> " +
+            "--seeds 0..199 --output <directory>");
     }
 }
 

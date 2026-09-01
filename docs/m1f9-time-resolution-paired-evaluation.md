@@ -9,8 +9,8 @@ world. This is not a new time-rule design, S5 migration, physical model, or real
 This document and
 `experiments/m1f9_time_resolution_paired/experiment.json` fix the generator, profiles,
 hypotheses, invalid conditions, metrics, and failure conditions before the 200-seed evaluation is
-run. The results section is intentionally left pending in this preregistration revision and will be
-filled without changing these choices.
+run. They were committed first as preregistration commit
+`ecd2bad8d0ebd9d7ff35fb345cdc27aad4e12a2a`. Sections 2–8 below are unchanged by the result entry.
 
 ## 2. Fixed M1-F8 rule and semantics
 
@@ -206,20 +206,127 @@ requirements.
 
 ## 9. Results
 
-Pending the preregistered `0..199` execution. This section will be filled from machine-readable
-artifacts without changing Sections 2–8.
+The exact registered seed set `0..199` produced 200 worlds and 800 paired profile runs. No seed was
+skipped, rejected, regenerated, or replaced.
 
-## 10. Interpretation and claim boundary
+### Primary profile metrics
 
-At most, F9 can establish that in this registered synthetic-world family, under the fixed public
-bounded-duration rule, broader observation occurrence-time uncertainty conservatively broadens
-the historical constraint and maintains or reduces candidate narrowing.
+| Profile | Mean candidates | Median | Min | Max | Containment | False exclusions | Mean reduction count vs Unknown | Mean reduction fraction vs Unknown | Mean generation work |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Exact | 2.190 | 2 | 1 | 6 | 1.000 | 0 | 6.365 | 0.734593 | 9.555 |
+| Medium | 3.210 | 3 | 1 | 8 | 1.000 | 0 | 5.345 | 0.618935 | 9.555 |
+| Broad | 5.295 | 5 | 1 | 11 | 1.000 | 0 | 3.260 | 0.378607 | 9.555 |
+| Unknown | 8.555 | 9 | 5 | 12 | 1.000 | 0 | 0.000 | 0.000000 | 8.555 |
+
+The reduction columns are synthetic-world candidate reduction only. Finite generation work is the
+generated candidate count plus one constraint application. Unknown performs no constraint
+application, so its mean work equals its mean candidate universe size.
+
+### Per-seed monotonicity and safety
+
+| Audit | Result |
+| --- | ---: |
+| derived-window monotonicity violations | 0 |
+| candidate-set monotonicity violations | 0 |
+| false exclusions across 800 profile runs | 0 |
+| seeds with `Exact < Medium` candidate count | 122 |
+| seeds with `Medium < Broad` | 175 |
+| seeds with `Broad < Unknown` | 190 |
+| seeds with all finite candidate sets equal | 11 |
+| seeds with equal adjacent finite derived windows | 0 |
+| seeds where a finite constraint widened but its candidate set did not | 92 |
+| seeds where Broad already equalled Unknown | 10 |
+
+Every finite derived window strictly expanded at both registered profile transitions. Candidate
+set equality therefore never came from an unchanged rule output. It came from the absence of a
+candidate state in the newly added time band.
+
+The 11 all-finite plateau seeds are `4, 43, 44, 47, 61, 73, 80, 101, 133, 150, 172`. The 10
+Broad/Unknown saturation seeds are `62, 68, 71, 85, 96, 112, 118, 124, 170, 180`. Complete lists,
+including all 92 adjacent finite plateaus, are in the report JSON and each individual transition is
+in the monotonicity CSV.
+
+### Duration-bound observations
+
+The generator exercised the complete registered duration range without making duration the primary
+comparison axis:
+
+| Duration item | Observed result |
+| --- | ---: |
+| `d_min` range | 3–6 |
+| `d_max` range | 3–9 |
+| width range | 0–3 |
+| mean width | 1.605 |
+| width 0 worlds | 47 |
+| width 1 worlds | 42 |
+| width 2 worlds | 54 |
+| width 3 worlds | 57 |
+
+No interaction effect is inferred from these frequencies. Duration is recorded so later analyses
+can stratify results without changing this primary observation-time comparison.
+
+## 10. Representation sensitivity and failure audit
+
+The 92 seeds with at least one finite plateau demonstrate the intended representation boundary:
+the derived constraint changed, but the discrete candidate layer had no state in the added band.
+This is analogous to the F2 Region plateau. It is not evidence that the extra time precision is
+unnecessary.
+
+Broad equalled Unknown in 10 worlds even though Broad still generated a finite constraint. In those
+worlds all generated candidates happened to fall inside the Broad-derived window. Unknown remained
+semantically distinct through constraint existence, derivation failure, provenance, and one less
+generation step.
+
+All registered failure gates remained clear:
+
+- 0 window monotonicity failures;
+- 0 candidate-set inclusion failures;
+- 0 false exclusions;
+- all finite profiles used `bounded-duration-predecessor-window-v1` and one source group;
+- every Unknown profile retained its source observation and returned `UnknownOccurrenceTime`;
+- truth substitution tests left public observations, constraints, derived windows, and candidate
+  IDs unchanged; and
+- changing `AvailableAtTick` between two usable ticks changed neither derived windows nor candidate
+  sets.
+
+## 11. Regression and deterministic reproduction
+
+The unchanged original M1-F8 acceptance fixture still returns candidate counts `2 -> 3 -> 4 -> 4`,
+its interval formula and rule ID are unchanged, and all M1-F8 tests remain in the regression suite.
+No S5 scenario, `later-trace-a`, F2/F3 experiment, or existing reconstruction contract is modified.
+
+The F9 writer emits:
+
+- `time-resolution-paired.json` — full report and aggregates;
+- `time-resolution-paired-runs.jsonl` — 200 per-seed worlds and all profile results;
+- `time-resolution-paired.csv` — primary profile table;
+- `time-resolution-paired-monotonicity.csv` — 600 adjacent per-seed set audits; and
+- `time-resolution-paired-manifest.json` — inputs, clean source commit, seeds, rule, and files.
+
+Two executions from the final clean commit produce byte-identical copies of all five files. No
+generated result is committed.
+
+## 12. Interpretation and claim boundary
+
+F9 establishes that in this registered synthetic-world family, under the fixed public
+bounded-duration rule, broader observation occurrence-time uncertainty conservatively broadens the
+historical constraint and maintains or reduces candidate narrowing. This held as a per-seed set
+invariant, not only as an aggregate trend.
 
 F9 cannot establish real-world effect sizes, a required tick precision, calibrated movement
 durations, S5 applicability, time-versus-location importance, or proportional rescue-performance
 improvement.
 
-## 11. Next recommendation
+## 13. Next recommendation
 
-Pending the semantic, monotonicity, safety, and representation-saturation results. The choice among
-Recommend A/B/C/D/E will be based on unresolved capability gaps, not numerical neatness.
+**Recommend A:** the time-resolution track is semantically established for one explicit rule and
+one preregistered seed-varying world family. The next missing cross-axis capability is a justified
+participant-side observation-to-constraint slice with explicit ambiguity and conservative
+alternative propagation.
+
+This recommendation does not follow merely from ordered means. It follows from zero semantic,
+monotonicity, safety, truth-boundary, or determinism defects combined with a clear account of the 92
+representation plateaus. A duration-interaction study would deepen one already-working rule but not
+address the participant and relation propagation gaps found by F5/F6. Candidate/world sensitivity
+remains valuable after at least one second axis uses the derivation envelope. S5 migration remains
+blocked by its missing public dependency, and minimal-observation conclusions remain premature.
