@@ -187,6 +187,17 @@ dotnet run --project src/FootprintSim.Cli -- evaluate-observation-ablation \
 
 これは現実の最小観測集合を確定する実験ではありません。設計、事前登録条件、結果と解釈境界は [M1-F observation-family ablation](docs/m1f-observation-ablation.md) を参照してください。
 
+M1-Fで候補削減への寄与が最も明確だった`later-trace-a`について、subject / time / location / relationの情報availabilityを分けて監査するM1-F1評価は次で実行します。現行のscenario-declared transformationは4 fieldを一体として要求するため、不足fieldを隠れたscenario値で補わず、導出不能を結果として記録します。
+
+```bash
+dotnet run --project src/FootprintSim.Cli -- evaluate-later-trace-field-ablation \
+  --experiment experiments/m1f1_later_trace_field_ablation/experiment.json \
+  --seeds 0..199 \
+  --output results/m1f1-s5
+```
+
+これはfieldごとの現実的価値を確定する実験ではありません。事前登録条件、atomic derivationの境界、結果の識別可能性は [M1-F1 later-trace field ablation](docs/m1f1-later-trace-field-ablation.md) を参照してください。
+
 ## 構成
 
 - `src/FootprintSim.Core`: world/event/observation/interaction/inference/evaluation の契約と決定論エンジン

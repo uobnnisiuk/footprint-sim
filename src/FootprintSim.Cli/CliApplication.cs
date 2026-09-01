@@ -20,6 +20,14 @@ public static class CliApplication
         {
             if (args.Length > 0 && string.Equals(
                 args[0],
+                "evaluate-later-trace-field-ablation",
+                StringComparison.Ordinal))
+            {
+                return await RunLaterTraceFieldAblationAsync(args[1..]);
+            }
+
+            if (args.Length > 0 && string.Equals(
+                args[0],
                 "evaluate-observation-ablation",
                 StringComparison.Ordinal))
             {
@@ -159,6 +167,53 @@ public static class CliApplication
 
         Console.WriteLine(
             $"Observation ablation completed: {result.Manifest.ProfileRunCount} paired profile runs, " +
+            $"{result.Manifest.MethodRunCount} method runs, {result.Manifest.Seeds.Count} seeds, " +
+            $"and {result.Manifest.ProfileIds.Count} profiles.");
+        Console.WriteLine($"Results: {outputPath}");
+        return 0;
+    }
+
+    private static async Task<int> RunLaterTraceFieldAblationAsync(string[] args)
+    {
+        if (args.Contains("--help", StringComparer.Ordinal))
+        {
+            PrintLaterTraceFieldAblationUsage();
+            return 0;
+        }
+
+        var options = ParseOptions(
+            args,
+            new HashSet<string>(["--experiment", "--seeds", "--output"], StringComparer.Ordinal));
+        var experimentPath = Path.GetFullPath(Require(options, "--experiment"));
+        var experiment = LaterTraceFieldAblationExperimentLoader.Load(experimentPath);
+        var experimentDirectory = Path.GetDirectoryName(experimentPath) ??
+            throw new InvalidOperationException("Experiment path has no containing directory.");
+        var scenarioPath = Path.GetFullPath(experiment.ScenarioPath, experimentDirectory);
+        var baseExperimentPath = Path.GetFullPath(
+            experiment.BaseObservationAblationExperimentPath,
+            experimentDirectory);
+        var scenario = ScenarioLoader.Load(scenarioPath);
+        var baseExperiment = ObservationAblationExperimentLoader.Load(baseExperimentPath);
+        var seeds = SeedExpressionParser.Parse(Require(options, "--seeds"));
+        var outputPath = Path.GetFullPath(Require(options, "--output"));
+        var git = GitMetadataReader.Read(Directory.GetCurrentDirectory());
+        var result = new LaterTraceFieldAblationEvaluationRunner().Run(
+            new LaterTraceFieldAblationEvaluationRequest
+            {
+                Experiment = experiment,
+                BaseExperiment = baseExperiment,
+                Scenario = scenario,
+                Seeds = seeds,
+                ExperimentContentSha256 = HashFile(experimentPath),
+                BaseExperimentContentSha256 = HashFile(baseExperimentPath),
+                ScenarioContentSha256 = HashFile(scenarioPath),
+                SourceCommitSha = git.CommitSha,
+                DirtyWorkingTree = git.DirtyWorkingTree
+            });
+        await new LaterTraceFieldAblationOutputWriter().WriteAsync(outputPath, result);
+
+        Console.WriteLine(
+            $"Later-trace field ablation completed: {result.Manifest.ProfileRunCount} paired profile runs, " +
             $"{result.Manifest.MethodRunCount} method runs, {result.Manifest.Seeds.Count} seeds, " +
             $"and {result.Manifest.ProfileIds.Count} profiles.");
         Console.WriteLine($"Results: {outputPath}");
@@ -330,6 +385,15 @@ public static class CliApplication
         Console.WriteLine(
             "Observation ablation: dotnet run --project src/FootprintSim.Cli -- " +
             "evaluate-observation-ablation --experiment <experiment.json> " +
+            "--seeds <n|a..b|list> --output <directory>");
+        PrintLaterTraceFieldAblationUsage();
+    }
+
+    private static void PrintLaterTraceFieldAblationUsage()
+    {
+        Console.WriteLine(
+            "Later-trace field ablation: dotnet run --project src/FootprintSim.Cli -- " +
+            "evaluate-later-trace-field-ablation --experiment <experiment.json> " +
             "--seeds <n|a..b|list> --output <directory>");
     }
 }
