@@ -220,6 +220,16 @@ dotnet run --project src/FootprintSim.Cli -- evaluate-time-resolution \
 
 これは現実の時間精度要件を決める実験ではありません。time level、occurrence uncertainty、既存transformationの境界、事前登録と結果は [M1-F3 time resolution](docs/m1f3-time-resolution.md) を参照してください。
 
+M1-F8ではS5を変更せず、観測されたlater-eventのoccurrence-time windowとpublic dependencyのduration boundから、predecessor windowを計算する最小vertical sliceを実行します。fixtureは決定論的であり、200回の同一seed反復は行いません。
+
+```bash
+dotnet run --project src/FootprintSim.Cli -- evaluate-observation-constraint-derivation \
+  --fixture experiments/m1f8_observation_constraint_derivation/fixture.json \
+  --output results/m1f8-derivation
+```
+
+式、provenance、unknown-time failure、CandidateGeneration用途境界、受入結果とS5未移行理由は [M1-F8 observation-to-constraint derivation](docs/m1f8-observation-constraint-derivation.md) を参照してください。
+
 ## 構成
 
 - `src/FootprintSim.Core`: world/event/observation/interaction/inference/evaluation の契約と決定論エンジン

@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "id": "m1f8-bounded-duration-time-derivation",
+  "scenarioId": "m1f8-bounded-duration-time-fixture",
+  "seed": 0,
+  "targetEntityId": "person-a",
+  "sourceEvidenceIdentifier": "later-event-observation",
+  "laterEventKind": "later-checkpoint-event",
+  "availableAtTick": 20,
+  "evidenceAvailabilityCutoff": 20,
+  "evidenceState": "confirmed",
+  "sourceAncestryIds": [
+    "later-event-observation-family"
+  ],
+  "publicDependency": {
+    "id": "predecessor-to-later-checkpoint",
+    "predecessorStateKind": "predecessor-state",
+    "laterEventKind": "later-checkpoint-event",
+    "targetEntityId": "person-a",
+    "minimumDurationTicks": 4,
+    "maximumDurationTicks": 5,
+    "durationSourceId": "public-transition-duration-bound",
+    "allowedPredecessorRegionIds": [
+      "predecessor-10",
+      "predecessor-11",
+      "predecessor-12",
+      "predecessor-13"
+    ]
+  },
+  "candidateStates": [
+    {
+      "startTick": 10,
+      "endTick": 10,
+      "temporalKind": "eventPoint",
+      "regionIds": ["predecessor-10"]
+    },
+    {
+      "startTick": 11,
+      "endTick": 11,
+      "temporalKind": "eventPoint",
+      "regionIds": ["predecessor-11"]
+    },
+    {
+      "startTick": 12,
+      "endTick": 12,
+      "temporalKind": "eventPoint",
+      "regionIds": ["predecessor-12"]
+    },
+    {
+      "startTick": 13,
+      "endTick": 13,
+      "temporalKind": "eventPoint",
+      "regionIds": ["predecessor-13"]
+    }
+  ],
+  "truthRegionId": "predecessor-10",
+  "profiles": [
+    {
+      "id": "exact",
+      "informationOrder": 0,
+      "description": "The later event occurred at tick 15.",
+      "observedStartTick": 15,
+      "observedEndTick": 15,
+      "boundaryRationale": "With duration [4,5], this reaches predecessor ticks [10,11]."
+    },
+    {
+      "id": "medium",
+      "informationOrder": 1,
+      "description": "The later event occurred at one tick in [15,16].",
+      "observedStartTick": 15,
+      "observedEndTick": 16,
+      "boundaryRationale": "The upper observation boundary adds predecessor tick 12."
+    },
+    {
+      "id": "broad",
+      "informationOrder": 2,
+      "description": "The later event occurred at one tick in [15,17].",
+      "observedStartTick": 15,
+      "observedEndTick": 17,
+      "boundaryRationale": "The upper observation boundary adds predecessor tick 13 and reaches the full candidate layer."
+    },
+    {
+      "id": "unknown",
+      "informationOrder": 3,
+      "description": "The later event was observed, but its occurrence time is unknown.",
+      "observedStartTick": null,
+      "observedEndTick": null,
+      "boundaryRationale": "No default, availability tick, or hidden truth tick may replace missing occurrence time."
+    }
+  ]
+}

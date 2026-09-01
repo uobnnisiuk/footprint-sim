@@ -20,6 +20,14 @@ public static class CliApplication
         {
             if (args.Length > 0 && string.Equals(
                 args[0],
+                "evaluate-observation-constraint-derivation",
+                StringComparison.Ordinal))
+            {
+                return await RunObservationConstraintDerivationAsync(args[1..]);
+            }
+
+            if (args.Length > 0 && string.Equals(
+                args[0],
                 "evaluate-time-resolution",
                 StringComparison.Ordinal))
             {
@@ -64,6 +72,38 @@ public static class CliApplication
             Console.Error.WriteLine($"error: {exception.Message}");
             return 2;
         }
+    }
+
+    private static async Task<int> RunObservationConstraintDerivationAsync(string[] args)
+    {
+        if (args.Contains("--help", StringComparer.Ordinal))
+        {
+            PrintObservationConstraintDerivationUsage();
+            return 0;
+        }
+
+        var options = ParseOptions(
+            args,
+            new HashSet<string>(["--fixture", "--output"], StringComparer.Ordinal));
+        var fixturePath = Path.GetFullPath(Require(options, "--fixture"));
+        var fixture = BoundedDurationTimeFixtureLoader.Load(fixturePath);
+        var outputPath = Path.GetFullPath(Require(options, "--output"));
+        var git = GitMetadataReader.Read(Directory.GetCurrentDirectory());
+        var result = new BoundedDurationTimeFixtureEvaluationRunner().Run(
+            new BoundedDurationTimeFixtureEvaluationRequest
+            {
+                Fixture = fixture,
+                FixtureContentSha256 = HashFile(fixturePath),
+                SourceCommitSha = git.CommitSha,
+                DirtyWorkingTree = git.DirtyWorkingTree
+            });
+        await new BoundedDurationTimeFixtureOutputWriter().WriteAsync(outputPath, result);
+
+        Console.WriteLine(
+            $"Observation-to-constraint fixture completed: {result.Manifest.ProfileRunCount} profiles, " +
+            $"{result.MonotonicityViolationCount} monotonicity violations.");
+        Console.WriteLine($"Results: {outputPath}");
+        return 0;
     }
 
     private static async Task<int> RunSimulationAsync(string[] args)
@@ -511,6 +551,15 @@ public static class CliApplication
             "Time resolution: dotnet run --project src/FootprintSim.Cli -- " +
             "evaluate-time-resolution --experiment <experiment.json> " +
             "--seeds <n|a..b|list> --output <directory>");
+        PrintObservationConstraintDerivationUsage();
+    }
+
+    private static void PrintObservationConstraintDerivationUsage()
+    {
+        Console.WriteLine(
+            "Observation-to-constraint derivation: dotnet run --project src/FootprintSim.Cli -- " +
+            "evaluate-observation-constraint-derivation --fixture <fixture.json> " +
+            "--output <directory>");
     }
 }
 
