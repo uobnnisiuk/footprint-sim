@@ -176,6 +176,17 @@ dotnet run --project src/FootprintSim.Cli -- evaluate \
 
 出力はbackward traversal、constraint-based reconstruction、reconstruction後のlocal traversalを同じseed/query/public inputで比較します。Addressabilityはtruth likelihoodではなく、Verifiabilityはgenerationとは別のlineage検査です。設計、preregistration、仏教方法論との限定的比較、命名監査は [M1-E past-state reconstruction](docs/m1e-past-state-reconstruction.md)、verificationとtraversalの用途分離および修正版比較は [M1-E method-composition correction](docs/m1e-method-composition-fix.md)、S5の観測lineage・時間・局所state・公開topologyの前提監査は [M1-E2 synthetic-world representation validity](docs/m1e2-world-representation-validity.md) を参照してください。
 
+S5 defaultを変えずにpublic observation familyだけを同一truth world上で増減するM1-F評価は、次で実行します。Full、None、single-family removal/presence、事前選定した3組を比較し、raw observationとderived constraintを同時に利用不能化します。
+
+```bash
+dotnet run --project src/FootprintSim.Cli -- evaluate-observation-ablation \
+  --experiment experiments/m1f_observation_ablation/experiment.json \
+  --seeds 0..199 \
+  --output results/m1f-s5
+```
+
+これは現実の最小観測集合を確定する実験ではありません。設計、事前登録条件、結果と解釈境界は [M1-F observation-family ablation](docs/m1f-observation-ablation.md) を参照してください。
+
 ## 構成
 
 - `src/FootprintSim.Core`: world/event/observation/interaction/inference/evaluation の契約と決定論エンジン

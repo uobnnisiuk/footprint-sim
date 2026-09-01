@@ -18,6 +18,14 @@ public static class CliApplication
     {
         try
         {
+            if (args.Length > 0 && string.Equals(
+                args[0],
+                "evaluate-observation-ablation",
+                StringComparison.Ordinal))
+            {
+                return await RunObservationAblationAsync(args[1..]);
+            }
+
             if (args.Length > 0 && string.Equals(args[0], "evaluate", StringComparison.Ordinal))
             {
                 return await RunEvaluationAsync(args[1..]);
@@ -112,6 +120,47 @@ public static class CliApplication
             $"Scenario '{scenario.Id}' completed with seed {seed}: " +
             $"{run.GroundTruthEvents.Count} truth events, " +
             $"{run.ObservationSet.Observations.Count} observations.");
+        Console.WriteLine($"Results: {outputPath}");
+        return 0;
+    }
+
+    private static async Task<int> RunObservationAblationAsync(string[] args)
+    {
+        if (args.Contains("--help", StringComparer.Ordinal))
+        {
+            PrintObservationAblationUsage();
+            return 0;
+        }
+
+        var options = ParseOptions(
+            args,
+            new HashSet<string>(["--experiment", "--seeds", "--output"], StringComparer.Ordinal));
+        var experimentPath = Path.GetFullPath(Require(options, "--experiment"));
+        var experiment = ObservationAblationExperimentLoader.Load(experimentPath);
+        var experimentDirectory = Path.GetDirectoryName(experimentPath) ??
+            throw new InvalidOperationException("Experiment path has no containing directory.");
+        var scenarioPath = Path.GetFullPath(experiment.ScenarioPath, experimentDirectory);
+        var scenario = ScenarioLoader.Load(scenarioPath);
+        var seeds = SeedExpressionParser.Parse(Require(options, "--seeds"));
+        var outputPath = Path.GetFullPath(Require(options, "--output"));
+        var git = GitMetadataReader.Read(Directory.GetCurrentDirectory());
+        var result = new ObservationAblationEvaluationRunner().Run(
+            new ObservationAblationEvaluationRequest
+            {
+                Experiment = experiment,
+                Scenario = scenario,
+                Seeds = seeds,
+                ExperimentContentSha256 = HashFile(experimentPath),
+                ScenarioContentSha256 = HashFile(scenarioPath),
+                SourceCommitSha = git.CommitSha,
+                DirtyWorkingTree = git.DirtyWorkingTree
+            });
+        await new ObservationAblationOutputWriter().WriteAsync(outputPath, result);
+
+        Console.WriteLine(
+            $"Observation ablation completed: {result.Manifest.ProfileRunCount} paired profile runs, " +
+            $"{result.Manifest.MethodRunCount} method runs, {result.Manifest.Seeds.Count} seeds, " +
+            $"and {result.Manifest.ProfileIds.Count} profiles.");
         Console.WriteLine($"Results: {outputPath}");
         return 0;
     }
@@ -273,6 +322,15 @@ public static class CliApplication
             "Evaluation: dotnet run --project src/FootprintSim.Cli -- evaluate " +
             "--scenario <file> | --scenarios <file-or-directory> --seeds <n|a..b|list> " +
             "--strategies <all|id-list> --output <directory> [--telemetry]");
+        PrintObservationAblationUsage();
+    }
+
+    private static void PrintObservationAblationUsage()
+    {
+        Console.WriteLine(
+            "Observation ablation: dotnet run --project src/FootprintSim.Cli -- " +
+            "evaluate-observation-ablation --experiment <experiment.json> " +
+            "--seeds <n|a..b|list> --output <directory>");
     }
 }
 
