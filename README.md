@@ -241,6 +241,16 @@ dotnet run --project src/FootprintSim.Cli -- evaluate-time-resolution-paired \
 
 generator範囲、per-seed set inclusion、candidate plateau、結果と解釈境界は [M1-F9 paired time-resolution evaluation](docs/m1f9-time-resolution-paired-evaluation.md) を参照してください。
 
+M1-F10ではS5を変更せず、exact / finite alternatives / identity unknownのother-participant情報と、各possible personのpublicなsame-time Region evidenceから、targetのencounter Region constraintを保守的unionで生成する最小vertical sliceを実行します。fixtureはPerson-onlyかつ決定論的であり、200-seed評価は次工程へ残します。
+
+```bash
+dotnet run --project src/FootprintSim.Cli -- evaluate-participant-ambiguity-derivation \
+  --fixture experiments/m1f10_participant_ambiguity_derivation/fixture.json \
+  --output results/m1f10-participant-derivation
+```
+
+same-time co-locationのsemantic basis、missing-evidence failure、source independence、受入結果とS5未移行理由は [M1-F10 participant ambiguity derivation](docs/m1f10-participant-ambiguity-derivation.md) を参照してください。
+
 ## 構成
 
 - `src/FootprintSim.Core`: world/event/observation/interaction/inference/evaluation の契約と決定論エンジン

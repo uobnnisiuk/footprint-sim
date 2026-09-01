@@ -20,6 +20,14 @@ public static class CliApplication
         {
             if (args.Length > 0 && string.Equals(
                 args[0],
+                "evaluate-participant-ambiguity-derivation",
+                StringComparison.Ordinal))
+            {
+                return await RunParticipantAmbiguityDerivationAsync(args[1..]);
+            }
+
+            if (args.Length > 0 && string.Equals(
+                args[0],
                 "evaluate-time-resolution-paired",
                 StringComparison.Ordinal))
             {
@@ -80,6 +88,39 @@ public static class CliApplication
             Console.Error.WriteLine($"error: {exception.Message}");
             return 2;
         }
+    }
+
+    private static async Task<int> RunParticipantAmbiguityDerivationAsync(string[] args)
+    {
+        if (args.Contains("--help", StringComparer.Ordinal))
+        {
+            PrintParticipantAmbiguityDerivationUsage();
+            return 0;
+        }
+
+        var options = ParseOptions(
+            args,
+            new HashSet<string>(["--fixture", "--output"], StringComparer.Ordinal));
+        var fixturePath = Path.GetFullPath(Require(options, "--fixture"));
+        var fixture = ParticipantAmbiguityFixtureLoader.Load(fixturePath);
+        var outputPath = Path.GetFullPath(Require(options, "--output"));
+        var git = GitMetadataReader.Read(Directory.GetCurrentDirectory());
+        var result = new ParticipantAmbiguityFixtureEvaluationRunner().Run(
+            new ParticipantAmbiguityFixtureEvaluationRequest
+            {
+                Fixture = fixture,
+                FixtureContentSha256 = HashFile(fixturePath),
+                SourceCommitSha = git.CommitSha,
+                DirtyWorkingTree = git.DirtyWorkingTree
+            });
+        await new ParticipantAmbiguityFixtureOutputWriter().WriteAsync(outputPath, result);
+
+        Console.WriteLine(
+            $"Participant-ambiguity derivation fixture completed: " +
+            $"{result.Manifest.ProfileRunCount} profiles, " +
+            $"{result.MonotonicityViolationCount} monotonicity violations.");
+        Console.WriteLine($"Results: {outputPath}");
+        return 0;
     }
 
     private static async Task<int> RunTimeResolutionPairedAsync(string[] args)
@@ -612,6 +653,15 @@ public static class CliApplication
             "Paired time resolution: dotnet run --project src/FootprintSim.Cli -- " +
             "evaluate-time-resolution-paired --experiment <experiment.json> " +
             "--seeds 0..199 --output <directory>");
+        PrintParticipantAmbiguityDerivationUsage();
+    }
+
+    private static void PrintParticipantAmbiguityDerivationUsage()
+    {
+        Console.WriteLine(
+            "Participant ambiguity derivation: dotnet run --project src/FootprintSim.Cli -- " +
+            "evaluate-participant-ambiguity-derivation --fixture <fixture.json> " +
+            "--output <directory>");
     }
 }
 
