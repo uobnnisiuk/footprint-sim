@@ -20,6 +20,14 @@ public static class CliApplication
         {
             if (args.Length > 0 && string.Equals(
                 args[0],
+                "evaluate-location-resolution",
+                StringComparison.Ordinal))
+            {
+                return await RunLocationResolutionAsync(args[1..]);
+            }
+
+            if (args.Length > 0 && string.Equals(
+                args[0],
                 "evaluate-later-trace-field-ablation",
                 StringComparison.Ordinal))
             {
@@ -220,6 +228,47 @@ public static class CliApplication
         return 0;
     }
 
+    private static async Task<int> RunLocationResolutionAsync(string[] args)
+    {
+        if (args.Contains("--help", StringComparer.Ordinal))
+        {
+            PrintLocationResolutionUsage();
+            return 0;
+        }
+
+        var options = ParseOptions(
+            args,
+            new HashSet<string>(["--experiment", "--seeds", "--output"], StringComparer.Ordinal));
+        var experimentPath = Path.GetFullPath(Require(options, "--experiment"));
+        var experiment = LocationResolutionExperimentLoader.Load(experimentPath);
+        var experimentDirectory = Path.GetDirectoryName(experimentPath) ??
+            throw new InvalidOperationException("Experiment path has no containing directory.");
+        var scenarioPath = Path.GetFullPath(experiment.ScenarioPath, experimentDirectory);
+        var scenario = ScenarioLoader.Load(scenarioPath);
+        var seeds = SeedExpressionParser.Parse(Require(options, "--seeds"));
+        var outputPath = Path.GetFullPath(Require(options, "--output"));
+        var git = GitMetadataReader.Read(Directory.GetCurrentDirectory());
+        var result = new LocationResolutionEvaluationRunner().Run(
+            new LocationResolutionEvaluationRequest
+            {
+                Experiment = experiment,
+                Scenario = scenario,
+                Seeds = seeds,
+                ExperimentContentSha256 = HashFile(experimentPath),
+                ScenarioContentSha256 = HashFile(scenarioPath),
+                SourceCommitSha = git.CommitSha,
+                DirtyWorkingTree = git.DirtyWorkingTree
+            });
+        await new LocationResolutionOutputWriter().WriteAsync(outputPath, result);
+
+        Console.WriteLine(
+            $"Location-resolution evaluation completed: {result.Manifest.ProfileRunCount} paired profile runs, " +
+            $"{result.Manifest.MethodRunCount} method runs, {result.Manifest.Seeds.Count} seeds, " +
+            $"and {result.Manifest.LevelIds.Count} levels.");
+        Console.WriteLine($"Results: {outputPath}");
+        return 0;
+    }
+
     private static async Task<int> RunEvaluationAsync(string[] args)
     {
         if (args.Contains("--help", StringComparer.Ordinal))
@@ -394,6 +443,15 @@ public static class CliApplication
         Console.WriteLine(
             "Later-trace field ablation: dotnet run --project src/FootprintSim.Cli -- " +
             "evaluate-later-trace-field-ablation --experiment <experiment.json> " +
+            "--seeds <n|a..b|list> --output <directory>");
+        PrintLocationResolutionUsage();
+    }
+
+    private static void PrintLocationResolutionUsage()
+    {
+        Console.WriteLine(
+            "Location resolution: dotnet run --project src/FootprintSim.Cli -- " +
+            "evaluate-location-resolution --experiment <experiment.json> " +
             "--seeds <n|a..b|list> --output <directory>");
     }
 }

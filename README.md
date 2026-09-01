@@ -198,6 +198,17 @@ dotnet run --project src/FootprintSim.Cli -- evaluate-later-trace-field-ablation
 
 これはfieldごとの現実的価値を確定する実験ではありません。事前登録条件、atomic derivationの境界、結果の識別可能性は [M1-F1 later-trace field ablation](docs/m1f1-later-trace-field-ablation.md) を参照してください。
 
+M1-F2ではsubject/time/relationを固定したまま、`later-trace-a`のlocation Region集合だけを現行fork集合、target-window全候補、S5 searchable全域、unknownへ段階的に粗くします。finite levelではobservation payloadとderived allowed regionsを一致させ、unknownからexact locationを補完しません。
+
+```bash
+dotnet run --project src/FootprintSim.Cli -- evaluate-location-resolution \
+  --experiment experiments/m1f2_location_resolution/experiment.json \
+  --seeds 0..199 \
+  --output results/m1f2-s5
+```
+
+これは現実距離やsensor精度を決める実験ではありません。location level、partial-observation semantics、事前登録、結果の表現依存性は [M1-F2 location resolution](docs/m1f2-location-resolution.md) を参照してください。
+
 ## 構成
 
 - `src/FootprintSim.Core`: world/event/observation/interaction/inference/evaluation の契約と決定論エンジン
