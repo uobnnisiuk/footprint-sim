@@ -312,6 +312,20 @@ dotnet run --project src/FootprintSim.Cli -- evaluate-common-world-observation \
 common world、source graph、各derivation、8条件結果、truth isolation、plateau、次の200-world
 generator要件は [M1-F15 common-world observation vertical slice](docs/m1f15-common-world-observation-vertical-slice.md) を参照してください。
 
+M1-F16はF15の3 derivationとF14 composerを変更せず、事前登録した200のpurified common
+worldそれぞれでNone/L/T/P/L+T/L+P/T+P/L+T+Pをpaired評価します。平均値でaxisを順位付け
+せず、per-worldのset inclusion、追加縮約、profile equivalence、plateauの発生層を監査します。
+
+```bash
+dotnet run --project src/FootprintSim.Cli -- evaluate-common-world-field-combination \
+  --experiment experiments/m1f16_common_world_field_combination/experiment.json \
+  --seeds 0..199 \
+  --output results/m1f16-common-world-field-combination
+```
+
+generator事前登録、primary invariants、failure conditions、結果と解釈境界は
+[M1-F16 common-world field-combination paired evaluation](docs/m1f16-common-world-field-combination-paired.md) を参照してください。
+
 ## 構成
 
 - `src/FootprintSim.Core`: world/event/observation/interaction/inference/evaluation の契約と決定論エンジン

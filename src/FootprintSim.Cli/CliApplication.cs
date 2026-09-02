@@ -20,6 +20,14 @@ public static class CliApplication
         {
             if (args.Length > 0 && string.Equals(
                 args[0],
+                "evaluate-common-world-field-combination",
+                StringComparison.Ordinal))
+            {
+                return await RunCommonWorldFieldCombinationAsync(args[1..]);
+            }
+
+            if (args.Length > 0 && string.Equals(
+                args[0],
                 "evaluate-common-world-observation",
                 StringComparison.Ordinal))
             {
@@ -120,6 +128,42 @@ public static class CliApplication
             Console.Error.WriteLine($"error: {exception.Message}");
             return 2;
         }
+    }
+
+    private static async Task<int> RunCommonWorldFieldCombinationAsync(string[] args)
+    {
+        if (args.Contains("--help", StringComparer.Ordinal))
+        {
+            PrintCommonWorldFieldCombinationUsage();
+            return 0;
+        }
+
+        var options = ParseOptions(
+            args,
+            new HashSet<string>(["--experiment", "--seeds", "--output"], StringComparer.Ordinal));
+        var experimentPath = Path.GetFullPath(Require(options, "--experiment"));
+        var experiment = CommonWorldFieldCombinationExperimentLoader.Load(experimentPath);
+        var seeds = SeedExpressionParser.Parse(Require(options, "--seeds"));
+        var outputPath = Path.GetFullPath(Require(options, "--output"));
+        var git = GitMetadataReader.Read(Directory.GetCurrentDirectory());
+        var result = new CommonWorldFieldCombinationEvaluationRunner().Run(
+            new CommonWorldFieldCombinationEvaluationRequest
+            {
+                Experiment = experiment,
+                Seeds = seeds,
+                ExperimentContentSha256 = HashFile(experimentPath),
+                SourceCommitSha = git.CommitSha,
+                DirtyWorkingTree = git.DirtyWorkingTree
+            });
+        await new CommonWorldFieldCombinationPairedOutputWriter().WriteAsync(outputPath, result);
+
+        Console.WriteLine(
+            $"Common-world field-combination evaluation completed: " +
+            $"{result.Summary.WorldCount} worlds, " +
+            $"{result.Summary.ProfileEvaluationCount} profile runs, " +
+            $"{result.Summary.JointSetInclusionViolationCount} set-inclusion violations.");
+        Console.WriteLine($"Results: {outputPath}");
+        return 0;
     }
 
     private static async Task<int> RunCommonWorldObservationAsync(string[] args)
@@ -864,6 +908,15 @@ public static class CliApplication
             "Common-world observation vertical slice: dotnet run --project " +
             "src/FootprintSim.Cli -- evaluate-common-world-observation " +
             "--fixture <fixture.json> --output <directory>");
+        PrintCommonWorldFieldCombinationUsage();
+    }
+
+    private static void PrintCommonWorldFieldCombinationUsage()
+    {
+        Console.WriteLine(
+            "Common-world field combination: dotnet run --project " +
+            "src/FootprintSim.Cli -- evaluate-common-world-field-combination " +
+            "--experiment <experiment.json> --seeds 0..199 --output <directory>");
     }
 }
 

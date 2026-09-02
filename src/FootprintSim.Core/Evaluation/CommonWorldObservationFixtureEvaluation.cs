@@ -39,7 +39,7 @@ public sealed class CommonWorldObservationFixtureEvaluationRunner
                 [
                     CandidateWarpProvenance.Create(
                         CandidateWarpSourceKind.PublicCausalModel,
-                        "m1f15-public-candidate-domain",
+                        item.PublicSourceIdentifier ?? "m1f15-public-candidate-domain",
                         availableAtTick: 0,
                         isPersonEvidence: false,
                         isDeviceOnlyEvidence: false,
@@ -575,10 +575,10 @@ public sealed class CommonWorldObservationFixtureEvaluationRunner
                 "The common world requires a Person target and exact PersonPersonEncounter.");
         }
 
-        if (fixture.EvidenceAvailabilityCutoff < 0 || fixture.CandidateStates.Count is < 4 or > 10)
+        if (fixture.EvidenceAvailabilityCutoff < 0 || fixture.CandidateStates.Count is < 4 or > 16)
         {
             throw new InvalidDataException(
-                "The common world requires a non-negative cutoff and four to ten candidates.");
+                "The common-world contract requires a non-negative cutoff and four to sixteen candidates.");
         }
 
         if (fixture.CandidateStates.Any(item => item.RegionIds.Count != 1))

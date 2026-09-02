@@ -116,6 +116,8 @@ public sealed record CommonWorldParticipantObservationDefinition
 
 public sealed record CommonWorldCandidateStateDefinition
 {
+    public string? PublicSourceIdentifier { get; init; }
+
     public required long StartTick { get; init; }
 
     public required long EndTick { get; init; }
