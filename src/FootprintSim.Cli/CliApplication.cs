@@ -20,6 +20,14 @@ public static class CliApplication
         {
             if (args.Length > 0 && string.Equals(
                 args[0],
+                "evaluate-common-world-observation",
+                StringComparison.Ordinal))
+            {
+                return await RunCommonWorldObservationAsync(args[1..]);
+            }
+
+            if (args.Length > 0 && string.Equals(
+                args[0],
                 "evaluate-constraint-composition",
                 StringComparison.Ordinal))
             {
@@ -112,6 +120,39 @@ public static class CliApplication
             Console.Error.WriteLine($"error: {exception.Message}");
             return 2;
         }
+    }
+
+    private static async Task<int> RunCommonWorldObservationAsync(string[] args)
+    {
+        if (args.Contains("--help", StringComparer.Ordinal))
+        {
+            PrintCommonWorldObservationUsage();
+            return 0;
+        }
+
+        var options = ParseOptions(
+            args,
+            new HashSet<string>(["--fixture", "--output"], StringComparer.Ordinal));
+        var fixturePath = Path.GetFullPath(Require(options, "--fixture"));
+        var fixture = CommonWorldObservationFixtureLoader.Load(fixturePath);
+        var outputPath = Path.GetFullPath(Require(options, "--output"));
+        var git = GitMetadataReader.Read(Directory.GetCurrentDirectory());
+        var result = new CommonWorldObservationFixtureEvaluationRunner().Run(
+            new CommonWorldObservationFixtureEvaluationRequest
+            {
+                Fixture = fixture,
+                FixtureContentSha256 = HashFile(fixturePath),
+                SourceCommitSha = git.CommitSha,
+                DirtyWorkingTree = git.DirtyWorkingTree
+            });
+        await new CommonWorldObservationFixtureOutputWriter().WriteAsync(outputPath, result);
+
+        Console.WriteLine(
+            $"Common-world observation fixture completed: {result.Manifest.ProfileRunCount} " +
+            $"profiles, {result.IntersectionViolationCount} intersection violations, " +
+            $"{result.FalseExclusionCount} false exclusions.");
+        Console.WriteLine($"Results: {outputPath}");
+        return 0;
     }
 
     private static async Task<int> RunConstraintCompositionAsync(string[] args)
@@ -814,6 +855,15 @@ public static class CliApplication
             "Constraint composition: dotnet run --project src/FootprintSim.Cli -- " +
             "evaluate-constraint-composition --fixture <fixture.json> " +
             "--output <directory>");
+        PrintCommonWorldObservationUsage();
+    }
+
+    private static void PrintCommonWorldObservationUsage()
+    {
+        Console.WriteLine(
+            "Common-world observation vertical slice: dotnet run --project " +
+            "src/FootprintSim.Cli -- evaluate-common-world-observation " +
+            "--fixture <fixture.json> --output <directory>");
     }
 }
 

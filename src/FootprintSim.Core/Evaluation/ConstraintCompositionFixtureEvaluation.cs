@@ -8,7 +8,7 @@ namespace FootprintSim.Evaluation;
 
 public sealed class ConstraintCompositionFixtureEvaluationRunner
 {
-    public const string LocationInputSemanticsId = "m1f2-observed-regions-direct-projection";
+    public const string LocationInputSemanticsId = ObservedRegionLocationConstraintDeriver.RuleId;
 
     private static readonly string[] ExpectedProfiles =
     [

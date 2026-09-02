@@ -297,6 +297,21 @@ dotnet run --project src/FootprintSim.Cli -- evaluate-constraint-composition \
 設計、8-profile結果、source/logical境界、conflictの未決定policyは
 [M1-F14 constraint-composition contract](docs/m1f14-constraint-composition-contract.md) を参照してください。
 
+M1-F15はF14 composerを変更せず、一つのpurified common worldのraw public observationsから
+LocationはF2直写像、Timeは`bounded-duration-predecessor-window-v1`、Participantは
+`encounter-participant-location-union-v1`を実行してL/T/P constraintsを生成します。その出力を
+同一candidate universeへ選択的に投入し、None/L/T/Pと4つのJoint組合せを機能確認します。
+axis OFFは観測やworld factの不在ではなく、この評価でconstraintを選択しないことを意味します。
+
+```bash
+dotnet run --project src/FootprintSim.Cli -- evaluate-common-world-observation \
+  --fixture experiments/m1f15_common_world_observation/fixture.json \
+  --output results/m1f15-common-world-observation
+```
+
+common world、source graph、各derivation、8条件結果、truth isolation、plateau、次の200-world
+generator要件は [M1-F15 common-world observation vertical slice](docs/m1f15-common-world-observation-vertical-slice.md) を参照してください。
+
 ## 構成
 
 - `src/FootprintSim.Core`: world/event/observation/interaction/inference/evaluation の契約と決定論エンジン

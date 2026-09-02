@@ -281,6 +281,34 @@ public sealed record CandidateGenerationConstraintComponent
             constraint.Provenance);
     }
 
+    public static CandidateGenerationConstraintComponent FromLocationDerivedConstraint(
+        LocationObservationDerivedConstraint constraint,
+        string targetStateContextId,
+        string candidateDomainId)
+    {
+        ArgumentNullException.ThrowIfNull(constraint);
+        return Create(
+            constraint.ScenarioId,
+            constraint.Seed,
+            constraint.TargetEntityId,
+            targetStateContextId,
+            candidateDomainId,
+            CandidateConstraintInputState.Applicable,
+            CandidateConstraintPredicate.Region(constraint.AllowedRegionIds),
+            constraint.ConstraintId,
+            constraint.SourceEvidenceIdentifier,
+            constraint.SourceObservationId,
+            constraint.SourceGroupId,
+            constraint.SourceAncestryIds,
+            constraint.DerivationRuleId,
+            constraint.PublicInputIds,
+            constraint.AvailableAtTick,
+            constraint.EvidenceBoundaryState,
+            constraint.Visibility,
+            constraint.UsageRole,
+            constraint.Provenance);
+    }
+
     public static CandidateGenerationConstraintComponent PublicPredicate(
         string scenarioId,
         int seed,
