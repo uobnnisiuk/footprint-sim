@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "id": "m1f11-participant-ambiguity-paired",
+  "scenarioId": "m1f11-seeded-participant-worlds",
+  "requiredSeedStart": 0,
+  "requiredSeedEnd": 199,
+  "targetEntityId": "person-a",
+  "targetEntityKind": "person",
+  "encounterSourceEvidenceIdentifier": "seeded-public-encounter-report",
+  "relationKind": "personPersonEncounter",
+  "encounterEvidenceState": "confirmed",
+  "encounterSourceAncestryIds": [
+    "seeded-public-encounter-source-group"
+  ],
+  "generator": {
+    "id": "m1f11-simple-participant-region-world-v1",
+    "candidateCountMinimum": 6,
+    "candidateCountMaximum": 14,
+    "regionUniverseSizeMinimum": 4,
+    "regionUniverseSizeMaximum": 8,
+    "participantPoolSizeMinimum": 3,
+    "participantPoolSizeMaximum": 5,
+    "participantRegionSetSizeMinimum": 1,
+    "participantRegionSetSizeMaximum": 3,
+    "encounterTickMinimum": 10,
+    "encounterTickMaximum": 40,
+    "availabilityLagTicks": 1,
+    "candidateTicksEqualEncounterTick": true,
+    "candidateRegionCollisionsAllowed": true,
+    "participantRegionsUniqueWithinParticipant": true,
+    "participantRegionSamplingIndependentAcrossParticipants": true,
+    "truthParticipantEvidenceIncludesTruthCandidateRegion": true,
+    "missingEvidenceSecondaryConditionEnabled": false,
+    "invalidWorldPolicy": "fail-no-skip-no-regenerate"
+  },
+  "profiles": [
+    {
+      "id": "exact",
+      "informationOrder": 0,
+      "participantCount": 1,
+      "usesFullParticipantPool": false,
+      "identityUnknown": false,
+      "selectionRule": "truth-participant-only",
+      "rationale": "A correct exact identity observation names the generated truth participant."
+    },
+    {
+      "id": "narrow",
+      "informationOrder": 1,
+      "participantCount": 2,
+      "usesFullParticipantPool": false,
+      "identityUnknown": false,
+      "selectionRule": "truth-participant-plus-lowest-id-nontruth-participant",
+      "rationale": "Adds one deterministic distractor without consulting participant Region evidence."
+    },
+    {
+      "id": "broad",
+      "informationOrder": 2,
+      "participantCount": null,
+      "usesFullParticipantPool": true,
+      "identityUnknown": false,
+      "selectionRule": "all-generated-participants",
+      "rationale": "Uses the complete generated pool of three to five persons."
+    },
+    {
+      "id": "unknown",
+      "informationOrder": 3,
+      "participantCount": null,
+      "usesFullParticipantPool": false,
+      "identityUnknown": true,
+      "selectionRule": "no-identity-candidates",
+      "rationale": "The person-person encounter remains observed, but the other identity is unknown."
+    }
+  ]
+}
