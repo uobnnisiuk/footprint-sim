@@ -20,6 +20,14 @@ public static class CliApplication
         {
             if (args.Length > 0 && string.Equals(
                 args[0],
+                "evaluate-participant-ambiguity-paired",
+                StringComparison.Ordinal))
+            {
+                return await RunParticipantAmbiguityPairedAsync(args[1..]);
+            }
+
+            if (args.Length > 0 && string.Equals(
+                args[0],
                 "evaluate-participant-ambiguity-derivation",
                 StringComparison.Ordinal))
             {
@@ -88,6 +96,41 @@ public static class CliApplication
             Console.Error.WriteLine($"error: {exception.Message}");
             return 2;
         }
+    }
+
+    private static async Task<int> RunParticipantAmbiguityPairedAsync(string[] args)
+    {
+        if (args.Contains("--help", StringComparer.Ordinal))
+        {
+            PrintParticipantAmbiguityPairedUsage();
+            return 0;
+        }
+
+        var options = ParseOptions(
+            args,
+            new HashSet<string>(["--experiment", "--seeds", "--output"], StringComparer.Ordinal));
+        var experimentPath = Path.GetFullPath(Require(options, "--experiment"));
+        var experiment = ParticipantAmbiguityPairedExperimentLoader.Load(experimentPath);
+        var seeds = SeedExpressionParser.Parse(Require(options, "--seeds"));
+        var outputPath = Path.GetFullPath(Require(options, "--output"));
+        var git = GitMetadataReader.Read(Directory.GetCurrentDirectory());
+        var result = new ParticipantAmbiguityPairedEvaluationRunner().Run(
+            new ParticipantAmbiguityPairedEvaluationRequest
+            {
+                Experiment = experiment,
+                Seeds = seeds,
+                ExperimentContentSha256 = HashFile(experimentPath),
+                SourceCommitSha = git.CommitSha,
+                DirtyWorkingTree = git.DirtyWorkingTree
+            });
+        await new ParticipantAmbiguityPairedOutputWriter().WriteAsync(outputPath, result);
+
+        Console.WriteLine(
+            $"Paired participant-ambiguity evaluation completed: {result.Summary.WorldCount} worlds, " +
+            $"{result.Summary.PairedProfileRunCount} profile runs, " +
+            $"{result.Summary.CandidateSetMonotonicityViolationCount} candidate-set violations.");
+        Console.WriteLine($"Results: {outputPath}");
+        return 0;
     }
 
     private static async Task<int> RunParticipantAmbiguityDerivationAsync(string[] args)
@@ -662,6 +705,15 @@ public static class CliApplication
             "Participant ambiguity derivation: dotnet run --project src/FootprintSim.Cli -- " +
             "evaluate-participant-ambiguity-derivation --fixture <fixture.json> " +
             "--output <directory>");
+        PrintParticipantAmbiguityPairedUsage();
+    }
+
+    private static void PrintParticipantAmbiguityPairedUsage()
+    {
+        Console.WriteLine(
+            "Paired participant ambiguity: dotnet run --project src/FootprintSim.Cli -- " +
+            "evaluate-participant-ambiguity-paired --experiment <experiment.json> " +
+            "--seeds 0..199 --output <directory>");
     }
 }
 

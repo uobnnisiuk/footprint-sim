@@ -251,6 +251,17 @@ dotnet run --project src/FootprintSim.Cli -- evaluate-participant-ambiguity-deri
 
 same-time co-locationのsemantic basis、missing-evidence failure、source independence、受入結果とS5未移行理由は [M1-F10 participant ambiguity derivation](docs/m1f10-participant-ambiguity-derivation.md) を参照してください。
 
+M1-F11ではF10 ruleを変更せず、candidate/Region/participant poolとparticipantごとのpublic Region evidenceをseedで変化させます。同一world上のExact / Narrow / Broad / Unknownをpaired評価し、participant→Region→candidateのどの層でprecision差がplateauになるかをper-seed set inclusionで監査します。
+
+```bash
+dotnet run --project src/FootprintSim.Cli -- evaluate-participant-ambiguity-paired \
+  --experiment experiments/m1f11_participant_ambiguity_paired/experiment.json \
+  --seeds 0..199 \
+  --output results/m1f11-participant-ambiguity
+```
+
+generator事前登録、overlap分類、source independence、200-world結果と解釈境界は [M1-F11 paired participant-ambiguity evaluation](docs/m1f11-participant-ambiguity-paired-evaluation.md) を参照してください。
+
 ## 構成
 
 - `src/FootprintSim.Core`: world/event/observation/interaction/inference/evaluation の契約と決定論エンジン
