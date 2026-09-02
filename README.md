@@ -277,6 +277,12 @@ dotnet run --project src/FootprintSim.Cli -- evaluate-relation-dependent-derivat
 formal/free-text relationの区別、applicability dispatch、Exact/Unknown結果、truth/source/usage
 境界と次工程判断は [M1-F12 relation-dependent derivation](docs/m1f12-relation-dependent-derivation.md) を参照してください。
 
+M1-F13ではF2/F9/F11/F12を統合し、単独軸の測定可能性と同一world上の組合せ可能性を
+分離して監査します。既存の小型reconstructorは複数derived constraintsを受け取らず、S5の
+source-group合成もjoint fieldsとalternativesを区別できないため、multi-axis実験の前に最小の
+source-aware constraint-composition contractを置く判断です。新ruleや200-seed組合せ実験は
+追加しません。詳細は [M1-F13 observation-axis integration](docs/m1f13-observation-axis-integration.md) を参照してください。
+
 ## 構成
 
 - `src/FootprintSim.Core`: world/event/observation/interaction/inference/evaluation の契約と決定論エンジン
