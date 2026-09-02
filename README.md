@@ -262,6 +262,21 @@ dotnet run --project src/FootprintSim.Cli -- evaluate-participant-ambiguity-pair
 
 generator事前登録、overlap分類、source independence、200-world結果と解釈境界は [M1-F11 paired participant-ambiguity evaluation](docs/m1f11-participant-ambiguity-paired-evaluation.md) を参照してください。
 
+M1-F12ではS5を変更せず、relation informationをExact `PersonPersonEncounter`と
+「relationは存在するがkind不明」に分離します。Exact時のみ既存same-time co-location
+ruleを適用し、kind不明時はrelation observationを保持したままrelation-derived constraintを
+安全側に保留する決定的vertical sliceです。正当なsecond relation/taxonomyがないため2 profileに
+限定します。
+
+```bash
+dotnet run --project src/FootprintSim.Cli -- evaluate-relation-dependent-derivation \
+  --fixture experiments/m1f12_relation_dependent_derivation/fixture.json \
+  --output results/m1f12-relation-derivation
+```
+
+formal/free-text relationの区別、applicability dispatch、Exact/Unknown結果、truth/source/usage
+境界と次工程判断は [M1-F12 relation-dependent derivation](docs/m1f12-relation-dependent-derivation.md) を参照してください。
+
 ## 構成
 
 - `src/FootprintSim.Core`: world/event/observation/interaction/inference/evaluation の契約と決定論エンジン

@@ -20,6 +20,14 @@ public static class CliApplication
         {
             if (args.Length > 0 && string.Equals(
                 args[0],
+                "evaluate-relation-dependent-derivation",
+                StringComparison.Ordinal))
+            {
+                return await RunRelationDependentDerivationAsync(args[1..]);
+            }
+
+            if (args.Length > 0 && string.Equals(
+                args[0],
                 "evaluate-participant-ambiguity-paired",
                 StringComparison.Ordinal))
             {
@@ -96,6 +104,39 @@ public static class CliApplication
             Console.Error.WriteLine($"error: {exception.Message}");
             return 2;
         }
+    }
+
+    private static async Task<int> RunRelationDependentDerivationAsync(string[] args)
+    {
+        if (args.Contains("--help", StringComparer.Ordinal))
+        {
+            PrintRelationDependentDerivationUsage();
+            return 0;
+        }
+
+        var options = ParseOptions(
+            args,
+            new HashSet<string>(["--fixture", "--output"], StringComparer.Ordinal));
+        var fixturePath = Path.GetFullPath(Require(options, "--fixture"));
+        var fixture = RelationDependentFixtureLoader.Load(fixturePath);
+        var outputPath = Path.GetFullPath(Require(options, "--output"));
+        var git = GitMetadataReader.Read(Directory.GetCurrentDirectory());
+        var result = new RelationDependentFixtureEvaluationRunner().Run(
+            new RelationDependentFixtureEvaluationRequest
+            {
+                Fixture = fixture,
+                FixtureContentSha256 = HashFile(fixturePath),
+                SourceCommitSha = git.CommitSha,
+                DirtyWorkingTree = git.DirtyWorkingTree
+            });
+        await new RelationDependentFixtureOutputWriter().WriteAsync(outputPath, result);
+
+        Console.WriteLine(
+            $"Relation-dependent derivation fixture completed: " +
+            $"{result.Manifest.ProfileRunCount} profiles, " +
+            $"{result.MonotonicityViolationCount} monotonicity violations.");
+        Console.WriteLine($"Results: {outputPath}");
+        return 0;
     }
 
     private static async Task<int> RunParticipantAmbiguityPairedAsync(string[] args)
@@ -714,6 +755,15 @@ public static class CliApplication
             "Paired participant ambiguity: dotnet run --project src/FootprintSim.Cli -- " +
             "evaluate-participant-ambiguity-paired --experiment <experiment.json> " +
             "--seeds 0..199 --output <directory>");
+        PrintRelationDependentDerivationUsage();
+    }
+
+    private static void PrintRelationDependentDerivationUsage()
+    {
+        Console.WriteLine(
+            "Relation-dependent derivation: dotnet run --project src/FootprintSim.Cli -- " +
+            "evaluate-relation-dependent-derivation --fixture <fixture.json> " +
+            "--output <directory>");
     }
 }
 
