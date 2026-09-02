@@ -283,6 +283,20 @@ source-group合成もjoint fieldsとalternativesを区別できないため、mu
 source-aware constraint-composition contractを置く判断です。新ruleや200-seed組合せ実験は
 追加しません。詳細は [M1-F13 observation-axis integration](docs/m1f13-observation-axis-integration.md) を参照してください。
 
+M1-F14は、source ancestryとlogical composition roleを分離し、すでに正当化されたpublicな
+CandidateGeneration constraintを`JointRequirement` / `Alternative` / `EquivalentSupport` /
+`NonRestricting`として合成する最小contractを追加します。deterministicな6-candidate fixtureで
+None、L、T、Pと4つのjoint profileを機能確認できます。
+
+```bash
+dotnet run --project src/FootprintSim.Cli -- evaluate-constraint-composition \
+  --fixture experiments/m1f14_constraint_composition/fixture.json \
+  --output results/m1f14-constraint-composition
+```
+
+設計、8-profile結果、source/logical境界、conflictの未決定policyは
+[M1-F14 constraint-composition contract](docs/m1f14-constraint-composition-contract.md) を参照してください。
+
 ## 構成
 
 - `src/FootprintSim.Core`: world/event/observation/interaction/inference/evaluation の契約と決定論エンジン

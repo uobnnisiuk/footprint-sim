@@ -20,6 +20,14 @@ public static class CliApplication
         {
             if (args.Length > 0 && string.Equals(
                 args[0],
+                "evaluate-constraint-composition",
+                StringComparison.Ordinal))
+            {
+                return await RunConstraintCompositionAsync(args[1..]);
+            }
+
+            if (args.Length > 0 && string.Equals(
+                args[0],
                 "evaluate-relation-dependent-derivation",
                 StringComparison.Ordinal))
             {
@@ -104,6 +112,39 @@ public static class CliApplication
             Console.Error.WriteLine($"error: {exception.Message}");
             return 2;
         }
+    }
+
+    private static async Task<int> RunConstraintCompositionAsync(string[] args)
+    {
+        if (args.Contains("--help", StringComparer.Ordinal))
+        {
+            PrintConstraintCompositionUsage();
+            return 0;
+        }
+
+        var options = ParseOptions(
+            args,
+            new HashSet<string>(["--fixture", "--output"], StringComparer.Ordinal));
+        var fixturePath = Path.GetFullPath(Require(options, "--fixture"));
+        var fixture = ConstraintCompositionFixtureLoader.Load(fixturePath);
+        var outputPath = Path.GetFullPath(Require(options, "--output"));
+        var git = GitMetadataReader.Read(Directory.GetCurrentDirectory());
+        var result = new ConstraintCompositionFixtureEvaluationRunner().Run(
+            new ConstraintCompositionFixtureEvaluationRequest
+            {
+                Fixture = fixture,
+                FixtureContentSha256 = HashFile(fixturePath),
+                SourceCommitSha = git.CommitSha,
+                DirtyWorkingTree = git.DirtyWorkingTree
+            });
+        await new ConstraintCompositionFixtureOutputWriter().WriteAsync(outputPath, result);
+
+        Console.WriteLine(
+            $"Constraint-composition fixture completed: {result.Manifest.ProfileRunCount} profiles, " +
+            $"{result.IntersectionViolationCount} intersection violations, " +
+            $"{result.FalseExclusionCount} false exclusions.");
+        Console.WriteLine($"Results: {outputPath}");
+        return 0;
     }
 
     private static async Task<int> RunRelationDependentDerivationAsync(string[] args)
@@ -763,6 +804,15 @@ public static class CliApplication
         Console.WriteLine(
             "Relation-dependent derivation: dotnet run --project src/FootprintSim.Cli -- " +
             "evaluate-relation-dependent-derivation --fixture <fixture.json> " +
+            "--output <directory>");
+        PrintConstraintCompositionUsage();
+    }
+
+    private static void PrintConstraintCompositionUsage()
+    {
+        Console.WriteLine(
+            "Constraint composition: dotnet run --project src/FootprintSim.Cli -- " +
+            "evaluate-constraint-composition --fixture <fixture.json> " +
             "--output <directory>");
     }
 }

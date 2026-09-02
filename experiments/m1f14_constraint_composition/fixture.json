@@ -1,0 +1,175 @@
+{
+  "schemaVersion": 1,
+  "id": "m1f14-constraint-composition",
+  "scenarioId": "m1f14-purified-composition-fixture",
+  "seed": 0,
+  "targetEntityId": "person-a",
+  "targetEntityKind": "person",
+  "targetStateContextId": "predecessor-state-at-search-window",
+  "candidateDomainId": "m1f14-time-region-candidate-domain",
+  "evidenceAvailabilityCutoff": 16,
+  "fixedRelationKind": "personPersonEncounter",
+  "locationInput": {
+    "sourceEvidenceIdentifier": "public-target-location-observation",
+    "availableAtTick": 13,
+    "evidenceState": "confirmed",
+    "visibility": "publicEvidence",
+    "sourceAncestryIds": ["target-location-source-group"],
+    "allowedRegionIds": ["east", "west"]
+  },
+  "timeInput": {
+    "sourceEvidenceIdentifier": "public-later-event-time-observation",
+    "laterEventKind": "later-public-event",
+    "observedStartTick": 15,
+    "observedEndTick": 15,
+    "availableAtTick": 16,
+    "evidenceState": "confirmed",
+    "sourceAncestryIds": ["later-time-source-group"],
+    "publicDependency": {
+      "id": "public-bounded-predecessor-dependency",
+      "predecessorStateKind": "target-predecessor-state",
+      "laterEventKind": "later-public-event",
+      "targetEntityId": "person-a",
+      "minimumDurationTicks": 4,
+      "maximumDurationTicks": 5,
+      "durationSourceId": "public-duration-source",
+      "allowedPredecessorRegionIds": ["east", "north", "south", "west"]
+    }
+  },
+  "participantInput": {
+    "encounterSourceEvidenceIdentifier": "public-encounter-observation",
+    "encounterStartTick": 10,
+    "encounterEndTick": 10,
+    "availableAtTick": 11,
+    "evidenceState": "confirmed",
+    "sourceAncestryIds": ["encounter-source-group"],
+    "possibleParticipantIds": ["person-b", "person-c"],
+    "participantLocationEvidence": [
+      {
+        "sourceEvidenceIdentifier": "public-location-person-b",
+        "participantId": "person-b",
+        "entityKind": "person",
+        "applicableStartTick": 10,
+        "applicableEndTick": 10,
+        "allowedRegionIds": ["west"],
+        "availableAtTick": 11,
+        "evidenceState": "confirmed",
+        "visibility": "publicEvidence",
+        "usageRole": "candidateGeneration",
+        "sourceAncestryIds": ["participant-b-location-source-group"]
+      },
+      {
+        "sourceEvidenceIdentifier": "public-location-person-c",
+        "participantId": "person-c",
+        "entityKind": "person",
+        "applicableStartTick": 10,
+        "applicableEndTick": 10,
+        "allowedRegionIds": ["north"],
+        "availableAtTick": 11,
+        "evidenceState": "confirmed",
+        "visibility": "publicEvidence",
+        "usageRole": "candidateGeneration",
+        "sourceAncestryIds": ["participant-c-location-source-group"]
+      }
+    ]
+  },
+  "candidateStates": [
+    {
+      "startTick": 10,
+      "endTick": 10,
+      "temporalKind": "eventPoint",
+      "regionIds": ["west"]
+    },
+    {
+      "startTick": 10,
+      "endTick": 10,
+      "temporalKind": "eventPoint",
+      "regionIds": ["east"]
+    },
+    {
+      "startTick": 10,
+      "endTick": 10,
+      "temporalKind": "eventPoint",
+      "regionIds": ["north"]
+    },
+    {
+      "startTick": 11,
+      "endTick": 11,
+      "temporalKind": "eventPoint",
+      "regionIds": ["south"]
+    },
+    {
+      "startTick": 12,
+      "endTick": 12,
+      "temporalKind": "eventPoint",
+      "regionIds": ["west"]
+    },
+    {
+      "startTick": 12,
+      "endTick": 12,
+      "temporalKind": "eventPoint",
+      "regionIds": ["east"]
+    }
+  ],
+  "truthCandidateStartTick": 10,
+  "truthCandidateEndTick": 10,
+  "truthCandidateRegionId": "west",
+  "profiles": [
+    {
+      "id": "none",
+      "order": 0,
+      "includeLocation": false,
+      "includeTime": false,
+      "includeParticipant": false
+    },
+    {
+      "id": "location",
+      "order": 1,
+      "includeLocation": true,
+      "includeTime": false,
+      "includeParticipant": false
+    },
+    {
+      "id": "time",
+      "order": 2,
+      "includeLocation": false,
+      "includeTime": true,
+      "includeParticipant": false
+    },
+    {
+      "id": "participant",
+      "order": 3,
+      "includeLocation": false,
+      "includeTime": false,
+      "includeParticipant": true
+    },
+    {
+      "id": "location-time",
+      "order": 4,
+      "includeLocation": true,
+      "includeTime": true,
+      "includeParticipant": false
+    },
+    {
+      "id": "location-participant",
+      "order": 5,
+      "includeLocation": true,
+      "includeTime": false,
+      "includeParticipant": true
+    },
+    {
+      "id": "time-participant",
+      "order": 6,
+      "includeLocation": false,
+      "includeTime": true,
+      "includeParticipant": true
+    },
+    {
+      "id": "location-time-participant",
+      "order": 7,
+      "includeLocation": true,
+      "includeTime": true,
+      "includeParticipant": true
+    }
+  ]
+}
