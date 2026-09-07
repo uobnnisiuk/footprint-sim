@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "m1f17-plateau-domain-audit",
+  "baselineFinalCommit": "e68e5a88b9feb103f05ec9d768ecbc3b85bd5f11",
+  "baselineExperimentSha256": "e717669c7178dcf8b278b831b6ee049a2aa8dae5a9c9e6366b8c32712649ca39",
+  "requiredSeedStart": 0,
+  "requiredSeedEnd": 199,
+  "classifierRuleId": "m1f17-explicit-region-domain-plateau-v1",
+  "domains": ["registered", "occupied", "extended"],
+  "unusedRegionId": "m1f17-unused-region",
+  "timeTopRule": "all-original-candidate-intervals-overlap-derived-time",
+  "legacyCorrectionOutcomeAlreadyInspected": true,
+  "prospectiveControls": ["occupied", "extended"],
+  "fixedInference": "unchanged-m1f16",
+  "failurePolicy": "fail-no-skip-no-regenerate-no-tuning"
+}
