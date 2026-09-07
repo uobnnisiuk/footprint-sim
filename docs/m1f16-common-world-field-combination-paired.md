@@ -277,8 +277,160 @@ be byte-identical.
 
 ## 18. Results
 
-Pending the preregistered 200-world evaluation. This section will be filled without changing the
-generator, profiles, hypotheses, comparisons, or failure conditions above.
+The preregistered seed range completed without skip or regeneration:
+
+- worlds: 200;
+- profile evaluations: 1,600;
+- primary candidate-ID set-inclusion audits: 2,400;
+- joint set-inclusion violations: 0;
+- containment: 1,600/1,600;
+- false exclusions: 0;
+- axis-orthogonality violations: 0;
+- candidate-universe invariance violations: 0; and
+- relation-invariance violations: 0.
+
+### 18.1 Candidate results and work
+
+| Profile | Mean | Median | Min-max | Containment | False exclusions | Mean reduction vs None | Mean CandidateGeneration work |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| None | 12.060 | 12 | 8-16 | 100% | 0 | 0.000 | 12.060 |
+| L | 6.550 | 6 | 2-16 | 100% | 0 | 5.510 | 24.120 |
+| T | 5.300 | 5 | 1-12 | 100% | 0 | 6.760 | 24.120 |
+| P | 8.140 | 8 | 2-16 | 100% | 0 | 3.920 | 24.120 |
+| L+T | 3.145 | 3 | 1-10 | 100% | 0 | 8.915 | 36.180 |
+| L+P | 4.965 | 5 | 1-15 | 100% | 0 | 7.095 | 36.180 |
+| T+P | 3.675 | 3 | 1-9 | 100% | 0 | 8.385 | 36.180 |
+| L+T+P | 2.415 | 2 | 1-8 | 100% | 0 | 9.645 | 48.240 |
+
+These averages describe only the preregistered generator. In particular, T having a smaller mean
+than L or P is not evidence of a general importance ordering.
+
+Each single profile receives one component and applies one predicate; pair profiles receive/apply
+two; the full profile receives/applies three. With mean universe size 12.060, mean predicate checks
+are 12.060, 24.120, and 36.180 for singles, pairs, and the full profile respectively. The None work
+is universe generation only. Duplicate suppression and raw composition-alternative evaluation are
+zero, as expected: P reaches composition as one pre-unioned component.
+
+### 18.2 Conditional additional reductions
+
+| Added axis / baseline | Mean reduction | Median | Min-max | Positive worlds | No-change worlds |
+|---|---:|---:|---:|---:|---:|
+| T added to L | 3.405 | 3 | 0-12 | 189 | 11 |
+| P added to L | 1.585 | 1 | 0-9 | 123 | 77 |
+| L added to T | 2.155 | 2 | 0-8 | 167 | 33 |
+| P added to T | 1.625 | 1 | 0-8 | 139 | 61 |
+| L added to P | 3.175 | 3 | 0-12 | 165 | 35 |
+| T added to P | 4.465 | 4 | 0-13 | 198 | 2 |
+| P added to L+T | 0.730 | 0 | 0-5 | 84 | 116 |
+| T added to L+P | 2.550 | 2 | 0-12 | 176 | 24 |
+| L added to T+P | 1.260 | 1 | 0-8 | 130 | 70 |
+
+Across the 1,800 fixed comparisons, 1,371 produced additional candidate reduction and 429 did not.
+The no-change cases split into 78 observation-to-constraint plateaus, 143 constraint-overlap
+plateaus, 121 constraint-to-candidate plateaus, and 87 one-candidate saturation cases. The detailed
+per-comparison split is:
+
+| Addition | Observation-to-constraint | Constraint overlap | Constraint-to-candidate | Saturation |
+|---|---:|---:|---:|---:|
+| T to L | 0 | 0 | 11 | 0 |
+| P to L | 21 | 56 | 0 | 0 |
+| L to T | 6 | 0 | 20 | 7 |
+| P to T | 21 | 0 | 33 | 7 |
+| L to P | 7 | 28 | 0 | 0 |
+| T to P | 0 | 0 | 2 | 0 |
+| P to L+T | 18 | 39 | 22 | 37 |
+| T to L+P | 0 | 0 | 12 | 12 |
+| L to T+P | 5 | 20 | 21 | 24 |
+
+Thus a zero result has four traceable meanings in this family. It never licenses the conclusion that
+the added field is semantically unnecessary.
+
+### 18.3 Profile equivalence
+
+Requested direct equivalence counts are:
+
+| Candidate sets compared | Equal worlds |
+|---|---:|
+| L vs L+T | 11 |
+| L vs L+P | 77 |
+| T vs L+T | 33 |
+| T vs T+P | 61 |
+| P vs L+P | 35 |
+| P vs T+P | 2 |
+| L+T vs L+T+P | 116 |
+| L+P vs L+T+P | 24 |
+| T+P vs L+T+P | 70 |
+
+All 28 unordered profile pairs are retained in the CSV/JSONL artifacts. Among the three singles, all
+candidate sets differed in 186 worlds. A single-axis result was a proper subset of both other
+single-axis results in 24 worlds. At least one two-axis addition plateaued in 133 worlds, while at
+least one third-axis addition still reduced candidates in 197 worlds.
+
+### 18.4 Per-world minimum profiles
+
+The mean per-world minimum was 2.415 candidates. The full profile attained the minimum count in all
+200 worlds by Joint monotonicity, but it was inclusion-minimal among count-minimum profiles in only
+42. Other profile frequencies were:
+
+| Profile | Worlds attaining minimum count | Worlds inclusion-minimal at minimum |
+|---|---:|---:|
+| None | 0 | 0 |
+| L | 4 | 4 |
+| T | 20 | 20 |
+| P | 0 | 0 |
+| L+T | 116 | 92 |
+| L+P | 24 | 20 |
+| T+P | 70 | 50 |
+| L+T+P | 200 | 42 |
+
+The most frequent inclusion-minimal sets were L+T alone (69 worlds), full L+T+P alone (42), T+P
+alone (28), T alone (20), and the tied alternatives L+T plus T+P (17). The remaining 24 worlds used
+L+P alone (12) or smaller mixed/tied patterns. Every world's count-minimum profiles returned the same
+candidate ID set, not merely the same count. These remain per-world descriptive results, not a
+general minimum field set.
+
+Minimum candidate-count distribution was: 1 in 69 worlds, 2 in 52, 3 in 39, 4 in 19, 5 in 14, 6 in
+3, 7 in 3, and 8 in 1.
+
+### 18.5 Representation and source observations
+
+The generator realized its full registered candidate range 8..16 and Region range 5..9. It produced:
+
+- unused Regions in 131 worlds;
+- same-Region candidate collisions in all 200 worlds;
+- same-start-tick candidate collisions in all 200 worlds;
+- non-point state intervals in all 200 worlds;
+- participant evidence classified as identical in 3 worlds, partially overlapping in 144, and
+  completely distinct in 53; and
+- participant pools of 2/3/4 Persons in 66/63/71 worlds.
+
+Mean L predicate size was 3.435 Regions (range 2..5), mean P union size was 4.410 (range 1..8), and
+mean derived T width was 1.465 ticks (range 0..3). Duration-bound widths 0/1/2/3 occurred in
+49/51/58/42 worlds. These representation choices help explain why a valid extra constraint can be
+absorbed at different layers.
+
+Available source-group count ranged from 6 to 8 (mean 7.025). Mean active supporting groups were 1
+for L, 2 for T, and 4.025 for P, whereas mean selected field counts were 1, 3, and 6.025. The full
+profile therefore averaged 7.025 source groups but 10.025 fields. This confirms that field count,
+source count, and composition component count remain different quantities.
+
+### 18.6 Truth, pairing, and source/operator audits
+
+The manifest records `TruthUsedForDerivationOrComposition=false`. Focused tests replace a compatible
+truth candidate and, separately, a compatible truth participant while preserving public inputs;
+derived L/T/P, composition IDs, candidate sets, and work remain invariant. Every profile retains the
+same raw observations, source graph, relation, candidate universe, and truth labels for its seed.
+
+The common evaluator invokes the unchanged F14 composer and has no source-based shortcut or L/T/P
+interaction rule. Same-source fields can be Joint; independently sourced participant alternatives
+remain unioned within P. All profiles use CandidateGeneration only.
+
+### 18.7 Deterministic reproduction and regressions
+
+The initial clean preregistration run used commit
+`5fe8bf33f6dde41f3f77fa09b29a59f42f84bb4d`. The final validation records the final commit and
+repeats the complete run twice; byte-identity and full regression status are reported with that
+commit rather than changing any preregistered definition.
 
 ## 19. Claim boundaries
 
@@ -301,3 +453,19 @@ buildings/floors, area/volume, check locations, actions, time, personnel/equipme
 and existing-method handoff. Multiple joint conditions may later be decomposed for neutral comparison
 with Buddhist methodological categories such as concurrence, sequence, dependency, and forward/
 reverse examination; no production naming or direct paccaya mapping is introduced here.
+
+## 21. Recommendation
+
+**Recommend D, then A.** The field-combination path is semantically valid and safe, so a field-level
+study is now implementable. However, 429/1,800 additions plateaued and 131/200 worlds contained
+unused Regions; every world also had Region/tick collisions and interval candidates. The inclusion-
+minimal profile pattern therefore visibly depends on the registered Region/tick/density/overlap
+representation. A small, preregistered sensitivity study that changes one representation factor at a
+time is the largest remaining prerequisite before elevating the secondary per-world minima into an
+explicit minimal-field study.
+
+Recommend A follows that sensitivity check, using the current per-world minimum schema as its
+starting point. Recommend C (source-level ablation) remains later because field and source counts are
+now correctly separated but source presence/correlation was intentionally fixed. Recommend B
+(precision interaction) and E (missingness/conflict/correlation) also remain later to avoid mixing
+two new axes before the field baseline's representation dependence is understood.

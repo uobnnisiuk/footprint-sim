@@ -103,6 +103,66 @@ public sealed class M1F16Tests
     }
 
     [Fact]
+    public void AggregateCandidateAndConditionalReductionMetricsMatchThePreregisteredRun()
+    {
+        Assert.Equal(
+            [12.06m, 6.55m, 5.3m, 8.14m, 3.145m, 4.965m, 3.675m, 2.415m],
+            Result.Value.ProfileAggregates.Select(item => item.MeanCandidateCount));
+        Assert.Equal(
+            [12m, 6m, 5m, 8m, 3m, 5m, 3m, 2m],
+            Result.Value.ProfileAggregates.Select(item => item.MedianCandidateCount));
+        Assert.Equal(
+            [8, 2, 1, 2, 1, 1, 1, 1],
+            Result.Value.ProfileAggregates.Select(item => item.MinimumCandidateCount));
+        Assert.Equal(
+            [16, 16, 12, 16, 10, 15, 9, 8],
+            Result.Value.ProfileAggregates.Select(item => item.MaximumCandidateCount));
+        Assert.Equal(
+            [0m, 5.51m, 6.76m, 3.92m, 8.915m, 7.095m, 8.385m, 9.645m],
+            Result.Value.ProfileAggregates.Select(item => item.MeanReductionCountVsNone));
+
+        Assert.Equal(
+            [3.405m, 1.585m, 2.155m, 1.625m, 3.175m, 4.465m, 0.73m, 2.55m, 1.26m],
+            Result.Value.ConditionalReductionAggregates.Select(item =>
+                item.MeanAdditionalCandidateReduction));
+        Assert.Equal(
+            [189, 123, 167, 139, 165, 198, 84, 176, 130],
+            Result.Value.ConditionalReductionAggregates.Select(item =>
+                item.PositiveAdditionalEffectWorldCount));
+        Assert.Equal(
+            [11, 77, 33, 61, 35, 2, 116, 24, 70],
+            Result.Value.ConditionalReductionAggregates.Select(item =>
+                item.ZeroAdditionalEffectWorldCount));
+    }
+
+    [Fact]
+    public void PlateauRepresentationAndPerWorldMinimumAuditsMatchTheRegisteredFamily()
+    {
+        var frequencies = Result.Value.ConditionalReductionAggregates
+            .SelectMany(item => item.ClassificationFrequencies)
+            .GroupBy(item => item.Classification)
+            .ToDictionary(group => group.Key, group => group.Sum(item => item.WorldCount));
+
+        Assert.Equal(1371, frequencies[CommonWorldConditionalOutcomeClassification.AdditionalCandidateReduction]);
+        Assert.Equal(78, frequencies[CommonWorldConditionalOutcomeClassification.ObservationToConstraintPlateau]);
+        Assert.Equal(143, frequencies[CommonWorldConditionalOutcomeClassification.ConstraintOverlapPlateau]);
+        Assert.Equal(121, frequencies[CommonWorldConditionalOutcomeClassification.ConstraintToCandidatePlateau]);
+        Assert.Equal(87, frequencies[CommonWorldConditionalOutcomeClassification.Saturation]);
+        Assert.Equal(131, Result.Value.RepresentationSummary.WorldsWithUnusedRegions);
+        Assert.Equal(3, Result.Value.RepresentationSummary.WorldsWithIdenticalParticipantEvidence);
+        Assert.Equal(144, Result.Value.RepresentationSummary.WorldsWithPartialParticipantEvidenceOverlap);
+        Assert.Equal(53, Result.Value.RepresentationSummary.WorldsWithDisjointParticipantEvidence);
+        Assert.Equal(2.415m, Result.Value.Summary.MeanPerWorldMinimumCandidateCount);
+        Assert.Equal(200, Result.Value.Summary.AllMinimumProfilesSameCandidateSetWorldCount);
+        Assert.Equal(
+            [0, 4, 20, 0, 116, 24, 70, 200],
+            Result.Value.MinimumProfileFrequencies.Select(item => item.MinimumCountWorldCount));
+        Assert.Equal(
+            [0, 4, 20, 0, 92, 20, 50, 42],
+            Result.Value.MinimumProfileFrequencies.Select(item => item.InclusionMinimalWorldCount));
+    }
+
+    [Fact]
     public void ParticipantAlternativesRemainPreUnionedAndSourceGroupsDoNotSelectOperators()
     {
         Assert.All(Result.Value.Runs, run =>
