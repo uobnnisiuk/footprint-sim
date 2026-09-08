@@ -95,6 +95,10 @@ dotnet run --project src/FootprintSim.Cli -- evaluate \
 
 `--scenarios` には単一の scenario JSON または `scenario.json` を再帰検索するディレクトリ、`--seeds` には単一値・包含範囲（`0..19`）・カンマ区切り、`--strategies` には `all` または strategy ID のカンマ区切りを指定できます。
 
+現在、上の一括コマンドはS4の`cross-thread-constrained`で、公開Regionと評価対象領域の
+不一致により`person-b-home`のエラーになります（F17監査で既存版でも再現）。S4は後述の
+3戦略を指定して個別実行してください。F17ではこのS4評価契約を変更していません。
+
 S2だけを200 seedで評価する例です。`--scenario` は単一ファイル用の別名です。
 
 ```bash
@@ -325,6 +329,22 @@ dotnet run --project src/FootprintSim.Cli -- evaluate-common-world-field-combina
 
 generator事前登録、primary invariants、failure conditions、結果と解釈境界は
 [M1-F16 common-world field-combination paired evaluation](docs/m1f16-common-world-field-combination-paired.md) を参照してください。
+
+M1-F17ではF16のplateau診断を監査します。旧Region含意判定は候補のあるRegionだけを使い、
+未使用Regionによるplateauの一部を制約の重なりに分類していました。F16の推論・旧出力は保持し、
+宣言済みRegion全域での修正分類と、診断領域だけを変える2つの対照を別出力で記録します。
+
+```bash
+dotnet run --project src/FootprintSim.Cli -- audit-common-world-plateau-domain \
+  --experiment experiments/m1f17_plateau_domain_audit/experiment.json \
+  --baseline-experiment experiments/m1f16_common_world_field_combination/experiment.json \
+  --seeds 0..199 \
+  --output results/m1f17-plateau-domain-audit
+```
+
+事前登録、探索的な事前結果閲覧の開示、分類修正、対照比較と次の研究判断は
+[M1-F17 plateau domain audit](docs/m1f17-plateau-domain-audit.md) を参照してください。
+この比較は診断ラベルの領域依存性を調べるもので、物理的な空間粒度や救助性能の実験ではありません。
 
 ## 構成
 

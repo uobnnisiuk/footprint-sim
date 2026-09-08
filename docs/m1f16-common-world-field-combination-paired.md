@@ -1,5 +1,10 @@
 # M1-F16 common-world field-combination paired evaluation
 
+> Subsequent audit: [M1-F17](m1f17-plateau-domain-audit.md) identifies an evaluation-diagnostic
+> defect in Region implication: F16 checks occupied Regions instead of the declared Region universe.
+> The historical results and command below remain reproducible. Use F17 for corrected plateau
+> explanations; candidate sets, containment, reduction totals and per-world minima are unaffected.
+
 ## 1. Objective and preregistration boundary
 
 M1-F15 established one deterministic end-to-end common world. M1-F16 keeps its public

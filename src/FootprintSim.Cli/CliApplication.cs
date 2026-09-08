@@ -20,6 +20,14 @@ public static class CliApplication
         {
             if (args.Length > 0 && string.Equals(
                 args[0],
+                "audit-common-world-plateau-domain",
+                StringComparison.Ordinal))
+            {
+                return await RunCommonWorldPlateauDomainAuditAsync(args[1..]);
+            }
+
+            if (args.Length > 0 && string.Equals(
+                args[0],
                 "evaluate-common-world-field-combination",
                 StringComparison.Ordinal))
             {
@@ -128,6 +136,46 @@ public static class CliApplication
             Console.Error.WriteLine($"error: {exception.Message}");
             return 2;
         }
+    }
+
+    private static async Task<int> RunCommonWorldPlateauDomainAuditAsync(string[] args)
+    {
+        if (args.Contains("--help", StringComparer.Ordinal))
+        {
+            PrintCommonWorldPlateauDomainAuditUsage();
+            return 0;
+        }
+
+        var options = ParseOptions(args, new HashSet<string>(
+            ["--experiment", "--baseline-experiment", "--seeds", "--output"],
+            StringComparer.Ordinal));
+        var protocolPath = Path.GetFullPath(Require(options, "--experiment"));
+        var baselinePath = Path.GetFullPath(Require(options, "--baseline-experiment"));
+        // The shared parser intentionally deduplicates seed expressions. This protocol
+        // requires the literal complete range, so duplicate/extra input cannot disappear.
+        var seedExpression = Require(options, "--seeds");
+        if (!string.Equals(seedExpression, "0..199", StringComparison.Ordinal))
+        {
+            throw new ArgumentException("M1-F17 requires --seeds 0..199 exactly.");
+        }
+
+        var outputPath = Path.GetFullPath(Require(options, "--output"));
+        var git = GitMetadataReader.Read(Directory.GetCurrentDirectory());
+        var result = new CommonWorldPlateauDomainAuditRunner().Run(
+            new CommonWorldPlateauDomainAuditRequest
+            {
+                Protocol = CommonWorldPlateauDomainAuditProtocolLoader.Load(protocolPath),
+                ProtocolContentSha256 = HashFile(protocolPath),
+                BaselineExperiment = CommonWorldFieldCombinationExperimentLoader.Load(baselinePath),
+                BaselineExperimentContentSha256 = HashFile(baselinePath),
+                Seeds = SeedExpressionParser.Parse(seedExpression),
+                SourceCommitSha = git.CommitSha,
+                DirtyWorkingTree = git.DirtyWorkingTree
+            });
+        await new CommonWorldPlateauDomainAuditOutputWriter().WriteAsync(result, outputPath);
+        Console.WriteLine($"Common-world plateau domain audit completed: {result.Rows.Count} comparisons.");
+        Console.WriteLine($"Results: {outputPath}");
+        return 0;
     }
 
     private static async Task<int> RunCommonWorldFieldCombinationAsync(string[] args)
@@ -917,6 +965,15 @@ public static class CliApplication
             "Common-world field combination: dotnet run --project " +
             "src/FootprintSim.Cli -- evaluate-common-world-field-combination " +
             "--experiment <experiment.json> --seeds 0..199 --output <directory>");
+        PrintCommonWorldPlateauDomainAuditUsage();
+    }
+
+    private static void PrintCommonWorldPlateauDomainAuditUsage()
+    {
+        Console.WriteLine(
+            "Plateau domain audit: dotnet run --project src/FootprintSim.Cli -- " +
+            "audit-common-world-plateau-domain --experiment <experiment.json> " +
+            "--baseline-experiment <f16-experiment.json> --seeds 0..199 --output <directory>");
     }
 }
 

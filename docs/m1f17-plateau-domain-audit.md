@@ -140,5 +140,126 @@ field importance ordering or direct Buddhist paccaya mapping follows from this a
 
 ## Results
 
-Pending prospective control execution after registration. Exploratory correction access is
-disclosed above and will not be relabeled as unseen confirmation.
+Registration commit: `fe630c20ed0398e2a76ad334a457a174691b8fd2`, pushed before the prospective
+controls. Protocol file SHA-256:
+`52c1a24b6b1ef3e84c7b59c219765ec2e1793d14c1c1728f8f2644a6dd0f54bc`.
+The registered protocol and F16 generator/configuration were not modified after outcome access.
+An independent Python implementation first ran the prospective controls from the original clean
+F16 JSONL at registration HEAD with implementation changes in the working tree. The C# F17 CLI then
+recomputed the same fixed worlds. All 1,800 comparison records, 7,200 domain records (including
+legacy), Region witnesses, candidate IDs, flags, transitions and aggregate counts agreed exactly.
+The known legacy correction remains exploratory correction/reproduction, as disclosed above.
+
+### Candidate results and safety
+
+The unchanged evaluator generated 200 worlds and 1,600 profile evaluations once per complete run.
+The three new diagnostic domains account for 5,400 classifications; they are not 600 independent
+worlds or new inference experiments. Containment is 1,600/1,600, false exclusion 0, and all 2,400
+candidate-ID inclusion checks pass. The profile mean counts remain
+`12.060 / 6.550 / 5.300 / 8.140 / 3.145 / 4.965 / 3.675 / 2.415` in F16 order. Full-profile
+saturation remains 69 worlds and inclusion-minimal full profile remains 42 worlds. There are still
+1,371 positive additions and 429 plateaus, with identical candidate IDs, per-world minima,
+derivation/composition identities, source graph and work.
+
+The manifest's public-inference input/output signatures are snapshots **before and after running
+the diagnostics**, not names for different inference pipeline stages. The full legacy result is
+also hashed before/after to detect mutation. Those checks establish non-mutation; separately,
+re-running the F16 command reproduces all eight baseline artifacts, with only source-commit/dirty
+manifest metadata differing. No production derivation, composer, generator, scenario or legacy
+F16 evaluation implementation was edited.
+
+### Corrected explanations and prospective controls
+
+| Classification | F16 legacy | Registered domain (corrected) | Occupied domain control | Extended domain control |
+|---|---:|---:|---:|---:|
+| Additional candidate reduction | 1,371 | 1,371 | 1,371 | 1,371 |
+| Observation-to-constraint plateau | 78 | 78 | 84 | 0 |
+| Constraint overlap plateau | 143 | 108 | 139 | 159 |
+| Constraint-to-candidate plateau | 121 | 156 | 119 | 183 |
+| One-candidate saturation | 87 | 87 | 87 | 87 |
+
+The correction changes 35 classifications in 19 worlds, all overlap -> constraint-to-candidate:
+P added to L: 9; L added to P: 11; P added to L+T: 6; L added to T+P: 9. Forty implication flags
+change; five are hidden by the intentionally higher-priority saturation category. Every changed
+implication has a concrete declared Region allowed by the baseline predicate but rejected by the
+added predicate, with no represented candidate occupying it. This corrects the reason for zero
+effect without treating an unavailable candidate as measured absence in the world.
+
+The registered -> occupied control changes 37 labels in 19 worlds: 31 constraint-to-candidate ->
+overlap, and six constraint-to-candidate -> observation-to-constraint. Six top flags and 40
+implication flags change. Restricting the diagnostic domain can therefore hide both non-universality
+and non-implication while every candidate result stays fixed.
+
+The registered -> extended control changes 78 labels in 27 worlds: 51 observation-to-constraint ->
+overlap, and 27 observation-to-constraint -> constraint-to-candidate. Eighty-four top flags change;
+six are hidden by saturation. Region implication never changes. Adding a sentinel outside all
+L/P predicates removes their universality over the extended domain. Time diagnostics do not change
+and no Time predicate was top in these worlds. All preregistered migration constraints hold.
+
+Thus even the pipeline-stage label is conditional on an explicitly declared domain and classification
+priority. The extended control does not show that real evidence deteriorated, nor that physical
+unused space increased search burden. It changed the scope of a diagnostic question only.
+
+### Validation and audit limitations
+
+Ubuntu 24.04 / .NET SDK 8.0.424: environment check and build pass with no warnings/errors; all 328
+tests pass (300 existing plus 28 new test cases). `dotnet format --verify-no-changes` passes. Tests
+cover the analytic unused-Region counterexample, saturation with independent flags, both domain
+controls, Time invariance, set ordering/duplicates, invalid domains and seeds, baseline file/object
+drift, unknown protocol fields, truth-free input types and compatible truth/participant swaps.
+
+All six sample simulations and the scenario-specific 200-seed evaluations pass: S0/S1/S2/S3/S5
+with all strategies, S4 with its documented three-strategy set. F8/F9/F10/F11/F12/F14/F15 registered
+CLI regressions pass, as does F16. These checks were repeated with the rebuilt application.
+
+One **pre-existing failure remains**: the generic README all-scenario/all-strategy command and S4
+with all strategies fail with `Strategy 'cross-thread-constrained' classified unknown region
+'person-b-home'`. S4 contains the public witness-home Regions but excludes them from its
+evaluation-searchable domain (`scenario.json`, `evaluationSearchableRegionIds`). Its missing weft
+definition triggers the cross-thread strategy's HazardAware fallback; early normal-movement
+candidates include the nearby homes. `PerRunEvaluator` then rejects valid public Regions outside
+the evaluation domain. This was reproduced on the original F16 binaries and the rebuilt application;
+it is not a passing regression and is documented in README. Fix the evaluation-domain/fallback
+contract separately before using all-strategy S4 comparisons. Changing that contract during F17
+would alter unrelated historical comparison semantics, so this audit records it without silently
+changing the scenario or treating those Regions as impossible.
+
+The final clean commit is the reproduction target. Run the F17 command twice into distinct output
+directories and compare all four files with `diff -qr`. Commit-independent row and CSV hashes are:
+
+- `plateau-domain-audit-runs.jsonl`:
+  `eba6a5addc7788d2b56488b9f6a443fccaf5029acee503ceb88c741add067b8f`;
+- `plateau-domain-audit.csv`:
+  `c4f294e061657705e6ab5778e2b9ab0c549d662f38ee5fbdbeeea8ac1286f2f5`.
+
+Summary/manifest hashes depend on the final source SHA and clean status and are therefore recorded
+by final validation rather than embedded recursively into their own source commit. Generated files
+remain under ignored `results/`; no outputs, SDK or build artifacts are committed.
+
+### Revised research judgment
+
+The audit supports keeping the F14/F15/F16 public inference baseline. It also demonstrates a
+specific diagnostic dependence on unoccupied declared Regions, and corrects an overstatement in
+F16's causal explanation of plateaus. It does **not** establish robustness of field-combination
+effects across physical representations: those effects were deliberately fixed here. Source ancestry
+partitions identify provenance groups; they do not establish statistical independence.
+
+Next choose a preregistered **candidate interval-width** comparison before field ablation. Generate
+F16 once, compare original intervals against pointification at each existing start tick, retain all
+candidate keys/Regions and raw L/T/P evidence, and keep a key-to-candidate-ID crosswalk. Test equality
+for profiles without T and subset containment by stable keys for profiles with T; inspect conditional
+deltas, corrected-domain plateau transitions and changed minimum profiles. The F16 truth starts
+at the candidate start, so this family allows truth-compatible pointification without consulting
+truth during transformation. This is candidate representation sensitivity, not observation precision.
+The exact transform, hypotheses and failure criteria still require their own registration before
+execution; no F18 outcomes were inspected in this task.
+
+Then assess nested candidate density and explicit spatial/temporal mappings as described above.
+Do not promote per-world minima into a general minimal field study after this diagnostic control
+alone. Repair the separate S4 evaluation-domain defect before cross-scenario strategy comparisons.
+
+Relative to the distant Footprint goal, the work now has a more trustworthy explanation of where
+information stops reducing synthetic historical hypotheses. It still has no calibrated mapping to
+Region/building/floor search, area/volume, check locations, actions, expected discovery time,
+personnel/equipment, wrong-area cost or existing rescue-method handoff. Those representations and
+an observation-generating action model are prerequisites for closed-loop and real-data claims.
