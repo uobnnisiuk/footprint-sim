@@ -346,6 +346,22 @@ dotnet run --project src/FootprintSim.Cli -- audit-common-world-plateau-domain \
 [M1-F17 plateau domain audit](docs/m1f17-plateau-domain-audit.md) を参照してください。
 この比較は診断ラベルの領域依存性を調べるもので、物理的な空間粒度や救助性能の実験ではありません。
 
+M1-F18は同じF16 world・raw evidenceに対して、候補の元intervalと既存startへのpoint化を
+paired比較します。観測時刻のprecisionは変えません。候補のnative IDは既存factoryで再生成し、
+original candidate keyとの全単射を保存して集合比較します。元worldとtruthは変更せず、
+推論後に固定のtruth keyから各表現の評価住所を解決します。
+
+```bash
+dotnet run --project src/FootprintSim.Cli -- evaluate-candidate-interval-width \
+  --experiment experiments/m1f18_candidate_interval_width/experiment.json \
+  --baseline-experiment experiments/m1f16_common_world_field_combination/experiment.json \
+  --seeds 0..199 \
+  --output results/m1f18-candidate-interval-width
+```
+
+集合の等号/包含、境界を跨ぐinterval、F17修正分類によるplateau遷移、最小profileへの影響と
+解釈境界は [M1-F18 candidate interval-width sensitivity](docs/m1f18-candidate-interval-width-paired.md) を参照してください。
+
 ## 構成
 
 - `src/FootprintSim.Core`: world/event/observation/interaction/inference/evaluation の契約と決定論エンジン

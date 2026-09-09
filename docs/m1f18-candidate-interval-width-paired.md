@@ -170,4 +170,184 @@ validation follow those contracts. No new Buddhist correspondence or production 
 
 ## Results
 
-Pending registered execution. Only original F16/F17 outcomes and algebraic consequences are known.
+The protocol was committed and pushed as `940d24c8a002564b3d42cf9943aee8fff7467cc2` before
+either the independent Python reference or the C# implementation inspected point-arm outcomes.
+Protocol SHA-256: `f8411417d008b8157e2f21c316c2183a198df271bf7b11f9630ae75e3e53d11f`.
+All registered 200 worlds and eight profiles were retained. No generator, transform, seed or
+analysis definition was tuned after outcomes. The first implementation run correctly records
+the preregistration HEAD with a dirty working tree; it is not presented as a clean committed run.
+
+### Paired validity and candidate sets
+
+All 2,412 candidate keys have bijective native-ID crosswalks. The 1,609 positive-width candidates
+change native ID; the 803 existing points keep it. A native-ID difference alone is consequently
+not evidence of changed membership. None/L/P/L+P pass all 800 key-set equality checks, and the
+four T profiles pass all 800 subset checks with no new keys. All 4,800 within-arm Joint inclusions
+hold. The original arm reproduces all 1,600 legacy reference profiles, including native IDs,
+composition audit and work. Both arms retain truth in all 3,200 primary evaluations, with zero
+false exclusions and zero invariant violations.
+
+The original world, fixed truth, raw observations, duration/time evidence, derived L/T/P
+constraints, source graph, Regions and starts remain unchanged. Public-input signatures before
+and after evaluation agree. Both primary inference arms finish before their truth addresses are
+resolved. Compatible truth-replacement and public-input type-boundary tests pass. This audits
+the implemented boundary; it does not convert synthetic containment into empirical sensor safety.
+
+| Profile | Mean original -> point | Median original -> point | Range original -> point | Changed worlds / 200 | Lost memberships |
+|---|---:|---:|---|---:|---:|
+| None | 12.060 -> 12.060 | 12 -> 12 | 8..16 -> 8..16 | 0 | 0 |
+| L | 6.550 -> 6.550 | 6 -> 6 | 2..16 -> 2..16 | 0 | 0 |
+| T | 5.300 -> 4.190 | 5 -> 4 | 1..12 -> 1..11 | 116 | 222 |
+| P | 8.140 -> 8.140 | 8 -> 8 | 2..16 -> 2..16 | 0 | 0 |
+| L+T | 3.145 -> 2.600 | 3 -> 2 | 1..10 -> 1..9 | 81 | 109 |
+| L+P | 4.965 -> 4.965 | 5 -> 5 | 1..15 -> 1..15 | 0 | 0 |
+| T+P | 3.675 -> 2.960 | 3 -> 3 | 1..9 -> 1..8 | 91 | 143 |
+| Full | 2.415 -> 2.045 | 2 -> 2 | 1..8 -> 1..7 | 59 | 74 |
+
+All 548 lost profile memberships satisfy exactly `original start < T lower <= original end`.
+They concern 222 distinct `(seed,key)` candidates, counted repeatedly when present in several
+profiles. Of the losses, 331 have `original end == T lower` (T 138, L+T 63, T+P 87, Full 43),
+so closed-interval endpoints materially participate in the mechanism. No observation bound changed.
+
+The within-world reduction distributions below give `removed count: number of worlds`; each row
+sums to 200. The four non-T profiles each have `0:200`. Full count reduction is 0.370 on average
+(15.3% of the original mean), not a measured improvement in reconstruction accuracy.
+
+| Profile | Original count minus point count distribution |
+|---|---|
+| T | 0:84, 1:44, 2:45, 3:21, 4:5, 5:1 |
+| L+T | 0:119, 1:58, 2:18, 3:5 |
+| T+P | 0:109, 1:53, 2:28, 3:6, 4:4 |
+| Full | 0:141, 1:47, 2:9, 3:3 |
+
+Full marginal count distributions are original `1:69, 2:52, 3:39, 4:19, 5:14, 6:3, 7:3, 8:1`
+and point `1:86, 2:56, 3:35, 4:13, 5:7, 6:2, 7:1`. The deterministic report retains full marginal
+distributions for every profile and every conditional comparison, including zero effects.
+
+### Conditional reduction and corrected F17 plateau transitions
+
+Additional reduction means baseline count minus combined count within the same arm. Delta means
+point additional reduction minus original additional reduction. All 1,800 registered sign checks
+hold. T gains more exclusions after pointification, while a Region field added after T often has
+fewer remaining candidates to remove. This does not rank the intrinsic value of L, T or P.
+
+| Addition | Mean original | Mean point | Mean delta | Worlds with changed reduction | Changed diagnostic labels |
+|---|---:|---:|---:|---:|---:|
+| T to L | 3.405 | 3.950 | +0.545 | 81 | 3 |
+| P to L | 1.585 | 1.585 | 0 | 0 | 0 |
+| L to T | 2.155 | 1.590 | -0.565 | 78 | 16 |
+| P to T | 1.625 | 1.230 | -0.395 | 61 | 17 |
+| L to P | 3.175 | 3.175 | 0 | 0 | 0 |
+| T to P | 4.465 | 5.180 | +0.715 | 91 | 0 |
+| P to L+T | 0.730 | 0.555 | -0.175 | 30 | 18 |
+| T to L+P | 2.550 | 2.920 | +0.370 | 59 | 4 |
+| L to T+P | 1.260 | 0.915 | -0.345 | 55 | 25 |
+
+The complete aggregate transition matrix uses the corrected F17 full Region domain. Rows are
+original, columns point. Reduction denotes additional candidate reduction; the other four outcomes
+are plateaus. Saturation keeps F17's priority over other plateau explanations.
+
+| Original / point | Reduction | Observation-to-constraint | Constraint overlap | Constraint-to-candidate | One-candidate saturation |
+|---|---:|---:|---:|---:|---:|
+| Reduction | 1315 | 0 | 0 | 30 | 26 |
+| Observation-to-constraint | 0 | 74 | 0 | 0 | 4 |
+| Constraint overlap | 0 | 0 | 103 | 0 | 5 |
+| Constraint-to-candidate | 7 | 0 | 0 | 138 | 11 |
+| One-candidate saturation | 0 | 0 | 0 | 0 | 87 |
+| Point total | 1322 | 74 | 103 | 168 | 133 |
+
+Plateaus increase from 429 to 478, despite lower T-profile counts. There are 83 label transitions
+across 47 worlds. Region top/implication and Time-top flags have zero changes; the moved labels
+come from membership and saturation, not changed public predicate logic. Seven candidate plateaus
+become reductions, while 56 reductions become plateaus. Per-comparison 5x5 matrices, raw flags,
+affected seeds and per-world rows are retained, so saturation does not erase the logical audit.
+
+### Minimum profiles and the F16 conclusions
+
+The minimum count changes in 59/200 worlds (29.5%). The entire family of inclusion-minimal profiles
+changes in 32/200 worlds (16%); 168 families remain identical. These are sets of field profiles,
+not merely the count of fields or one arbitrarily selected winner. All 28 profile-pair key-set
+equivalences in each arm are retained and independently checked.
+
+| Profile | Worlds attaining minimum: original -> point | Worlds inclusion-minimal: original -> point |
+|---|---:|---:|
+| None | 0 -> 0 | 0 -> 0 |
+| L | 4 -> 2 | 4 -> 2 |
+| T | 20 -> 31 | 20 -> 31 |
+| P | 0 -> 0 | 0 -> 0 |
+| L+T | 116 -> 124 | 92 -> 91 |
+| L+P | 24 -> 20 | 20 -> 18 |
+| T+P | 70 -> 89 | 50 -> 58 |
+| Full | 200 -> 200 | 42 -> 31 |
+
+Columns need not sum to 200 because a world can have several minimal profiles. Full attaining the
+count minimum is guaranteed by Joint inclusion, not empirical evidence of its necessity. Full is
+inclusion-minimal in 42 original versus 31 point worlds; one world gains this status and twelve
+lose it. T-only becomes inclusion-minimal in eleven more worlds. Even L/L+P minimum status can
+change while their own candidate sets stay fixed, because the minimum elsewhere becomes smaller.
+
+F16's fixed-family containment, Joint monotonicity, all no-T memberships, and the existence of
+both additional reductions and plateaus survive this manipulation. F16's numerical candidate
+burden, conditional magnitudes, plateau frequencies, profile equivalences and exact minimum
+families depend on interval representation. F17's correction remains necessary in both arms; it
+does not make a plateau label independent of candidate representation.
+
+### Validation and reproduction
+
+Build succeeds without warnings or errors; all 357 tests pass (328 baseline plus 29 F18 cases).
+Environment check and `dotnet format FootprintSim.sln --verify-no-changes --no-restore` pass.
+All six sample scenarios and 13 additional supported legacy evaluation commands pass, including
+200-seed S3/S4/S5 telemetry evaluations, F8/F9/F10/F11/F12/F14/F15 and S0/S1/S2 all-strategy runs.
+Separate F16/F17 replay checks compare the legacy artifacts, permitting only source-commit and
+dirty-tree manifest metadata to differ. The protocol and baseline experiment bytes remain frozen.
+
+The independent Python reference starts from the immutable original F16 per-world artifact
+(SHA-256 `6c114058f7e9479ae29e3d16030f10843ddfb71b8b8bc861d13f8840c0cd4c81`). It recomputes both
+arms from raw L Regions, raw P alternatives and raw later-event/duration evidence before checking
+truth. It agrees on 3,200 profile memberships/work, 3,600 diagnostics, 11,200 equivalences,
+400 minimum families, 2,412 crosswalks, 1,800 conditional deltas and all 548 loss witnesses, plus
+the complete reported aggregate statistics and transition matrices. It checks native coordinates,
+uniqueness and crosswalk behavior; it does not independently reimplement the native hash factory.
+
+```bash
+python3 scripts/verify-candidate-interval-width.py \
+  --baseline-runs results/m1f17-baseline-audit/f16-a/common-world-field-combination-runs.jsonl \
+  --actual-runs results/m1f18-final-a/candidate-interval-width-runs.jsonl \
+  --output results/m1f18-final-independent
+```
+
+For clean-commit reproduction, run the registered F18 CLI twice with outputs `results/m1f18-final-a`
+and `results/m1f18-final-b`, and compare all six artifacts byte for byte. Each manifest records the
+actual execution commit and dirty flag; outputs and validation evidence remain ignored. The tracked
+code, frozen inputs, report and independent verifier are the durable reproduction package.
+
+Post-registration implementation review tightened rejection of inconsistent temporal kind/width
+and named distribution frequencies `Count`, since the global conditional distribution counts
+comparisons rather than worlds. The independent verifier initially compared gained minimum-profile
+sets in profile order; it now compares set content and separately requires unique ordinal output
+order. These corrections changed neither the registered design nor any prospective outcome.
+
+The generic README `--scenarios scenarios --strategies all` command still fails on the known S4
+evaluation-domain mismatch (`person-b-home`, exit 2). Its three documented strategies succeed.
+This predates F17 and is independent of the F18 candidate-support experiment, so it is not silently
+repaired here. Repair it in a separate change before cross-scenario all-strategy comparisons.
+
+### Research decision after F16/F17/F18
+
+Do not yet promote per-world minimal field combinations into general field requirements or
+automatically begin field ablation. The mechanism of this interval manipulation is now understood
+exactly, but its 32 changed minimum families and sparse-support plateaus show that minima are still
+properties of the representation as well as the evidence. The next highest-value factor is nested
+candidate density: retain original candidates and raw evidence, predefine public space/time support,
+and add candidates without consulting truth. Region occupancy/unused-Region rate must be reported
+as a coupled consequence of filling that support. It is not an independently held factor. This
+follow-up needs its own semantic audit and preregistration; no density outcomes are generated here.
+
+The distant Footprint goal still needs a justified mapping from represented candidate states to
+Region/building/floor, area or volume and actual check locations/actions. Only then can observations
+from dogs, calling, acoustic/vibration sensing or cameras support calibrated action cost, expected
+time, personnel/equipment and wrong-area cost. Nothing in the present candidate-count change
+estimates those quantities. Physical spatial/tick mapping, action-generated observations, inference
+updates, cross-domain SAR and real-data validation remain subsequent stages. F18 advances the
+auditability of synthetic support and its minimum-profile claims; it establishes no operational
+rescue performance or general guarantee that pointification safely discards temporal uncertainty.

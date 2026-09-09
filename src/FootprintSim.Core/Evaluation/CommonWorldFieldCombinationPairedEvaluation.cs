@@ -267,7 +267,7 @@ public sealed class CommonWorldFieldCombinationWorldEvaluator
         }
     }
 
-    private static CommonWorldObservationFixtureDefinition ToFixture(
+    internal static CommonWorldObservationFixtureDefinition ToFixture(
         CommonWorldFieldCombinationExperimentDefinition experiment,
         GeneratedCommonFieldCombinationWorld world) => new()
         {

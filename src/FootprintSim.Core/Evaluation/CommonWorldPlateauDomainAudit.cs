@@ -204,29 +204,38 @@ public sealed class CommonWorldPlateauDomainClassifier
     }
 
     private static CommonWorldPlateauDomainDiagnostic Diagnose(CommonWorldPlateauDiagnosticInput input,
+        string domainId, IReadOnlyList<string> topDomain, IReadOnlyList<string> implicationDomain) =>
+        Diagnose(input.AddedAxis, input.LocationAllowedRegionIds, input.ParticipantAllowedRegionIds,
+            input.TimePredicateIsTop, input.BaselineAxes, input.BaselineCandidateIds, input.CombinedCandidateIds,
+            domainId, topDomain, implicationDomain);
+
+    internal static CommonWorldPlateauDomainDiagnostic Diagnose(CommonWorldObservationAxis addedAxis,
+        IReadOnlyList<string> locationAllowedRegionIds, IReadOnlyList<string> participantAllowedRegionIds,
+        bool timePredicateIsTop, IReadOnlyList<CommonWorldObservationAxis> baselineAxes,
+        IReadOnlyList<string> baselineCandidateIds, IReadOnlyList<string> combinedCandidateIds,
         string domainId, IReadOnlyList<string> topDomain, IReadOnlyList<string> implicationDomain)
     {
-        var regionAxis = input.AddedAxis != CommonWorldObservationAxis.Time;
-        var addedRegions = input.AddedAxis == CommonWorldObservationAxis.Location
-            ? input.LocationAllowedRegionIds : input.ParticipantAllowedRegionIds;
-        var top = regionAxis ? topDomain.All(addedRegions.Contains) : input.TimePredicateIsTop;
-        var implicationApplicable = regionAxis && input.BaselineAxes.Any(axis =>
+        var regionAxis = addedAxis != CommonWorldObservationAxis.Time;
+        var addedRegions = addedAxis == CommonWorldObservationAxis.Location
+            ? locationAllowedRegionIds : participantAllowedRegionIds;
+        var top = regionAxis ? topDomain.All(addedRegions.Contains) : timePredicateIsTop;
+        var implicationApplicable = regionAxis && baselineAxes.Any(axis =>
             axis is CommonWorldObservationAxis.Location or CommonWorldObservationAxis.Participant);
         var baseRegions = implicationDomain.AsEnumerable();
-        if (input.BaselineAxes.Contains(CommonWorldObservationAxis.Location))
+        if (baselineAxes.Contains(CommonWorldObservationAxis.Location))
         {
-            baseRegions = baseRegions.Intersect(input.LocationAllowedRegionIds, StringComparer.Ordinal);
+            baseRegions = baseRegions.Intersect(locationAllowedRegionIds, StringComparer.Ordinal);
         }
 
-        if (input.BaselineAxes.Contains(CommonWorldObservationAxis.Participant))
+        if (baselineAxes.Contains(CommonWorldObservationAxis.Participant))
         {
-            baseRegions = baseRegions.Intersect(input.ParticipantAllowedRegionIds, StringComparer.Ordinal);
+            baseRegions = baseRegions.Intersect(participantAllowedRegionIds, StringComparer.Ordinal);
         }
 
         var witnesses = implicationApplicable
             ? Set(baseRegions.Except(addedRegions, StringComparer.Ordinal)) : [];
         var implied = implicationApplicable && witnesses.Length == 0;
-        var equal = input.BaselineCandidateIds.SequenceEqual(input.CombinedCandidateIds);
+        var equal = baselineCandidateIds.SequenceEqual(combinedCandidateIds);
         return new CommonWorldPlateauDomainDiagnostic
         {
             DomainId = domainId,
@@ -237,7 +246,7 @@ public sealed class CommonWorldPlateauDomainClassifier
             RegionImplicationApplicable = implicationApplicable,
             ImplicationCounterexampleRegionIds = witnesses,
             Classification = !equal ? CommonWorldConditionalOutcomeClassification.AdditionalCandidateReduction
-                : input.BaselineCandidateIds.Count == 1 ? CommonWorldConditionalOutcomeClassification.Saturation
+                : baselineCandidateIds.Count == 1 ? CommonWorldConditionalOutcomeClassification.Saturation
                 : top ? CommonWorldConditionalOutcomeClassification.ObservationToConstraintPlateau
                 : implied ? CommonWorldConditionalOutcomeClassification.ConstraintOverlapPlateau
                 : CommonWorldConditionalOutcomeClassification.ConstraintToCandidatePlateau
