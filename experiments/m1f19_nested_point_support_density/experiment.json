@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "m1f19-nested-point-support-density",
+  "baselineFinalCommit": "77611bc52976178857ac442be6e07a9caa1a2a9d",
+  "baselineExperimentSha256": "e717669c7178dcf8b278b831b6ee049a2aa8dae5a9c9e6366b8c32712649ca39",
+  "requiredSeedStart": 0,
+  "requiredSeedEnd": 199,
+  "baselineRepresentation": "m1f18-point-at-existing-start",
+  "arms": ["point-baseline", "half-missing", "full-support"],
+  "supportRuleId": "m1f19-seven-starts-times-registered-regions-v1",
+  "orderingRuleId": "m1f19-point-support-order-v1",
+  "additionNumerators": [0, 1, 2],
+  "additionDenominator": 2,
+  "rounding": "floor",
+  "addedWidthTicks": 0,
+  "truthRule": "unchanged-original-world-truth-resolved-after-all-public-density-arms",
+  "plateauRuleId": "m1f17-explicit-region-domain-plateau-v1",
+  "fixedInference": "original-public-derivations-and-m1f14-composer",
+  "prospectiveOutcomeInspected": false,
+  "failurePolicy": "fail-no-skip-no-regenerate-no-tuning"
+}
