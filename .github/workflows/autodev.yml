@@ -1,0 +1,194 @@
+name: AutoDev - issue to draft PR
+
+on:
+  # Issue events use the workflow on the default branch. Install on main first.
+  issues:
+    types: [labeled]
+
+permissions: {}
+
+concurrency:
+  group: autodev-issue-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  develop:
+    if: >-
+      github.run_attempt == 1 &&
+      github.event.label.name == 'autodev' &&
+      github.actor == github.repository_owner &&
+      github.event.issue.user.login == github.repository_owner &&
+      github.event.issue.state == 'open' &&
+      github.event.repository.default_branch == 'main' &&
+      !github.event.repository.fork
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      artifact_id: ${{ steps.patch.outputs.artifact-id }}
+    steps:
+      - name: Check whether this issue already has an AutoDev candidate
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          [[ "$ISSUE_NUMBER" =~ ^[1-9][0-9]*$ ]]
+          branch="autodev/issue-${ISSUE_NUMBER}"
+          refs=$(gh api "repos/$GH_REPO/git/matching-refs/heads/$branch")
+          existing_ref=$(jq --arg ref "refs/heads/$branch" '[.[] | select(.ref == $ref)] | length' <<< "$refs")
+          existing_pr=$(gh pr list --repo "$GH_REPO" --head "$branch" --state all --json number --jq 'length')
+          if [[ "$existing_ref" != 0 || "$existing_pr" != 0 ]]; then
+            echo 'An AutoDev branch or PR already exists; no duplicate run will be started.'
+            echo 'proceed=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'proceed=true' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        if: steps.gate.outputs.proceed == 'true'
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Prepare the task and a separate unprivileged Codex user
+        if: steps.gate.outputs.proceed == 'true'
+        env:
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          EVENT_ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/make_prompt.py
+          sudo useradd --no-log-init --create-home --shell /bin/bash autodev
+          sudo chmod 755 /home/autodev
+          # The new user can read source, but cannot alter source, .git, actions,
+          # runner command files, or the runner user's API proxy process.
+          chmod -R a+rX,go-w "$GITHUB_WORKSPACE"
+          chmod o+x "$RUNNER_TEMP"
+          touch "$RUNNER_TEMP/changes.patch"
+          sudo chown autodev:autodev "$RUNNER_TEMP/changes.patch"
+          sudo chmod 644 "$RUNNER_TEMP/changes.patch"
+          sudo -u autodev git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          sudo -u autodev test -r "$GITHUB_WORKSPACE/AGENTS.md"
+          sudo -u autodev test ! -w "$GITHUB_WORKSPACE"
+          if sudo -n -u autodev sudo -n true 2>/dev/null; then
+            echo 'The Codex user must not have sudo access.' >&2
+            exit 1
+          fi
+      - name: Generate a patch without changing or executing candidate code
+        if: steps.gate.outputs.proceed == 'true'
+        uses: openai/codex-action@bdf19a4a223ec2549a3e2274a0cf61556bc07675 # v1.13
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          codex-version: '0.164.0'
+          permission-profile: ':read-only'
+          safety-strategy: unprivileged-user
+          codex-user: autodev
+          prompt-file: ${{ runner.temp }}/autodev-prompt.md
+          output-file: ${{ runner.temp }}/changes.patch
+      # Only this pinned artifact action follows Codex; no repository code runs.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        id: patch
+        if: steps.gate.outputs.proceed == 'true'
+        with:
+          name: autodev-patch
+          path: ${{ runner.temp }}/changes.patch
+          if-no-files-found: error
+          retention-days: 2
+
+  validate:
+    # Fresh runner, no OPENAI_API_KEY, no persistent credentials or write token.
+    needs: develop
+    if: github.run_attempt == 1 && needs.develop.outputs.artifact_id != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ needs.develop.outputs.artifact_id }}
+          path: ${{ runner.temp }}/autodev
+          merge-multiple: true
+      - name: Apply and validate the untrusted patch against the original base
+        env:
+          BASE_SHA: ${{ github.sha }}
+        run: python3 .github/scripts/patch_guard.py import "$RUNNER_TEMP/autodev/changes.patch" --base "$BASE_SHA"
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          global-json-file: global.json
+      - name: Verify environment and restore
+        run: |
+          bash scripts/check-environment.sh
+          dotnet restore FootprintSim.sln
+      - name: Build, test, format, scenarios and evaluation
+        run: |
+          dotnet build FootprintSim.sln --no-restore -c Release
+          dotnet test FootprintSim.sln --no-build --no-restore -c Release
+          dotnet format FootprintSim.sln --verify-no-changes --no-restore
+          dotnet run --no-build --no-restore -c Release --project src/FootprintSim.Cli -- --scenario scenarios/s0_walking_baseline/scenario.json --seed 42 --output results/s0
+          dotnet run --no-build --no-restore -c Release --project src/FootprintSim.Cli -- --scenario scenarios/s1_debris_transport/scenario.json --seed 42 --output results/s1
+          dotnet run --no-build --no-restore -c Release --project src/FootprintSim.Cli -- evaluate --scenarios scenarios --seeds 0..19 --strategies all --output results/evaluation
+
+  publish:
+    # Never consume files from the validation runner: candidate tests are untrusted.
+    needs: [develop, validate]
+    if: github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ needs.develop.outputs.artifact_id }}
+          path: ${{ runner.temp }}/autodev
+          merge-multiple: true
+      - name: Independently revalidate the original patch
+        env:
+          BASE_SHA: ${{ github.sha }}
+        run: python3 .github/scripts/patch_guard.py import "$RUNNER_TEMP/autodev/changes.patch" --base "$BASE_SHA"
+      - name: Publish a new branch and draft PR, then explicitly dispatch CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          BASE_SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          [[ "$ISSUE_NUMBER" =~ ^[1-9][0-9]*$ ]]
+          branch="autodev/issue-${ISSUE_NUMBER}"
+          # Do not execute hooks, build steps, or any candidate script here.
+          git -c core.hooksPath=/dev/null switch -c "$branch"
+          git -c core.hooksPath=/dev/null -c commit.gpgsign=false \
+            -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -m "AutoDev: implement issue #${ISSUE_NUMBER}"
+          gh auth setup-git
+          # The empty lease requires that the remote branch does not yet exist.
+          git -c core.hooksPath=/dev/null push \
+            --force-with-lease="refs/heads/$branch:" origin "HEAD:refs/heads/$branch"
+          printf 'Candidate for #%s, based on %s.\n\nValidated: build, tests, formatting, S0/S1 and evaluation on a separate runner without API secrets.\n\n[AutoDev validation](%s). Owner review and merge are required; no automatic merge is configured.\n\nCloses #%s\n' \
+            "$ISSUE_NUMBER" "$BASE_SHA" "$RUN_URL" "$ISSUE_NUMBER" > "$RUNNER_TEMP/pr-body.md"
+          gh pr create --repo "$GH_REPO" --draft --base main --head "$branch" \
+            --title "AutoDev: issue #${ISSUE_NUMBER}" --body-file "$RUNNER_TEMP/pr-body.md"
+          # Token-created push events do not start CI; token-created PR runs may
+          # require approval. Explicit dispatch starts CI for this exact branch.
+          gh workflow run ci.yml --repo "$GH_REPO" --ref "$branch"
