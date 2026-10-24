@@ -1,0 +1,44 @@
+name: Footprint Sim CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    # Bot-created PR checks may require approval. AutoDev dispatches CI directly.
+    if: github.event_name != 'pull_request' || github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Check automation scripts
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Check environment
+        run: bash scripts/check-environment.sh
+      - name: Restore
+        run: dotnet restore FootprintSim.sln
+      - name: Build
+        run: dotnet build FootprintSim.sln --no-restore -c Release
+      - name: Test
+        run: dotnet test FootprintSim.sln --no-build --no-restore -c Release
+      - name: Format
+        run: dotnet format FootprintSim.sln --verify-no-changes --no-restore
+      - name: Check S0 and S1
+        run: |
+          dotnet run --no-build -c Release --project src/FootprintSim.Cli -- --scenario scenarios/s0_walking_baseline/scenario.json --seed 42 --output results/s0
+          dotnet run --no-build -c Release --project src/FootprintSim.Cli -- --scenario scenarios/s1_debris_transport/scenario.json --seed 42 --output results/s1
+      - name: Check evaluation harness
+        run: dotnet run --no-build -c Release --project src/FootprintSim.Cli -- evaluate --scenarios scenarios --seeds 0..19 --strategies all --output results/evaluation
