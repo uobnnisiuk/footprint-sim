@@ -32,7 +32,7 @@
 - 範囲内でも、入れ子の `AGENTS.md`、隠しパス、SDK・MSBuild・NuGet・package設定、project/solutionファイル、生成物は変更できません。`.github/`、`scripts/`、ルートのSDK設定等も保護します。新しい依存関係やprojectの追加は手動対応です。
 - シンボリックリンクとその配下、gitlink、実行ビット、binary/NUL/non-UTF-8、rename/copy、不正なhunkや余分な末尾テキストを拒否します。30ファイル、patch 400,000 bytes、各ファイル180,000 bytesまでです。
 - Issueは所有者作成でも信頼しません。長さ・発火条件を検証し、不可視制御文字を拒否、HTMLコメントを除去、JSONとしてプロンプトへ埋め込みます。これだけでプロンプト注入を完全に防げるわけではなく、外部のOS権限・sandbox・パッチ検査が実際の制約です。
-- Actionはcommit SHA、Codex CLIとAPI proxyはバージョンを固定します。更新時は入力仕様と権限を再確認してください。
+- Actionはcommit SHA、Codex CLIとAPI proxyはバージョンを固定します。Codex Actionは出力中のworkflow commandを無効化する上流修正#187を含む版を使用します。更新時は入力仕様と権限を再確認してください。
 
 ## 起動・重複・失敗時の扱い
 
@@ -80,7 +80,7 @@ dotnet format FootprintSim.sln --verify-no-changes --no-restore
 ## 確認した一次資料
 
 - [OpenAI Codex GitHub Action](https://learn.chatgpt.com/docs/github-action)
-- [Codex Actionの固定版と入力仕様](https://github.com/openai/codex-action/blob/bdf19a4a223ec2549a3e2274a0cf61556bc07675/action.yml)
+- [Codex Actionの固定版と入力仕様](https://github.com/openai/codex-action/blob/c05cfd74ad95c626cdf05c6685e62becc3bf7813/action.yml)
 - [GitHub: ワークフローからの起動とGITHUB_TOKEN](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow)
 - [GitHub: issues / workflow_dispatchの発火条件](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows)
 

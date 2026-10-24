@@ -83,7 +83,7 @@ jobs:
           fi
       - name: Generate a patch without changing or executing candidate code
         if: steps.gate.outputs.proceed == 'true'
-        uses: openai/codex-action@bdf19a4a223ec2549a3e2274a0cf61556bc07675 # v1.13
+        uses: openai/codex-action@c05cfd74ad95c626cdf05c6685e62becc3bf7813 # Includes untrusted-output workflow-command isolation (#187)
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           codex-version: '0.164.0'
