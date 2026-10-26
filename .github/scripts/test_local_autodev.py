@@ -207,7 +207,7 @@ class LocalRunnerTests(unittest.TestCase):
                 "sk-proj-FakeSecret123456789 https://example.invalid/token?secret=PRIVATE\n'); "
                 "sys.stderr.write('warning: rate limit exceeded\n'); "
                 "sys.exit(1)"
-            ).replace("\\n", "\\\\n")
+            ).replace("\n", "\\n")
             with self.assertRaisesRegex(RuntimeError, "Filtered diagnostic saved") as caught:
                 module.cmd([sys.executable, "-c", code], diagnostics_dir=directory)
             files = list(directory.glob("codex-failure-*.log"))
