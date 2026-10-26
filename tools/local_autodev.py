@@ -7,7 +7,6 @@ Does not forward GitHub tokens or write to the user's existing worktree.
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
 import fcntl
 import json
 import os
@@ -26,62 +25,68 @@ DEFAULT_PATH = Path(__file__).resolve().parents[1]
 BRANCH_PREFIX = "local-autodev/issue-"
 
 
-
-# Keep diagnostics actionable without storing raw model output, prompts or secrets.
-# This is defense in depth, not a guarantee that arbitrary CLI text is secret-free.
-_DIAG_LINE = re.compile(
-    r"(?i)\b(?:error|failed|failure|fatal|warn(?:ing)?|"
-    r"rate.limit|usage.limit|unauthorized|forbidden|authentication|"
-    r"permission.denied|timed.out|timeout|connection.refused|"
-    r"connection.reset|unknown.option|unexpected.argument|panic|"
-    r"http\s*[45][0-9]{2}|status\s*[45][0-9]{2})\b"
-)
-_DIAG_SECRET = re.compile(
-    r"(?i)\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|"
-    r"authorization|password|client[_-]?secret|session[_-]?token)"
-    r"\s*[:=]\s*(?:[^\s]+)"
-)
-_DIAG_TOKENS = re.compile(
-    r"(?i)\b(?:sk-(?:proj-)?|github_pat_|gh[pousr]_)[a-z0-9_-]+"
-)
-
-
-def diagnostic_excerpt(stderr: str) -> str:
-    """Extract only bounded error-like lines; discard stdout and other stderr."""
-    kept = []
-    for raw in stderr.splitlines():
-        if not _DIAG_LINE.search(raw):
-            continue
-        line = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", raw)
-        line = _DIAG_SECRET.sub("[REDACTED_CREDENTIAL_FIELD]", line)
-        line = re.sub(r"(?i)\bbearer\s+\S+", "Bearer [REDACTED]", line)
-        line = _DIAG_TOKENS.sub("[REDACTED_TOKEN]", line)
-        line = re.sub(r"https?://[^\s]+", "[REDACTED_URL]", line)
-        line = re.sub(r"(?i)\b[A-Za-z0-9_+/\-]{48,}={0,2}\b",
-                      "[REDACTED_LONG_VALUE]", line)
-        line = "".join(c for c in line if c.isprintable() or c == "\t")
-        kept.append(line[:320])
-        if len(kept) >= 25:
-            break
-    return "\n".join(kept) if kept else (
-        "No recognized diagnostic lines in stderr. Other CLI output was intentionally discarded."
-    )
+def safe_failure_diagnostic(stderr: str) -> dict:
+    """Return fixed classification fields, never arbitrary CLI text or secrets."""
+    text = stderr[-16384:].casefold()
+    known_codes = ("refresh_token_reused", "refresh_token_expired", "invalid_grant",
+                   "token_expired", "insufficient_quota", "usage_limit_reached",
+                   "model_not_found", "invalid_api_key")
+    codes = [code for code in known_codes if re.search(r"\b" + code + r"\b", text)]
+    statuses = re.findall(
+        r'\b(?:http(?:/\d(?:\.\d)?)?\s+|status(?:[_ ]code)?["\']?[\s:=]+)([45]\d{2})\b', text)
+    http_status = int(statuses[-1]) if statuses else None
+    auth_codes = {"refresh_token_reused", "refresh_token_expired", "invalid_grant",
+                  "token_expired", "invalid_api_key"}
+    if (auth_codes.intersection(codes) or http_status in (401, 403)
+            or any(x in text for x in ("token could not be refreshed",
+                   "refresh token has already been used", "authentication failed", "not logged in"))):
+        category = "authentication"
+    elif ({"insufficient_quota", "usage_limit_reached"}.intersection(codes)
+          or http_status == 429
+          or any(x in text for x in ("usage limit", "rate limit reached", "quota exceeded"))):
+        category = "usage_limit"
+    elif ("model_not_found" in codes or "not supported when using codex" in text
+          or "model is not supported" in text):
+        category = "model"
+    elif any(x in text for x in ("error sending request", "dns error", "connection refused",
+                                "connection reset", "certificate verify failed", "tls error")):
+        category = "network"
+    elif any(x in text for x in ("sandbox failed", "sandbox error", "bwrap:", "landlock error")):
+        category = "sandbox"
+    elif any(x in text for x in ("error loading config", "invalid configuration",
+                                "unexpected argument", "unknown variant")):
+        category = "configuration"
+    else:
+        category = "unknown"
+    return {"category": category, "error_codes": codes, "http_status": http_status}
 
 
 def save_codex_failure(diagnostics_dir: Path, status: str, stderr: str) -> Path:
-    """Write a *filtered* private diagnostic, never the full CLI transcript."""
-    if diagnostics_dir.is_symlink():
-        raise OSError("Diagnostic directory is a symlink")
+    """Save a private JSON classification; no raw or regex-redacted transcript."""
+    exit_match = re.fullmatch(r"exit=(-?\d{1,3})", status)
+    if status != "timeout" and exit_match is None:
+        raise ValueError("Invalid diagnostic status")
+    diagnostic = {
+        "schema_version": 1, "command": "codex",
+        "status": "timeout" if status == "timeout" else "exit",
+        "exit_code": int(exit_match.group(1)) if exit_match else None,
+        **safe_failure_diagnostic(stderr),
+    }
+    diagnostics_dir = diagnostics_dir.absolute()
+    if any(path.is_symlink() for path in (diagnostics_dir, *diagnostics_dir.parents)):
+        raise OSError("Diagnostic path contains a symlink")
     diagnostics_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
     diagnostics_dir.chmod(0o700)
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    path = diagnostics_dir / f"codex-failure-{timestamp}-{os.getpid()}.log"
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-    descriptor = os.open(path, flags, 0o600)
-    with os.fdopen(descriptor, "w", encoding="utf-8") as output:
-        output.write(f"Command: codex exec\nStatus: {status}\n")
-        output.write("Filtered stderr excerpt (never share without checking):\n")
-        output.write(diagnostic_excerpt(stderr) + "\n")
+    descriptor, name = tempfile.mkstemp(prefix="codex-failure-", suffix=".json",
+                                        dir=diagnostics_dir)
+    path = Path(name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+            json.dump(diagnostic, output, indent=2)
+            output.write("\n")
+    except OSError:
+        path.unlink(missing_ok=True)
+        raise
     return path
 
 
@@ -90,8 +95,8 @@ def failure_note(diagnostics_dir: Path | None, status: str, stderr: str) -> str:
         return "CLI stderr was intentionally suppressed."
     try:
         path = save_codex_failure(diagnostics_dir, status, stderr)
-        return f"Filtered diagnostic saved to {path}. Review locally before sharing."
-    except OSError:
+        return f"Private diagnostic summary saved to {path}."
+    except (OSError, ValueError):
         return "Could not write private diagnostic; raw CLI output was not exposed."
 
 
@@ -124,7 +129,7 @@ def cmd(argv: list[str], *, cwd: Path | None = None, env: dict | None = None,
             note = failure_note(diagnostics_dir, "timeout", stderr)
             raise RuntimeError(f"{argv[0]} command timed out; process group stopped. {note}") from None
         if process.returncode:
-            # Only the Codex invocation opts into bounded filtered local logging.
+            # Only the Codex invocation opts into fixed-field private diagnostics.
             note = failure_note(diagnostics_dir, f"exit={process.returncode}", stderr)
             raise RuntimeError(f"{argv[0]} command failed (exit={process.returncode}). {note}")
         return (stdout + ("\n" + stderr if include_stderr else "")).strip()
