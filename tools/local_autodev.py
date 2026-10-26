@@ -2,7 +2,7 @@
 """One Issue -> one local ChatGPT-authenticated Codex patch -> draft PR.
 
 No Codex API key, no unattended scheduler, no local execution of generated code.
-Never grants Codex the GitHub token or writes to the user's existing worktree.
+Does not forward GitHub tokens or write to the user's existing worktree.
 """
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -20,32 +21,52 @@ import tempfile
 REPO = "uobnnisiuk/footprint-sim"
 OWNER = "uobnnisiuk"
 LABEL = "local-autodev"
-DEFAULT_PATH = Path.home() / "personal/me/footprint-sim"
+DEFAULT_PATH = Path(__file__).resolve().parents[1]
 BRANCH_PREFIX = "local-autodev/issue-"
 
 
 def cmd(argv: list[str], *, cwd: Path | None = None, env: dict | None = None,
-        input_text: str | None = None, timeout: int = 90) -> str:
-    result = subprocess.run(argv, cwd=cwd, env=env, input=input_text, text=True,
-                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            timeout=timeout, check=False)
-    if result.returncode:
-        # Avoid blindly printing secrets or prompts found in command stderr.
-        raise RuntimeError(f"{argv[0]} command failed (exit={result.returncode}). "
-                           "Inspect local CLI diagnostic output if needed.")
-    return result.stdout.strip()
+        input_text: str | None = None, timeout: int = 90,
+        include_stderr: bool = False) -> str:
+    if argv[0] == "git":
+        argv = ["git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", *argv[1:]]
+    with subprocess.Popen(argv, cwd=cwd, env=env, text=True,
+                          stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE, start_new_session=True) as process:
+        try:
+            stdout, stderr = process.communicate(input_text, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            # Stop descendants too before removing their worktree or releasing the lock.
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            try:
+                process.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.communicate()
+            raise RuntimeError(f"{argv[0]} command timed out; process group stopped") from None
+        if process.returncode:
+            # Never print credentials or prompts from command diagnostics.
+            raise RuntimeError(f"{argv[0]} command failed (exit={process.returncode}). "
+                               "Inspect local CLI diagnostic output if needed.")
+        return (stdout + ("\n" + stderr if include_stderr else "")).strip()
 
 
 def safe_env() -> dict[str, str]:
-    """Remove credentials for services that must not be called by Codex.
+    """Only pass ordinary OS settings; no API/provider/GitHub credentials.
 
-    The CLI still has its own ChatGPT login; Codex sandboxing is not a hard
-    boundary against credentials in the same Unix user's home directory.
+    The CLI uses its standard ChatGPT login. Same-user files are not isolated
+    by this environment filter or by the read-only sandbox.
     """
-    block = {"OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN",
-             "GITHUB_TOKEN", "GH_TOKEN", "GIT_ASKPASS", "SSH_ASKPASS",
-             "OPENAI_BASE_URL", "OPENAI_API_BASE", "AZURE_OPENAI_API_KEY"}
-    return {k: v for k, v in os.environ.items() if k not in block}
+    allowed = {"HOME", "PATH", "USER", "LOGNAME", "SHELL", "TERM", "LANG",
+               "LC_ALL", "LC_CTYPE", "TMPDIR", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS"}
+    return {k: v for k, v in os.environ.items() if k in allowed}
 
 
 def validate_issue(issue: dict, expected_number: int, github_user: str) -> None:
@@ -55,6 +76,8 @@ def validate_issue(issue: dict, expected_number: int, github_user: str) -> None:
             or issue.get("user", {}).get("login") != OWNER or "pull_request" in issue):
         raise RuntimeError("Issue is not an open, owner-authored Issue")
     labels = {x["name"] for x in issue.get("labels", []) if isinstance(x, dict) and "name" in x}
+    if "autodev" in labels:
+        raise RuntimeError("Remove the API-workflow autodev label before using the local runner")
     if LABEL not in labels:
         raise RuntimeError(f"Issue has not been approved with label: {LABEL}")
     if not isinstance(issue.get("title"), str) or not issue["title"].strip():
@@ -90,20 +113,26 @@ def ensure_auth(repo_path: Path) -> None:
     for name in ("gh", "git", "codex", "python3"):
         if shutil.which(name) is None:
             raise RuntimeError(f"Required CLI not installed: {name}")
-    auth = cmd(["codex", "login", "status"], env=safe_env(), timeout=20)
-    if "chatgpt" not in auth.casefold():
+    auth = cmd(["codex", "login", "status"], cwd=repo_path, env=safe_env(),
+               timeout=20, include_stderr=True)
+    if auth.strip() != "Logged in using ChatGPT":
         raise RuntimeError("Codex is not confirmed signed in with ChatGPT. "
                            "Run 'codex login' and verify 'codex login status'. "
                            "API-key authentication is not permitted.")
     login = cmd(["gh", "api", "user", "--jq", ".login"], cwd=repo_path)
     if login != OWNER:
         raise RuntimeError("gh is not authenticated as the repository owner")
-    origin = cmd(["git", "remote", "get-url", "origin"], cwd=repo_path)
-    if not re.search(r"github\.com[:/]uobnnisiuk/footprint-sim(?:\.git)?$", origin):
-        raise RuntimeError(f"Unexpected Git remote (not {REPO})")
+    allowed = {f"https://github.com/{REPO}", f"https://github.com/{REPO}.git",
+               f"git@github.com:{REPO}.git", f"ssh://git@github.com/{REPO}.git"}
+    for mode in ([], ["--push"]):
+        urls = cmd(["git", "remote", "get-url", *mode, "--all", "origin"], cwd=repo_path).splitlines()
+        if not urls or any(url not in allowed for url in urls):
+            raise RuntimeError(f"Unexpected Git remote (not {REPO})")
 
 
 def verify_no_candidate(repo_path: Path, branch: str) -> None:
+    if cmd(["git", "branch", "--list", branch], cwd=repo_path):
+        raise RuntimeError("Local candidate branch exists; refusing to overwrite it")
     ref_json = cmd(["gh", "api", f"repos/{REPO}/git/matching-refs/heads/{branch}"], cwd=repo_path)
     refs = json.loads(ref_json)
     if any(x.get("ref") == f"refs/heads/{branch}" for x in refs):
@@ -126,7 +155,7 @@ def run(repo_path: Path, issue_number: int, execute: bool) -> None:
     verify_no_candidate(repo_path, branch)
     print(f"Owner-approved Issue #{issue_number}; branch {branch}")
     if not execute:
-        print("DRY RUN: no Codex calls, no repository changes, no GitHub writes.")
+        print("DRY RUN: no model calls, no repository changes, no GitHub writes.")
         print("To run, pass --execute after confirming ChatGPT credit/usage settings.")
         return
     state = Path.home() / ".local/state/footprint-local-autodev"
@@ -150,7 +179,11 @@ def run(repo_path: Path, issue_number: int, execute: bool) -> None:
                 env = safe_env()
                 env["NO_COLOR"] = "1"
                 print("Starting one Codex ChatGPT-plan task (no API key)...")
-                cmd(["codex", "exec", "--ignore-user-config", "--ephemeral",
+                if (worktree / ".codex").exists():
+                    raise RuntimeError("Project .codex configuration needs a separate security review")
+                cmd(["codex", "exec", "--ignore-user-config", "--ignore-rules", "--ephemeral",
+                     "-c", 'model_provider="openai"', "-c", 'forced_login_method="chatgpt"',
+                     "-c", 'approval_policy="never"', "-c", 'web_search="disabled"',
                      "--sandbox", "read-only", "--output-last-message",
                      str(patch), "-"], cwd=worktree, env=env,
                     input_text=prompt, timeout=1800)
@@ -161,14 +194,15 @@ def run(repo_path: Path, issue_number: int, execute: bool) -> None:
                 cmd([sys.executable, ".github/scripts/patch_guard.py", "import",
                      str(patch), "--base", base], cwd=worktree, timeout=90)
                 cmd(["git", "diff", "--cached", "--check"], cwd=worktree)
+                # Recheck before branch creation; push lease handles remote races.
+                verify_no_candidate(repo_path, branch)
                 # Candidate code is not run locally: this account holds credentials.
                 cmd(["git", "switch", "-c", branch], cwd=worktree)
-                cmd(["git", "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false",
+                cmd(["git", "-c", "commit.gpgsign=false",
                      "-c", "user.name=local-autodev", "-c",
                      "user.email=local-autodev@users.noreply.github.com", "commit", "-m",
                      f"Local AutoDev: implement issue #{issue_number}"], cwd=worktree)
-                verify_no_candidate(repo_path, branch)
-                cmd(["git", "-c", "core.hooksPath=/dev/null", "push",
+                cmd(["git", "push",
                      f"--force-with-lease=refs/heads/{branch}:", "origin",
                      f"HEAD:refs/heads/{branch}"], cwd=worktree, timeout=120)
                 body = (f"Local Codex ChatGPT-plan candidate for #{issue_number}.\n\n"
@@ -177,9 +211,11 @@ def run(repo_path: Path, issue_number: int, execute: bool) -> None:
                         "- Check the automatically triggered read-only GitHub CI.\n"
                         "- Manual review and merge required.\n\n"
                         f"Closes #{issue_number} after merge.")
+                body_path = temp / "pr-body.md"
+                body_path.write_text(body, encoding="utf-8")
                 url = cmd(["gh", "pr", "create", "--repo", REPO, "--draft", "--base", "main",
                            "--head", branch, "--title", f"Local AutoDev: issue #{issue_number}",
-                           "--body", body], cwd=worktree, timeout=120)
+                           "--body-file", str(body_path)], cwd=worktree, timeout=120)
                 print(f"Draft PR created: {url}")
                 print("Review GitHub CI and source changes before any manual merge.")
             finally:
