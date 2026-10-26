@@ -25,9 +25,85 @@ DEFAULT_PATH = Path(__file__).resolve().parents[1]
 BRANCH_PREFIX = "local-autodev/issue-"
 
 
+def safe_failure_diagnostic(stderr: str) -> dict:
+    """Return fixed classification fields, never arbitrary CLI text or secrets."""
+    text = stderr[-16384:].casefold()
+    known_codes = ("refresh_token_reused", "refresh_token_expired", "invalid_grant",
+                   "token_expired", "insufficient_quota", "usage_limit_reached",
+                   "model_not_found", "invalid_api_key")
+    codes = [code for code in known_codes if re.search(r"\b" + code + r"\b", text)]
+    statuses = re.findall(
+        r'\b(?:http(?:/\d(?:\.\d)?)?\s+|status(?:[_ ]code)?["\']?[\s:=]+)([45]\d{2})\b', text)
+    http_status = int(statuses[-1]) if statuses else None
+    auth_codes = {"refresh_token_reused", "refresh_token_expired", "invalid_grant",
+                  "token_expired", "invalid_api_key"}
+    if (auth_codes.intersection(codes) or http_status in (401, 403)
+            or any(x in text for x in ("token could not be refreshed",
+                   "refresh token has already been used", "authentication failed", "not logged in"))):
+        category = "authentication"
+    elif ({"insufficient_quota", "usage_limit_reached"}.intersection(codes)
+          or http_status == 429
+          or any(x in text for x in ("usage limit", "rate limit reached", "quota exceeded"))):
+        category = "usage_limit"
+    elif ("model_not_found" in codes or "not supported when using codex" in text
+          or "model is not supported" in text):
+        category = "model"
+    elif any(x in text for x in ("error sending request", "dns error", "connection refused",
+                                "connection reset", "certificate verify failed", "tls error")):
+        category = "network"
+    elif any(x in text for x in ("sandbox failed", "sandbox error", "bwrap:", "landlock error")):
+        category = "sandbox"
+    elif any(x in text for x in ("error loading config", "invalid configuration",
+                                "unexpected argument", "unknown variant")):
+        category = "configuration"
+    else:
+        category = "unknown"
+    return {"category": category, "error_codes": codes, "http_status": http_status}
+
+
+def save_codex_failure(diagnostics_dir: Path, status: str, stderr: str) -> Path:
+    """Save a private JSON classification; no raw or regex-redacted transcript."""
+    exit_match = re.fullmatch(r"exit=(-?\d{1,3})", status)
+    if status != "timeout" and exit_match is None:
+        raise ValueError("Invalid diagnostic status")
+    diagnostic = {
+        "schema_version": 1, "command": "codex",
+        "status": "timeout" if status == "timeout" else "exit",
+        "exit_code": int(exit_match.group(1)) if exit_match else None,
+        **safe_failure_diagnostic(stderr),
+    }
+    diagnostics_dir = diagnostics_dir.absolute()
+    if any(path.is_symlink() for path in (diagnostics_dir, *diagnostics_dir.parents)):
+        raise OSError("Diagnostic path contains a symlink")
+    diagnostics_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
+    diagnostics_dir.chmod(0o700)
+    descriptor, name = tempfile.mkstemp(prefix="codex-failure-", suffix=".json",
+                                        dir=diagnostics_dir)
+    path = Path(name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+            json.dump(diagnostic, output, indent=2)
+            output.write("\n")
+    except OSError:
+        path.unlink(missing_ok=True)
+        raise
+    return path
+
+
+def failure_note(diagnostics_dir: Path | None, status: str, stderr: str) -> str:
+    if diagnostics_dir is None:
+        return "CLI stderr was intentionally suppressed."
+    try:
+        path = save_codex_failure(diagnostics_dir, status, stderr)
+        return f"Private diagnostic summary saved to {path}."
+    except (OSError, ValueError):
+        return "Could not write private diagnostic; raw CLI output was not exposed."
+
+
 def cmd(argv: list[str], *, cwd: Path | None = None, env: dict | None = None,
         input_text: str | None = None, timeout: int = 90,
-        include_stderr: bool = False) -> str:
+        include_stderr: bool = False,
+        diagnostics_dir: Path | None = None) -> str:
     if argv[0] == "git":
         argv = ["git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", *argv[1:]]
     with subprocess.Popen(argv, cwd=cwd, env=env, text=True,
@@ -49,12 +125,13 @@ def cmd(argv: list[str], *, cwd: Path | None = None, env: dict | None = None,
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-            process.communicate()
-            raise RuntimeError(f"{argv[0]} command timed out; process group stopped") from None
+            _, stderr = process.communicate()
+            note = failure_note(diagnostics_dir, "timeout", stderr)
+            raise RuntimeError(f"{argv[0]} command timed out; process group stopped. {note}") from None
         if process.returncode:
-            # Never print credentials or prompts from command diagnostics.
-            raise RuntimeError(f"{argv[0]} command failed (exit={process.returncode}). "
-                               "Inspect local CLI diagnostic output if needed.")
+            # Only the Codex invocation opts into fixed-field private diagnostics.
+            note = failure_note(diagnostics_dir, f"exit={process.returncode}", stderr)
+            raise RuntimeError(f"{argv[0]} command failed (exit={process.returncode}). {note}")
         return (stdout + ("\n" + stderr if include_stderr else "")).strip()
 
 
@@ -186,7 +263,7 @@ def run(repo_path: Path, issue_number: int, execute: bool) -> None:
                      "-c", 'approval_policy="never"', "-c", 'web_search="disabled"',
                      "--sandbox", "read-only", "--output-last-message",
                      str(patch), "-"], cwd=worktree, env=env,
-                    input_text=prompt, timeout=1800)
+                    input_text=prompt, timeout=1800, diagnostics_dir=state / "diagnostics")
                 if not patch.is_file() or patch.stat().st_size == 0:
                     raise RuntimeError("Codex returned no patch. No PR was created")
                 if patch.read_text(encoding="utf-8").strip() == "NO_CHANGES":

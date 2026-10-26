@@ -64,6 +64,40 @@ The read-only Codex sandbox and environment-variable filtering **do not complete
 
 Generated code is not run locally; however, it **will execute during GitHub CI** inside its isolated, read-only job. Inspect CI permissions and repository secrets before expanding this to other repositories.
 
+## Failure diagnostics (no model call)
+
+On a nonzero exit or timeout from `codex exec`, the runner saves a small JSON
+summary under `~/.local/state/footprint-local-autodev/diagnostics/`. The directory
+is restricted to 0700 and each uniquely named file to 0600. Symlinked diagnostic
+paths are refused. The error message includes the local file path; no diagnostic
+is automatically uploaded to GitHub.
+
+The summary contains only fixed fields: schema version, command, exit or timeout,
+exit code, a known error category/code, and an HTTP error status when recognized.
+It never saves arbitrary stderr lines, stdout, prompts, credential fields, URLs,
+or response bodies. Unknown errors stay `unknown`; endpoint and unrecognized
+error details are intentionally unavailable. Classification is a hint from CLI
+output, not proof of a particular authentication failure such as token expiry.
+
+Only the Codex invocation opts into this logging. A later Git cleanup failure
+cannot overwrite its unique record. A diagnostic write failure still stops the
+command safely without exposing raw output. The runner does not retry failed
+invocations or start further model work.
+
+To inspect locally after a failure:
+
+```bash
+ls -lt ~/.local/state/footprint-local-autodev/diagnostics/
+# Open the exact JSON path reported by the failed run in your editor.
+```
+
+`codex login status` confirms the stored login method; it does not guarantee the
+next server request will accept those credentials. A prior minimal connection
+test succeeded with the runner's ChatGPT authentication options, but the complete
+Issue-to-Draft-PR flow still needs a separately approved execution. A dry-run
+checks prerequisites without model inference. Never run `--execute` solely to
+diagnose a failure unless the owner has approved a new one-off execution.
+
 ## Failure modes
 
 - Incorrect login, missing label, issue not owner-authored, existing branch/PR → stop.
