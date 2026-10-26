@@ -196,6 +196,42 @@ class LocalRunnerTests(unittest.TestCase):
             module.cmd([sys.executable, "-c", "import sys; sys.stderr.write('PRIVATE_DIAGNOSTIC'); sys.exit(2)"])
         self.assertNotIn("PRIVATE_DIAGNOSTIC", str(raised.exception))
 
+    def test_failed_codex_command_writes_private_filtered_diagnostics(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp) / "diagnostics"
+            code = (
+                "import sys; "
+                "sys.stdout.write('PROMPT_OR_SOURCE_CONTENT_NEVER_LOG\n'); "
+                "sys.stderr.write('DEBUG ignored private content\n'); "
+                "sys.stderr.write('ERROR HTTP 401 unauthorized access_token=SECRET_ABC123 "
+                "sk-proj-FakeSecret123456789 https://example.invalid/token?secret=PRIVATE\n'); "
+                "sys.stderr.write('warning: rate limit exceeded\n'); "
+                "sys.exit(1)"
+            ).replace("\\n", "\\\\n")
+            with self.assertRaisesRegex(RuntimeError, "Filtered diagnostic saved") as caught:
+                module.cmd([sys.executable, "-c", code], diagnostics_dir=directory)
+            files = list(directory.glob("codex-failure-*.log"))
+            self.assertEqual(len(files), 1)
+            self.assertEqual(files[0].stat().st_mode & 0o777, 0o600)
+            self.assertEqual(directory.stat().st_mode & 0o777, 0o700)
+            log = files[0].read_text(encoding="utf-8")
+            self.assertIn("HTTP 401", log)
+            self.assertIn("rate limit exceeded", log)
+            for secret in ("SECRET_ABC123", "FakeSecret123456789", "PRIVATE",
+                           "PROMPT_OR_SOURCE_CONTENT_NEVER_LOG", "ignored private content"):
+                self.assertNotIn(secret, log)
+                self.assertNotIn(secret, str(caught.exception))
+            self.assertIn("Filtered stderr excerpt", log)
+
+    def test_diagnostic_excerpt_discards_lines_without_failure_signal(self):
+        text = module.diagnostic_excerpt(
+            "private transcript\napi key value\n"
+            "ERROR failed: Bearer highly_private_token\n"
+        )
+        self.assertNotIn("private transcript", text)
+        self.assertNotIn("highly_private_token", text)
+        self.assertIn("ERROR failed", text)
+
     def test_git_checkout_cannot_execute_a_local_hook(self):
         with tempfile.TemporaryDirectory(prefix="local-autodev-hook-test-") as temp:
             repo = Path(temp)
