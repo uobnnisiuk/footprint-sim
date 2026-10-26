@@ -7,6 +7,7 @@ Does not forward GitHub tokens or write to the user's existing worktree.
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import fcntl
 import json
 import os
@@ -25,9 +26,79 @@ DEFAULT_PATH = Path(__file__).resolve().parents[1]
 BRANCH_PREFIX = "local-autodev/issue-"
 
 
+
+# Keep diagnostics actionable without storing raw model output, prompts or secrets.
+# This is defense in depth, not a guarantee that arbitrary CLI text is secret-free.
+_DIAG_LINE = re.compile(
+    r"(?i)\b(?:error|failed|failure|fatal|warn(?:ing)?|"
+    r"rate.limit|usage.limit|unauthorized|forbidden|authentication|"
+    r"permission.denied|timed.out|timeout|connection.refused|"
+    r"connection.reset|unknown.option|unexpected.argument|panic|"
+    r"http\s*[45][0-9]{2}|status\s*[45][0-9]{2})\b"
+)
+_DIAG_SECRET = re.compile(
+    r"(?i)\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|"
+    r"authorization|password|client[_-]?secret|session[_-]?token)"
+    r"\s*[:=]\s*(?:[^\s]+)"
+)
+_DIAG_TOKENS = re.compile(
+    r"(?i)\b(?:sk-(?:proj-)?|github_pat_|gh[pousr]_)[a-z0-9_-]+"
+)
+
+
+def diagnostic_excerpt(stderr: str) -> str:
+    """Extract only bounded error-like lines; discard stdout and other stderr."""
+    kept = []
+    for raw in stderr.splitlines():
+        if not _DIAG_LINE.search(raw):
+            continue
+        line = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", raw)
+        line = _DIAG_SECRET.sub("[REDACTED_CREDENTIAL_FIELD]", line)
+        line = re.sub(r"(?i)\bbearer\s+\S+", "Bearer [REDACTED]", line)
+        line = _DIAG_TOKENS.sub("[REDACTED_TOKEN]", line)
+        line = re.sub(r"https?://[^\s]+", "[REDACTED_URL]", line)
+        line = re.sub(r"(?i)\b[A-Za-z0-9_+/\-]{48,}={0,2}\b",
+                      "[REDACTED_LONG_VALUE]", line)
+        line = "".join(c for c in line if c.isprintable() or c == "\t")
+        kept.append(line[:320])
+        if len(kept) >= 25:
+            break
+    return "\n".join(kept) if kept else (
+        "No recognized diagnostic lines in stderr. Other CLI output was intentionally discarded."
+    )
+
+
+def save_codex_failure(diagnostics_dir: Path, status: str, stderr: str) -> Path:
+    """Write a *filtered* private diagnostic, never the full CLI transcript."""
+    if diagnostics_dir.is_symlink():
+        raise OSError("Diagnostic directory is a symlink")
+    diagnostics_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
+    diagnostics_dir.chmod(0o700)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    path = diagnostics_dir / f"codex-failure-{timestamp}-{os.getpid()}.log"
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+        output.write(f"Command: codex exec\nStatus: {status}\n")
+        output.write("Filtered stderr excerpt (never share without checking):\n")
+        output.write(diagnostic_excerpt(stderr) + "\n")
+    return path
+
+
+def failure_note(diagnostics_dir: Path | None, status: str, stderr: str) -> str:
+    if diagnostics_dir is None:
+        return "CLI stderr was intentionally suppressed."
+    try:
+        path = save_codex_failure(diagnostics_dir, status, stderr)
+        return f"Filtered diagnostic saved to {path}. Review locally before sharing."
+    except OSError:
+        return "Could not write private diagnostic; raw CLI output was not exposed."
+
+
 def cmd(argv: list[str], *, cwd: Path | None = None, env: dict | None = None,
         input_text: str | None = None, timeout: int = 90,
-        include_stderr: bool = False) -> str:
+        include_stderr: bool = False,
+        diagnostics_dir: Path | None = None) -> str:
     if argv[0] == "git":
         argv = ["git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", *argv[1:]]
     with subprocess.Popen(argv, cwd=cwd, env=env, text=True,
@@ -49,12 +120,13 @@ def cmd(argv: list[str], *, cwd: Path | None = None, env: dict | None = None,
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-            process.communicate()
-            raise RuntimeError(f"{argv[0]} command timed out; process group stopped") from None
+            _, stderr = process.communicate()
+            note = failure_note(diagnostics_dir, "timeout", stderr)
+            raise RuntimeError(f"{argv[0]} command timed out; process group stopped. {note}") from None
         if process.returncode:
-            # Never print credentials or prompts from command diagnostics.
-            raise RuntimeError(f"{argv[0]} command failed (exit={process.returncode}). "
-                               "Inspect local CLI diagnostic output if needed.")
+            # Only the Codex invocation opts into bounded filtered local logging.
+            note = failure_note(diagnostics_dir, f"exit={process.returncode}", stderr)
+            raise RuntimeError(f"{argv[0]} command failed (exit={process.returncode}). {note}")
         return (stdout + ("\n" + stderr if include_stderr else "")).strip()
 
 
@@ -186,7 +258,7 @@ def run(repo_path: Path, issue_number: int, execute: bool) -> None:
                      "-c", 'approval_policy="never"', "-c", 'web_search="disabled"',
                      "--sandbox", "read-only", "--output-last-message",
                      str(patch), "-"], cwd=worktree, env=env,
-                    input_text=prompt, timeout=1800)
+                    input_text=prompt, timeout=1800, diagnostics_dir=state / "diagnostics")
                 if not patch.is_file() or patch.stat().st_size == 0:
                     raise RuntimeError("Codex returned no patch. No PR was created")
                 if patch.read_text(encoding="utf-8").strip() == "NO_CHANGES":
