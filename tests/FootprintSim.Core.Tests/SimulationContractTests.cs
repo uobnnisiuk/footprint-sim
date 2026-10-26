@@ -29,6 +29,24 @@ public sealed class SimulationContractTests
     }
 
     [Theory]
+    [InlineData("s0_walking_baseline", 0)]
+    [InlineData("s0_walking_baseline", 42)]
+    [InlineData("s1_debris_transport", 0)]
+    [InlineData("s1_debris_transport", 42)]
+    public void SameSeedProducesIdenticalObservationJsonForSampleScenarios(string scenarioDirectory, int seed)
+    {
+        var scenario = LoadScenario(scenarioDirectory);
+        var engine = new SimulationEngine();
+
+        var first = engine.Run(scenario, seed);
+        var second = engine.Run(scenario, seed);
+
+        Assert.Equal(
+            JsonDefaults.Serialize(first.ObservationSet),
+            JsonDefaults.Serialize(second.ObservationSet));
+    }
+
+    [Theory]
     [InlineData("s0_walking_baseline")]
     [InlineData("s1_debris_transport")]
     public void EventTicksAndSequencesHaveStableTotalOrder(string scenarioDirectory)
