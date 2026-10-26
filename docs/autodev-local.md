@@ -64,6 +64,29 @@ The read-only Codex sandbox and environment-variable filtering **do not complete
 
 Generated code is not run locally; however, it **will execute during GitHub CI** inside its isolated, read-only job. Inspect CI permissions and repository secrets before expanding this to other repositories.
 
+## Failure diagnostics (no model call)
+
+On a nonzero exit or timeout from \`codex exec\`, the runner now writes a small, filtered
+stderr excerpt under \`~/.local/state/footprint-local-autodev/diagnostics/\` using
+0700 directory and 0600 file permissions. The path appears in the error message.
+It records the exit code or timeout and up to 25 bounded *error-like* stderr lines,
+after credential-like tokens and URLs are redacted. It intentionally discards
+stdout, full prompts and normal CLI transcripts.
+
+This is **best-effort sanitization**, not a formal guarantee: review the local log
+before sharing any excerpt. If the CLI writes no recognized diagnostic lines,
+the log says so rather than inventing a cause. No automatic retry takes place.
+
+To inspect locally after a failure:
+
+\`\`\`bash
+ls -lt ~/.local/state/footprint-local-autodev/diagnostics/
+# Open the exact path reported by the failed run in your editor.
+\`\`\`
+
+Do not paste raw local logs into issues or chat without checking for personal
+information and credentials.
+
 ## Failure modes
 
 - Incorrect login, missing label, issue not owner-authored, existing branch/PR → stop.
