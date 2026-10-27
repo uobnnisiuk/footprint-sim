@@ -1,16 +1,20 @@
-# Unattended Local AutoDev: one Issue/day
+# Unattended Local AutoDev: up to four JST slots/day
 
-**Owner approval:** On 2026-10-27 the owner approved daily unattended
-ChatGPT-plan Local AutoDev execution, with up to one Issue per Japan-local day,
-accepting possible consumption of existing purchased ChatGPT credits.
+**Owner approval:** On 2026-10-27 the owner approved unattended
+ChatGPT-plan Local AutoDev execution and subsequently requested increased
+frequency. The enabled schedule offers **09:05, 13:05, 17:05, and 21:05 JST**,
+with **at most one Issue attempt per slot (four per JST day)**. It may consume
+existing purchased ChatGPT credits.
 This approval does **not** authorize API-key billing or automatic PR merge.
 
 ## Safeguards
 
 `tools/local_autodev_daily.py` is separate from the existing read-only
 daily 09:00 monitor, and is **not a background service** on its own.
-The Windows task installer explicitly registers a second task at **09:05
-Asia/Tokyo** only while the usual Windows account is signed in.
+The Windows task installer registers a second task at **09:05, 13:05, 17:05,
+21:05 Asia/Tokyo** only while the usual Windows account is signed in.
+These are opportunities to process another Issue, **not guaranteed runs**:
+every open PR, including Draft, blocks further work until reviewed/merged.
 
 Each run:
 
@@ -26,9 +30,11 @@ Each run:
 3. Queries owner-authored, open `local-autodev` Issues excluding the billed
    `autodev` label; selects only the lowest number.
 4. Acquires a nonblocking Linux `flock` and creates exclusive,
-   permission-restricted daily and per-Issue attempt markers **before** invoking
-   Codex. These markers permanently block the same Issue from being retried
-   even on subsequent days, and block more than one attempt per JST day.
+   permission-restricted per-slot and per-Issue attempt markers **before**
+   invoking Codex. These markers permanently block the same Issue from being
+   retried even on subsequent days, and block more than one attempt in any one
+   of the four JST daily slots. A legacy one-per-day marker blocks that day's
+   additional slots after an in-place upgrade.
 5. Delegates **one** call to `tools/local_autodev.py`, which checks
    ChatGPT authentication and the GitHub owner, runs Codex in a restricted
    read-only sandbox, applies the patch guard, and opens a Draft PR.
@@ -39,10 +45,13 @@ Logs and attempt markers are private WSL files at:
 
 ```text
 ~/.local/state/footprint-local-autodev/daily/
-  day-YYYY-MM-DD.json
+  day-YYYY-MM-DD-slot-0.json  # 09:05 slot
+  day-YYYY-MM-DD-slot-1.json  # 13:05 slot
+  day-YYYY-MM-DD-slot-2.json  # 17:05 slot
+  day-YYYY-MM-DD-slot-3.json  # 21:05 slot
   issue-<number>.json
-  result-YYYY-MM-DD.json
-  log-YYYY-MM-DD.txt
+  result-YYYY-MM-DD-slot-<slot>.json
+  log-YYYY-MM-DD-slot-<slot>.txt
 ```
 
 The directory is restricted to mode 0700; records/logs use 0600.
@@ -55,7 +64,7 @@ the cause and getting a new approval for any retry.
 pre-purchased credits can be consumed when included allowance runs out.
 Turning auto-recharge OFF prevents automatic *purchase* but does not guarantee
 zero spending of pre-purchased credit balance. If the model hits a limit,
-the attempt remains recorded as used; tomorrow does not auto-retry it.
+the Issue and its slot remain recorded as used; later slots do not auto-retry it.
 Check remaining account credits/allowance and manually disable the task
 whenever needed. There is no automatic credit-state check.
 
@@ -114,10 +123,12 @@ Then, in **Windows PowerShell**, as the normal logged-in user:
 If local PowerShell execution policy blocks scripts, run the file from a
 one-time process with `powershell.exe -NoProfile -ExecutionPolicy Bypass -File`
 instead. The installer checks Tokyo timezone, verifies read-only WSL preflight,
-then creates/updates task `Footprint Local AutoDev Daily` with:
+then **replaces** the triggers on the existing task `Footprint Local AutoDev Daily` with four times.
+The task name remains the same, and the existing 09:00 read-only monitor is not changed.
+Settings:
 
 - WSL distro `Ubuntu` and WSL user `higuchi`;
-- daily Windows-local 09:05 schedule;
+- daily Windows-local 09:05, 13:05, 17:05, 21:05 schedule;
 - interactive Windows user principal at limited privilege;
 - ignore concurrent triggers;
 - 40-minute execution limit, no retry and no waking the PC;
@@ -125,7 +136,7 @@ then creates/updates task `Footprint Local AutoDev Daily` with:
 
 **The installer does not start the scheduled task**, and the read-only
 preflight does not invoke the model. Registration activates the next scheduled
-09:05 execution if the computer is awake and the account is logged on.
+one of the scheduled executions if the computer is awake and the account is logged on.
 
 Verify registration from **Windows PowerShell**, not WSL Bash:
 
@@ -149,7 +160,9 @@ real, accounted AI attempt when the queue is eligible.
 
 A PR remains review-gated: even CI success does not merge code.
 The next Issue (#12, then #13) cannot run until the owner reviews and merges
-the earlier PR. That constraint is deliberate and can slow progress, but keeps
-candidate code from stacking uncontrolled changes. The run counter uses the
+the earlier PR. If a PR is still open at 13:05, 17:05 or 21:05, those
+opportunities are skipped without model usage. No attempt at skipped slots
+is made later that day. That constraint is deliberate and can slow progress, but keeps
+candidate code from stacking uncontrolled changes. The per-slot counter uses the
 Windows/WSL local machine's clock translated into Asia/Tokyo; clock tampering
 or manually deleting ledger files is outside the threat model.
