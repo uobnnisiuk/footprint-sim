@@ -99,7 +99,7 @@ class GuardTests(unittest.TestCase):
                                            max_issues=1, date="2026-10-28")
             self.assertIn("completed", first)
             self.assertIn("already recorded", same_day)
-            self.assertIn("previously attempted", next_day)
+            self.assertIn("already attempted", next_day)
             invoke.assert_called_once()
             self.assertEqual(json.loads((path / "result-2026-10-27.json").read_text())["status"],
                              "succeeded")
@@ -121,7 +121,7 @@ class GuardTests(unittest.TestCase):
                 next_day = daily.run_daily(ROOT, path, execute=True,
                                            acknowledge_credit_risk=True,
                                            max_issues=1, date="2026-10-28")
-            self.assertIn("previously attempted", next_day)
+            self.assertIn("already attempted", next_day)
             invoke.assert_called_once()
             self.assertEqual(json.loads((path / "result-2026-10-27.json").read_text())["status"],
                              "failed")
