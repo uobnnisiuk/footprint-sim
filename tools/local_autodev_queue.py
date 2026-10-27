@@ -22,7 +22,7 @@ DEFAULT_PATH = Path(__file__).resolve().parents[1]
 def issue_is_eligible(issue: object) -> bool:
     if not isinstance(issue, dict):
         return False
-    if issue.get("state") not in ("OPEN", "open", None):
+    if issue.get("state") not in ("OPEN", "open"):
         return False  # gh issue list --state open only returns open Issues
     author = issue.get("author")
     if not isinstance(author, dict) or author.get("login") != OWNER:
