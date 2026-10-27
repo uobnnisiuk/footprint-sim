@@ -48,7 +48,7 @@ Metric records carry `available`, nullable `value`, and, where a ratio is involv
 
 ## Batch CLI
 
-Evaluate both checked-in scenarios for seeds 0 through 19 with every strategy:
+Evaluate all checked-in scenarios for seeds 0 through 19 with every strategy:
 
 ```bash
 dotnet run --project src/FootprintSim.Cli -- evaluate \
@@ -81,3 +81,17 @@ JSON property order follows declared record property order. Scenario, seed, stra
 M0 uses the seed for observation emission, delay, and conflict choices, but its checked-in truth steps are explicit. The outcome fingerprint covers candidates, confirmed-person evidence regions, explicit exclusions, evidence state, containment, search-space fraction/reduction, device-only promotion count, and time-to-guidance. Across two or more selected seeds, if all fingerprints for an aggregate group match, `uniqueOutcomeCount` is `1` and the report states that the current M0 scenario is seed-insensitive for that strategy result. With fewer than two distinct seeds, sensitivity is explicitly unavailable. The harness does not invent variation. When observation availability changes time-to-guidance, the unique outcome count records that timing sensitivity.
 
 M1-B and later work should address probabilistic hazard propagation, calibrated per-channel observation behavior, explicit public/private hazard-policy configuration, broader scenario fixtures with seed-sensitive truth outcomes, and richer validation of evidence promotion. Complete EBPC mapping, real-data ingestion, survival estimation, map presentation, and operational rescue prioritization remain outside M1-A.
+
+## M1-B synthetic S2 observation loss
+
+S2 (`s2-intermittent-person-evidence`) preserves S1's topology, physical steps, and independent person/device trajectories. Only the transport-start target-person signal changes: emission probability is 1.0 and drop probability is 0.5. The deposition-person signal remains always dropped; device-only fixes remain separate evidence. Seeds affect observation loss and timing, not the physical trajectory. This is an abstract fixture, not a calibrated disaster model.
+
+```bash
+dotnet run --project src/FootprintSim.Cli -- evaluate \
+  --scenarios scenarios/s2_intermittent_person_evidence/scenario.json \
+  --seeds 0..19 \
+  --strategies all \
+  --output results/s2-evaluation
+```
+
+The integration test checks both signal forms across these seeds, byte-identical observation JSON and evaluation results for repeated inputs, unchanged physical truth, and no device-only promotion for all four strategies. For `hazard-aware`, retained person evidence selects the four-region hazard envelope; missing evidence selects the two-region normal baseline. Containment and candidate/search metrics therefore vary, and aggregate containment is checked against the observed signal-presence count rather than an assumed random split.
