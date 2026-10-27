@@ -18,13 +18,17 @@ every open PR, including Draft, blocks further work until reviewed/merged.
 
 Each run:
 
-1. Requires a dedicated checkout on `main` or detached HEAD, with `HEAD` equal
-   to the locally recorded `origin/main`. Other named branches are refused.
+1. Requires a dedicated checkout on `main` or detached HEAD, with `HEAD`
+   equal to or an ancestor of the locally recorded `origin/main`. Other
+   named branches or diverged histories are refused.
    Tracked changes and untracked source files stop the run; only untracked
    regular `.pyc` files directly inside `tools/__pycache__/` and
-   `.github/scripts/__pycache__/` are tolerated. Preflight creates no bytecode
-   and does not fetch, update, reset, or clean the checkout. Research worktrees
-   are not changed.
+   `.github/scripts/__pycache__/` are tolerated. Preview does not fetch or
+   change any files. **Real scheduled executions** verify the trusted GitHub
+   origin, fetch remote main and fast-forward only this clean, dedicated
+   checkout under the execution lock before any Codex use. If the local HEAD
+   diverged or any user files changed, the refresh fails closed. No reset or
+   clean is ever performed, and research worktrees are not changed.
 2. Checks **all open repository PRs**. If any PR is open (including Draft), it
    stops without spending Codex usage.
 3. Queries owner-authored, open `local-autodev` Issues excluding the billed
@@ -111,8 +115,11 @@ Detached HEAD is expected and does not need a branch switch. Do not use
 `git reset --hard`, `git clean`, or broad cache ignore rules to bypass a stop.
 The final command is a dry run: it never invokes Codex or reserves an attempt.
 An open PR, empty queue, or recorded attempt is a normal `DRY RUN` result.
-Repeat this manual update after future approved merges; daily preflight checks
-the local `origin/main` reference and does not check GitHub for a newer commit.
+**Only the initial update after merging this maintenance PR is manual.**
+After installation, each authorized scheduled execution safely refreshes this
+dedicated checkout from the GitHub `main` branch, so future reviewed PR merges
+do not require you to run these commands again. Read-only previews still do
+not fetch or modify any files.
 
 Then, in **Windows PowerShell**, as the normal logged-in user:
 
@@ -158,7 +165,15 @@ real, accounted AI attempt when the queue is eligible.
 
 ## Limits and next steps
 
-A PR remains review-gated: even CI success does not merge code.
+Local AutoDev PRs are separately reviewed by the configured hourly ChatGPT
+PR monitor. The user's 2026-10-27 opt-in permits that reviewer to merge an
+owner-authored local-autodev/issue-N PR only after verifying every diff,
+Issue acceptance criterion, patch guard scope, CI success and head/main SHA.
+Ambiguous, infrastructure, security-sensitive and other non-Local-AutoDev PRs
+are never auto-merged. CI alone is not sufficient. Branch protections remain
+in force; this program itself never performs a merge.
+
+A PR remains review-gated: even CI success alone does not merge code.
 The next Issue (#12, then #13) cannot run until the owner reviews and merges
 the earlier PR. If a PR is still open at 13:05, 17:05 or 21:05, those
 opportunities are skipped without model usage. No attempt at skipped slots

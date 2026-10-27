@@ -46,7 +46,7 @@ def command(args: list[str], cwd: Path, timeout: int = 60, *,
     return result.stdout.strip() if strip else result.stdout
 
 
-def verify_checkout(repo_path: Path) -> None:
+def verify_checkout(repo_path: Path, *, allow_behind: bool = False) -> None:
     if not (repo_path / "tools" / "local_autodev.py").is_file():
         raise RuntimeError("Local AutoDev checkout not found")
     root = command(["git", "rev-parse", "--show-toplevel"], repo_path)
@@ -61,8 +61,15 @@ def verify_checkout(repo_path: Path) -> None:
     base = command(["git", "rev-parse", "--verify",
                     "refs/remotes/origin/main^{commit}"], repo_path)
     if head != base:
-        raise RuntimeError("Dedicated AutoDev HEAD must match local origin/main; "
-                           "review and update the dedicated checkout manually")
+        if not allow_behind:
+            raise RuntimeError("Dedicated AutoDev HEAD must match local origin/main; "
+                               "review and update the dedicated checkout manually")
+        ancestor = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", "HEAD", "refs/remotes/origin/main"],
+            cwd=repo_path, capture_output=True, text=True, timeout=60, check=False)
+        if ancestor.returncode != 0:
+            raise RuntimeError("Dedicated AutoDev HEAD is not an ancestor of origin/main; "
+                               "refusing automatic update")
     status = command(["git", "status", "--porcelain=v1", "-z",
                       "--untracked-files=all"], repo_path, strip=False)
     for entry in status.split("\0"):
@@ -77,6 +84,34 @@ def verify_checkout(repo_path: Path) -> None:
                 stat.S_ISREG((repo_path / path).lstat().st_mode)):
             continue
         raise RuntimeError("Dedicated AutoDev checkout has uncommitted changes")
+
+
+
+def refresh_checkout(repo_path: Path) -> None:
+    """Fast-forward only the dedicated clean checkout, never a research worktree.
+
+    Called after the per-run lock is acquired, and before querying any Issue or
+    reserving a paid model attempt. Refuses unexpected GitHub remotes, local
+    commits, dirty tracked files, and unknown untracked artifacts.
+    """
+    verify_checkout(repo_path, allow_behind=True)
+    accepted = {
+        f"https://github.com/{REPO}",
+        f"https://github.com/{REPO}.git",
+        f"git@github.com:{REPO}.git",
+        f"ssh://git@github.com/{REPO}.git",
+    }
+    for options in (["--all"], ["--push", "--all"]):
+        urls = command(["git", "remote", "get-url", *options, "origin"], repo_path).splitlines()
+        if not urls or any(url not in accepted for url in urls):
+            raise RuntimeError("Untrusted Git remote; checkout refresh stopped")
+    # Never merge arbitrary local commits, overwrite source, reset, or clean.
+    command(["git", "-c", "core.hooksPath=/dev/null",
+             "fetch", "--no-tags", "origin", "main"], repo_path, timeout=120)
+    verify_checkout(repo_path, allow_behind=True)
+    command(["git", "-c", "core.hooksPath=/dev/null",
+             "merge", "--ff-only", "refs/remotes/origin/main"], repo_path, timeout=60)
+    verify_checkout(repo_path)
 
 
 def open_pr_numbers(repo_path: Path) -> list[int]:
@@ -160,7 +195,9 @@ def run_daily(repo_path: Path, state: Path, *, execute: bool,
         raise ValueError("Unknown daily execution slot")
     if execute and not acknowledge_credit_risk:
         raise ValueError("Unattended execution requires --acknowledge-credit-risk")
-    verify_checkout(repo_path)
+    # Read-only preview may inspect an older clean checkout; a real run first
+    # refreshes it under lock to the approved remote main.
+    verify_checkout(repo_path, allow_behind=True)
     if not execute:
         # No state writes and no model work in dry-run mode.
         prs = open_pr_numbers(repo_path)
@@ -192,6 +229,9 @@ def run_daily(repo_path: Path, state: Path, *, execute: bool,
             return "Skipped: legacy daily attempt already recorded"
         if (state / f"day-{date}-slot-{slot}.json").exists():
             return "Skipped: slot attempt already recorded"
+        # Run the unattended refresh only after the lock and before any model
+        # attempt; unsafe or non-fast-forward states must stop closed.
+        refresh_checkout(repo_path)
         prs = open_pr_numbers(repo_path)
         if prs:
             return f"Skipped: {len(prs)} open PR(s) await review/merge"
