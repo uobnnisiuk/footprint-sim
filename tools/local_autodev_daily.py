@@ -17,6 +17,8 @@ import subprocess
 import sys
 from zoneinfo import ZoneInfo
 
+# Preflight must not dirty the checkout, even when invoked without python -B.
+sys.dont_write_bytecode = True
 import local_autodev_queue as queue
 
 REPO = queue.REPO
@@ -26,14 +28,15 @@ JST = ZoneInfo("Asia/Tokyo")
 MAX_PR_LIST = 500
 
 
-def command(args: list[str], cwd: Path, timeout: int = 60) -> str:
+def command(args: list[str], cwd: Path, timeout: int = 60, *,
+            strip: bool = True) -> str:
     result = subprocess.run(
         args, cwd=cwd, capture_output=True, text=True,
         timeout=timeout, check=False)
     if result.returncode:
         raise RuntimeError(f"Preflight command failed: {args[0]} "
                            f"(exit={result.returncode}); output withheld")
-    return result.stdout.strip()
+    return result.stdout.strip() if strip else result.stdout
 
 
 def verify_checkout(repo_path: Path) -> None:
@@ -42,9 +45,30 @@ def verify_checkout(repo_path: Path) -> None:
     root = command(["git", "rev-parse", "--show-toplevel"], repo_path)
     if Path(root).resolve() != repo_path.resolve():
         raise RuntimeError("Expected checkout root does not match")
-    if command(["git", "branch", "--show-current"], repo_path) != "main":
-        raise RuntimeError("Dedicated AutoDev checkout must be on main")
-    if command(["git", "status", "--porcelain", "--untracked-files=all"], repo_path):
+    branch = command(["git", "branch", "--show-current"], repo_path)
+    if branch not in ("main", ""):
+        raise RuntimeError("Dedicated AutoDev checkout must be on main or detached")
+    # A branch name alone does not prove that the checkout is the approved base.
+    # Only compare local refs: preflight never fetches or updates any worktree.
+    head = command(["git", "rev-parse", "--verify", "HEAD^{commit}"], repo_path)
+    base = command(["git", "rev-parse", "--verify",
+                    "refs/remotes/origin/main^{commit}"], repo_path)
+    if head != base:
+        raise RuntimeError("Dedicated AutoDev HEAD must match local origin/main; "
+                           "review and update the dedicated checkout manually")
+    status = command(["git", "status", "--porcelain=v1", "-z",
+                      "--untracked-files=all"], repo_path, strip=False)
+    for entry in status.split("\0"):
+        if not entry:
+            continue
+        path = Path(entry[3:])
+        # Tolerate only generated, untracked bytecode in these known locations.
+        # Tracked edits, source inside __pycache__, and symlinks still stop us.
+        if (entry.startswith("?? ") and path.suffix == ".pyc" and
+                path.parent.as_posix() in ("tools/__pycache__",
+                                           ".github/scripts/__pycache__") and
+                stat.S_ISREG((repo_path / path).lstat().st_mode)):
+            continue
         raise RuntimeError("Dedicated AutoDev checkout has uncommitted changes")
 
 

@@ -14,8 +14,13 @@ Asia/Tokyo** only while the usual Windows account is signed in.
 
 Each run:
 
-1. Requires a clean dedicated checkout on `main`; never touches the research
-   worktrees. Does not update or reset the checkout automatically.
+1. Requires a dedicated checkout on `main` or detached HEAD, with `HEAD` equal
+   to the locally recorded `origin/main`. Other named branches are refused.
+   Tracked changes and untracked source files stop the run; only untracked
+   regular `.pyc` files directly inside `tools/__pycache__/` and
+   `.github/scripts/__pycache__/` are tolerated. Preflight creates no bytecode
+   and does not fetch, update, reset, or clean the checkout. Research worktrees
+   are not changed.
 2. Checks **all open repository PRs**. If any PR is open (including Draft), it
    stops without spending Codex usage.
 3. Queries owner-authored, open `local-autodev` Issues excluding the billed
@@ -56,17 +61,49 @@ whenever needed. There is no automatic credit-state check.
 
 ## Install on Windows 11 (after this PR is reviewed, CI passes and it is merged)
 
-First, safely update the **dedicated** Ubuntu checkout, provided it is clean,
-not a research checkout:
+First, run this in **WSL Ubuntu Bash** to update only the dedicated checkout.
+The check works with the older script at `ce3aacd`, preserving existing Python
+caches while refusing source changes. The parentheses keep a failure from
+closing the interactive shell; subsequent steps stop on the first failure.
 
 ```bash
+(
+set -e
 cd /home/higuchi/personal/me/footprint-sim/footprint-sim-local-autodev-pr6
-test -z "$(git status --porcelain)" || { echo "Dirty checkout; stop"; exit 1; }
+python3 -B - <<'PY'
+import os
+from pathlib import Path
+import stat
+import subprocess
+
+def git(*args):
+    return subprocess.check_output(["git", *args])
+
+if git("branch", "--show-current").strip() not in (b"", b"main"):
+    raise SystemExit("Expected main or detached dedicated checkout; stop")
+cache_dirs = {Path("tools/__pycache__"), Path(".github/scripts/__pycache__")}
+for entry in git("status", "--porcelain=v1", "-z", "--untracked-files=all").split(b"\0"):
+    if not entry:
+        continue
+    path = Path(os.fsdecode(entry[3:]))
+    if (entry.startswith(b"?? ") and path.parent in cache_dirs
+            and path.suffix == ".pyc" and stat.S_ISREG(path.lstat().st_mode)):
+        continue
+    raise SystemExit("Source/unexpected file changes present; preserve them and stop")
+PY
 git fetch origin main
 git merge --ff-only origin/main
-python3 -m unittest discover -s .github/scripts -p 'test_local_autodev_daily.py' -v
-python3 tools/local_autodev_daily.py
+python3 -B -m unittest discover -s .github/scripts -p 'test_local_autodev_daily.py' -v
+python3 -B tools/local_autodev_daily.py
+)
 ```
+
+Detached HEAD is expected and does not need a branch switch. Do not use
+`git reset --hard`, `git clean`, or broad cache ignore rules to bypass a stop.
+The final command is a dry run: it never invokes Codex or reserves an attempt.
+An open PR, empty queue, or recorded attempt is a normal `DRY RUN` result.
+Repeat this manual update after future approved merges; daily preflight checks
+the local `origin/main` reference and does not check GitHub for a newer commit.
 
 Then, in **Windows PowerShell**, as the normal logged-in user:
 
@@ -89,6 +126,15 @@ then creates/updates task `Footprint Local AutoDev Daily` with:
 **The installer does not start the scheduled task**, and the read-only
 preflight does not invoke the model. Registration activates the next scheduled
 09:05 execution if the computer is awake and the account is logged on.
+
+Verify registration from **Windows PowerShell**, not WSL Bash:
+
+```powershell
+Get-ScheduledTask -TaskName "Footprint Local AutoDev Daily" |
+    Select-Object TaskName, State
+Get-ScheduledTaskInfo -TaskName "Footprint Local AutoDev Daily" |
+    Select-Object LastRunTime, LastTaskResult, NextRunTime
+```
 
 To stop unattended AI runs immediately from Windows PowerShell:
 
