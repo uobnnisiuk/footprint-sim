@@ -78,6 +78,64 @@ public sealed class EvaluationHarnessTests
         Assert.Contains("deposition-zone", hazard.CandidateRegionIds);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(42)]
+    public void S1DelayedPersonEvidenceAffectsHazardCandidatesOnlyWhenAvailable(int seed)
+    {
+        var scenario = LoadScenario("s1_debris_transport");
+        var evidence = new SimulationEngine().Run(scenario, seed).ObservationSet;
+        var delayed = Assert.Single(evidence.Observations, observation =>
+            observation.EvidenceType == "coarsePresenceSignal" &&
+            observation.SubjectIds.Contains(scenario.TargetPersonId) &&
+            observation.ObservedTick == 10);
+
+        Assert.True(delayed.ObservedTick < delayed.AvailableTick);
+        Assert.InRange(delayed.AvailableTick - delayed.ObservedTick, 2L, 4L);
+
+        SearchStrategyInput InputAt(long tick) => new()
+        {
+            ScenarioId = scenario.Id,
+            Seed = seed,
+            CurrentTick = tick,
+            PublicContext = new RescueContext
+            {
+                ScenarioId = scenario.Id,
+                TargetPersonId = scenario.TargetPersonId,
+                NormalWalkingRadius = scenario.NormalWalkingRadius,
+                PublicRegions = scenario.Regions,
+                DeclaredHazardEnvelopeRegionIds = scenario.HazardTransportEnvelopeRegionIds
+            },
+            AvailableEvidence = evidence with
+            {
+                Observations = evidence.Observations
+                    .Where(observation => observation.AvailableTick <= tick)
+                    .ToArray()
+            }
+        };
+
+        var before = InputAt(delayed.AvailableTick - 1);
+        var available = InputAt(delayed.AvailableTick);
+        Assert.DoesNotContain(delayed, before.AvailableEvidence.Observations);
+        Assert.Contains(delayed, available.AvailableEvidence.Observations);
+        Assert.All(before.AvailableEvidence.Observations, observation =>
+            Assert.True(observation.AvailableTick <= before.CurrentTick));
+        Assert.All(available.AvailableEvidence.Observations, observation =>
+            Assert.True(observation.AvailableTick <= available.CurrentTick));
+        Assert.Equal(
+            before.AvailableEvidence.Observations.Append(delayed),
+            available.AvailableEvidence.Observations);
+
+        var strategy = new HazardAwareStrategy();
+        var beforeResult = strategy.Evaluate(before);
+        var availableResult = strategy.Evaluate(available);
+
+        Assert.DoesNotContain("deposition-zone", beforeResult.CandidateRegionIds);
+        Assert.DoesNotContain(beforeResult.CandidateRegionIds, candidate =>
+            scenario.HazardTransportEnvelopeRegionIds.Contains(candidate));
+        Assert.Contains("deposition-zone", availableResult.CandidateRegionIds);
+    }
+
     [Fact]
     public void S1DeviceOnlyRegionIsNeverPromotedToConfirmedPersonLocation()
     {
