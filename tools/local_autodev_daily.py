@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run at most one approved Local AutoDev Issue per Japan-local calendar day.
+"""Run at most one approved Local AutoDev Issue in each of four JST daily slots.
 
 No background scheduling is installed by this file. Execution requires two
 explicit flags and a separate Windows Task Scheduler installation step.
@@ -26,6 +26,13 @@ DEFAULT_PATH = Path(__file__).resolve().parents[1]
 STATE = Path.home() / ".local" / "state" / "footprint-local-autodev" / "daily"
 JST = ZoneInfo("Asia/Tokyo")
 MAX_PR_LIST = 500
+SLOT_HOURS_JST = (9, 13, 17, 21)
+
+
+def slot_for_hour(hour: int) -> int | None:
+    """Slot 0 begins at 09:00 JST; no unattended runs before that hour."""
+    available = [i for i, start in enumerate(SLOT_HOURS_JST) if hour >= start]
+    return available[-1] if available else None
 
 
 def command(args: list[str], cwd: Path, timeout: int = 60, *,
@@ -106,20 +113,25 @@ def create_private(path: Path, data: str) -> None:
         os.fsync(stream.fileno())
 
 
-def reserve_attempt(state: Path, date: str, issue_number: int) -> None:
+def reserve_attempt(state: Path, date: str, issue_number: int, slot: int) -> None:
     # The date marker is reserved *before* invoking any model. If the process
     # crashes or power is lost, that date remains consumed: never retry.
-    day_file = state / f"day-{date}.json"
+    # An old one-per-day marker means the former runner already executed.
+    # Never reinterpret its authorization as an additional slot.
+    legacy = state / f"day-{date}.json"
+    day_file = state / f"day-{date}-slot-{slot}.json"
     issue_file = state / f"issue-{issue_number}.json"
+    if legacy.exists() or legacy.is_symlink():
+        raise RuntimeError("Legacy daily attempt exists; no further run today")
     if day_file.exists() or day_file.is_symlink():
-        raise RuntimeError("Already attempted an Issue today; no retry")
+        raise RuntimeError("Already attempted an Issue in this slot; no retry")
     if issue_file.exists() or issue_file.is_symlink():
         raise RuntimeError(f"Issue #{issue_number} was previously attempted; no retry")
     create_private(day_file, json.dumps({
-        "dateJst": date, "issue": issue_number, "status": "started"
+        "dateJst": date, "slot": slot, "issue": issue_number, "status": "started"
     }) + "\n")
     create_private(issue_file, json.dumps({
-        "issue": issue_number, "dateJst": date, "status": "attempted"
+        "issue": issue_number, "dateJst": date, "slot": slot, "status": "attempted"
     }) + "\n")
 
 
@@ -141,9 +153,11 @@ def invoke_once(repo_path: Path, issue_number: int, log_path: Path) -> int:
 
 def run_daily(repo_path: Path, state: Path, *, execute: bool,
               acknowledge_credit_risk: bool, max_issues: int,
-              date: str) -> str:
+              date: str, slot: int = 0) -> str:
     if max_issues != 1:
-        raise ValueError("Hard limit is one Issue per day and per invocation")
+        raise ValueError("Hard limit is one Issue per invocation")
+    if type(slot) is not int or not (0 <= slot < len(SLOT_HOURS_JST)):
+        raise ValueError("Unknown daily execution slot")
     if execute and not acknowledge_credit_risk:
         raise ValueError("Unattended execution requires --acknowledge-credit-risk")
     verify_checkout(repo_path)
@@ -157,6 +171,7 @@ def run_daily(repo_path: Path, state: Path, *, execute: bool,
             return "DRY RUN: queue empty"
         number = candidates[0]["number"]
         if ((state / f"day-{date}.json").exists() or
+                (state / f"day-{date}-slot-{slot}.json").exists() or
                 (state / f"issue-{number}.json").exists()):
             return "DRY RUN: attempt already recorded; would stop"
         return f"DRY RUN: would invoke only Issue #{number} after explicit opt-in"
@@ -174,7 +189,9 @@ def run_daily(repo_path: Path, state: Path, *, execute: bool,
         except BlockingIOError:
             return "Skipped: another daily runner is active"
         if (state / f"day-{date}.json").exists():
-            return "Skipped: daily attempt already recorded"
+            return "Skipped: legacy daily attempt already recorded"
+        if (state / f"day-{date}-slot-{slot}.json").exists():
+            return "Skipped: slot attempt already recorded"
         prs = open_pr_numbers(repo_path)
         if prs:
             return f"Skipped: {len(prs)} open PR(s) await review/merge"
@@ -187,21 +204,21 @@ def run_daily(repo_path: Path, state: Path, *, execute: bool,
         # A PR could appear during preflight; check once more before reservation.
         if open_pr_numbers(repo_path):
             return "Skipped: a PR appeared during preflight"
-        reserve_attempt(state, date, number)
-        print(f"Reserved Japan-local day {date} for Issue #{number}. "
+        reserve_attempt(state, date, number, slot)
+        print(f"Reserved Japan-local day {date}, slot {slot + 1}/4 for Issue #{number}. "
               "One ChatGPT-plan Codex invocation; purchased credits may be consumed.",
               flush=True)
         try:
-            code = invoke_once(repo_path, number, state / f"log-{date}.txt")
+            code = invoke_once(repo_path, number, state / f"log-{date}-slot-{slot}.txt")
         except (OSError, subprocess.TimeoutExpired) as error:
             # Day and Issue remain reserved on any error (including uncertainty).
-            create_private(state / f"result-{date}.json", json.dumps({
-                "dateJst": date, "issue": number,
+            create_private(state / f"result-{date}-slot-{slot}.json", json.dumps({
+                "dateJst": date, "slot": slot, "issue": number,
                 "status": "failed", "failureType": type(error).__name__
             }) + "\n")
             raise RuntimeError("One-shot runner failed; no retry permitted") from None
-        create_private(state / f"result-{date}.json", json.dumps({
-            "dateJst": date, "issue": number, "status": "succeeded" if code == 0 else "failed",
+        create_private(state / f"result-{date}-slot-{slot}.json", json.dumps({
+            "dateJst": date, "slot": slot, "issue": number, "status": "succeeded" if code == 0 else "failed",
             "exitCode": code
         }) + "\n")
         if code != 0:
@@ -220,11 +237,16 @@ def main() -> int:
     parser.add_argument("--max-issues", type=int, default=1)
     args = parser.parse_args()
     try:
-        today = datetime.now(JST).date().isoformat()
+        now = datetime.now(JST)
+        slot = slot_for_hour(now.hour)
+        if slot is None:
+            print("Skipped: first daily slot starts at 09:00 JST")
+            return 0
+        today = now.date().isoformat()
         result = run_daily(
             args.repo_path.expanduser().resolve(strict=True), STATE,
             execute=args.execute, acknowledge_credit_risk=args.acknowledge_credit_risk,
-            max_issues=args.max_issues, date=today)
+            max_issues=args.max_issues, date=today, slot=slot)
         print(result, flush=True)
         return 0
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired,
