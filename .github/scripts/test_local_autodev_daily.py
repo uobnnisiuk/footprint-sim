@@ -164,6 +164,55 @@ class CheckoutTests(unittest.TestCase):
             invoke.assert_not_called()
         self.assertFalse(state.exists())
 
+
+    def test_behind_origin_main_can_be_checked_and_refreshed_safely(self):
+        baseline = self.git("rev-parse", "HEAD")
+        self.git("commit", "--allow-empty", "-qm", "new main commit")
+        latest = self.git("rev-parse", "HEAD")
+        self.git("update-ref", "refs/remotes/origin/main", latest)
+        self.git("checkout", "--detach", baseline)
+        self.git("remote", "add", "origin",
+                 "https://github.com/uobnnisiuk/footprint-sim.git")
+        cache = self.repo / "tools/__pycache__"
+        cache.mkdir()
+        (cache / "module.pyc").write_bytes(b"retained")
+        with self.assertRaisesRegex(RuntimeError, "must match"):
+            daily.verify_checkout(self.repo)
+        daily.verify_checkout(self.repo, allow_behind=True)
+        original = daily.command
+        def mock_fetch(args, cwd, timeout=60, *, strip=True):
+            if "fetch" in args:
+                self.assertIn("--no-tags", args)
+                return ""
+            return original(args, cwd, timeout=timeout, strip=strip)
+        with patch.object(daily, "command", side_effect=mock_fetch):
+            daily.refresh_checkout(self.repo)
+        self.assertEqual(self.git("rev-parse", "HEAD"), latest)
+        self.assertEqual((cache / "module.pyc").read_bytes(), b"retained")
+        daily.verify_checkout(self.repo)
+
+    def test_refresh_rejects_untrusted_remote_before_fetch_or_merge(self):
+        self.git("remote", "add", "origin", "https://example.invalid/evil.git")
+        with patch.object(daily, "command", wraps=daily.command) as command:
+            with self.assertRaisesRegex(RuntimeError, "Untrusted Git remote"):
+                daily.refresh_checkout(self.repo)
+            self.assertFalse(any("fetch" in call.args[0] for call in command.call_args_list))
+
+    def test_refresh_refuses_diverging_commits_and_user_changes(self):
+        self.git("remote", "add", "origin",
+                 "https://github.com/uobnnisiuk/footprint-sim.git")
+        original = self.git("rev-parse", "HEAD")
+        self.git("commit", "--allow-empty", "-qm", "local fork")
+        self.git("update-ref", "refs/remotes/origin/main", original)
+        with patch.object(daily, "command", wraps=daily.command) as command:
+            with self.assertRaisesRegex(RuntimeError, "not an ancestor"):
+                daily.refresh_checkout(self.repo)
+            self.assertFalse(any("fetch" in call.args[0] for call in command.call_args_list))
+        self.git("checkout", "--detach", original)
+        (self.repo / "source.py").write_text("user modification\n")
+        with self.assertRaisesRegex(RuntimeError, "uncommitted changes"):
+            daily.refresh_checkout(self.repo)
+
     def test_fresh_dry_run_without_bytecode_flag_keeps_checkout_clean(self):
         for name in ("local_autodev_daily.py", "local_autodev_queue.py"):
             shutil.copyfile(ROOT / "tools" / name, self.repo / "tools" / name)
@@ -211,6 +260,7 @@ class GuardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "daily"
             with patch.object(daily, "verify_checkout"), \
+                 patch.object(daily, "refresh_checkout"), \
                  patch.object(daily, "open_pr_numbers", return_value=[]), \
                  patch.object(daily.queue, "list_issues", return_value=one_issue()), \
                  patch.object(daily, "invoke_once") as invoke:
@@ -225,6 +275,7 @@ class GuardTests(unittest.TestCase):
     def test_open_pr_blocks_even_with_otherwise_approved_issue(self):
         with tempfile.TemporaryDirectory() as temp:
             with patch.object(daily, "verify_checkout"), \
+                 patch.object(daily, "refresh_checkout"), \
                  patch.object(daily, "open_pr_numbers", return_value=[99]), \
                  patch.object(daily.queue, "list_issues") as list_issues, \
                  patch.object(daily, "invoke_once") as invoke:
@@ -239,6 +290,7 @@ class GuardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "daily"
             with patch.object(daily, "verify_checkout"), \
+                 patch.object(daily, "refresh_checkout"), \
                  patch.object(daily, "open_pr_numbers", return_value=[]), \
                  patch.object(daily.queue, "list_issues", return_value=[]), \
                  patch.object(daily, "invoke_once") as invoke:
@@ -253,6 +305,7 @@ class GuardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "daily"
             with patch.object(daily, "verify_checkout"), \
+                 patch.object(daily, "refresh_checkout"), \
                  patch.object(daily, "open_pr_numbers", return_value=[]), \
                  patch.object(daily.queue, "list_issues", return_value=one_issue()), \
                  patch.object(daily, "invoke_once", return_value=0) as invoke:
@@ -279,6 +332,7 @@ class GuardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "daily"
             with patch.object(daily, "verify_checkout"), \
+                 patch.object(daily, "refresh_checkout"), \
                  patch.object(daily, "open_pr_numbers", return_value=[]), \
                  patch.object(daily.queue, "list_issues", return_value=one_issue()), \
                  patch.object(daily, "invoke_once", return_value=1) as invoke:
@@ -298,6 +352,7 @@ class GuardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "daily"
             with patch.object(daily, "verify_checkout"), \
+                 patch.object(daily, "refresh_checkout"), \
                  patch.object(daily, "open_pr_numbers", return_value=[]), \
                  patch.object(daily.queue, "list_issues", return_value=one_issue()), \
                  patch.object(daily, "invoke_once", side_effect=OSError("secret")) as invoke:
@@ -309,6 +364,29 @@ class GuardTests(unittest.TestCase):
             self.assertTrue((path / "issue-12.json").exists())
             invoke.assert_called_once()
 
+
+
+    def test_real_execution_refreshes_before_issue_discovery(self):
+        with tempfile.TemporaryDirectory() as temp:
+            state = Path(temp) / "daily"
+            call_order = []
+            def refresh(_):
+                call_order.append("refresh")
+            def prs(_):
+                call_order.append("prs")
+                return [17]
+            with patch.object(daily, "verify_checkout"), \
+                 patch.object(daily, "refresh_checkout", side_effect=refresh), \
+                 patch.object(daily, "open_pr_numbers", side_effect=prs), \
+                 patch.object(daily.queue, "list_issues") as issues, \
+                 patch.object(daily, "invoke_once") as invoke:
+                result = daily.run_daily(ROOT, state, execute=True,
+                                         acknowledge_credit_risk=True, max_issues=1,
+                                         date="2026-10-28", slot=0)
+            self.assertIn("open PR", result)
+            self.assertEqual(call_order, ["refresh", "prs"])
+            issues.assert_not_called()
+            invoke.assert_not_called()
 
     def test_scheduled_slots_are_four_and_before_nine_skips(self):
         self.assertEqual(daily.SLOT_HOURS_JST, (9, 13, 17, 21))
@@ -323,6 +401,7 @@ class GuardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "daily"
             with patch.object(daily, "verify_checkout"), \
+                 patch.object(daily, "refresh_checkout"), \
                  patch.object(daily, "open_pr_numbers", return_value=[]), \
                  patch.object(daily.queue, "list_issues",
                               side_effect=[one_issue(12), one_issue(13)]), \
@@ -345,6 +424,7 @@ class GuardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "daily"
             with patch.object(daily, "verify_checkout"), \
+                 patch.object(daily, "refresh_checkout"), \
                  patch.object(daily, "open_pr_numbers", return_value=[]), \
                  patch.object(daily.queue, "list_issues", return_value=one_issue(12)), \
                  patch.object(daily, "invoke_once", return_value=0) as invoke:
@@ -363,6 +443,7 @@ class GuardTests(unittest.TestCase):
             daily.ensure_private_state(path)
             daily.create_private(path / "day-2026-10-28.json", '{"status":"started"}\n')
             with patch.object(daily, "verify_checkout"), \
+                 patch.object(daily, "refresh_checkout"), \
                  patch.object(daily, "open_pr_numbers", return_value=[]), \
                  patch.object(daily.queue, "list_issues", return_value=one_issue(13)), \
                  patch.object(daily, "invoke_once") as invoke:
