@@ -92,9 +92,8 @@ ls -lt ~/.local/state/footprint-local-autodev/diagnostics/
 ```
 
 `codex login status` confirms the stored login method; it does not guarantee the
-next server request will accept those credentials. A prior minimal connection
-test succeeded with the runner's ChatGPT authentication options, but the complete
-Issue-to-Draft-PR flow still needs a separately approved execution. A dry-run
+next server request will accept those credentials. A minimal connection test succeeded with the runner's ChatGPT authentication
+options, and a separately approved full Issue #3 run also succeeded. A dry-run
 checks prerequisites without model inference. Never run `--execute` solely to
 diagnose a failure unless the owner has approved a new one-off execution.
 
@@ -109,6 +108,6 @@ diagnose a failure unless the owner has approved a new one-off execution.
 
 ## Status
 
-Python tests cover authentication output, remote allowlisting, environment filtering, duplicate detection, timeout cleanup, dry-run behavior, and the existing patch guard. A successful dry-run validates prerequisites without starting a model call. End-to-end patch generation and Draft PR publication remain **unverified** until an explicitly approved `--execute` smoke test. This MVP does not poll Issues or run unattended.
+Python tests cover authentication output, remote allowlisting, environment filtering, duplicate detection, timeout cleanup, dry-run behavior, and the existing patch guard. A successful dry-run validates prerequisites without starting a model call. The owner-approved one-off Issue #3 run succeeded with ChatGPT login: patch guard passed, Draft PR #7 was created, CI passed, and the reviewed PR was merged. The single-Issue runner still does not poll Issues or run unattended; see [autodev-queue.md](autodev-queue.md) for the separately opt-in one-Issue queue preview.
 
 CLI authentication and billing references: [OpenAI authentication](https://learn.chatgpt.com/docs/auth), [CLI reference](https://learn.chatgpt.com/docs/cli/reference), [Codex pricing](https://learn.chatgpt.com/docs/pricing).
