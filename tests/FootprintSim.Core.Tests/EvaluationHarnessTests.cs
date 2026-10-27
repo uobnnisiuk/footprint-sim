@@ -150,6 +150,79 @@ public sealed class EvaluationHarnessTests
     }
 
     [Fact]
+    public void S2ObservationLossIsDeterministicAndChangesHazardSearchOutcomes()
+    {
+        const string directory = "s2_intermittent_person_evidence";
+        var seeds = Enumerable.Range(0, 20).ToArray();
+        var scenario = LoadScenario(directory);
+        var engine = new SimulationEngine();
+        var baseline = engine.Run(LoadScenario("s1_debris_transport"), 0);
+        var physicalKinds = scenario.Steps.Select(step => step.Kind).ToHashSet();
+        string PhysicalTrajectory(SimulationRun run) => JsonDefaults.Serialize(
+            run.GroundTruthEvents.Where(item => physicalKinds.Contains(item.Kind))
+                .Select(item => item with { Id = "", CauseEventId = null, Sequence = 0 }).ToArray());
+
+        var presentSeeds = new HashSet<int>();
+        foreach (var seed in seeds)
+        {
+            var first = engine.Run(scenario, seed);
+            var repeat = engine.Run(LoadScenario(directory), seed);
+            Assert.Equal(JsonDefaults.Serialize(first.ObservationSet), JsonDefaults.Serialize(repeat.ObservationSet));
+            Assert.Equal(PhysicalTrajectory(baseline), PhysicalTrajectory(first));
+            Assert.Equal(
+                JsonDefaults.Serialize(baseline.GroundTruthFinalEntityStates),
+                JsonDefaults.Serialize(first.GroundTruthFinalEntityStates));
+
+            var observations = first.ObservationSet.Observations;
+            var personSignals = observations.Where(item =>
+                item.EvidenceType == "coarsePresenceSignal" &&
+                item.SubjectIds.Contains(scenario.TargetPersonId)).ToArray();
+            Assert.DoesNotContain(observations, item => item.ReportedRegionId == "deposition-zone");
+            Assert.Contains(observations, item =>
+                item.ReportedRegionId == "downstream-bank" &&
+                !item.SubjectIds.Contains(scenario.TargetPersonId));
+            if (personSignals.Length > 0)
+            {
+                Assert.Equal("slope-channel", Assert.Single(personSignals).ReportedRegionId);
+                presentSeeds.Add(seed);
+            }
+        }
+
+        Assert.NotEmpty(presentSeeds);
+        Assert.True(presentSeeds.Count < seeds.Length);
+        var batch = RunBatch([directory], seeds);
+        var repeatBatch = RunBatch([directory], seeds);
+        Assert.Equal(JsonDefaults.Serialize(batch), JsonDefaults.Serialize(repeatBatch));
+        Assert.All(batch.Runs, run =>
+        {
+            Assert.True(run.DeviceOnlyPromotionViolation.Available);
+            Assert.Equal(0, run.DeviceOnlyPromotionViolation.Value);
+            Assert.Equal(new[] { "hillside-building" }, run.ConfirmedPersonRegionIds);
+        });
+
+        var hazardRuns = batch.Runs.Where(run => run.StrategyId == SearchStrategyIds.HazardAware).ToArray();
+        Assert.All(hazardRuns, run =>
+        {
+            var present = presentSeeds.Contains(run.Seed);
+            var expected = present
+                ? scenario.HazardTransportEnvelopeRegionIds.OrderBy(id => id, StringComparer.Ordinal).ToArray()
+                : new[] { "hillside-building", "mountain-road" };
+            Assert.Equal(expected, run.CandidateRegionIds);
+            Assert.True(run.GroundTruthContainment.Available);
+            Assert.Equal(present, run.GroundTruthContainment.Value);
+            Assert.Equal(expected.Length, run.CandidateRegionCount.Value);
+            Assert.Equal((decimal)expected.Length / scenario.Regions.Count, run.SearchSpaceFraction.Value);
+        });
+        var aggregate = Assert.Single(batch.Aggregate.Groups, group =>
+            group.StrategyId == SearchStrategyIds.HazardAware);
+        Assert.True(aggregate.UniqueOutcomeCount > 1);
+        Assert.Equal(presentSeeds.Count, aggregate.GroundTruthContainment.Numerator);
+        Assert.Equal(seeds.Length, aggregate.GroundTruthContainment.Denominator);
+        Assert.Equal((decimal)presentSeeds.Count / seeds.Length, aggregate.GroundTruthContainment.Rate);
+        Assert.True(aggregate.CandidateRegionCount.Minimum < aggregate.CandidateRegionCount.Maximum);
+    }
+
+    [Fact]
     public void HandCalculatedPerRunMetricsAndTimeToGuidanceMatch()
     {
         var truth = Truth("region-b", ["region-a", "region-b", "region-c", "region-d"]);
