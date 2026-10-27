@@ -15,7 +15,7 @@ if (-not (Test-Path -LiteralPath $wsl)) {
 }
 
 # Bash --login provides the same CLI PATH used by the WSL login account.
-& $wsl -d Ubuntu -u higuchi --exec /bin/bash --login -c "python3 '$dryScript' --repo-path '$repo'"
+& $wsl -d Ubuntu -u higuchi --exec /bin/bash --login -c "python3 -B '$dryScript' --repo-path '$repo'"
 if ($LASTEXITCODE -ne 0) {
     throw "WSL dry-run failed (exit $LASTEXITCODE). The task was not registered."
 }

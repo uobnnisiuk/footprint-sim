@@ -3,7 +3,9 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import stat
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -20,6 +22,172 @@ SPEC.loader.exec_module(daily)
 
 def one_issue(number=12):
     return [{"number": number, "title": "test issue"}]
+
+
+class CheckoutTests(unittest.TestCase):
+    """Exercise real Git status/ref output, without GitHub or a model CLI."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.repo = Path(self.temp.name) / "repo"
+        self.repo.mkdir()
+        (self.repo / "tools").mkdir()
+        (self.repo / ".github/scripts").mkdir(parents=True)
+        (self.repo / "tools/local_autodev.py").write_text(
+            'raise AssertionError("Runner must never execute in this test")\n')
+        (self.repo / "source.py").write_text("original = True\n")
+        self.git("init", "-q", "--initial-branch=main")
+        self.commit_base()
+
+    def git(self, *args):
+        return subprocess.run(
+            ["git", "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false",
+             "-c", "user.name=Test", "-c", "user.email=test@example.invalid", *args],
+            cwd=self.repo, check=True, text=True, capture_output=True).stdout.strip()
+
+    def commit_base(self):
+        self.git("add", ".")
+        self.git("commit", "-qm", "test fixture")
+        self.git("update-ref", "refs/remotes/origin/main", "HEAD")
+
+    def assert_dirty(self):
+        with self.assertRaisesRegex(RuntimeError, "uncommitted changes"):
+            daily.verify_checkout(self.repo)
+
+    def test_main_and_detached_at_origin_main_are_accepted(self):
+        daily.verify_checkout(self.repo)
+        self.git("checkout", "--detach")
+        daily.verify_checkout(self.repo)
+        self.assertEqual(self.git("branch", "--show-current"), "")
+
+    def test_named_research_branch_even_at_origin_main_is_rejected(self):
+        self.git("checkout", "-b", "research")
+        with self.assertRaisesRegex(RuntimeError, "main or detached"):
+            daily.verify_checkout(self.repo)
+
+    def test_main_and_detached_ahead_or_behind_origin_main_are_rejected(self):
+        old = self.git("rev-parse", "HEAD")
+        self.git("commit", "--allow-empty", "-qm", "local change")
+        new = self.git("rev-parse", "HEAD")
+        for branch in ("main", ""):
+            if not branch:
+                self.git("checkout", "--detach")
+            with self.assertRaisesRegex(RuntimeError, "must match local origin/main"):
+                daily.verify_checkout(self.repo)
+        self.git("update-ref", "refs/remotes/origin/main", new)
+        self.git("checkout", "--detach", old)
+        with self.assertRaisesRegex(RuntimeError, "must match local origin/main"):
+            daily.verify_checkout(self.repo)
+        self.git("branch", "-f", "main", old)
+        self.git("checkout", "main")
+        with self.assertRaisesRegex(RuntimeError, "must match local origin/main"):
+            daily.verify_checkout(self.repo)
+        self.assertEqual(self.git("rev-parse", "HEAD"), old)
+        self.assertEqual(self.git("rev-parse", "origin/main"), new)
+
+    def test_missing_origin_main_is_rejected(self):
+        self.git("update-ref", "-d", "refs/remotes/origin/main")
+        with self.assertRaises(RuntimeError):
+            daily.verify_checkout(self.repo)
+
+    def test_only_known_untracked_bytecode_is_tolerated_without_deletion(self):
+        self.git("checkout", "--detach")
+        for directory in ("tools", ".github/scripts"):
+            cache = self.repo / directory / "__pycache__"
+            cache.mkdir()
+            (cache / "module.cpython-312.pyc").write_bytes(b"cached bytecode")
+        before = self.git("status", "--porcelain", "--untracked-files=all")
+        daily.verify_checkout(self.repo)
+        self.assertEqual(self.git("status", "--porcelain", "--untracked-files=all"), before)
+
+    def test_staged_and_unstaged_source_edits_are_rejected(self):
+        (self.repo / "source.py").write_text("modified = True\n")
+        self.assert_dirty()
+        self.git("add", "source.py")
+        self.assert_dirty()
+
+    def test_tracked_deletion_and_rename_to_cache_are_rejected(self):
+        (self.repo / "source.py").unlink()
+        self.assert_dirty()
+        self.git("restore", "source.py")
+        cache = self.repo / "tools/__pycache__"
+        cache.mkdir()
+        self.git("mv", "source.py", "tools/__pycache__/source.pyc")
+        self.assert_dirty()
+
+    def test_tracked_bytecode_edits_are_rejected(self):
+        cache = self.repo / "tools/__pycache__"
+        cache.mkdir()
+        bytecode = cache / "module.pyc"
+        bytecode.write_bytes(b"original")
+        self.commit_base()
+        bytecode.write_bytes(b"changed")
+        self.assert_dirty()
+        self.git("add", ".")
+        self.assert_dirty()
+
+    def test_untracked_source_and_other_files_are_rejected(self):
+        for name in ("new.py", "tools/__pycache__/new.py",
+                     ".github/scripts/__pycache__/notes.txt",
+                     "elsewhere/__pycache__/module.pyc", "tools/module.pyc",
+                     "tools/__pycache__/nested/module.pyc",
+                     "tools/__pycache__/line\nbreak.py"):
+            with self.subTest(name=name):
+                path = self.repo / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("user content")
+                try:
+                    self.assert_dirty()
+                finally:
+                    path.unlink()
+
+    def test_cache_symlink_is_rejected(self):
+        cache = self.repo / "tools/__pycache__"
+        cache.mkdir()
+        (cache / "module.pyc").symlink_to(self.repo / "source.py")
+        self.assert_dirty()
+
+    def test_dirty_checkout_stops_before_queries_state_or_model(self):
+        (self.repo / "source.py").write_text("modified = True\n")
+        state = Path(self.temp.name) / "daily"
+        with patch.object(daily, "open_pr_numbers") as prs, \
+             patch.object(daily.queue, "list_issues") as issues, \
+             patch.object(daily, "invoke_once") as invoke:
+            for execute in (False, True):
+                with self.assertRaisesRegex(RuntimeError, "uncommitted changes"):
+                    daily.run_daily(self.repo, state, execute=execute,
+                                    acknowledge_credit_risk=True, max_issues=1,
+                                    date="2026-10-27")
+            prs.assert_not_called()
+            issues.assert_not_called()
+            invoke.assert_not_called()
+        self.assertFalse(state.exists())
+
+    def test_fresh_dry_run_without_bytecode_flag_keeps_checkout_clean(self):
+        for name in ("local_autodev_daily.py", "local_autodev_queue.py"):
+            shutil.copyfile(ROOT / "tools" / name, self.repo / "tools" / name)
+        self.commit_base()
+        self.git("checkout", "--detach")
+        fake_bin = Path(self.temp.name) / "bin"
+        fake_bin.mkdir()
+        gh = fake_bin / "gh"
+        gh.write_text('#!/bin/sh\ncase "$1 $2" in\n'
+                      '  "pr list"|"issue list") printf "[]\\n" ;;\n'
+                      '  *) exit 99 ;;\nesac\n')
+        gh.chmod(0o700)
+        env = {k: v for k, v in os.environ.items()
+               if k not in ("PYTHONDONTWRITEBYTECODE", "PYTHONPYCACHEPREFIX", "PYTHONPATH")}
+        env["PATH"] = f"{fake_bin}{os.pathsep}{os.defpath}"
+        env["HOME"] = str(Path(self.temp.name) / "home")
+        result = subprocess.run(
+            [sys.executable, str(self.repo / "tools/local_autodev_daily.py"),
+             "--repo-path", str(self.repo)], env=env, cwd=self.repo,
+            text=True, capture_output=True, timeout=30, check=True)
+        self.assertIn("DRY RUN: queue empty", result.stdout)
+        self.assertEqual(list(self.repo.rglob("__pycache__")), [])
+        self.assertEqual(self.git("status", "--porcelain"), "")
+        self.assertFalse((Path(env["HOME"]) / ".local").exists())
 
 
 class GuardTests(unittest.TestCase):
