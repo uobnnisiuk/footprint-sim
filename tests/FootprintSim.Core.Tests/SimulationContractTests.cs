@@ -400,6 +400,91 @@ public sealed class SimulationContractTests
         Assert.Equal(expectedMessage, exception.Message);
     }
 
+    [Theory]
+    [InlineData(-1, 4)]
+    [InlineData(5, 4)]
+    public void ScenarioRejectsInvalidObservationDelayRanges(int minimumDelayTicks, int maximumDelayTicks)
+    {
+        var baseline = LoadScenario("s1_debris_transport");
+        ScenarioValidator.Validate(baseline);
+        var scenario = CopyWithObservationDelayRange(baseline, minimumDelayTicks, maximumDelayTicks);
+
+        var exception = Assert.Throws<InvalidDataException>(() => ScenarioValidator.Validate(scenario));
+
+        Assert.Equal(
+            "Step 'debris-transport-starts' contains an invalid observation delay range.",
+            exception.Message);
+    }
+
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(2, 2)]
+    [InlineData(2, 4)]
+    public void ScenarioAcceptsObservationDelayRangeBoundaries(int minimumDelayTicks, int maximumDelayTicks)
+    {
+        var baseline = LoadScenario("s1_debris_transport");
+        ScenarioValidator.Validate(baseline);
+
+        ScenarioValidator.Validate(CopyWithObservationDelayRange(baseline, minimumDelayTicks, maximumDelayTicks));
+    }
+
+    private static ScenarioDefinition CopyWithObservationDelayRange(
+        ScenarioDefinition baseline, int minimumDelayTicks, int maximumDelayTicks)
+    {
+        var step = baseline.Steps.Single(item => item.Id == "debris-transport-starts");
+        var observation = step.Observation;
+        Assert.NotNull(observation);
+        Assert.Equal("coarsePresenceSignal", observation.EvidenceType);
+        Assert.Equal(2, observation.MinimumDelayTicks);
+        Assert.Equal(4, observation.MaximumDelayTicks);
+
+        var replacement = new ScenarioStep
+        {
+            Id = step.Id,
+            Tick = step.Tick,
+            Kind = step.Kind,
+            MovementKind = step.MovementKind,
+            SubjectIds = step.SubjectIds,
+            RelatedEntityIds = step.RelatedEntityIds,
+            CauseStepId = step.CauseStepId,
+            Position = step.Position,
+            RelatedPosition = step.RelatedPosition,
+            RegionId = step.RegionId,
+            Payload = step.Payload,
+            Observation = new ObservationSpecification
+            {
+                EvidenceType = observation.EvidenceType,
+                ReportedSubjectIds = observation.ReportedSubjectIds,
+                ReportedPosition = observation.ReportedPosition,
+                ReportedRegionId = observation.ReportedRegionId,
+                EmissionProbability = observation.EmissionProbability,
+                DropProbability = observation.DropProbability,
+                MinimumDelayTicks = minimumDelayTicks,
+                MaximumDelayTicks = maximumDelayTicks,
+                State = observation.State,
+                ConflictProbability = observation.ConflictProbability,
+                ConflictOffsetX = observation.ConflictOffsetX,
+                ConflictOffsetY = observation.ConflictOffsetY,
+                ConflictRegionId = observation.ConflictRegionId,
+                PublicPayload = observation.PublicPayload
+            }
+        };
+
+        return new ScenarioDefinition
+        {
+            SchemaVersion = baseline.SchemaVersion,
+            Id = baseline.Id,
+            Title = baseline.Title,
+            Description = baseline.Description,
+            TargetPersonId = baseline.TargetPersonId,
+            NormalWalkingRadius = baseline.NormalWalkingRadius,
+            HazardTransportEnvelopeRegionIds = baseline.HazardTransportEnvelopeRegionIds,
+            Regions = baseline.Regions,
+            Entities = baseline.Entities,
+            Steps = baseline.Steps.Select(item => ReferenceEquals(item, step) ? replacement : item).ToArray()
+        };
+    }
+
     private static ScenarioDefinition CreateRadiusAndTopologyScenario(
         double radius, double passability, double travelCost)
     {
