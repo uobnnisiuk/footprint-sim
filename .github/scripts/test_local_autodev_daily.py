@@ -1,4 +1,4 @@
-"""Offline tests for the four-slot JST Local AutoDev guard. No live GitHub or AI."""
+"""Offline tests for the eight-slot JST Local AutoDev guard. No live GitHub or AI."""
 import importlib.util
 import json
 import os
@@ -298,7 +298,7 @@ class GuardTests(unittest.TestCase):
                                       acknowledge_credit_risk=True,
                                       max_issues=1, date="2026-10-27")
             self.assertIn("no approved", msg)
-            self.assertFalse((path / "day-2026-10-27-slot-0.json").exists())
+            self.assertFalse((path / "day-2026-10-27-3h-slot-0.json").exists())
             invoke.assert_not_called()
 
     def test_success_reserves_day_and_issue_without_retry(self):
@@ -322,10 +322,10 @@ class GuardTests(unittest.TestCase):
             self.assertIn("already recorded", same_day)
             self.assertIn("all approved open Issues already attempted", next_day)
             invoke.assert_called_once()
-            self.assertEqual(json.loads((path / "result-2026-10-27-slot-0.json").read_text())["status"],
+            self.assertEqual(json.loads((path / "result-2026-10-27-3h-slot-0.json").read_text())["status"],
                              "succeeded")
             self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o700)
-            for name in ("day-2026-10-27-slot-0.json", "issue-12.json", "result-2026-10-27-slot-0.json"):
+            for name in ("day-2026-10-27-3h-slot-0.json", "issue-12.json", "result-2026-10-27-3h-slot-0.json"):
                 self.assertEqual(stat.S_IMODE((path / name).stat().st_mode), 0o600)
 
     def test_failure_stays_attempted_and_never_retries(self):
@@ -345,7 +345,7 @@ class GuardTests(unittest.TestCase):
                                            max_issues=1, date="2026-10-28")
             self.assertIn("all approved open Issues already attempted", next_day)
             invoke.assert_called_once()
-            self.assertEqual(json.loads((path / "result-2026-10-27-slot-0.json").read_text())["status"],
+            self.assertEqual(json.loads((path / "result-2026-10-27-3h-slot-0.json").read_text())["status"],
                              "failed")
 
     def test_timeout_stays_attempted(self):
@@ -388,12 +388,14 @@ class GuardTests(unittest.TestCase):
             issues.assert_not_called()
             invoke.assert_not_called()
 
-    def test_scheduled_slots_are_four_and_before_nine_skips(self):
-        self.assertEqual(daily.SLOT_HOURS_JST, (9, 13, 17, 21))
-        self.assertIsNone(daily.slot_for_hour(8))
-        for hour, slot in ((9, 0), (12, 0), (13, 1),
-                           (16, 1), (17, 2), (20, 2),
-                           (21, 3), (23, 3)):
+    def test_every_three_hours_has_a_distinct_slot(self):
+        self.assertEqual(daily.SLOT_HOURS_JST, (0, 3, 6, 9, 12, 15, 18, 21))
+        self.assertIsNone(daily.slot_for_hour(-1))
+        self.assertIsNone(daily.slot_for_hour(24))
+        for hour, slot in ((0, 0), (2, 0), (3, 1), (5, 1),
+                           (6, 2), (8, 2), (9, 3), (11, 3),
+                           (12, 4), (14, 4), (15, 5), (17, 5),
+                           (18, 6), (20, 6), (21, 7), (23, 7)):
             with self.subTest(hour=hour):
                 self.assertEqual(daily.slot_for_hour(hour), slot)
 
@@ -415,8 +417,8 @@ class GuardTests(unittest.TestCase):
             self.assertIn("#12 completed", first)
             self.assertIn("#13 completed", second)
             self.assertEqual(invoke.call_count, 2)
-            self.assertTrue((path / "day-2026-10-28-slot-0.json").exists())
-            self.assertTrue((path / "day-2026-10-28-slot-1.json").exists())
+            self.assertTrue((path / "day-2026-10-28-3h-slot-0.json").exists())
+            self.assertTrue((path / "day-2026-10-28-3h-slot-1.json").exists())
             self.assertTrue((path / "issue-12.json").exists())
             self.assertTrue((path / "issue-13.json").exists())
 
@@ -475,8 +477,34 @@ class GuardTests(unittest.TestCase):
                                          acknowledge_credit_risk=True, max_issues=1,
                                          date="2026-10-28", slot=2)
             self.assertIn("all approved open Issues already attempted", result)
-            self.assertFalse((state / "day-2026-10-28-slot-2.json").exists())
+            self.assertFalse((state / "day-2026-10-28-3h-slot-2.json").exists())
             invoke.assert_not_called()
+
+    def test_legacy_four_slot_marker_blocks_matching_three_hour_window(self):
+        with tempfile.TemporaryDirectory() as temp:
+            state = Path(temp) / "daily"
+            daily.ensure_private_state(state)
+            daily.create_private(state / "day-2026-10-28-slot-0.json",
+                                 '{"issue":13,"status":"started"}\n')
+            self.assertEqual(
+                daily.legacy_slot_markers(state, "2026-10-28", 3),
+                [state / "day-2026-10-28-slot-0.json"])
+            with patch.object(daily, "verify_checkout"), \
+                 patch.object(daily, "refresh_checkout"), \
+                 patch.object(daily, "open_pr_numbers", return_value=[]), \
+                 patch.object(daily.queue, "list_issues", return_value=one_issue(21)), \
+                 patch.object(daily, "invoke_once") as invoke:
+                blocked = daily.run_daily(ROOT, state, execute=True,
+                                          acknowledge_credit_risk=True, max_issues=1,
+                                          date="2026-10-28", slot=3)
+                allowed = daily.run_daily(ROOT, state, execute=True,
+                                          acknowledge_credit_risk=True, max_issues=1,
+                                          date="2026-10-28", slot=4)
+            self.assertIn("slot attempt already recorded", blocked)
+            self.assertIn("#21 completed", allowed)
+            invoke.assert_called_once()
+            self.assertTrue((state / "day-2026-10-28-slot-0.json").exists())
+            self.assertTrue((state / "day-2026-10-28-3h-slot-4.json").exists())
 
     def test_legacy_date_marker_blocks_today_even_in_new_slot(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -496,7 +524,7 @@ class GuardTests(unittest.TestCase):
 
     def test_out_of_range_slot_rejected_before_any_model_work(self):
         with patch.object(daily, "verify_checkout") as verify:
-            for slot in (-1, 4, True):
+            for slot in (-1, 8, True):
                 with self.subTest(slot=slot):
                     with self.assertRaisesRegex(ValueError, "slot"):
                         daily.run_daily(ROOT, ROOT / "nonexistent-state", execute=True,
