@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """Regression tests for the AutoDev patch trust boundary (stdlib only)."""
 import importlib.util
+from contextlib import redirect_stderr
+from io import StringIO
+import json
 from pathlib import Path
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
+from unittest.mock import patch as mock_patch
 
 SPEC = importlib.util.spec_from_file_location("patch_guard", Path(__file__).with_name("patch_guard.py"))
 guard = importlib.util.module_from_spec(SPEC)
@@ -229,6 +234,113 @@ class PatchGuardTests(unittest.TestCase):
 
     def test_no_patch(self):
         self.reject(b"")
+
+    def diagnostic_cli(self, data, base=None):
+        self.patch_file.write_bytes(data)
+        return subprocess.run(
+            [sys.executable, "-B", str(Path(guard.__file__).resolve()), "import",
+             str(self.patch_file), "--base", base or self.base, "--diagnostic-json"],
+            capture_output=True, text=True, check=False,
+        )
+
+    def reject_with_reason(self, data, reason, base=None):
+        before = self.snapshot()
+        result = self.diagnostic_cli(data, base)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(json.loads(result.stderr), {
+            "schema_version": 1, "command": "patch_guard", "reason": reason,
+        })
+        self.assertNotIn("PRIVATE", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertEqual(before, self.snapshot(), "Diagnostic rejection modified the checkout")
+
+    def test_cli_reports_malformed_diff_and_hunks_without_raw_patch(self):
+        self.write("src/code.cs", b"changed PRIVATE_CONTENT\n")
+        valid = self.make_patch()
+        for data, reason in (
+            (b"PRIVATE_TOKEN invalid diff\n", "malformed_diff"),
+            (valid.replace(b"@@ -1 +1 @@", b"@@ -1,2 +1 @@"), "malformed_hunk"),
+            (valid.replace(b"+++ b/src/code.cs", b"+++ b/PRIVATE_PATH"), "malformed_diff"),
+        ):
+            with self.subTest(reason=reason):
+                self.reject_with_reason(data, reason)
+
+    def test_cli_reports_context_mismatch_separately_from_invalid_syntax(self):
+        self.write("src/code.cs", b"changed PRIVATE_CONTENT\n")
+        data = self.make_patch().replace(b"-old\n", b"-PRIVATE_WRONG_ORIGINAL\n")
+        self.reject_with_reason(data, "patch_not_applicable")
+
+    def test_cli_reports_disallowed_path_without_disclosing_it(self):
+        path = ".github/PRIVATE_TOKEN.yml"
+        data = (f"diff --git a/{path} b/{path}\nnew file mode 100644\n"
+                f"--- /dev/null\n+++ b/{path}\n@@ -0,0 +1 @@\n+PRIVATE_CONTENT\n").encode()
+        self.reject_with_reason(data, "disallowed_path")
+
+    def test_cli_reports_baseline_and_dirty_checkout(self):
+        self.write("src/code.cs", b"changed\n")
+        data = self.make_patch()
+        self.reject_with_reason(data, "baseline_mismatch", "0" * 40)
+        self.reject_with_reason(data, "baseline_mismatch", "PRIVATE_BAD_BASE")
+        self.write("docs/PRIVATE_LOCAL.md", b"PRIVATE_LOCAL_CONTENT\n")
+        self.reject_with_reason(data, "dirty_checkout")
+
+    def test_cli_reports_empty_oversized_and_invalid_encoding(self):
+        for data, reason in (
+            (b"", "invalid_patch"),
+            (b"PRIVATE\0CONTENT", "invalid_patch"),
+            (b"x" * (guard.MAX_PATCH_BYTES + 1), "size_limit"),
+            (b"PRIVATE\xff\n", "invalid_encoding"),
+        ):
+            with self.subTest(reason=reason):
+                self.reject_with_reason(data, reason)
+
+    def test_cli_diagnostic_mode_preserves_success_and_newline_normalization(self):
+        self.write("src/code.cs", b"changed\n")
+        data = self.make_patch().removesuffix(b"\n")
+        result = self.diagnostic_cli(data)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, "")
+        self.assertIn("Applied 1 approved files", result.stdout)
+        self.assertEqual((self.root / "src/code.cs").read_bytes(), b"changed\n")
+
+    def test_unexpected_errors_have_only_fixed_safe_cli_diagnostics(self):
+        for error, reason in (
+            (OSError("PRIVATE_IO_ERROR"), "io_error"),
+            (RuntimeError("PRIVATE_INTERNAL_ERROR"), "internal_error"),
+            (guard.GuardRejection("PRIVATE_UNKNOWN_REASON", "PRIVATE_ERROR"), "internal_error"),
+            (guard.GuardRejection(["PRIVATE_REASON"], "PRIVATE_ERROR"), "internal_error"),
+        ):
+            output = StringIO()
+            with self.subTest(reason=reason), \
+                 mock_patch.object(sys, "argv", ["patch_guard.py", "import", str(self.patch_file),
+                                                 "--base", self.base, "--diagnostic-json"]), \
+                 mock_patch.object(guard, "import_patch", side_effect=error), \
+                 redirect_stderr(output), self.assertRaises(SystemExit) as raised:
+                guard.main()
+            self.assertEqual(raised.exception.code, 1)
+            self.assertEqual(json.loads(output.getvalue()), {
+                "schema_version": 1, "command": "patch_guard", "reason": reason,
+            })
+            self.assertNotIn("PRIVATE", output.getvalue())
+
+    def test_git_failures_are_classified_without_using_git_output(self):
+        for command, reason in (("apply", "patch_not_applicable"), ("read-tree", "git_failure")):
+            error = subprocess.CalledProcessError(1, ["git", command],
+                                                 output=b"PRIVATE_STDOUT", stderr=b"PRIVATE_STDERR")
+            with self.subTest(command=command), \
+                 mock_patch.object(guard.subprocess, "run", side_effect=error), \
+                 self.assertRaises(guard.GuardRejection) as caught:
+                guard.git(command)
+            self.assertEqual(guard.failure_reason(caught.exception), reason)
+            self.assertNotIn("PRIVATE", str(caught.exception))
+
+    def test_without_diagnostic_flag_local_exceptions_still_propagate(self):
+        with mock_patch.object(sys, "argv", ["patch_guard.py", "import", str(self.patch_file),
+                                            "--base", self.base]), \
+             mock_patch.object(guard, "import_patch", side_effect=RuntimeError("local detail")), \
+             self.assertRaisesRegex(RuntimeError, "local detail"):
+            guard.main()
 
 
 if __name__ == "__main__":

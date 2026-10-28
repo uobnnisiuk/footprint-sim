@@ -66,23 +66,49 @@ Generated code is not run locally; however, it **will execute during GitHub CI**
 
 ## Failure diagnostics (no model call)
 
-On a nonzero exit or timeout from `codex exec`, the runner saves a small JSON
+On a nonzero exit or timeout from `codex exec` or patch validation, the runner saves a small JSON
 summary under `~/.local/state/footprint-local-autodev/diagnostics/`. The directory
 is restricted to 0700 and each uniquely named file to 0600. Symlinked diagnostic
 paths are refused. The error message includes the local file path; no diagnostic
 is automatically uploaded to GitHub.
 
-The summary contains only fixed fields: schema version, command, exit or timeout,
-exit code, a known error category/code, and an HTTP error status when recognized.
+Codex summaries (`codex-failure-*.json`) contain only fixed fields: schema version,
+command, exit or timeout, exit code, a known error category/code, and an HTTP error
+status when recognized.
 It never saves arbitrary stderr lines, stdout, prompts, credential fields, URLs,
 or response bodies. Unknown errors stay `unknown`; endpoint and unrecognized
 error details are intentionally unavailable. Classification is a hint from CLI
 output, not proof of a particular authentication failure such as token expiry.
 
-Only the Codex invocation opts into this logging. A later Git cleanup failure
-cannot overwrite its unique record. A diagnostic write failure still stops the
+Patch validation summaries (`patch-guard-failure-*.json`) contain the schema version,
+`command: "patch_guard"`, `stage: "patch_validation"`, Issue number, trusted base SHA,
+exit/timeout status, exit code, and a fixed `reason`. The guard's optional
+`--diagnostic-json` mode emits this reason without a traceback, patch contents,
+filenames from the patch, or raw Git output. The runner accepts only the exact
+protocol and known reasons; malformed or unrecognized output becomes `unknown`.
+
+| Reason | Next inspection |
+| --- | --- |
+| `invalid_patch`, `malformed_diff`, `malformed_hunk`, `invalid_encoding` | Patch transport, headers, hunk line counts, or UTF-8 encoding |
+| `patch_not_applicable` | Patch context against the trusted base commit |
+| `disallowed_path`, `disallowed_file`, `size_limit` | Allowed paths, file modes, file types, and size limits |
+| `baseline_mismatch`, `dirty_checkout` | Temporary checkout baseline and cleanliness |
+| `git_failure`, `io_error`, `internal_error`, `unknown` | Local execution or diagnostic protocol failure |
+
+The progress log is flushed before and after validation, so `Codex completed;
+validating generated patch...` identifies the transition. A patch-guard failure
+also prints its fixed reason and diagnostic path. The daily result's `exitCode`
+is the single-Issue runner's status, not necessarily the Codex process's status.
+
+Only Codex and patch validation opt into this logging. A later Git cleanup failure
+cannot overwrite their unique records. A diagnostic write failure still stops the
 command safely without exposing raw output. The runner does not retry failed
 invocations or start further model work.
+
+Temporary candidate patches are still deleted on exit, and `--ephemeral` does not
+retain a Codex session transcript. This change cannot recover detailed reasons for
+older failures whose diagnostics were discarded; do not remove attempt markers
+or rerun an Issue solely to reconstruct them.
 
 To inspect locally after a failure:
 
