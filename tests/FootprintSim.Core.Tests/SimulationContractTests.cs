@@ -278,7 +278,7 @@ public sealed class SimulationContractTests
 
         var expectedMessage = field switch
         {
-            "radius" => "Normal walking radius cannot be negative.",
+            "radius" => "Normal walking radius must be finite.",
             "passability" => "Region 'validation-region' passability must be between 0 and 1.",
             _ => "Region 'validation-region' connection to 'validation-region' travel cost must be finite."
         };
