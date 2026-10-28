@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run at most one approved Local AutoDev Issue in each of four JST daily slots.
+"""Run at most one approved Local AutoDev Issue in each of eight 3-hour JST daily slots.
 
 No background scheduling is installed by this file. Execution requires two
 explicit flags and a separate Windows Task Scheduler installation step.
@@ -26,13 +26,30 @@ DEFAULT_PATH = Path(__file__).resolve().parents[1]
 STATE = Path.home() / ".local" / "state" / "footprint-local-autodev" / "daily"
 JST = ZoneInfo("Asia/Tokyo")
 MAX_PR_LIST = 500
-SLOT_HOURS_JST = (9, 13, 17, 21)
+SLOT_HOURS_JST = (0, 3, 6, 9, 12, 15, 18, 21)
+LEGACY_SLOT_HOURS_JST = (9, 13, 17, 21)
 
 
 def slot_for_hour(hour: int) -> int | None:
-    """Slot 0 begins at 09:00 JST; no unattended runs before that hour."""
-    available = [i for i, start in enumerate(SLOT_HOURS_JST) if hour >= start]
-    return available[-1] if available else None
+    """Return the 3-hour JST slot index; 00:00–02:59 is slot zero."""
+    if type(hour) is not int or not 0 <= hour <= 23:
+        return None
+    return hour // 3
+
+
+def slot_marker(state: Path, date: str, slot: int) -> Path:
+    # Distinct namespace: the previous four-slot ledger used 'slot-N'.
+    return state / f"day-{date}-3h-slot-{slot}.json"
+
+
+def legacy_slot_markers(state: Path, date: str, slot: int) -> list[Path]:
+    # Every historic execution slot belongs to a 3-hour bucket.
+    # Honor its irrevocable attempt even when switching schedules mid-day.
+    return [
+        state / f"day-{date}-slot-{old_slot}.json"
+        for old_slot, hour in enumerate(LEGACY_SLOT_HOURS_JST)
+        if hour // 3 == slot
+    ]
 
 
 def command(args: list[str], cwd: Path, timeout: int = 60, *,
@@ -154,10 +171,12 @@ def reserve_attempt(state: Path, date: str, issue_number: int, slot: int) -> Non
     # An old one-per-day marker means the former runner already executed.
     # Never reinterpret its authorization as an additional slot.
     legacy = state / f"day-{date}.json"
-    day_file = state / f"day-{date}-slot-{slot}.json"
+    day_file = slot_marker(state, date, slot)
     issue_file = state / f"issue-{issue_number}.json"
     if legacy.exists() or legacy.is_symlink():
         raise RuntimeError("Legacy daily attempt exists; no further run today")
+    if any(p.exists() or p.is_symlink() for p in legacy_slot_markers(state, date, slot)):
+        raise RuntimeError("Previous four-slot attempt already recorded in this window; no retry")
     if day_file.exists() or day_file.is_symlink():
         raise RuntimeError("Already attempted an Issue in this slot; no retry")
     if issue_file.exists() or issue_file.is_symlink():
@@ -222,8 +241,10 @@ def run_daily(repo_path: Path, state: Path, *, execute: bool,
         if not candidates:
             return "DRY RUN: queue empty"
         # A slot marker overrides later candidates; no second attempt that slot.
-        if ((state / f"day-{date}.json").exists() or
-                (state / f"day-{date}-slot-{slot}.json").exists()):
+        if ((state / f"day-{date}.json").exists()
+                or slot_marker(state, date, slot).exists()
+                or any(p.exists() or p.is_symlink()
+                       for p in legacy_slot_markers(state, date, slot))):
             return "DRY RUN: slot attempt already recorded; would stop"
         number = first_unattempted_issue(candidates, state)
         if number is None:
@@ -244,7 +265,9 @@ def run_daily(repo_path: Path, state: Path, *, execute: bool,
             return "Skipped: another daily runner is active"
         if (state / f"day-{date}.json").exists():
             return "Skipped: legacy daily attempt already recorded"
-        if (state / f"day-{date}-slot-{slot}.json").exists():
+        if (slot_marker(state, date, slot).exists() or
+                any(p.exists() or p.is_symlink()
+                    for p in legacy_slot_markers(state, date, slot))):
             return "Skipped: slot attempt already recorded"
         # Run the unattended refresh only after the lock and before any model
         # attempt; unsafe or non-fast-forward states must stop closed.
@@ -262,14 +285,14 @@ def run_daily(repo_path: Path, state: Path, *, execute: bool,
         if open_pr_numbers(repo_path):
             return "Skipped: a PR appeared during preflight"
         reserve_attempt(state, date, number, slot)
-        print(f"Reserved Japan-local day {date}, slot {slot + 1}/4 for Issue #{number}. "
+        print(f"Reserved Japan-local day {date}, slot {slot + 1}/8 for Issue #{number}. "
               "One ChatGPT-plan Codex invocation; purchased credits may be consumed.",
               flush=True)
         try:
-            code = invoke_once(repo_path, number, state / f"log-{date}-slot-{slot}.txt")
+            code = invoke_once(repo_path, number, state / f"log-{date}-3h-slot-{slot}.txt")
         except (OSError, subprocess.TimeoutExpired) as error:
             # Day and Issue remain reserved on any error (including uncertainty).
-            create_private(state / f"result-{date}-slot-{slot}.json", json.dumps({
+            create_private(state / f"result-{date}-3h-slot-{slot}.json", json.dumps({
                 "dateJst": date, "slot": slot, "issue": number,
                 "status": "failed", "failureType": type(error).__name__
             }) + "\n")
@@ -297,7 +320,7 @@ def main() -> int:
         now = datetime.now(JST)
         slot = slot_for_hour(now.hour)
         if slot is None:
-            print("Skipped: first daily slot starts at 09:00 JST")
+            print("Skipped: invalid local slot time")
             return 0
         today = now.date().isoformat()
         result = run_daily(
