@@ -493,7 +493,7 @@ class GuardTests(unittest.TestCase):
                  patch.object(daily, "refresh_checkout"), \
                  patch.object(daily, "open_pr_numbers", return_value=[]), \
                  patch.object(daily.queue, "list_issues", return_value=one_issue(21)), \
-                 patch.object(daily, "invoke_once") as invoke:
+                 patch.object(daily, "invoke_once", return_value=0) as invoke:
                 blocked = daily.run_daily(ROOT, state, execute=True,
                                           acknowledge_credit_risk=True, max_issues=1,
                                           date="2026-10-28", slot=3)
