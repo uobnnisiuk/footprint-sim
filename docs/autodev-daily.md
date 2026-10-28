@@ -1,9 +1,9 @@
-# Unattended Local AutoDev: up to four JST slots/day
+# Unattended Local AutoDev: one bounded attempt per 3-hour JST window
 
 **Owner approval:** On 2026-10-27 the owner approved unattended
 ChatGPT-plan Local AutoDev execution and subsequently requested increased
-frequency. The enabled schedule offers **09:05, 13:05, 17:05, and 21:05 JST**,
-with **at most one Issue attempt per slot (four per JST day)**. It may consume
+frequency. The enabled schedule offers **00:05, 03:05, 06:05, 09:05, 12:05, 15:05, 18:05, and 21:05 JST**,
+with **at most one Issue attempt per slot (eight per JST day)**. It may consume
 existing purchased ChatGPT credits.
 This approval does **not** authorize API-key billing or automatic PR merge.
 
@@ -11,8 +11,8 @@ This approval does **not** authorize API-key billing or automatic PR merge.
 
 `tools/local_autodev_daily.py` is separate from the existing read-only
 daily 09:00 monitor, and is **not a background service** on its own.
-The Windows task installer registers a second task at **09:05, 13:05, 17:05,
-21:05 Asia/Tokyo** only while the usual Windows account is signed in.
+The Windows task installer registers a second task at **00:05, 03:05, 06:05, 09:05, 12:05,
+15:05, 18:05 and 21:05 Asia/Tokyo** only while the usual Windows account is signed in.
 These are opportunities to process another Issue, **not guaranteed runs**:
 every open PR, including Draft, blocks further work until reviewed/merged.
 
@@ -41,7 +41,7 @@ Each run:
    permission-restricted per-slot and per-Issue attempt markers **before**
    invoking Codex. These markers permanently block the same Issue from being
    retried even on subsequent days, and block more than one attempt in any one
-   of the four JST daily slots. A legacy one-per-day marker blocks that day's
+   of the eight three-hour JST daily slots. A legacy one-per-day marker blocks that day's
    additional slots after an in-place upgrade.
 5. Delegates **one** call to `tools/local_autodev.py`, which checks
    ChatGPT authentication and the GitHub owner, runs Codex in a restricted
@@ -53,13 +53,17 @@ Logs and attempt markers are private WSL files at:
 
 ```text
 ~/.local/state/footprint-local-autodev/daily/
-  day-YYYY-MM-DD-slot-0.json  # 09:05 slot
-  day-YYYY-MM-DD-slot-1.json  # 13:05 slot
-  day-YYYY-MM-DD-slot-2.json  # 17:05 slot
-  day-YYYY-MM-DD-slot-3.json  # 21:05 slot
+  day-YYYY-MM-DD-3h-slot-0.json  # 00:05
+  day-YYYY-MM-DD-3h-slot-1.json  # 03:05
+  day-YYYY-MM-DD-3h-slot-2.json  # 06:05
+  day-YYYY-MM-DD-3h-slot-3.json  # 09:05
+  day-YYYY-MM-DD-3h-slot-4.json  # 12:05
+  day-YYYY-MM-DD-3h-slot-5.json  # 15:05
+  day-YYYY-MM-DD-3h-slot-6.json  # 18:05
+  day-YYYY-MM-DD-3h-slot-7.json  # 21:05
   issue-<number>.json
-  result-YYYY-MM-DD-slot-<slot>.json
-  log-YYYY-MM-DD-slot-<slot>.txt
+  result-YYYY-MM-DD-3h-slot-<slot>.json
+  log-YYYY-MM-DD-3h-slot-<slot>.txt
 ```
 
 The directory is restricted to mode 0700; records/logs use 0600.
@@ -152,12 +156,12 @@ Then, in **Windows PowerShell**, as the normal logged-in user:
 If local PowerShell execution policy blocks scripts, run the file from a
 one-time process with `powershell.exe -NoProfile -ExecutionPolicy Bypass -File`
 instead. The installer checks Tokyo timezone, verifies read-only WSL preflight,
-then **replaces** the triggers on the existing task `Footprint Local AutoDev Daily` with four times.
+then **replaces** the triggers on the existing task `Footprint Local AutoDev Daily` with eight 3-hour times.
 The task name remains the same, and the existing 09:00 read-only monitor is not changed.
 Settings:
 
 - WSL distro `Ubuntu` and WSL user `higuchi`;
-- daily Windows-local 09:05, 13:05, 17:05, 21:05 schedule;
+- daily Windows-local 00:05, 03:05, 06:05, 09:05, 12:05, 15:05, 18:05, 21:05 schedule;
 - interactive Windows user principal at limited privilege;
 - ignore concurrent triggers;
 - 40-minute execution limit, no retry and no waking the PC;
@@ -197,9 +201,28 @@ in force; this program itself never performs a merge.
 
 A PR remains review-gated: even CI success alone does not merge code.
 The next Issue (#12, then #13) cannot run until the owner reviews and merges
-the earlier PR. If a PR is still open at 13:05, 17:05 or 21:05, those
+the earlier PR. If a PR is still open at the next three-hour scheduled time, those
 opportunities are skipped without model usage. No attempt at skipped slots
 is made later that day. That constraint is deliberate and can slow progress, but keeps
 candidate code from stacking uncontrolled changes. The per-slot counter uses the
 Windows/WSL local machine's clock translated into Asia/Tokyo; clock tampering
 or manually deleting ledger files is outside the threat model.
+
+## Migration from four slots to 3-hour cadence
+
+The earlier four-slot ledger used `day-YYYY-MM-DD-slot-N.json`, with N
+associated with 09:05, 13:05, 17:05, 21:05. The newer eight-slot ledger uses
+a distinct `-3h-slot-N.json` namespace. Existing four-slot attempts remain
+authoritative inside their corresponding three-hour windows. The original
+one-per-day legacy marker also remains authoritative. Per-Issue
+`issue-N.json` markers are **never reset** or reused.
+
+A new checkout update alone does not change Windows Task Scheduler. After
+the reviewed PR is merged and the dedicated WSL checkout is updated, rerun
+`install_local_autodev_daily.ps1`. It replaces the four triggers with eight
+and performs a read-only dry run; it does **not** start Codex. The Windows
+account must still be logged on and PC awake at each trigger time.
+
+Moving from four to eight potential Codex calls daily increases plan/credit
+consumption risk. There is still no automatic credit-balance spending cap.
+An approved unattempted Issue is needed, and any open PR blocks the run.

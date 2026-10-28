@@ -20,18 +20,18 @@ if ($LASTEXITCODE -ne 0) {
     throw "WSL dry-run failed (exit $LASTEXITCODE). The task was not registered."
 }
 $action = New-ScheduledTaskAction -Execute $wsl -Argument ("-d Ubuntu -u higuchi --exec /bin/bash --login " + $entry)
-$triggers = @('09:05', '13:05', '17:05', '21:05') | ForEach-Object { New-ScheduledTaskTrigger -Daily -At $_ }
+$triggers = @('00:05', '03:05', '06:05', '09:05', '12:05', '15:05', '18:05', '21:05') | ForEach-Object { New-ScheduledTaskTrigger -Daily -At $_ }
 $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 40) -StartWhenAvailable:$false -WakeToRun:$false
 $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 $principal = New-ScheduledTaskPrincipal -UserId $identity -LogonType Interactive -RunLevel Limited
 
 # Leaves the existing read-only 'Footprint Local AutoDev Monitor' untouched.
-Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $triggers -Settings $settings -Principal $principal -Description 'Owner-authorized, up to four JST slots per day, one ChatGPT-plan Codex Issue per slot; no auto-merge' -Force | Out-Null
+Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $triggers -Settings $settings -Principal $principal -Description 'Owner-authorized, eight three-hour JST slots per day, one ChatGPT-plan Codex Issue per slot; no auto-merge' -Force | Out-Null
 
 $task = Get-ScheduledTask -TaskName $taskName
 $info = Get-ScheduledTaskInfo -TaskName $taskName
 Write-Host "Registered: $($task.TaskName), state: $($task.State)"
 Write-Host "Next run: $($info.NextRunTime)"
-Write-Host "Daily slots JST: 09:05, 13:05, 17:05, 21:05"
+Write-Host "Daily slots JST: 00:05, 03:05, 06:05, 09:05, 12:05, 15:05, 18:05, 21:05"
 Write-Host 'No AI call was started by this installer.'
 Write-Host 'To disable: Disable-ScheduledTask -TaskName "Footprint Local AutoDev Daily"'
