@@ -1,0 +1,22 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "status", "edits"],
+  "properties": {
+    "version": {"type": "integer", "enum": [1]},
+    "status": {"type": "string", "enum": ["changes", "no_changes"]},
+    "edits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "before", "after"],
+        "properties": {
+          "path": {"type": "string"},
+          "before": {"type": "string"},
+          "after": {"type": "string"}
+        }
+      }
+    }
+  }
+}
