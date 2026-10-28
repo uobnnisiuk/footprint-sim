@@ -297,7 +297,7 @@ def run_daily(repo_path: Path, state: Path, *, execute: bool,
                 "status": "failed", "failureType": type(error).__name__
             }) + "\n")
             raise RuntimeError("One-shot runner failed; no retry permitted") from None
-        create_private(state / f"result-{date}-slot-{slot}.json", json.dumps({
+        create_private(state / f"result-{date}-3h-slot-{slot}.json", json.dumps({
             "dateJst": date, "slot": slot, "issue": number, "status": "succeeded" if code == 0 else "failed",
             "exitCode": code
         }) + "\n")
