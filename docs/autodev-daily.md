@@ -64,6 +64,24 @@ A crash or interruption deliberately consumes the attempt without re-running.
 Do not delete markers to reset a failed Issue without manually investigating
 the cause and getting a new approval for any retry.
 
+The daily runner invokes `tools/local_autodev.py` directly. It does not update the
+older controller's `attempts/` directory or `last-failure.json`. The `started`
+day marker records the reservation; use `result-...json` for the final outcome.
+Its `exitCode` is the single-Issue runner's exit code, not Codex's exit code.
+
+Codex failures and subsequent patch-validation failures have separate private
+summaries under `~/.local/state/footprint-local-autodev/diagnostics/`. For a guard
+failure, the daily log includes a fixed reason and a `patch-guard-failure-*.json`
+path. That JSON identifies the Issue and trusted base SHA. See
+[failure diagnostics](autodev-local.md#failure-diagnostics-no-model-call) for
+reason codes and what is deliberately not retained. Logs made before this
+diagnostic support cannot be reconstructed by reading the older controller files.
+
+Deploy the runner and guard together through the reviewed main branch: the
+runner executes the guard from a temporary checkout of `origin/main`. Replacing
+only the local runner while main still has the old guard is not a supported
+upgrade. An upgrade does not authorize or clear a recorded Issue attempt.
+
 **No hard usage or financial cap exists.** ChatGPT plan usage is consumed;
 pre-purchased credits can be consumed when included allowance runs out.
 Turning auto-recharge OFF prevents automatic *purchase* but does not guarantee

@@ -23,6 +23,12 @@ OWNER = "uobnnisiuk"
 LABEL = "local-autodev"
 DEFAULT_PATH = Path(__file__).resolve().parents[1]
 BRANCH_PREFIX = "local-autodev/issue-"
+PATCH_GUARD_REASONS = frozenset({
+    "invalid_patch", "malformed_diff", "malformed_hunk", "disallowed_path",
+    "disallowed_file", "size_limit", "baseline_mismatch", "dirty_checkout",
+    "patch_not_applicable", "git_failure", "invalid_encoding", "io_error",
+    "internal_error",
+})
 
 
 def safe_failure_diagnostic(stderr: str) -> dict:
@@ -72,12 +78,64 @@ def save_codex_failure(diagnostics_dir: Path, status: str, stderr: str) -> Path:
         "exit_code": int(exit_match.group(1)) if exit_match else None,
         **safe_failure_diagnostic(stderr),
     }
+    return write_private_diagnostic(diagnostics_dir, diagnostic, "codex-failure-")
+
+
+def safe_patch_guard_reason(stderr: str) -> str:
+    """Accept only the guard's bounded, fixed-field diagnostic protocol."""
+    if len(stderr) > 4096:
+        return "unknown"
+
+    def unique_fields(pairs: list[tuple]) -> dict:
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("Duplicate diagnostic field")
+            result[key] = value
+        return result
+
+    try:
+        diagnostic = json.loads(stderr, object_pairs_hook=unique_fields)
+    except (ValueError, RecursionError):
+        return "unknown"
+    if (not isinstance(diagnostic, dict)
+            or set(diagnostic) != {"schema_version", "command", "reason"}
+            or type(diagnostic["schema_version"]) is not int
+            or diagnostic["schema_version"] != 1
+            or diagnostic["command"] != "patch_guard"
+            or not isinstance(diagnostic["reason"], str)
+            or diagnostic["reason"] not in PATCH_GUARD_REASONS):
+        return "unknown"
+    return diagnostic["reason"]
+
+
+def save_patch_guard_failure(diagnostics_dir: Path, status: str, stderr: str,
+                             *, issue_number: int, base_sha: str) -> Path:
+    """Keep correlation and fixed failure codes, never patch or CLI text."""
+    exit_match = re.fullmatch(r"exit=(-?\d{1,3})", status)
+    if status != "timeout" and exit_match is None:
+        raise ValueError("Invalid diagnostic status")
+    if type(issue_number) is not int or issue_number < 1:
+        raise ValueError("Invalid diagnostic Issue number")
+    if not isinstance(base_sha, str) or not re.fullmatch(r"[a-f0-9]{40}", base_sha):
+        raise ValueError("Invalid diagnostic baseline")
+    diagnostic = {
+        "schema_version": 1, "command": "patch_guard", "stage": "patch_validation",
+        "issue": issue_number, "base_sha": base_sha,
+        "status": "timeout" if status == "timeout" else "exit",
+        "exit_code": int(exit_match.group(1)) if exit_match else None,
+        "reason": safe_patch_guard_reason(stderr),
+    }
+    return write_private_diagnostic(diagnostics_dir, diagnostic, "patch-guard-failure-")
+
+
+def write_private_diagnostic(diagnostics_dir: Path, diagnostic: dict, prefix: str) -> Path:
     diagnostics_dir = diagnostics_dir.absolute()
     if any(path.is_symlink() for path in (diagnostics_dir, *diagnostics_dir.parents)):
         raise OSError("Diagnostic path contains a symlink")
     diagnostics_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
     diagnostics_dir.chmod(0o700)
-    descriptor, name = tempfile.mkstemp(prefix="codex-failure-", suffix=".json",
+    descriptor, name = tempfile.mkstemp(prefix=prefix, suffix=".json",
                                         dir=diagnostics_dir)
     path = Path(name)
     try:
@@ -90,10 +148,19 @@ def save_codex_failure(diagnostics_dir: Path, status: str, stderr: str) -> Path:
     return path
 
 
-def failure_note(diagnostics_dir: Path | None, status: str, stderr: str) -> str:
+def failure_note(diagnostics_dir: Path | None, status: str, stderr: str, *,
+                 diagnostic_command: str = "codex", issue_number: int | None = None,
+                 base_sha: str | None = None) -> str:
     if diagnostics_dir is None:
         return "CLI stderr was intentionally suppressed."
     try:
+        if diagnostic_command == "patch_guard":
+            path = save_patch_guard_failure(diagnostics_dir, status, stderr,
+                                           issue_number=issue_number, base_sha=base_sha)
+            return (f"Patch guard reason: {safe_patch_guard_reason(stderr)}. "
+                    f"Private diagnostic summary saved to {path}.")
+        if diagnostic_command != "codex":
+            raise ValueError("Unknown diagnostic command")
         path = save_codex_failure(diagnostics_dir, status, stderr)
         return f"Private diagnostic summary saved to {path}."
     except (OSError, ValueError):
@@ -103,7 +170,11 @@ def failure_note(diagnostics_dir: Path | None, status: str, stderr: str) -> str:
 def cmd(argv: list[str], *, cwd: Path | None = None, env: dict | None = None,
         input_text: str | None = None, timeout: int = 90,
         include_stderr: bool = False,
-        diagnostics_dir: Path | None = None) -> str:
+        diagnostics_dir: Path | None = None, diagnostic_command: str = "codex",
+        issue_number: int | None = None, base_sha: str | None = None) -> str:
+    diagnostic_options = {"diagnostic_command": diagnostic_command,
+                          "issue_number": issue_number, "base_sha": base_sha}
+    command_name = "patch_guard" if diagnostic_command == "patch_guard" else argv[0]
     if argv[0] == "git":
         argv = ["git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", *argv[1:]]
     with subprocess.Popen(argv, cwd=cwd, env=env, text=True,
@@ -126,12 +197,13 @@ def cmd(argv: list[str], *, cwd: Path | None = None, env: dict | None = None,
             except ProcessLookupError:
                 pass
             _, stderr = process.communicate()
-            note = failure_note(diagnostics_dir, "timeout", stderr)
-            raise RuntimeError(f"{argv[0]} command timed out; process group stopped. {note}") from None
+            note = failure_note(diagnostics_dir, "timeout", stderr, **diagnostic_options)
+            raise RuntimeError(f"{command_name} command timed out; process group stopped. {note}") from None
         if process.returncode:
-            # Only the Codex invocation opts into fixed-field private diagnostics.
-            note = failure_note(diagnostics_dir, f"exit={process.returncode}", stderr)
-            raise RuntimeError(f"{argv[0]} command failed (exit={process.returncode}). {note}")
+            # Codex and patch validation opt into fixed-field private diagnostics.
+            note = failure_note(diagnostics_dir, f"exit={process.returncode}", stderr,
+                                **diagnostic_options)
+            raise RuntimeError(f"{command_name} command failed (exit={process.returncode}). {note}")
         return (stdout + ("\n" + stderr if include_stderr else "")).strip()
 
 
@@ -230,7 +302,7 @@ def run(repo_path: Path, issue_number: int, execute: bool) -> None:
     validate_issue(issue, issue_number, OWNER)
     branch = f"{BRANCH_PREFIX}{issue_number}"
     verify_no_candidate(repo_path, branch)
-    print(f"Owner-approved Issue #{issue_number}; branch {branch}")
+    print(f"Owner-approved Issue #{issue_number}; branch {branch}", flush=True)
     if not execute:
         print("DRY RUN: no model calls, no repository changes, no GitHub writes.")
         print("To run, pass --execute after confirming ChatGPT credit/usage settings.")
@@ -255,7 +327,7 @@ def run(repo_path: Path, issue_number: int, execute: bool) -> None:
                 prompt = make_prompt(issue)
                 env = safe_env()
                 env["NO_COLOR"] = "1"
-                print("Starting one Codex ChatGPT-plan task (no API key)...")
+                print("Starting one Codex ChatGPT-plan task (no API key)...", flush=True)
                 if (worktree / ".codex").exists():
                     raise RuntimeError("Project .codex configuration needs a separate security review")
                 cmd(["codex", "exec", "--ignore-user-config", "--ignore-rules", "--ephemeral",
@@ -266,10 +338,15 @@ def run(repo_path: Path, issue_number: int, execute: bool) -> None:
                     input_text=prompt, timeout=1800, diagnostics_dir=state / "diagnostics")
                 if not patch.is_file() or patch.stat().st_size == 0:
                     raise RuntimeError("Codex returned no patch. No PR was created")
-                if patch.read_text(encoding="utf-8").strip() == "NO_CHANGES":
+                # Leave encoding validation to the guard so failures retain diagnostics.
+                if patch.read_bytes().strip() == b"NO_CHANGES":
                     raise RuntimeError("Codex declined task. No PR was created")
+                print("Codex completed; validating generated patch...", flush=True)
                 cmd([sys.executable, ".github/scripts/patch_guard.py", "import",
-                     str(patch), "--base", base], cwd=worktree, timeout=90)
+                     str(patch), "--diagnostic-json", "--base", base], cwd=worktree, timeout=90,
+                    diagnostics_dir=state / "diagnostics", diagnostic_command="patch_guard",
+                    issue_number=issue_number, base_sha=base)
+                print("Patch validation passed.", flush=True)
                 cmd(["git", "diff", "--cached", "--check"], cwd=worktree)
                 # Recheck before branch creation; push lease handles remote races.
                 verify_no_candidate(repo_path, branch)

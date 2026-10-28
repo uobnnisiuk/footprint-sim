@@ -304,6 +304,152 @@ class LocalRunnerTests(unittest.TestCase):
                 self.assertEqual(list(target.iterdir()), [])
                 self.assertEqual(target.stat().st_mode & 0o777, 0o755)
 
+    def test_patch_guard_reason_accepts_only_known_structured_codes(self):
+        reasons = (
+            "invalid_patch", "malformed_diff", "malformed_hunk", "disallowed_path",
+            "disallowed_file", "size_limit", "baseline_mismatch", "dirty_checkout",
+            "patch_not_applicable", "git_failure", "invalid_encoding", "io_error",
+            "internal_error",
+        )
+        for reason in reasons:
+            with self.subTest(reason=reason):
+                report = json.dumps({"schema_version": 1, "command": "patch_guard", "reason": reason})
+                self.assertEqual(module.safe_patch_guard_reason(report + "\n"), reason)
+
+    def test_patch_guard_reason_rejects_malformed_or_hostile_reports(self):
+        valid = {"schema_version": 1, "command": "patch_guard", "reason": "malformed_hunk"}
+        reports = [
+            "", "PRIVATE_RAW_TRACEBACK", "null", "[]", "1", "\"PRIVATE_STRING\"",
+            json.dumps(valid) + "\nPRIVATE_TRAILING_TEXT",
+            "PRIVATE_PREFIX\n" + json.dumps(valid),
+            " " * 4097 + json.dumps(valid),
+            "[" * 2000 + "]" * 2000,
+            json.dumps({**valid, "schema_version": True}),
+            json.dumps({**valid, "schema_version": 2}),
+            json.dumps({**valid, "command": "PRIVATE_COMMAND"}),
+            json.dumps({**valid, "reason": "PRIVATE_REASON"}),
+            json.dumps({**valid, "reason": ["malformed_hunk"]}),
+            json.dumps({**valid, "reason": None}),
+            json.dumps({**valid, "stderr": "PRIVATE_TOKEN"}),
+            json.dumps({"schema_version": 1, "reason": "malformed_hunk"}),
+            '{"schema_version":1,"command":"PRIVATE_COMMAND","command":"patch_guard",'
+            '"reason":"malformed_hunk"}',
+        ]
+        for report in reports:
+            with self.subTest(report=report):
+                self.assertEqual(module.safe_patch_guard_reason(report), "unknown")
+
+    def test_failed_patch_guard_writes_private_issue_and_stage_without_raw_output(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp) / "diagnostics"
+            directory.mkdir(mode=0o755)
+            report = json.dumps({"schema_version": 1, "command": "patch_guard",
+                                 "reason": "patch_not_applicable"})
+            code = ("import sys; sys.stdout.write('PRIVATE_PATCH_CONTENT'); "
+                    f"sys.stderr.write({report!r}); sys.exit(1)")
+            with self.assertRaises(RuntimeError) as caught:
+                module.cmd([sys.executable, "-c", code], diagnostics_dir=directory,
+                           diagnostic_command="patch_guard", issue_number=13, base_sha="a" * 40)
+            files = list(directory.glob("patch-guard-failure-*.json"))
+            self.assertEqual(len(files), 1)
+            self.assertEqual(files[0].stat().st_mode & 0o777, 0o600)
+            self.assertEqual(directory.stat().st_mode & 0o777, 0o700)
+            saved = files[0].read_text(encoding="utf-8")
+            self.assertEqual(json.loads(saved), {
+                "schema_version": 1, "command": "patch_guard", "stage": "patch_validation",
+                "issue": 13, "base_sha": "a" * 40, "status": "exit", "exit_code": 1,
+                "reason": "patch_not_applicable",
+            })
+            self.assertEqual(len(list(directory.iterdir())), 1)
+            self.assertIn(str(files[0]), str(caught.exception))
+            self.assertIn("patch_guard", str(caught.exception))
+            self.assertNotIn("PRIVATE", saved + str(caught.exception))
+
+    def test_unknown_patch_guard_failure_saves_no_secret_or_untrusted_fields(self):
+        with tempfile.TemporaryDirectory() as temp:
+            report = json.dumps({"schema_version": 1, "command": "patch_guard",
+                                 "reason": "malformed_hunk", "token": "PRIVATE_TOKEN",
+                                 "patch": "PRIVATE_PATCH", "issue": 999})
+            saved = module.save_patch_guard_failure(
+                Path(temp), "exit=1", report, issue_number=13, base_sha="a" * 40)
+            contents = saved.read_text(encoding="utf-8")
+            diagnostic = json.loads(contents)
+            self.assertEqual(diagnostic["reason"], "unknown")
+            self.assertEqual(diagnostic["issue"], 13)
+            self.assertNotIn("token", diagnostic)
+            self.assertNotIn("patch", diagnostic)
+            self.assertNotIn("PRIVATE", contents)
+
+    def test_patch_guard_diagnostic_validates_context_and_status_before_writing(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp) / "diagnostics"
+            for issue in (0, -1, True, "13", None):
+                with self.subTest(issue=issue), self.assertRaises(ValueError):
+                    module.save_patch_guard_failure(directory, "exit=1", "PRIVATE",
+                                                    issue_number=issue, base_sha="a" * 40)
+            for base in ("a" * 39, "a" * 41, "A" * 40, "PRIVATE_BASE", "a" * 40 + "\n"):
+                with self.subTest(base=base), self.assertRaises(ValueError):
+                    module.save_patch_guard_failure(directory, "exit=1", "PRIVATE",
+                                                    issue_number=13, base_sha=base)
+            for status in ("PRIVATE_STATUS", "exit=1\nPRIVATE", "exit=oops"):
+                with self.subTest(status=status), self.assertRaises(ValueError):
+                    module.save_patch_guard_failure(directory, status, "PRIVATE",
+                                                    issue_number=13, base_sha="a" * 40)
+            self.assertFalse(directory.exists())
+
+    def test_patch_guard_diagnostics_are_unique_and_do_not_follow_symlinks(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp) / "diagnostics"
+            first = module.save_patch_guard_failure(directory, "exit=1", "PRIVATE_FIRST",
+                                                    issue_number=13, base_sha="a" * 40)
+            second = module.save_patch_guard_failure(directory, "exit=-9", "PRIVATE_SECOND",
+                                                     issue_number=13, base_sha="a" * 40)
+            self.assertNotEqual(first, second)
+            self.assertEqual(json.loads(second.read_text(encoding="utf-8"))["exit_code"], -9)
+        for through_parent in (False, True):
+            with self.subTest(through_parent=through_parent), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                target = root / "target"
+                target.mkdir(mode=0o755)
+                link = root / "link"
+                link.symlink_to(target, target_is_directory=True)
+                directory = link / "diagnostics" if through_parent else link
+                with self.assertRaises(OSError):
+                    module.save_patch_guard_failure(directory, "exit=1", "PRIVATE_STDERR",
+                                                    issue_number=13, base_sha="a" * 40)
+                self.assertEqual(list(target.iterdir()), [])
+                self.assertEqual(target.stat().st_mode & 0o777, 0o755)
+
+    def test_patch_guard_diagnostic_storage_failure_keeps_original_exit_private(self):
+        with tempfile.TemporaryDirectory() as temp, \
+             patch.object(module, "save_patch_guard_failure", side_effect=OSError("PRIVATE_STORAGE_ERROR")), \
+             self.assertRaises(RuntimeError) as caught:
+            module.cmd([sys.executable, "-c",
+                        "import sys; sys.stderr.write('PRIVATE_STDERR'); sys.exit(7)"],
+                       diagnostics_dir=Path(temp), diagnostic_command="patch_guard",
+                       issue_number=13, base_sha="a" * 40)
+        self.assertIn("exit=7", str(caught.exception))
+        self.assertIn("Could not write", str(caught.exception))
+        self.assertNotIn("PRIVATE", str(caught.exception))
+
+    def test_patch_guard_timeout_retains_stage_without_raw_stderr(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with self.assertRaisesRegex(RuntimeError, "timed out"):
+                module.cmd([sys.executable, "-c",
+                            "import sys,time; sys.stderr.write('PRIVATE_TIMEOUT'); "
+                            "sys.stderr.flush(); time.sleep(30)"],
+                           timeout=0.1, diagnostics_dir=Path(temp), diagnostic_command="patch_guard",
+                           issue_number=13, base_sha="a" * 40)
+            files = list(Path(temp).glob("patch-guard-failure-*.json"))
+            self.assertEqual(len(files), 1)
+            contents = files[0].read_text(encoding="utf-8")
+            diagnostic = json.loads(contents)
+            self.assertEqual(diagnostic["status"], "timeout")
+            self.assertIsNone(diagnostic["exit_code"])
+            self.assertEqual(diagnostic["stage"], "patch_validation")
+            self.assertEqual(diagnostic["issue"], 13)
+            self.assertNotIn("PRIVATE", contents)
+
     def test_git_checkout_cannot_execute_a_local_hook(self):
         with tempfile.TemporaryDirectory(prefix="local-autodev-hook-test-") as temp:
             repo = Path(temp)
@@ -345,9 +491,12 @@ class LocalRunnerTests(unittest.TestCase):
             self.assertNotIn("PRIVATE_TIMEOUT_TEXT", log)
 
     def test_mocked_execute_guards_patch_before_publication_and_never_runs_candidate_code(self):
-        # Every external command is replaced; this never invokes a model or GitHub.
-        for reject_patch in (False, True):
-            with self.subTest(reject_patch=reject_patch), tempfile.TemporaryDirectory() as temp:
+        # External commands are mocked except local Python guard checks.
+        # This never invokes a model, GitHub, or candidate code.
+        real_cmd = module.cmd
+        for outcome in ("success", "malformed_hunk", "invalid_encoding"):
+            with self.subTest(outcome=outcome), tempfile.TemporaryDirectory() as temp:
+                reject_patch = outcome != "success"
                 calls = []
                 base = "a" * 40
 
@@ -373,13 +522,31 @@ class LocalRunnerTests(unittest.TestCase):
                         self.assertNotIn("GH_TOKEN", kwargs["env"])
                         self.assertNotIn("OPENAI_API_KEY", kwargs["env"])
                         self.assertIn("raw unified diff", kwargs["input_text"])
-                        Path(argv[argv.index("--output-last-message") + 1]).write_text(
-                            "mock patch; guard is separately tested\n", encoding="utf-8")
+                        patch_path = Path(argv[argv.index("--output-last-message") + 1])
+                        if outcome == "invalid_encoding":
+                            patch_path.write_bytes(b"PRIVATE_PATCH\xff\n")
+                        else:
+                            patch_path.write_text("mock patch; guard is separately tested\n", encoding="utf-8")
                         return ""
                     if argv[:3] == [sys.executable, ".github/scripts/patch_guard.py", "import"]:
                         self.assertEqual(argv[-2:], ["--base", base])
+                        self.assertIn("--diagnostic-json", argv)
+                        self.assertEqual(kwargs["diagnostics_dir"],
+                                         Path(temp) / ".local/state/footprint-local-autodev/diagnostics")
+                        self.assertEqual(kwargs["diagnostic_command"], "patch_guard")
+                        self.assertEqual(kwargs["issue_number"], 3)
+                        self.assertEqual(kwargs["base_sha"], base)
+                        if outcome == "invalid_encoding":
+                            # Run the trusted local guard, which rejects decoding before Git.
+                            return real_cmd([sys.executable,
+                                             str(REPO_ROOT / ".github/scripts/patch_guard.py"),
+                                             *argv[2:]], **kwargs)
                         if reject_patch:
-                            raise RuntimeError("Mock patch guard rejected candidate")
+                            report = json.dumps({"schema_version": 1, "command": "patch_guard",
+                                                 "reason": "malformed_hunk"})
+                            return real_cmd([sys.executable, "-c",
+                                             f"import sys; sys.stderr.write({report!r}); sys.exit(1)"],
+                                            **kwargs)
                         return ""
                     if argv[:2] in (["git", "diff"], ["git", "switch"], ["git", "push"]):
                         return ""
@@ -400,7 +567,7 @@ class LocalRunnerTests(unittest.TestCase):
                      patch.object(module.Path, "home", return_value=Path(temp)), \
                      patch.object(module, "cmd", side_effect=fake), redirect_stdout(StringIO()):
                     if reject_patch:
-                        with self.assertRaisesRegex(RuntimeError, "guard rejected"):
+                        with self.assertRaisesRegex(RuntimeError, "patch_guard"):
                             module.run(REPO_ROOT, 3, execute=True)
                     else:
                         module.run(REPO_ROOT, 3, execute=True)
@@ -412,10 +579,18 @@ class LocalRunnerTests(unittest.TestCase):
                 if reject_patch:
                     self.assertFalse(publishes)
                     self.assertFalse(any("commit" in argv for argv in calls))
+                    diagnostics = list((Path(temp) / ".local/state/footprint-local-autodev/diagnostics").glob("*.json"))
+                    self.assertEqual(len(diagnostics), 1)
+                    diagnostic = json.loads(diagnostics[0].read_text(encoding="utf-8"))
+                    self.assertEqual(diagnostic["reason"], outcome)
+                    self.assertEqual(diagnostic["issue"], 3)
+                    self.assertEqual(diagnostic["base_sha"], base)
+                    self.assertNotIn("PRIVATE", diagnostics[0].read_text(encoding="utf-8"))
                 else:
                     self.assertEqual(len(publishes), 2)
                     self.assertTrue(all(i > guard_index for i in publishes))
                     self.assertEqual(duplicate_check.call_count, 2)
+                    self.assertFalse((Path(temp) / ".local/state/footprint-local-autodev/diagnostics").exists())
 
     def test_dry_run_does_not_call_codex_or_mutate_git(self):
         sample = self.issue()
