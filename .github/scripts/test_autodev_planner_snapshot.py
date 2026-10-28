@@ -57,7 +57,7 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(root, self.root)
         self.assertEqual(argv[0], "gh")
         self.assertEqual(argv[2], "list")
-        self.assertEqual(argv[4:6], ["--repo", planner.REPO])
+        self.assertEqual(argv[3:5], ["--repo", planner.REPO])
         self.assertNotIn("--execute", argv)
         if argv[1] == "issue":
             return json.dumps(ISSUES)
