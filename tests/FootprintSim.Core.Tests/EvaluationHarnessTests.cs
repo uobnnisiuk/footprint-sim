@@ -65,6 +65,99 @@ public sealed class EvaluationHarnessTests
     }
 
     [Fact]
+    public void AllStrategiesRejectMismatchedRunIdentifiers()
+    {
+        var scenario = LoadScenario("s1_debris_transport");
+        var simulation = new SimulationEngine().Run(scenario, 42);
+        var input = CreateFinalInput(scenario, simulation, 42);
+        SearchStrategyInput[] invalidInputs =
+        [
+            input with { ScenarioId = scenario.Id + "-mismatch" },
+            input with
+            {
+                PublicContext = input.PublicContext with { ScenarioId = scenario.Id + "-mismatch" }
+            },
+            input with
+            {
+                AvailableEvidence = input.AvailableEvidence with { ScenarioId = scenario.Id + "-mismatch" }
+            },
+            input with
+            {
+                AvailableEvidence = input.AvailableEvidence with { Seed = input.Seed + 1 }
+            }
+        ];
+
+        Assert.Equal(4, SearchStrategyRegistry.All.Count);
+        foreach (var strategy in SearchStrategyRegistry.All)
+        {
+            foreach (var invalidInput in invalidInputs)
+            {
+                Assert.Throws<ArgumentException>(() => strategy.Evaluate(invalidInput));
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(42)]
+    public void AllStrategiesRejectPrematureEvidenceAndAcceptExactAvailability(int seed)
+    {
+        var scenario = LoadScenario("s1_debris_transport");
+        var simulation = new SimulationEngine().Run(scenario, seed);
+        var input = CreateFinalInput(scenario, simulation, seed);
+        var evidence = simulation.ObservationSet;
+        var delayed = Assert.Single(evidence.Observations, observation =>
+            observation.EvidenceType == "coarsePresenceSignal" &&
+            observation.SubjectIds.Contains(scenario.TargetPersonId) &&
+            observation.ObservedTick == 10);
+        Assert.True(delayed.ObservedTick < delayed.AvailableTick);
+
+        var beforeTick = delayed.AvailableTick - 1;
+        var premature = input with
+        {
+            CurrentTick = beforeTick,
+            AvailableEvidence = evidence with
+            {
+                Observations = evidence.Observations
+                    .Where(observation => observation.AvailableTick <= beforeTick)
+                    .Append(delayed)
+                    .ToArray()
+            }
+        };
+        Assert.Equal(delayed, Assert.Single(premature.AvailableEvidence.Observations,
+            observation => observation.AvailableTick > premature.CurrentTick));
+
+        var available = input with
+        {
+            CurrentTick = delayed.AvailableTick,
+            AvailableEvidence = evidence with
+            {
+                Observations = evidence.Observations
+                    .Where(observation => observation.AvailableTick <= delayed.AvailableTick)
+                    .ToArray()
+            }
+        };
+        Assert.Contains(delayed, available.AvailableEvidence.Observations);
+        Assert.All(available.AvailableEvidence.Observations, observation =>
+            Assert.True(observation.AvailableTick <= available.CurrentTick));
+        Assert.Equal(available.ScenarioId, available.PublicContext.ScenarioId);
+        Assert.Equal(available.ScenarioId, available.AvailableEvidence.ScenarioId);
+        Assert.Equal(available.Seed, available.AvailableEvidence.Seed);
+
+        Assert.Equal(4, SearchStrategyRegistry.All.Count);
+        foreach (var strategy in SearchStrategyRegistry.All)
+        {
+            Assert.Throws<ArgumentException>(() => strategy.Evaluate(premature));
+
+            var result = strategy.Evaluate(available);
+            Assert.Equal(strategy.Id, result.StrategyId);
+            Assert.Equal(available.ScenarioId, result.ScenarioId);
+            Assert.Equal(seed, result.Seed);
+            Assert.Equal(delayed.AvailableTick, result.ProducedAtTick);
+        }
+    }
+
+    [Fact]
     public void S1VoluntaryMissesDepositionWhileHazardAwareContainsIt()
     {
         var scenario = LoadScenario("s1_debris_transport");
