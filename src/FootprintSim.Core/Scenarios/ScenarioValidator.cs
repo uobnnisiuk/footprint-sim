@@ -16,6 +16,11 @@ public static class ScenarioValidator
 
         RequireText(scenario.Id, "Scenario id");
         RequireText(scenario.TargetPersonId, "Target person id");
+        if (!double.IsFinite(scenario.NormalWalkingRadius))
+        {
+            throw new InvalidDataException("Normal walking radius must be finite.");
+        }
+
         if (scenario.NormalWalkingRadius < 0)
         {
             throw new InvalidDataException("Normal walking radius cannot be negative.");
@@ -24,7 +29,7 @@ public static class ScenarioValidator
         var regionIds = UniqueIds(scenario.Regions.Select(region => region.Id), "region");
         foreach (var region in scenario.Regions)
         {
-            if (region.Passability is < 0 or > 1)
+            if (!double.IsFinite(region.Passability) || region.Passability is < 0 or > 1)
             {
                 throw new InvalidDataException($"Region '{region.Id}' passability must be between 0 and 1.");
             }
@@ -38,6 +43,12 @@ public static class ScenarioValidator
 
             foreach (var connection in region.Connections)
             {
+                if (!double.IsFinite(connection.TravelCost))
+                {
+                    throw new InvalidDataException(
+                        $"Region '{region.Id}' connection to '{connection.ToRegionId}' travel cost must be finite.");
+                }
+
                 if (!regionIds.Contains(connection.ToRegionId))
                 {
                     throw new InvalidDataException(
