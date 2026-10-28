@@ -16,7 +16,12 @@ public static class ScenarioValidator
 
         RequireText(scenario.Id, "Scenario id");
         RequireText(scenario.TargetPersonId, "Target person id");
-        if (!double.IsFinite(scenario.NormalWalkingRadius) || scenario.NormalWalkingRadius < 0)
+        if (!double.IsFinite(scenario.NormalWalkingRadius))
+        {
+            throw new InvalidDataException("Normal walking radius must be finite.");
+        }
+
+        if (scenario.NormalWalkingRadius < 0)
         {
             throw new InvalidDataException("Normal walking radius cannot be negative.");
         }
