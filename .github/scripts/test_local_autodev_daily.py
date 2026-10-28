@@ -320,7 +320,7 @@ class GuardTests(unittest.TestCase):
                                            max_issues=1, date="2026-10-28")
             self.assertIn("completed", first)
             self.assertIn("already recorded", same_day)
-            self.assertIn("already attempted", next_day)
+            self.assertIn("all approved open Issues already attempted", next_day)
             invoke.assert_called_once()
             self.assertEqual(json.loads((path / "result-2026-10-27-slot-0.json").read_text())["status"],
                              "succeeded")
@@ -343,7 +343,7 @@ class GuardTests(unittest.TestCase):
                 next_day = daily.run_daily(ROOT, path, execute=True,
                                            acknowledge_credit_risk=True,
                                            max_issues=1, date="2026-10-28")
-            self.assertIn("already attempted", next_day)
+            self.assertIn("all approved open Issues already attempted", next_day)
             invoke.assert_called_once()
             self.assertEqual(json.loads((path / "result-2026-10-27-slot-0.json").read_text())["status"],
                              "failed")
@@ -434,8 +434,49 @@ class GuardTests(unittest.TestCase):
                 skipped = daily.run_daily(ROOT, path, execute=True,
                                           acknowledge_credit_risk=True, max_issues=1,
                                           date="2026-10-28", slot=1)
-            self.assertIn("already attempted", skipped)
+            self.assertIn("all approved open Issues already attempted", skipped)
             invoke.assert_called_once()
+
+    def test_attempted_issue_is_skipped_for_later_approved_issue(self):
+        with tempfile.TemporaryDirectory() as temp:
+            state = Path(temp) / "daily"
+            daily.ensure_private_state(state)
+            daily.create_private(state / "issue-13.json", '{"status":"attempted"}\n')
+            candidates = [one_issue(13)[0], one_issue(21)[0]]
+            with patch.object(daily, "verify_checkout"), \
+                 patch.object(daily, "refresh_checkout"), \
+                 patch.object(daily, "open_pr_numbers", return_value=[]), \
+                 patch.object(daily.queue, "list_issues", return_value=candidates), \
+                 patch.object(daily, "invoke_once", return_value=0) as invoke:
+                preview = daily.run_daily(ROOT, state, execute=False,
+                                          acknowledge_credit_risk=False, max_issues=1,
+                                          date="2026-10-28", slot=1)
+                executed = daily.run_daily(ROOT, state, execute=True,
+                                           acknowledge_credit_risk=True, max_issues=1,
+                                           date="2026-10-28", slot=1)
+            self.assertIn("#21", preview)
+            self.assertIn("#21 completed", executed)
+            invoke.assert_called_once()
+            self.assertEqual(invoke.call_args.args[1], 21)
+            self.assertTrue((state / "issue-13.json").exists())
+            self.assertTrue((state / "issue-21.json").exists())
+
+    def test_only_attempted_issues_remain_stopped_with_no_new_attempt(self):
+        with tempfile.TemporaryDirectory() as temp:
+            state = Path(temp) / "daily"
+            daily.ensure_private_state(state)
+            daily.create_private(state / "issue-13.json", '{"status":"failed"}\n')
+            with patch.object(daily, "verify_checkout"), \
+                 patch.object(daily, "refresh_checkout"), \
+                 patch.object(daily, "open_pr_numbers", return_value=[]), \
+                 patch.object(daily.queue, "list_issues", return_value=one_issue(13)), \
+                 patch.object(daily, "invoke_once") as invoke:
+                result = daily.run_daily(ROOT, state, execute=True,
+                                         acknowledge_credit_risk=True, max_issues=1,
+                                         date="2026-10-28", slot=2)
+            self.assertIn("all approved open Issues already attempted", result)
+            self.assertFalse((state / "day-2026-10-28-slot-2.json").exists())
+            invoke.assert_not_called()
 
     def test_legacy_date_marker_blocks_today_even_in_new_slot(self):
         with tempfile.TemporaryDirectory() as temp:

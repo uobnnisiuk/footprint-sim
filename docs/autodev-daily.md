@@ -32,7 +32,11 @@ Each run:
 2. Checks **all open repository PRs**. If any PR is open (including Draft), it
    stops without spending Codex usage.
 3. Queries owner-authored, open `local-autodev` Issues excluding the billed
-   `autodev` label; selects only the lowest number.
+   `autodev` label; selects the lowest-numbered **never-attempted** Issue.
+   Previously attempted Issues are skipped without altering their immutable
+   attempt markers or retriggering the failed model call. This prevents a
+   blocked Issue from starving separately approved later work. If none remains,
+   the run stops without reserving the slot or calling Codex.
 4. Acquires a nonblocking Linux `flock` and creates exclusive,
    permission-restricted per-slot and per-Issue attempt markers **before**
    invoking Codex. These markers permanently block the same Issue from being
