@@ -441,12 +441,12 @@ class GuardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             state = Path(temp) / "daily"
             daily.ensure_private_state(state)
-            daily.create_private(state / "issue-13.json", '{"status":"attempted"}\\n')
+            daily.create_private(state / "issue-13.json", '{"status":"attempted"}\n')
             candidates = [one_issue(13)[0], one_issue(21)[0]]
-            with patch.object(daily, "verify_checkout"), \\
-                 patch.object(daily, "refresh_checkout"), \\
-                 patch.object(daily, "open_pr_numbers", return_value=[]), \\
-                 patch.object(daily.queue, "list_issues", return_value=candidates), \\
+            with patch.object(daily, "verify_checkout"), \
+                 patch.object(daily, "refresh_checkout"), \
+                 patch.object(daily, "open_pr_numbers", return_value=[]), \
+                 patch.object(daily.queue, "list_issues", return_value=candidates), \
                  patch.object(daily, "invoke_once", return_value=0) as invoke:
                 preview = daily.run_daily(ROOT, state, execute=False,
                                           acknowledge_credit_risk=False, max_issues=1,
@@ -465,11 +465,11 @@ class GuardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             state = Path(temp) / "daily"
             daily.ensure_private_state(state)
-            daily.create_private(state / "issue-13.json", '{"status":"failed"}\\n')
-            with patch.object(daily, "verify_checkout"), \\
-                 patch.object(daily, "refresh_checkout"), \\
-                 patch.object(daily, "open_pr_numbers", return_value=[]), \\
-                 patch.object(daily.queue, "list_issues", return_value=one_issue(13)), \\
+            daily.create_private(state / "issue-13.json", '{"status":"failed"}\n')
+            with patch.object(daily, "verify_checkout"), \
+                 patch.object(daily, "refresh_checkout"), \
+                 patch.object(daily, "open_pr_numbers", return_value=[]), \
+                 patch.object(daily.queue, "list_issues", return_value=one_issue(13)), \
                  patch.object(daily, "invoke_once") as invoke:
                 result = daily.run_daily(ROOT, state, execute=True,
                                          acknowledge_credit_risk=True, max_issues=1,
