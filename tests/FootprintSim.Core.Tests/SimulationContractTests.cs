@@ -155,6 +155,96 @@ public sealed class SimulationContractTests
             });
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void PersonObservationTiesAreIndependentOfInputOrder(bool includeConflict)
+    {
+        var scenario = LoadScenario("s1_debris_transport");
+        var confirmed = Observation(scenario.TargetPersonId, EvidenceState.Confirmed) with
+        {
+            ObservationId = "tie-z",
+            ObservedTick = 10,
+            AvailableTick = 12,
+            ReportedPosition = scenario.Regions.Single(region => region.Id == "mountain-road").Center,
+            ReportedRegionId = "mountain-road"
+        };
+        var other = confirmed with
+        {
+            ObservationId = "tie-Z",
+            ReportedPosition = scenario.Regions.Single(region => region.Id == "hillside-building").Center,
+            ReportedRegionId = "hillside-building"
+        };
+        var earlierAvailable = other with
+        {
+            ObservationId = "tie-zzzz",
+            AvailableTick = 11
+        };
+        var conflict = confirmed with
+        {
+            ObservationId = "tie-zz",
+            State = EvidenceState.Conflicting,
+            ReportedPosition = scenario.Regions.Single(region => region.Id == "slope-channel").Center,
+            ReportedRegionId = "slope-channel"
+        };
+        var device = Observation("device-mika-phone", EvidenceState.Confirmed) with
+        {
+            ObservedTick = 99,
+            AvailableTick = 100,
+            ReportedPosition = scenario.Regions.Single(region => region.Id == "downstream-bank").Center,
+            ReportedRegionId = "downstream-bank"
+        };
+        ObservationRecord[] personRecords = includeConflict
+            ? [confirmed, other, earlierAvailable, conflict]
+            : [confirmed, other, earlierAvailable];
+        var evidence = new ObservationSet
+        {
+            ScenarioId = scenario.Id,
+            Seed = 42,
+            Observations = personRecords
+        };
+        var expected = Infer(scenario, evidence);
+        var expectedJson = JsonDefaults.Serialize(expected);
+        var expectedRegions = expected.SearchPriorityZones.SelectMany(zone => zone.RegionIds).ToArray();
+
+        Assert.Equal(includeConflict ? EvidenceState.Conflicting : EvidenceState.Confirmed, expected.EvidenceState);
+        Assert.Equal(confirmed.ReportedPosition, expected.LastConfirmedPosition);
+        Assert.Equal(includeConflict ? conflict.ReportedPosition : confirmed.ReportedPosition, expected.LastReportedPosition);
+        Assert.Equal(includeConflict ? EvidenceState.Conflicting : EvidenceState.Confirmed, expected.LastReportedPositionState);
+        Assert.Equal([includeConflict ? "slope-channel" : "mountain-road"], expected.SearchPriorityZones[0].RegionIds);
+        Assert.Contains("mountain-road", expected.NormalMovementRegionIds);
+        Assert.DoesNotContain("downstream-bank", expected.NormalMovementRegionIds);
+
+        foreach (var records in new[] { personRecords, personRecords.Append(device).ToArray() })
+        {
+            foreach (var permutation in Permutations(records))
+            {
+                var actual = Infer(scenario, evidence with { Observations = permutation });
+
+                Assert.Equal(expectedJson, JsonDefaults.Serialize(actual));
+                Assert.Equal(expectedRegions, actual.SearchPriorityZones.SelectMany(zone => zone.RegionIds).ToArray());
+            }
+        }
+
+        static IEnumerable<ObservationRecord[]> Permutations(ObservationRecord[] records)
+        {
+            if (records.Length == 0)
+            {
+                yield return [];
+                yield break;
+            }
+
+            for (var index = 0; index < records.Length; index++)
+            {
+                var remaining = records.Where((_, itemIndex) => itemIndex != index).ToArray();
+                foreach (var tail in Permutations(remaining))
+                {
+                    yield return [records[index], .. tail];
+                }
+            }
+        }
+    }
+
     [Fact]
     public void ObservationJsonDoesNotContainPrivateGroundTruthFieldsOrPayload()
     {
