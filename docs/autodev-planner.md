@@ -40,3 +40,33 @@ that a proposed Issue is approved for implementation.
 
 Neither Issue has the local-autodev label. Existing Local AutoDev
 implementation queue and four Windows schedule slots remain unchanged.
+
+## Stage B: inspect proposed Issues without publishing
+
+The next local tool validates an explicit JSON bundle of one to three draft
+Issues against Stage A's evidence. An AI proposal generator is **not connected**
+yet. To validate a user-reviewed or externally prepared JSON proposal file:
+
+    python3 -B tools/autodev_planner_validate.py --snapshot "$HOME/autodev-planner-M1-B.json" --drafts "$HOME/proposed-issues.json"
+
+The drafts file is a JSON object containing schema_version=1 and a proposals
+array (1–3 items). Each proposal must contain exactly these fields:
+
+- draft_id (P1, P2 or P3), title, objective
+- scope (array), exclusions (array), paths (array)
+- acceptance_tests (array, at least two), risks (array), evidence (array)
+- dependencies (array of P1–P3 or issue:NUMBER)
+- target_milestone and base_sha matching the snapshot
+
+Example of an evidence path: AGENTS.md. Only source and test paths allowed by
+the existing patch guard can be proposed; protected configuration is rejected.
+Missing or stale dependencies, cycles, duplicated normalized titles, already
+tracked Issue titles, and ambiguous/non-testable drafts stop validation.
+
+Outputs carry a deterministic dedup_key, blocked/draft status and explicit
+blocking_dependencies. Exact normalized-title matching is not semantic
+duplicate detection; manual scientific/roadmap review is still necessary.
+
+**The validator never adds labels, creates Issues, runs Codex, incurs API
+charges or grants implementation authority.** It cannot supply an approval
+token. Stage C requires its own explicit authorization and review.
