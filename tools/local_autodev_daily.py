@@ -186,6 +186,21 @@ def invoke_once(repo_path: Path, issue_number: int, log_path: Path) -> int:
     return result.returncode
 
 
+def first_unattempted_issue(candidates: list[dict], state: Path) -> int | None:
+    """Select the first approved Issue without a recorded attempt.
+
+    Never delete/modify markers or retry an Issue. A failed prior Issue must
+    not prevent *separately approved* later Issues from being processed.
+    """
+    for candidate in candidates:
+        number = candidate["number"]
+        marker = state / f"issue-{number}.json"
+        if marker.exists() or marker.is_symlink():
+            continue
+        return number
+    return None
+
+
 def run_daily(repo_path: Path, state: Path, *, execute: bool,
               acknowledge_credit_risk: bool, max_issues: int,
               date: str, slot: int = 0) -> str:
@@ -206,11 +221,13 @@ def run_daily(repo_path: Path, state: Path, *, execute: bool,
         candidates = queue.list_issues(repo_path)
         if not candidates:
             return "DRY RUN: queue empty"
-        number = candidates[0]["number"]
+        # A slot marker overrides later candidates; no second attempt that slot.
         if ((state / f"day-{date}.json").exists() or
-                (state / f"day-{date}-slot-{slot}.json").exists() or
-                (state / f"issue-{number}.json").exists()):
-            return "DRY RUN: attempt already recorded; would stop"
+                (state / f"day-{date}-slot-{slot}.json").exists()):
+            return "DRY RUN: slot attempt already recorded; would stop"
+        number = first_unattempted_issue(candidates, state)
+        if number is None:
+            return "DRY RUN: all approved Issues already attempted; would stop"
         return f"DRY RUN: would invoke only Issue #{number} after explicit opt-in"
 
     ensure_private_state(state)
@@ -238,9 +255,9 @@ def run_daily(repo_path: Path, state: Path, *, execute: bool,
         candidates = queue.list_issues(repo_path)
         if not candidates:
             return "Skipped: no approved open Issues"
-        number = candidates[0]["number"]
-        if (state / f"issue-{number}.json").exists():
-            return f"Skipped: Issue #{number} was already attempted; manual review required"
+        number = first_unattempted_issue(candidates, state)
+        if number is None:
+            return "Skipped: all approved open Issues already attempted; manual triage required"
         # A PR could appear during preflight; check once more before reservation.
         if open_pr_numbers(repo_path):
             return "Skipped: a PR appeared during preflight"
