@@ -257,6 +257,89 @@ public sealed class SimulationContractTests
         Assert.Empty(summary.HazardTransportEnvelopeRegionIds);
     }
 
+    [Theory]
+    [InlineData("radius", double.NaN)]
+    [InlineData("radius", double.PositiveInfinity)]
+    [InlineData("radius", double.NegativeInfinity)]
+    [InlineData("passability", double.NaN)]
+    [InlineData("passability", double.PositiveInfinity)]
+    [InlineData("passability", double.NegativeInfinity)]
+    [InlineData("travelCost", double.NaN)]
+    [InlineData("travelCost", double.PositiveInfinity)]
+    [InlineData("travelCost", double.NegativeInfinity)]
+    public void ScenarioRejectsNonFiniteRadiusAndTopology(string field, double value)
+    {
+        var scenario = CreateRadiusAndTopologyScenario(
+            field == "radius" ? value : 1,
+            field == "passability" ? value : 1,
+            field == "travelCost" ? value : 1);
+
+        var exception = Assert.Throws<InvalidDataException>(() => ScenarioValidator.Validate(scenario));
+
+        var expectedMessage = field switch
+        {
+            "radius" => "Normal walking radius cannot be negative.",
+            "passability" => "Region 'validation-region' passability must be between 0 and 1.",
+            _ => "Region 'validation-region' connection to 'validation-region' travel cost must be finite."
+        };
+        Assert.Equal(expectedMessage, exception.Message);
+    }
+
+    [Theory]
+    [InlineData(0, 0, double.MinValue)]
+    [InlineData(double.MaxValue, 1, double.MaxValue)]
+    [InlineData(1, 0.5, 0)]
+    [InlineData(1, 1, -1)]
+    public void ScenarioAcceptsFiniteRadiusAndTopologyBoundaries(
+        double radius, double passability, double travelCost)
+    {
+        ScenarioValidator.Validate(CreateRadiusAndTopologyScenario(radius, passability, travelCost));
+    }
+
+    [Theory]
+    [InlineData(-1, 1, "Normal walking radius cannot be negative.")]
+    [InlineData(1, -0.1, "Region 'validation-region' passability must be between 0 and 1.")]
+    [InlineData(1, 1.1, "Region 'validation-region' passability must be between 0 and 1.")]
+    public void ScenarioPreservesFiniteRadiusAndPassabilityRejections(
+        double radius, double passability, string expectedMessage)
+    {
+        var scenario = CreateRadiusAndTopologyScenario(radius, passability, 1);
+
+        var exception = Assert.Throws<InvalidDataException>(() => ScenarioValidator.Validate(scenario));
+
+        Assert.Equal(expectedMessage, exception.Message);
+    }
+
+    private static ScenarioDefinition CreateRadiusAndTopologyScenario(
+        double radius, double passability, double travelCost)
+    {
+        var baseline = LoadScenario("s0_walking_baseline");
+        return new ScenarioDefinition
+        {
+            Id = "radius-and-topology-validation",
+            Title = "Radius and topology validation",
+            Description = "Synthetic validator test",
+            TargetPersonId = baseline.TargetPersonId,
+            NormalWalkingRadius = radius,
+            Entities = baseline.Entities,
+            Regions = baseline.Regions.Append(new FootprintSim.Model.RegionDefinition
+            {
+                Id = "validation-region",
+                Type = FootprintSim.Model.RegionType.Outdoor,
+                Center = new FootprintSim.Model.Position(0, 0, 0, "validation-region"),
+                Passability = passability,
+                Connections =
+                [
+                    new FootprintSim.Model.RegionConnection
+                    {
+                        ToRegionId = "validation-region",
+                        TravelCost = travelCost
+                    }
+                ]
+            }).ToArray()
+        };
+    }
+
     private static ObservationRecord Observation(string subjectId, EvidenceState state)
     {
         return new ObservationRecord
