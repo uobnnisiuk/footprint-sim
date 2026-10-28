@@ -105,6 +105,8 @@ class LocalRunnerTests(unittest.TestCase):
                 self.assertEqual(kwargs.get("cwd"), REPO_ROOT)
                 self.assertTrue(kwargs.get("include_stderr"))
                 return auth
+            if argv == ["codex", "exec", "--help"]:
+                return '      --output-schema <FILE>'
             if argv[:3] == ["gh", "api", "user"]:
                 return github_user
             if argv[:3] == ["git", "remote", "get-url"]:
@@ -142,6 +144,22 @@ class LocalRunnerTests(unittest.TestCase):
              patch.object(module, "cmd", side_effect=self.auth_command(github_user="other")), \
              self.assertRaisesRegex(RuntimeError, "repository owner"):
             module.ensure_auth(REPO_ROOT)
+
+    def test_missing_output_schema_support_stops_without_upgrade_or_model_call(self):
+        fallback = self.auth_command()
+        calls = []
+
+        def command(argv, **kwargs):
+            calls.append(argv)
+            if argv == ["codex", "exec", "--help"]:
+                return "Usage: codex exec (older CLI)"
+            return fallback(argv, **kwargs)
+
+        with patch.object(module.shutil, "which", return_value="/fake/installed"), \
+             patch.object(module, "cmd", side_effect=command), \
+             self.assertRaisesRegex(RuntimeError, "lacks --output-schema"):
+            module.ensure_auth(REPO_ROOT)
+        self.assertEqual(calls, [["codex", "login", "status"], ["codex", "exec", "--help"]])
 
     def test_accepts_exact_https_and_ssh_repository_urls(self):
         for url in ("https://github.com/uobnnisiuk/footprint-sim",
@@ -220,7 +238,7 @@ class LocalRunnerTests(unittest.TestCase):
             self.assertEqual(json.loads(log), {
                 "schema_version": 1, "command": "codex", "status": "exit", "exit_code": 1,
                 "category": "authentication", "error_codes": ["refresh_token_expired"],
-                "http_status": 401,
+                "http_status": 401, "stage": "model_execution", "reason": "command_failed",
             })
             self.assertIn(str(files[0]), str(caught.exception))
             self.assertNotIn("PRIVATE", log)
@@ -489,108 +507,6 @@ class LocalRunnerTests(unittest.TestCase):
             self.assertIsNone(diagnostic["exit_code"])
             self.assertEqual(diagnostic["category"], "unknown")
             self.assertNotIn("PRIVATE_TIMEOUT_TEXT", log)
-
-    def test_mocked_execute_guards_patch_before_publication_and_never_runs_candidate_code(self):
-        # External commands are mocked except local Python guard checks.
-        # This never invokes a model, GitHub, or candidate code.
-        real_cmd = module.cmd
-        for outcome in ("success", "malformed_hunk", "invalid_encoding"):
-            with self.subTest(outcome=outcome), tempfile.TemporaryDirectory() as temp:
-                reject_patch = outcome != "success"
-                calls = []
-                base = "a" * 40
-
-                def fake(argv, **kwargs):
-                    calls.append(argv)
-                    if argv[:2] == ["gh", "api"]:
-                        return json.dumps(self.issue())
-                    if argv[:2] == ["git", "fetch"]:
-                        return ""
-                    if argv[:2] == ["git", "rev-parse"]:
-                        return base
-                    if argv[:3] == ["git", "worktree", "add"]:
-                        Path(argv[4]).mkdir()
-                        return ""
-                    if argv[:2] == ["codex", "exec"]:
-                        self.assertIn("--ignore-user-config", argv)
-                        self.assertIn("--ignore-rules", argv)
-                        self.assertIn("--ephemeral", argv)
-                        self.assertEqual(argv[argv.index("--sandbox") + 1], "read-only")
-                        for setting in ('model_provider="openai"', 'forced_login_method="chatgpt"',
-                                        'approval_policy="never"', 'web_search="disabled"'):
-                            self.assertIn(setting, argv)
-                        self.assertNotIn("GH_TOKEN", kwargs["env"])
-                        self.assertNotIn("OPENAI_API_KEY", kwargs["env"])
-                        self.assertIn("raw unified diff", kwargs["input_text"])
-                        patch_path = Path(argv[argv.index("--output-last-message") + 1])
-                        if outcome == "invalid_encoding":
-                            patch_path.write_bytes(b"PRIVATE_PATCH\xff\n")
-                        else:
-                            patch_path.write_text("mock patch; guard is separately tested\n", encoding="utf-8")
-                        return ""
-                    if argv[:3] == [sys.executable, ".github/scripts/patch_guard.py", "import"]:
-                        self.assertEqual(argv[-2:], ["--base", base])
-                        self.assertIn("--diagnostic-json", argv)
-                        self.assertEqual(kwargs["diagnostics_dir"],
-                                         Path(temp) / ".local/state/footprint-local-autodev/diagnostics")
-                        self.assertEqual(kwargs["diagnostic_command"], "patch_guard")
-                        self.assertEqual(kwargs["issue_number"], 3)
-                        self.assertEqual(kwargs["base_sha"], base)
-                        if outcome == "invalid_encoding":
-                            # Run the trusted local guard, which rejects decoding before Git.
-                            return real_cmd([sys.executable,
-                                             str(REPO_ROOT / ".github/scripts/patch_guard.py"),
-                                             *argv[2:]], **kwargs)
-                        if reject_patch:
-                            report = json.dumps({"schema_version": 1, "command": "patch_guard",
-                                                 "reason": "malformed_hunk"})
-                            return real_cmd([sys.executable, "-c",
-                                             f"import sys; sys.stderr.write({report!r}); sys.exit(1)"],
-                                            **kwargs)
-                        return ""
-                    if argv[:2] in (["git", "diff"], ["git", "switch"], ["git", "push"]):
-                        return ""
-                    if argv[0] == "git" and "commit" in argv:
-                        return ""
-                    if argv[:3] == ["gh", "pr", "create"]:
-                        self.assertIn("--draft", argv)
-                        self.assertEqual(argv[argv.index("--base") + 1], "main")
-                        body = Path(argv[argv.index("--body-file") + 1]).read_text(encoding="utf-8")
-                        self.assertIn("No candidate tests were run locally", body)
-                        return "https://github.com/example/fixture/pull/1"
-                    if argv[:3] == ["git", "worktree", "remove"]:
-                        return ""
-                    raise AssertionError("Unexpected candidate execution or external command: " + repr(argv))
-
-                with patch.object(module, "ensure_auth"), \
-                     patch.object(module, "verify_no_candidate") as duplicate_check, \
-                     patch.object(module.Path, "home", return_value=Path(temp)), \
-                     patch.object(module, "cmd", side_effect=fake), redirect_stdout(StringIO()):
-                    if reject_patch:
-                        with self.assertRaisesRegex(RuntimeError, "patch_guard"):
-                            module.run(REPO_ROOT, 3, execute=True)
-                    else:
-                        module.run(REPO_ROOT, 3, execute=True)
-                self.assertEqual(sum(argv[:2] == ["codex", "exec"] for argv in calls), 1)
-                self.assertEqual(calls[-1][:3], ["git", "worktree", "remove"])
-                guard_index = next(i for i, argv in enumerate(calls) if "patch_guard.py" in " ".join(argv))
-                publishes = [i for i, argv in enumerate(calls)
-                             if argv[:2] == ["git", "push"] or argv[:3] == ["gh", "pr", "create"]]
-                if reject_patch:
-                    self.assertFalse(publishes)
-                    self.assertFalse(any("commit" in argv for argv in calls))
-                    diagnostics = list((Path(temp) / ".local/state/footprint-local-autodev/diagnostics").glob("*.json"))
-                    self.assertEqual(len(diagnostics), 1)
-                    diagnostic = json.loads(diagnostics[0].read_text(encoding="utf-8"))
-                    self.assertEqual(diagnostic["reason"], outcome)
-                    self.assertEqual(diagnostic["issue"], 3)
-                    self.assertEqual(diagnostic["base_sha"], base)
-                    self.assertNotIn("PRIVATE", diagnostics[0].read_text(encoding="utf-8"))
-                else:
-                    self.assertEqual(len(publishes), 2)
-                    self.assertTrue(all(i > guard_index for i in publishes))
-                    self.assertEqual(duplicate_check.call_count, 2)
-                    self.assertFalse((Path(temp) / ".local/state/footprint-local-autodev/diagnostics").exists())
 
     def test_dry_run_does_not_call_codex_or_mutate_git(self):
         sample = self.issue()

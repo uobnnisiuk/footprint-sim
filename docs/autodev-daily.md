@@ -77,7 +77,7 @@ older controller's `attempts/` directory or `last-failure.json`. The `started`
 day marker records the reservation; use `result-...json` for the final outcome.
 Its `exitCode` is the single-Issue runner's exit code, not Codex's exit code.
 
-Codex failures and subsequent patch-validation failures have separate private
+Codex, structured-response conversion, and patch-validation failures have separate private
 summaries under `~/.local/state/footprint-local-autodev/diagnostics/`. For a guard
 failure, the daily log includes a fixed reason and a `patch-guard-failure-*.json`
 path. That JSON identifies the Issue and trusted base SHA. See
@@ -85,9 +85,10 @@ path. That JSON identifies the Issue and trusted base SHA. See
 reason codes and what is deliberately not retained. Logs made before this
 diagnostic support cannot be reconstructed by reading the older controller files.
 
-Deploy the runner and guard together through the reviewed main branch: the
-runner executes the guard from a temporary checkout of `origin/main`. Replacing
-only the local runner while main still has the old guard is not a supported
+Deploy the runner, structured-edit converter, output schema and guard together
+through the reviewed main branch: the runner uses these files from a temporary
+checkout of `origin/main`. Replacing only the local runner while main still has
+older conversion/validation files is not a supported
 upgrade. An upgrade does not authorize or clear a recorded Issue attempt.
 
 **No hard usage or financial cap exists.** ChatGPT plan usage is consumed;
