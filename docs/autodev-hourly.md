@@ -29,8 +29,9 @@ fast-forward, source verification, dry-run and installer invocation. The
 installer rejects an enabled task and an elevated PowerShell process. Its own
 backup is the already disabled definition, so keep the original backup too.
 
-After the staged definition and unchanged ledgers/Monitor are verified, restore
-the saved enabled state, release the deployment locks and read the actual
+After the staged definition and unchanged ledgers/Monitor are verified, release
+the deployment locks while Daily remains disabled, restore the saved enabled
+state and read the actual
 `Get-ScheduledTaskInfo` NextRunTime. If verification fails, leave Daily disabled,
 retain all records and report the incomplete step; do not enable or roll back
 by guessing. No `Start-ScheduledTask`, production `--execute` or model invocation
@@ -44,10 +45,14 @@ directory. New files are `day-YYYY-MM-DD-hour-H.json`, `log-...-hour-H.txt` and
 No reservation or Issue marker is removed, reset, overwritten or discounted
 because of failure. Both old `-slot-N` and `-3h-slot-N` reservations count against
 the same eight-attempt total; their current three-hour bucket remains blocked
-conservatively. An original one-per-day marker blocks the entire date. Orphaned
-same-day Issue markers and malformed/unknown reservation formats stop execution
-rather than guessing unused credit. Two reservation files count as two even if
-they name one Issue. Result/log files are not extra attempts.
+conservatively. An original one-per-day marker blocks the entire date. Every
+historical and current reservation must match exactly one per-Issue marker;
+missing or mismatched counterparts, duplicate Issue reservations, orphaned
+results/logs, and malformed or unknown entries stop execution rather than
+guessing unused credit. This also prevents a partial reservation write from
+making an Issue eligible again on a later hour or date. Missing result/log
+files can follow a crash and do not restore an allowance. Result/log files
+are not extra attempts. Validation never repairs or removes a ledger entry.
 
 The JST date/hour is sampled again after network preflight, under the existing
 lock. Midnight resets only the DATE allowance, never Issue eligibility. This is
