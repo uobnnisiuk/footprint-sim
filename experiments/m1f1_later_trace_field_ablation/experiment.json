@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "id": "m1f1-s5-later-trace-a-field-ablation",
+  "scenarioPath": "../../scenarios/s5_distributed_past_evidence/scenario.json",
+  "scenarioId": "s5-distributed-past-evidence",
+  "baseObservationAblationExperimentPath": "../m1f_observation_ablation/experiment.json",
+  "sourceObservationKey": "later-trace-a",
+  "fields": [
+    {
+      "id": "subject",
+      "description": "The observed participant identity and entity kind: person-a with person-b."
+    },
+    {
+      "id": "time",
+      "description": "The observation time window at tick 24; cutoff availability at tick 25 remains fixed metadata."
+    },
+    {
+      "id": "location",
+      "description": "The recorded fork-east/fork-west region set."
+    },
+    {
+      "id": "relation",
+      "description": "The observed encounter relation and its declared later-trace transformation context."
+    }
+  ],
+  "requiredFieldIds": ["subject", "time", "location", "relation"],
+  "profiles": [
+    {
+      "id": "full",
+      "kind": "full",
+      "availableFieldIds": ["subject", "time", "location", "relation"],
+      "isCore": true,
+      "selectionRationale": "All four information fields required by the current declared transformation are available."
+    },
+    {
+      "id": "minus-subject",
+      "kind": "singleFieldRemoval",
+      "availableFieldIds": ["time", "location", "relation"],
+      "isCore": true,
+      "selectionRationale": "Remove only observed participant identity and entity kind."
+    },
+    {
+      "id": "minus-time",
+      "kind": "singleFieldRemoval",
+      "availableFieldIds": ["subject", "location", "relation"],
+      "isCore": true,
+      "selectionRationale": "Remove only the observed time window while retaining fixed cutoff metadata."
+    },
+    {
+      "id": "minus-location",
+      "kind": "singleFieldRemoval",
+      "availableFieldIds": ["subject", "time", "relation"],
+      "isCore": true,
+      "selectionRationale": "Remove only the recorded region set."
+    },
+    {
+      "id": "minus-relation",
+      "kind": "singleFieldRemoval",
+      "availableFieldIds": ["subject", "time", "location"],
+      "isCore": true,
+      "selectionRationale": "Remove only the observed relation and declared transformation context."
+    },
+    {
+      "id": "none",
+      "kind": "none",
+      "availableFieldIds": [],
+      "isCore": true,
+      "selectionRationale": "None of the four information fields is available."
+    },
+    {
+      "id": "subject-only",
+      "kind": "singleFieldPresence",
+      "availableFieldIds": ["subject"],
+      "isCore": true,
+      "selectionRationale": "Only participant identity and entity kind are available."
+    },
+    {
+      "id": "time-only",
+      "kind": "singleFieldPresence",
+      "availableFieldIds": ["time"],
+      "isCore": true,
+      "selectionRationale": "Only the observed time window is available."
+    },
+    {
+      "id": "location-only",
+      "kind": "singleFieldPresence",
+      "availableFieldIds": ["location"],
+      "isCore": true,
+      "selectionRationale": "Only the recorded region set is available."
+    },
+    {
+      "id": "relation-only",
+      "kind": "singleFieldPresence",
+      "availableFieldIds": ["relation"],
+      "isCore": true,
+      "selectionRationale": "Only the observed relation and transformation context are available."
+    }
+  ]
+}

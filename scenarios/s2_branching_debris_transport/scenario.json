@@ -1,0 +1,417 @@
+{
+  "schemaVersion": 2,
+  "id": "s2-branching-debris-transport",
+  "title": "S2: Synthetic branching debris transport",
+  "description": "A synthetic research scenario with uncalibrated branch weights. It does not represent probabilities or terrain from a real disaster.",
+  "targetPersonId": "person-sora",
+  "normalWalkingRadius": 32.0,
+  "hazardTransportEnvelopeRegionIds": [
+    "slope-source",
+    "debris-fork",
+    "river-channel",
+    "deposition-north",
+    "deposition-central",
+    "deposition-south",
+    "downstream-bank"
+  ],
+  "stochasticHazard": {
+    "hazardId": "hazard-synthetic-debris",
+    "sourceRegionId": "slope-source",
+    "startTick": 10,
+    "deviceId": "device-sora-phone",
+    "separationProbability": 0.8,
+    "maximumTransitionsPerEntity": 12,
+    "nodes": [
+      {
+        "regionId": "slope-source",
+        "minimumArrivalTick": 10,
+        "maximumArrivalTick": 10,
+        "depositionProbability": 0.0,
+        "trappingProbability": 0.0,
+        "releaseProbability": 0.0,
+        "minimumReleaseDelayTicks": 0,
+        "maximumReleaseDelayTicks": 0,
+        "isTerminal": false,
+        "isRequiredTerminal": false,
+        "publiclyVisible": true,
+        "publishedAtTick": 0,
+        "publicProvenanceId": "synthetic-envelope-source"
+      },
+      {
+        "regionId": "debris-fork",
+        "minimumArrivalTick": 11,
+        "maximumArrivalTick": 12,
+        "depositionProbability": 0.0,
+        "trappingProbability": 0.0,
+        "releaseProbability": 0.0,
+        "minimumReleaseDelayTicks": 0,
+        "maximumReleaseDelayTicks": 0,
+        "isTerminal": false,
+        "isRequiredTerminal": false,
+        "publiclyVisible": true,
+        "publishedAtTick": 0,
+        "publicProvenanceId": "synthetic-envelope-fork"
+      },
+      {
+        "regionId": "river-channel",
+        "minimumArrivalTick": 13,
+        "maximumArrivalTick": 16,
+        "depositionProbability": 0.0,
+        "trappingProbability": 0.0,
+        "releaseProbability": 0.0,
+        "minimumReleaseDelayTicks": 0,
+        "maximumReleaseDelayTicks": 0,
+        "isTerminal": false,
+        "isRequiredTerminal": false,
+        "publiclyVisible": true,
+        "publishedAtTick": 0,
+        "publicProvenanceId": "synthetic-envelope-river"
+      },
+      {
+        "regionId": "deposition-north",
+        "minimumArrivalTick": 15,
+        "maximumArrivalTick": 21,
+        "depositionProbability": 1.0,
+        "trappingProbability": 0.2,
+        "releaseProbability": 0.0,
+        "minimumReleaseDelayTicks": 0,
+        "maximumReleaseDelayTicks": 0,
+        "isTerminal": true,
+        "isRequiredTerminal": true,
+        "publiclyVisible": true,
+        "publishedAtTick": 0,
+        "publicProvenanceId": "synthetic-envelope-north"
+      },
+      {
+        "regionId": "deposition-central",
+        "minimumArrivalTick": 13,
+        "maximumArrivalTick": 17,
+        "depositionProbability": 1.0,
+        "trappingProbability": 0.3,
+        "releaseProbability": 0.0,
+        "minimumReleaseDelayTicks": 0,
+        "maximumReleaseDelayTicks": 0,
+        "isTerminal": true,
+        "isRequiredTerminal": true,
+        "publiclyVisible": true,
+        "publishedAtTick": 0,
+        "publicProvenanceId": "synthetic-envelope-central"
+      },
+      {
+        "regionId": "deposition-south",
+        "minimumArrivalTick": 13,
+        "maximumArrivalTick": 20,
+        "depositionProbability": 1.0,
+        "trappingProbability": 0.25,
+        "releaseProbability": 0.45,
+        "minimumReleaseDelayTicks": 1,
+        "maximumReleaseDelayTicks": 3,
+        "isTerminal": true,
+        "isRequiredTerminal": true,
+        "publiclyVisible": true,
+        "publishedAtTick": 0,
+        "publicProvenanceId": "synthetic-envelope-south"
+      },
+      {
+        "regionId": "downstream-bank",
+        "minimumArrivalTick": 17,
+        "maximumArrivalTick": 29,
+        "depositionProbability": 1.0,
+        "trappingProbability": 0.1,
+        "releaseProbability": 0.0,
+        "minimumReleaseDelayTicks": 0,
+        "maximumReleaseDelayTicks": 0,
+        "isTerminal": true,
+        "isRequiredTerminal": true,
+        "publiclyVisible": true,
+        "publishedAtTick": 0,
+        "publicProvenanceId": "synthetic-envelope-downstream"
+      }
+    ],
+    "transitions": [
+      {
+        "id": "source-to-fork",
+        "sourceRegionId": "slope-source",
+        "destinationRegionId": "debris-fork",
+        "weight": 1.0,
+        "minimumTravelTicks": 1,
+        "maximumTravelTicks": 2,
+        "transportType": "hazardDriven",
+        "activation": "anyEntity",
+        "publiclyVisible": true,
+        "provenanceId": "synthetic-topology-trunk"
+      },
+      {
+        "id": "fork-to-river",
+        "sourceRegionId": "debris-fork",
+        "destinationRegionId": "river-channel",
+        "weight": 0.38,
+        "minimumTravelTicks": 2,
+        "maximumTravelTicks": 4,
+        "transportType": "hazardDriven",
+        "activation": "anyEntity",
+        "publiclyVisible": true,
+        "provenanceId": "synthetic-topology-river-branch"
+      },
+      {
+        "id": "fork-to-central",
+        "sourceRegionId": "debris-fork",
+        "destinationRegionId": "deposition-central",
+        "weight": 0.32,
+        "minimumTravelTicks": 2,
+        "maximumTravelTicks": 5,
+        "transportType": "hazardDriven",
+        "activation": "anyEntity",
+        "publiclyVisible": true,
+        "provenanceId": "synthetic-topology-central-branch"
+      },
+      {
+        "id": "fork-to-south",
+        "sourceRegionId": "debris-fork",
+        "destinationRegionId": "deposition-south",
+        "weight": 0.3,
+        "minimumTravelTicks": 2,
+        "maximumTravelTicks": 5,
+        "transportType": "hazardDriven",
+        "activation": "anyEntity",
+        "publiclyVisible": true,
+        "provenanceId": "synthetic-topology-south-branch"
+      },
+      {
+        "id": "river-to-north",
+        "sourceRegionId": "river-channel",
+        "destinationRegionId": "deposition-north",
+        "weight": 0.55,
+        "minimumTravelTicks": 2,
+        "maximumTravelTicks": 5,
+        "transportType": "hazardDriven",
+        "activation": "anyEntity",
+        "publiclyVisible": true,
+        "provenanceId": "synthetic-topology-north-terminal"
+      },
+      {
+        "id": "river-to-south",
+        "sourceRegionId": "river-channel",
+        "destinationRegionId": "deposition-south",
+        "weight": 0.45,
+        "minimumTravelTicks": 2,
+        "maximumTravelTicks": 4,
+        "transportType": "hazardDriven",
+        "activation": "anyEntity",
+        "publiclyVisible": true,
+        "provenanceId": "synthetic-topology-river-south-terminal"
+      },
+      {
+        "id": "south-secondary-to-downstream",
+        "sourceRegionId": "deposition-south",
+        "destinationRegionId": "downstream-bank",
+        "weight": 1.0,
+        "minimumTravelTicks": 3,
+        "maximumTravelTicks": 6,
+        "transportType": "secondaryTransport",
+        "activation": "anyEntity",
+        "publiclyVisible": true,
+        "provenanceId": "synthetic-topology-secondary-surge"
+      }
+    ]
+  },
+  "regions": [
+    {
+      "id": "hillside-building",
+      "type": "building",
+      "center": { "x": 0.0, "y": 0.0, "elevation": 52.0, "regionId": "hillside-building" },
+      "passability": 0.8,
+      "connections": [{ "toRegionId": "access-road", "travelCost": 1.0, "passable": true }]
+    },
+    {
+      "id": "access-road",
+      "type": "road",
+      "center": { "x": 25.0, "y": 0.0, "elevation": 47.0, "regionId": "access-road" },
+      "passability": 0.9,
+      "connections": [{ "toRegionId": "slope-source", "travelCost": 2.0, "passable": false }]
+    },
+    {
+      "id": "safe-ridge",
+      "type": "outdoor",
+      "center": { "x": -18.0, "y": 18.0, "elevation": 58.0, "regionId": "safe-ridge" },
+      "passability": 0.7,
+      "connections": []
+    },
+    {
+      "id": "slope-source",
+      "type": "slope",
+      "center": { "x": 52.0, "y": -8.0, "elevation": 36.0, "regionId": "slope-source" },
+      "passability": 0.1,
+      "connections": [{ "toRegionId": "debris-fork", "travelCost": 1.0, "passable": false }]
+    },
+    {
+      "id": "debris-fork",
+      "type": "slope",
+      "center": { "x": 75.0, "y": -15.0, "elevation": 27.0, "regionId": "debris-fork" },
+      "passability": 0.0,
+      "connections": [
+        { "toRegionId": "river-channel", "travelCost": 1.0, "passable": false },
+        { "toRegionId": "deposition-central", "travelCost": 1.0, "passable": false },
+        { "toRegionId": "deposition-south", "travelCost": 1.0, "passable": false }
+      ]
+    },
+    {
+      "id": "river-channel",
+      "type": "river",
+      "center": { "x": 103.0, "y": -25.0, "elevation": 16.0, "regionId": "river-channel" },
+      "passability": 0.0,
+      "connections": [
+        { "toRegionId": "deposition-north", "travelCost": 1.0, "passable": false },
+        { "toRegionId": "deposition-south", "travelCost": 1.0, "passable": false }
+      ]
+    },
+    {
+      "id": "deposition-north",
+      "type": "outdoor",
+      "center": { "x": 132.0, "y": -12.0, "elevation": 10.0, "regionId": "deposition-north" },
+      "passability": 0.25,
+      "connections": []
+    },
+    {
+      "id": "deposition-central",
+      "type": "outdoor",
+      "center": { "x": 126.0, "y": -31.0, "elevation": 9.0, "regionId": "deposition-central" },
+      "passability": 0.25,
+      "connections": []
+    },
+    {
+      "id": "deposition-south",
+      "type": "outdoor",
+      "center": { "x": 119.0, "y": -52.0, "elevation": 8.0, "regionId": "deposition-south" },
+      "passability": 0.2,
+      "connections": [{ "toRegionId": "downstream-bank", "travelCost": 1.0, "passable": false }]
+    },
+    {
+      "id": "downstream-bank",
+      "type": "outdoor",
+      "center": { "x": 160.0, "y": -67.0, "elevation": 5.0, "regionId": "downstream-bank" },
+      "passability": 0.3,
+      "connections": []
+    }
+  ],
+  "entities": {
+    "persons": [
+      {
+        "id": "person-sora",
+        "initialPosition": { "x": 0.0, "y": 0.0, "elevation": 52.0, "regionId": "hillside-building" }
+      }
+    ],
+    "devices": [
+      {
+        "id": "device-sora-phone",
+        "initialPosition": { "x": 0.0, "y": 0.0, "elevation": 52.0, "regionId": "hillside-building" }
+      }
+    ],
+    "carriers": [],
+    "rescuers": [
+      {
+        "id": "rescuer-s2",
+        "initialPosition": { "x": 25.0, "y": 0.0, "elevation": 47.0, "regionId": "access-road" }
+      }
+    ],
+    "hazards": [
+      {
+        "id": "hazard-synthetic-debris",
+        "kind": "synthetic-branching-debris-flow",
+        "routeRegionIds": [
+          "slope-source",
+          "debris-fork",
+          "river-channel",
+          "deposition-north",
+          "deposition-central",
+          "deposition-south",
+          "downstream-bank"
+        ],
+        "minimumSpeedPerTick": 4.0,
+        "maximumSpeedPerTick": 16.0,
+        "stopProbability": 0.3
+      }
+    ]
+  },
+  "steps": [
+    {
+      "id": "associate-device",
+      "tick": 0,
+      "kind": "personDeviceAssociated",
+      "subjectIds": ["person-sora"],
+      "relatedEntityIds": ["device-sora-phone"],
+      "regionId": "hillside-building",
+      "payload": { "relationship": "carried" }
+    },
+    {
+      "id": "confirmed-at-building",
+      "tick": 3,
+      "kind": "regionEntered",
+      "movementKind": "voluntary",
+      "subjectIds": ["person-sora", "device-sora-phone"],
+      "position": { "x": 0.0, "y": 0.0, "elevation": 52.0, "regionId": "hillside-building" },
+      "observation": {
+        "evidenceType": "syntheticBuildingAccessRecord",
+        "reportedSubjectIds": ["person-sora"],
+        "reportedPosition": { "x": 0.0, "y": 0.0, "elevation": 52.0, "regionId": "hillside-building" },
+        "reportedRegionId": "hillside-building",
+        "emissionProbability": 1.0,
+        "dropProbability": 0.0,
+        "minimumDelayTicks": 0,
+        "maximumDelayTicks": 0,
+        "state": "confirmed",
+        "conflictProbability": 0.0,
+        "publicPayload": { "source": "synthetic-building-log" }
+      }
+    },
+    {
+      "id": "move-to-access-road",
+      "tick": 6,
+      "kind": "voluntaryMovement",
+      "movementKind": "voluntary",
+      "subjectIds": ["person-sora", "device-sora-phone"],
+      "position": { "x": 25.0, "y": 0.0, "elevation": 47.0, "regionId": "access-road" },
+      "payload": { "mode": "walking" }
+    },
+    {
+      "id": "coarse-source-observation",
+      "tick": 9,
+      "kind": "regionEntered",
+      "movementKind": "voluntary",
+      "subjectIds": ["person-sora", "device-sora-phone"],
+      "position": { "x": 52.0, "y": -8.0, "elevation": 36.0, "regionId": "slope-source" },
+      "observation": {
+        "evidenceType": "syntheticCoarsePresenceSignal",
+        "reportedSubjectIds": ["person-sora"],
+        "reportedPosition": { "x": 52.0, "y": -8.0, "elevation": 36.0, "regionId": "slope-source" },
+        "reportedRegionId": "slope-source",
+        "emissionProbability": 1.0,
+        "dropProbability": 0.0,
+        "minimumDelayTicks": 1,
+        "maximumDelayTicks": 3,
+        "state": "supportedButUncertain",
+        "conflictProbability": 0.0,
+        "publicPayload": { "source": "synthetic-slope-sensor" }
+      }
+    },
+    {
+      "id": "device-only-radio-fix",
+      "tick": 18,
+      "kind": "communicationLost",
+      "subjectIds": ["device-sora-phone"],
+      "relatedEntityIds": [],
+      "observation": {
+        "evidenceType": "syntheticDeviceRadioFix",
+        "reportedSubjectIds": ["device-sora-phone"],
+        "reportedRegionId": "downstream-bank",
+        "emissionProbability": 1.0,
+        "dropProbability": 0.0,
+        "minimumDelayTicks": 1,
+        "maximumDelayTicks": 2,
+        "state": "supportedButUncertain",
+        "conflictProbability": 0.0,
+        "publicPayload": { "source": "synthetic-radio-fix", "subjectType": "device" }
+      }
+    }
+  ]
+}

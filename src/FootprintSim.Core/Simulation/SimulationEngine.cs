@@ -3,6 +3,10 @@ using System.Text;
 using System.Text.Json;
 using FootprintSim.Evidence;
 using FootprintSim.Events;
+using FootprintSim.Hazards;
+using FootprintSim.Interactions;
+using FootprintSim.Interactions.Tracing;
+using FootprintSim.Interactions.Truth;
 using FootprintSim.Model;
 using FootprintSim.Scenarios;
 
@@ -14,7 +18,7 @@ public sealed class SimulationEngine
     {
         ScenarioValidator.Validate(scenario);
 
-        var random = new DeterministicRandom(seed);
+        var random = new StableRandom(seed);
         var eventCandidates = new List<EventCandidate>();
         var observations = new List<ObservationRecord>();
         var entityStates = CreateInitialEntityStates(scenario.Entities);
@@ -71,6 +75,24 @@ public sealed class SimulationEngine
             }
         }
 
+        if (scenario.StochasticHazard is not null)
+        {
+            var propagation = new StochasticHazardPropagator().Propagate(scenario, seed);
+            var stableOrderBase = ((long)scenario.Steps.Count) * 100;
+            foreach (var item in propagation.Events.Select((simulationEvent, index) =>
+                (simulationEvent, index)))
+            {
+                eventCandidates.Add(new EventCandidate(
+                    item.simulationEvent,
+                    stableOrderBase + item.index));
+            }
+
+            foreach (var finalPosition in propagation.FinalPositions)
+            {
+                UpdatePosition(entityStates, finalPosition.Key, finalPosition.Value);
+            }
+        }
+
         var orderedEvents = eventCandidates
             .OrderBy(candidate => candidate.Event.Tick)
             .ThenBy(candidate => candidate.StableOrder)
@@ -83,6 +105,13 @@ public sealed class SimulationEngine
             .ThenBy(observation => observation.ObservedTick)
             .ThenBy(observation => observation.ObservationId, StringComparer.Ordinal)
             .ToArray();
+
+        var interactionProjection = CreateInteractionProjection(
+            scenario,
+            seed,
+            orderedEvents,
+            eventIdsByStep,
+            orderedObservations);
 
         return new SimulationRun
         {
@@ -97,8 +126,411 @@ public sealed class SimulationEngine
             },
             GroundTruthFinalEntityStates = new SortedDictionary<string, EntityState>(
                 entityStates,
-                StringComparer.Ordinal)
+                StringComparer.Ordinal),
+            GroundTruthInteractionOccurrences = interactionProjection.Occurrences,
+            InteractionObservations = interactionProjection.Observations,
+            CrossThreadConstraints = interactionProjection.Constraints,
+            WeftEvidenceCondition = interactionProjection.Condition,
+            CausalTracingConstraints = interactionProjection.TracingConstraints,
+            CausalTracingCondition = interactionProjection.TracingCondition,
+            PastStateEvidenceCondition = interactionProjection.PastStateCondition
         };
+    }
+
+    private static InteractionProjection CreateInteractionProjection(
+        ScenarioDefinition scenario,
+        int seed,
+        IReadOnlyList<SimulationEvent> events,
+        IReadOnlyDictionary<string, string> eventIdsByStep,
+        IReadOnlyList<ObservationRecord> observations)
+    {
+        if (scenario.PastStateReconstruction is not null)
+        {
+            return CreatePastStateProjection(scenario, seed, observations);
+        }
+
+        if (scenario.CausalTracingEvaluation is not null)
+        {
+            return CreateCausalTracingProjection(scenario, seed, events, eventIdsByStep);
+        }
+
+        var definition = scenario.WeftEvaluation;
+        if (definition is null)
+        {
+            return new InteractionProjection([], null, null, null, null, null, null);
+        }
+
+        var sourceEventId = eventIdsByStep[definition.EncounterStepId];
+        var sourceEvent = events.Single(item => string.Equals(
+            item.Id,
+            sourceEventId,
+            StringComparison.Ordinal));
+        var occurrence = InteractionOccurrenceProjector.FromPersonPersonEncounter(
+            scenario.Id,
+            seed,
+            sourceEvent,
+            scenario.Entities.Persons.Select(person => person.Id));
+        var condition = definition.ConditionCycle[(int)((uint)seed % definition.ConditionCycle.Count)];
+        InteractionObservation? observation = null;
+        if (condition != WeftEvidenceCondition.DeviceOnly)
+        {
+            var observedWindow = ((uint)seed / (uint)definition.ConditionCycle.Count) % 2 == 0
+                ? InteractionTimeWindow.At(definition.HistoricalEndTick)
+                : new InteractionTimeWindow(
+                    definition.HistoricalStartTick,
+                    definition.HistoricalEndTick);
+            var state = condition switch
+            {
+                WeftEvidenceCondition.SupportedButUncertain =>
+                    EvidenceState.SupportedButUncertain,
+                WeftEvidenceCondition.Conflicting => EvidenceState.Conflicting,
+                _ => EvidenceState.Confirmed
+            };
+            var availableAt = condition == WeftEvidenceCondition.Delayed
+                ? definition.DelayedAvailableAtTick
+                : definition.NormalAvailableAtTick;
+            var visibility = condition == WeftEvidenceCondition.Unavailable
+                ? InteractionVisibility.PrivateEvidence
+                : InteractionVisibility.PublicEvidence;
+            var regionId = condition == WeftEvidenceCondition.Conflicting
+                ? definition.ConflictingRegionId
+                : definition.EncounterRegionId;
+            observation = InteractionObservation.Create(
+                scenario.Id,
+                seed,
+                $"synthetic-encounter-evidence:{scenario.Id}:{seed}",
+                referencedInteractionId: null,
+                InteractionRelationKind.PersonPersonEncounter,
+                [
+                    new InteractionParticipant(
+                        scenario.TargetPersonId,
+                        InteractionEntityKind.Person,
+                        InteractionParticipantRole.EncounterParticipant),
+                    new InteractionParticipant(
+                        definition.OtherPersonId,
+                        InteractionEntityKind.Person,
+                        InteractionParticipantRole.EncounterParticipant)
+                ],
+                observedWindow,
+                [regionId],
+                availableAt,
+                state,
+                isPersonEvidence: true,
+                isDeviceOnlyEvidence: false,
+                visibility,
+                [new InteractionProvenance(
+                    InteractionProvenanceKind.ExternalSource,
+                    $"synthetic-s3-condition:{condition}")]);
+        }
+
+        var observationSet = new InteractionObservationSet(
+            scenario.Id,
+            seed,
+            observation is null ? [] : [observation]);
+        var constraint = observation is null
+            ? null
+            : CrossThreadConstraintDeriver.DerivePersonEncounterCoLocation(
+                observation,
+                scenario.TargetPersonId);
+        var constraintSet = new CrossThreadConstraintSet(
+            scenario.Id,
+            seed,
+            constraint is null ? [] : [constraint]);
+        return new InteractionProjection(
+            [occurrence],
+            observationSet,
+            constraintSet,
+            condition,
+            null,
+            null,
+            null);
+    }
+
+    private static InteractionProjection CreateCausalTracingProjection(
+        ScenarioDefinition scenario,
+        int seed,
+        IReadOnlyList<SimulationEvent> events,
+        IReadOnlyDictionary<string, string> eventIdsByStep)
+    {
+        var definition = scenario.CausalTracingEvaluation!;
+        var condition = definition.ConditionCycle[(int)((uint)seed % definition.ConditionCycle.Count)];
+        var active = definition.Constraints
+            .Where(item => item.AppliesToConditions.Contains(condition))
+            .OrderBy(item => item.Id, StringComparer.Ordinal)
+            .ToArray();
+        // Truth occurrences follow the scenario world log, not which evidence is available
+        // under the current condition. This preserves occurrence != observation.
+        var occurrences = definition.Constraints
+            .Select(item => item.OccurrenceStepId)
+            .Where(item => item is not null)
+            .Distinct(StringComparer.Ordinal)
+            .Select(stepId =>
+            {
+                var sourceEvent = events.Single(item => string.Equals(
+                    item.Id,
+                    eventIdsByStep[stepId!],
+                    StringComparison.Ordinal));
+                return InteractionOccurrenceProjector.FromPersonPersonEncounter(
+                    scenario.Id,
+                    seed,
+                    sourceEvent,
+                    scenario.Entities.Persons.Select(person => person.Id));
+            })
+            .OrderBy(item => item.OccurrenceTimeWindow.StartTick)
+            .ThenBy(item => item.InteractionId, StringComparer.Ordinal)
+            .ToArray();
+
+        var observations = new List<InteractionObservation>();
+        var observationsByKey = new Dictionary<string, InteractionObservation>(StringComparer.Ordinal);
+        foreach (var sourceGroup in active
+            .Where(item => item.SourceKind == TracingConstraintSourceKind.CrossThreadObservation)
+            .GroupBy(item => item.SourceObservationKey, StringComparer.Ordinal)
+            .OrderBy(item => item.Key, StringComparer.Ordinal))
+        {
+            var first = sourceGroup.OrderBy(item => item.Id, StringComparer.Ordinal).First();
+            var otherEntity = first.OtherEntityId ?? scenario.TargetPersonId;
+            var otherKind = first.SourceKind == TracingConstraintSourceKind.DeviceOnlyObservation
+                ? InteractionEntityKind.Device
+                : InteractionEntityKind.Person;
+            var observation = InteractionObservation.Create(
+                scenario.Id,
+                seed,
+                $"synthetic-s4-evidence:{sourceGroup.Key}:{scenario.Id}:{seed}",
+                referencedInteractionId: null,
+                InteractionRelationKind.PersonPersonEncounter,
+                [
+                    new InteractionParticipant(
+                        scenario.TargetPersonId,
+                        InteractionEntityKind.Person,
+                        InteractionParticipantRole.EncounterParticipant),
+                    new InteractionParticipant(
+                        otherEntity,
+                        otherKind,
+                        InteractionParticipantRole.EncounterParticipant)
+                ],
+                new InteractionTimeWindow(
+                    sourceGroup.Min(item => item.ObservedStartTick),
+                    sourceGroup.Max(item => item.ObservedEndTick)),
+                sourceGroup.SelectMany(item => item.AllowedRegionIds),
+                sourceGroup.Min(item => item.AvailableAtTick),
+                first.EvidenceState,
+                first.IsPersonEvidence,
+                first.IsDeviceOnlyEvidence,
+                first.Visibility,
+                [new InteractionProvenance(
+                    InteractionProvenanceKind.ExternalSource,
+                    $"synthetic-s4-condition:{condition}")]);
+            observations.Add(observation);
+            observationsByKey.Add(sourceGroup.Key, observation);
+        }
+
+        var constraints = active.Select(item =>
+        {
+            var hasObservation = observationsByKey.TryGetValue(
+                item.SourceObservationKey,
+                out var observation);
+            var sourceObservationId = hasObservation
+                ? observation!.ObservationId
+                : InteractionStableIdentifier.Create(
+                    "iobs",
+                    scenario.Id,
+                    InteractionStableIdentifier.Seed(seed),
+                    item.SourceObservationKey);
+            var sourceObservedWindow = hasObservation
+                ? observation!.ObservedTimeWindow
+                : new InteractionTimeWindow(item.ObservedStartTick, item.ObservedEndTick);
+            var availableAtTick = hasObservation
+                ? Math.Max(item.AvailableAtTick, observation!.AvailableAtTick)
+                : item.AvailableAtTick;
+            var otherEntity = item.OtherEntityId ?? scenario.TargetPersonId;
+            var otherKind = item.SourceKind == TracingConstraintSourceKind.DeviceOnlyObservation
+                ? InteractionEntityKind.Device
+                : InteractionEntityKind.Person;
+            return CausalTracingConstraint.Create(
+                scenario.Id,
+                seed,
+                sourceObservationId,
+                item.DirectSourceId,
+                item.SourceAncestryIds,
+                scenario.TargetPersonId,
+                item.SourceKind,
+                item.RelationKind,
+                [
+                    new InteractionParticipant(
+                        scenario.TargetPersonId,
+                        InteractionEntityKind.Person,
+                        InteractionParticipantRole.EncounterParticipant),
+                    new InteractionParticipant(
+                        otherEntity,
+                        otherKind,
+                        InteractionParticipantRole.EncounterParticipant)
+                ],
+                item.Role,
+                sourceObservedWindow,
+                new InteractionTimeWindow(item.ConstrainedStartTick, item.ConstrainedEndTick),
+                item.AllowedRegionIds,
+                availableAtTick,
+                item.EvidenceState,
+                item.IsPersonEvidence,
+                item.IsDeviceOnlyEvidence,
+                item.Visibility,
+                item.DerivationKind,
+                [
+                    new InteractionProvenance(
+                        InteractionProvenanceKind.DerivationRule,
+                        item.DerivationKind),
+                    new InteractionProvenance(
+                        InteractionProvenanceKind.ExternalSource,
+                        item.DirectSourceId)
+                ]);
+        }).ToArray();
+
+        return new InteractionProjection(
+            occurrences,
+            new InteractionObservationSet(scenario.Id, seed, observations),
+            new CrossThreadConstraintSet(scenario.Id, seed, []),
+            null,
+            new CausalTracingConstraintSet(scenario.Id, seed, constraints),
+            condition,
+            null);
+    }
+
+    private static InteractionProjection CreatePastStateProjection(
+        ScenarioDefinition scenario,
+        int seed,
+        IReadOnlyList<ObservationRecord> publicObservations)
+    {
+        var definition = scenario.PastStateReconstruction!;
+        var condition = definition.ConditionCycle[(int)((uint)seed % definition.ConditionCycle.Count)];
+        var active = definition.Constraints
+            .Where(item => item.AppliesToPastStateConditions.Contains(condition))
+            .OrderBy(item => item.Id, StringComparer.Ordinal)
+            .ToArray();
+        var observations = new List<InteractionObservation>();
+        var observationsByKey = new Dictionary<string, InteractionObservation>(StringComparer.Ordinal);
+        var publicObservationsByKey = publicObservations
+            .GroupBy(item => item.EvidenceType, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => group.OrderBy(item => item.ObservationId, StringComparer.Ordinal).First(),
+                StringComparer.Ordinal);
+        foreach (var sourceGroup in active
+            .Where(item => item.SourceKind == TracingConstraintSourceKind.CrossThreadObservation)
+            .GroupBy(item => item.SourceObservationKey, StringComparer.Ordinal)
+            .OrderBy(item => item.Key, StringComparer.Ordinal))
+        {
+            var first = sourceGroup.OrderBy(item => item.Id, StringComparer.Ordinal).First();
+            var otherEntity = first.OtherEntityId ?? scenario.TargetPersonId;
+            var observation = InteractionObservation.Create(
+                scenario.Id,
+                seed,
+                $"synthetic-s5-evidence:{sourceGroup.Key}:{scenario.Id}:{seed}",
+                referencedInteractionId: null,
+                InteractionRelationKind.PersonPersonEncounter,
+                [
+                    new InteractionParticipant(
+                        scenario.TargetPersonId,
+                        InteractionEntityKind.Person,
+                        InteractionParticipantRole.EncounterParticipant),
+                    new InteractionParticipant(
+                        otherEntity,
+                        InteractionEntityKind.Person,
+                        InteractionParticipantRole.EncounterParticipant)
+                ],
+                new InteractionTimeWindow(
+                    sourceGroup.Min(item => item.ObservedStartTick),
+                    sourceGroup.Max(item => item.ObservedEndTick)),
+                sourceGroup.SelectMany(item => item.AllowedRegionIds),
+                sourceGroup.Min(item => item.AvailableAtTick),
+                first.EvidenceState,
+                first.IsPersonEvidence,
+                first.IsDeviceOnlyEvidence,
+                first.Visibility,
+                [new InteractionProvenance(
+                    InteractionProvenanceKind.ExternalSource,
+                    $"synthetic-s5-condition:{condition}")]);
+            observations.Add(observation);
+            observationsByKey.Add(sourceGroup.Key, observation);
+        }
+
+        var constraints = active.Select(item =>
+        {
+            var hasObservation = observationsByKey.TryGetValue(
+                item.SourceObservationKey,
+                out var observation);
+            var hasPublicObservation = publicObservationsByKey.TryGetValue(
+                item.SourceObservationKey,
+                out var publicObservation);
+            var sourceObservationId = hasObservation
+                ? observation!.ObservationId
+                : hasPublicObservation
+                    ? publicObservation!.ObservationId
+                : InteractionStableIdentifier.Create(
+                    "iobs",
+                    scenario.Id,
+                    InteractionStableIdentifier.Seed(seed),
+                    item.SourceObservationKey);
+            var sourceObservedWindow = hasObservation
+                ? observation!.ObservedTimeWindow
+                : hasPublicObservation
+                    ? InteractionTimeWindow.At(publicObservation!.ObservedTick)
+                : new InteractionTimeWindow(item.ObservedStartTick, item.ObservedEndTick);
+            var availableAtTick = hasObservation
+                ? Math.Max(item.AvailableAtTick, observation!.AvailableAtTick)
+                : hasPublicObservation
+                    ? Math.Max(item.AvailableAtTick, publicObservation!.AvailableTick)
+                : item.AvailableAtTick;
+            var otherEntity = item.OtherEntityId ?? scenario.TargetPersonId;
+            var otherKind = item.SourceKind == TracingConstraintSourceKind.DeviceOnlyObservation
+                ? InteractionEntityKind.Device
+                : InteractionEntityKind.Person;
+            return CausalTracingConstraint.Create(
+                scenario.Id,
+                seed,
+                sourceObservationId,
+                item.DirectSourceId,
+                item.SourceAncestryIds,
+                scenario.TargetPersonId,
+                item.SourceKind,
+                item.RelationKind,
+                [
+                    new InteractionParticipant(
+                        scenario.TargetPersonId,
+                        InteractionEntityKind.Person,
+                        InteractionParticipantRole.EncounterParticipant),
+                    new InteractionParticipant(
+                        otherEntity,
+                        otherKind,
+                        InteractionParticipantRole.EncounterParticipant)
+                ],
+                item.Role,
+                sourceObservedWindow,
+                new InteractionTimeWindow(item.ConstrainedStartTick, item.ConstrainedEndTick),
+                item.AllowedRegionIds,
+                availableAtTick,
+                item.EvidenceState,
+                item.IsPersonEvidence,
+                item.IsDeviceOnlyEvidence,
+                item.Visibility,
+                item.DerivationKind,
+                [
+                    new InteractionProvenance(
+                        InteractionProvenanceKind.DerivationRule,
+                        item.DerivationKind),
+                    new InteractionProvenance(
+                        InteractionProvenanceKind.ExternalSource,
+                        item.DirectSourceId)
+                ]);
+        }).ToArray();
+
+        return new InteractionProjection(
+            [],
+            new InteractionObservationSet(scenario.Id, seed, observations),
+            new CrossThreadConstraintSet(scenario.Id, seed, []),
+            null,
+            new CausalTracingConstraintSet(scenario.Id, seed, constraints),
+            null,
+            condition);
     }
 
     private static Dictionary<string, EntityState> CreateInitialEntityStates(ScenarioEntities entities)
@@ -175,7 +607,7 @@ public sealed class SimulationEngine
         long stableOrder,
         SimulationEvent sourceEvent,
         ObservationSpecification specification,
-        DeterministicRandom random,
+        StableRandom random,
         ICollection<ObservationRecord> observations,
         ICollection<EventCandidate> eventCandidates)
     {
@@ -379,4 +811,13 @@ public sealed class SimulationEngine
     private sealed record IndexedStep(ScenarioStep Step, int Index);
 
     private sealed record EventCandidate(SimulationEvent Event, long StableOrder);
+
+    private sealed record InteractionProjection(
+        IReadOnlyList<InteractionOccurrence> Occurrences,
+        InteractionObservationSet? Observations,
+        CrossThreadConstraintSet? Constraints,
+        WeftEvidenceCondition? Condition,
+        CausalTracingConstraintSet? TracingConstraints,
+        CausalTracingCondition? TracingCondition,
+        PastStateEvidenceCondition? PastStateCondition);
 }

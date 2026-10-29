@@ -1,13 +1,31 @@
+using System.Buffers.Binary;
+using System.Security.Cryptography;
+using System.Text;
+
 namespace FootprintSim.Simulation;
 
-// SplitMix64 is small, explicitly specified, and independent of System.Random implementation changes.
-internal sealed class DeterministicRandom
+// SplitMix64 is explicitly specified and stable across .NET versions. It is not cryptographic.
+public sealed class StableRandom
 {
     private ulong _state;
 
-    public DeterministicRandom(int seed)
+    public StableRandom(ulong seed)
     {
-        _state = unchecked((ulong)(long)seed);
+        _state = seed;
+    }
+
+    public StableRandom(int seed)
+        : this(unchecked((ulong)(long)seed))
+    {
+    }
+
+    public ulong NextUInt64()
+    {
+        _state += 0x9E3779B97F4A7C15UL;
+        var value = _state;
+        value = (value ^ (value >> 30)) * 0xBF58476D1CE4E5B9UL;
+        value = (value ^ (value >> 27)) * 0x94D049BB133111EBUL;
+        return value ^ (value >> 31);
     }
 
     public double NextDouble()
@@ -28,15 +46,39 @@ internal sealed class DeterministicRandom
         }
 
         var range = (ulong)((long)maximum - minimum + 1L);
-        return minimum + (int)(NextUInt64() % range);
-    }
+        var rejectionThreshold = unchecked(0UL - range) % range;
+        ulong value;
+        do
+        {
+            value = NextUInt64();
+        }
+        while (value < rejectionThreshold);
 
-    private ulong NextUInt64()
+        return minimum + (int)(value % range);
+    }
+}
+
+public static class StableSeed
+{
+    public static ulong Derive(ulong rootSeed, params string[] components)
     {
-        _state += 0x9E3779B97F4A7C15UL;
-        var value = _state;
-        value = (value ^ (value >> 30)) * 0xBF58476D1CE4E5B9UL;
-        value = (value ^ (value >> 27)) * 0x94D049BB133111EBUL;
-        return value ^ (value >> 31);
+        ArgumentNullException.ThrowIfNull(components);
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        Span<byte> seedBytes = stackalloc byte[sizeof(ulong)];
+        BinaryPrimitives.WriteUInt64LittleEndian(seedBytes, rootSeed);
+        hash.AppendData(seedBytes);
+        Span<byte> lengthBytes = stackalloc byte[sizeof(int)];
+
+        foreach (var component in components)
+        {
+            ArgumentNullException.ThrowIfNull(component);
+            var bytes = Encoding.UTF8.GetBytes(component);
+            BinaryPrimitives.WriteInt32LittleEndian(lengthBytes, bytes.Length);
+            hash.AppendData(lengthBytes);
+            hash.AppendData(bytes);
+        }
+
+        var digest = hash.GetHashAndReset();
+        return BinaryPrimitives.ReadUInt64LittleEndian(digest);
     }
 }

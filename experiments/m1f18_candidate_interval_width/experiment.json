@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "m1f18-candidate-interval-width-paired",
+  "baselineFinalCommit": "58bb181593c11fd8afff5d03b057b01b5de3ab3b",
+  "baselineExperimentSha256": "e717669c7178dcf8b278b831b6ee049a2aa8dae5a9c9e6366b8c32712649ca39",
+  "requiredSeedStart": 0,
+  "requiredSeedEnd": 199,
+  "arms": ["original", "point-at-start"],
+  "transformRuleId": "candidate-point-at-existing-start-v1",
+  "stableKeyRule": "seed-and-original-candidate-key-bijection",
+  "truthRule": "unchanged-original-truth-key-resolved-after-public-inference",
+  "plateauRuleId": "m1f17-explicit-region-domain-plateau-v1",
+  "fixedInference": "original-public-derivations-and-m1f14-composer",
+  "prospectiveOutcomeInspected": false,
+  "failurePolicy": "fail-no-skip-no-regenerate-no-tuning"
+}

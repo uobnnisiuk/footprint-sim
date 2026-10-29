@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "id": "m1f10-participant-ambiguity-derivation",
+  "scenarioId": "m1f10-same-time-person-encounter-fixture",
+  "seed": 0,
+  "targetEntityId": "person-a",
+  "targetEntityKind": "person",
+  "encounterSourceEvidenceIdentifier": "public-encounter-report",
+  "relationKind": "personPersonEncounter",
+  "encounterStartTick": 10,
+  "encounterEndTick": 10,
+  "encounterAvailableAtTick": 11,
+  "evidenceAvailabilityCutoff": 11,
+  "encounterEvidenceState": "confirmed",
+  "encounterSourceAncestryIds": [
+    "public-encounter-source-group"
+  ],
+  "participantLocationEvidence": [
+    {
+      "sourceEvidenceIdentifier": "public-location-person-b",
+      "participantId": "person-b",
+      "entityKind": "person",
+      "applicableStartTick": 10,
+      "applicableEndTick": 10,
+      "allowedRegionIds": ["east"],
+      "availableAtTick": 11,
+      "evidenceState": "confirmed",
+      "visibility": "publicEvidence",
+      "usageRole": "candidateGeneration",
+      "sourceAncestryIds": ["participant-b-location-source-group"]
+    },
+    {
+      "sourceEvidenceIdentifier": "public-location-person-c",
+      "participantId": "person-c",
+      "entityKind": "person",
+      "applicableStartTick": 10,
+      "applicableEndTick": 10,
+      "allowedRegionIds": ["west"],
+      "availableAtTick": 11,
+      "evidenceState": "confirmed",
+      "visibility": "publicEvidence",
+      "usageRole": "candidateGeneration",
+      "sourceAncestryIds": ["participant-c-location-source-group"]
+    },
+    {
+      "sourceEvidenceIdentifier": "public-location-person-d",
+      "participantId": "person-d",
+      "entityKind": "person",
+      "applicableStartTick": 10,
+      "applicableEndTick": 10,
+      "allowedRegionIds": ["north"],
+      "availableAtTick": 11,
+      "evidenceState": "confirmed",
+      "visibility": "publicEvidence",
+      "usageRole": "candidateGeneration",
+      "sourceAncestryIds": ["participant-d-location-source-group"]
+    }
+  ],
+  "candidateStates": [
+    {
+      "startTick": 10,
+      "endTick": 10,
+      "temporalKind": "eventPoint",
+      "regionIds": ["east"]
+    },
+    {
+      "startTick": 10,
+      "endTick": 10,
+      "temporalKind": "eventPoint",
+      "regionIds": ["west"]
+    },
+    {
+      "startTick": 10,
+      "endTick": 10,
+      "temporalKind": "eventPoint",
+      "regionIds": ["north"]
+    },
+    {
+      "startTick": 10,
+      "endTick": 10,
+      "temporalKind": "eventPoint",
+      "regionIds": ["south"]
+    }
+  ],
+  "truthOtherParticipantId": "person-b",
+  "truthCandidateStartTick": 10,
+  "truthCandidateEndTick": 10,
+  "truthCandidateRegionId": "east",
+  "profiles": [
+    {
+      "id": "exact",
+      "informationOrder": 0,
+      "description": "The other encounter participant is exactly person-b.",
+      "identityKnowledge": "exact",
+      "entityKind": "person",
+      "possibleParticipantIds": ["person-b"]
+    },
+    {
+      "id": "narrow",
+      "informationOrder": 1,
+      "description": "The other encounter participant is either person-b or person-c.",
+      "identityKnowledge": "finiteAlternatives",
+      "entityKind": "person",
+      "possibleParticipantIds": ["person-b", "person-c"]
+    },
+    {
+      "id": "broad",
+      "informationOrder": 2,
+      "description": "The other encounter participant is person-b, person-c, or person-d.",
+      "identityKnowledge": "finiteAlternatives",
+      "entityKind": "person",
+      "possibleParticipantIds": ["person-b", "person-c", "person-d"]
+    },
+    {
+      "id": "unknown",
+      "informationOrder": 3,
+      "description": "A person-person encounter was observed, but the other person's identity is unknown.",
+      "identityKnowledge": "unknownIdentity",
+      "entityKind": "person",
+      "possibleParticipantIds": []
+    }
+  ]
+}

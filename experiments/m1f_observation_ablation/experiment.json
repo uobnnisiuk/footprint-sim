@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "id": "m1f-s5-observation-ablation",
+  "scenarioPath": "../../scenarios/s5_distributed_past_evidence/scenario.json",
+  "scenarioId": "s5-distributed-past-evidence",
+  "families": [
+    {
+      "id": "later-trace-a",
+      "description": "Confirmed later cross-thread trace with one same-source redundant derivation.",
+      "sourceObservationKeys": ["later-trace-a"]
+    },
+    {
+      "id": "later-trace-b",
+      "description": "Uncertain later cross-thread trace limiting one possible target region.",
+      "sourceObservationKeys": ["later-trace-b"]
+    },
+    {
+      "id": "later-trace-conflict",
+      "description": "Conflicting later cross-thread trace for the topology-inconsistent alternate route.",
+      "sourceObservationKeys": ["later-trace-conflict"]
+    },
+    {
+      "id": "known-later-public-state",
+      "description": "Coarse later public person-state record used as a traversal constraint.",
+      "sourceObservationKeys": ["known-later-public-state"]
+    },
+    {
+      "id": "public-environment-west",
+      "description": "Truth-independent west record used only for independent candidate verification.",
+      "sourceObservationKeys": ["public-environment-west"]
+    },
+    {
+      "id": "shared-record-check",
+      "description": "Candidate verification record sharing ancestry with later-trace-a.",
+      "sourceObservationKeys": ["shared-record-check"]
+    },
+    {
+      "id": "independent-conflicting-check",
+      "description": "Independent conflicting candidate-verification record.",
+      "sourceObservationKeys": ["independent-conflicting-check"]
+    },
+    {
+      "id": "device-fix",
+      "description": "Uncertain device-only record retained at the device/person boundary.",
+      "sourceObservationKeys": ["device-fix"]
+    }
+  ],
+  "selectedCombinations": [
+    {
+      "id": "pair-generation-and-traversal",
+      "familyIds": ["later-trace-a", "known-later-public-state"],
+      "selectionRationale": "Separates target-window generation information from fixed public-topology traversal work."
+    },
+    {
+      "id": "pair-generation-and-independent-verification",
+      "familyIds": ["later-trace-a", "public-environment-west"],
+      "selectionRationale": "Checks generation output together with an independent verification-only record."
+    },
+    {
+      "id": "pair-generation-and-shared-ancestry-verification",
+      "familyIds": ["later-trace-a", "shared-record-check"],
+      "selectionRationale": "Checks that shared ancestry is preserved when generation and verification records are both available."
+    }
+  ]
+}
