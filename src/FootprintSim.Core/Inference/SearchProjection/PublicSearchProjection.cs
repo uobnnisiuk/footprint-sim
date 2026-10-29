@@ -75,6 +75,76 @@ public sealed record PublicSearchProjectionResult(
     IReadOnlyList<ActionSupportProjection> Actions);
 
 /// <summary>
+/// Connects a public reconstruction to explicit caller-declared temporal and spatial maps.
+/// This does not infer transition completeness from a hazard envelope.
+/// </summary>
+public static class PublicPastStateProjectionAdapter
+{
+    public static PublicSearchProjectionInput CreateInput(
+        PastStateReconstructionResult reconstruction,
+        long targetTick,
+        IReadOnlyList<string> regionIds,
+        IReadOnlyList<string> searchUnitIds,
+        IReadOnlyList<PublicRegionProjection> regionProjections,
+        IReadOnlyList<PublicSearchUnitMapping> unitMappings,
+        IReadOnlyList<PublicActionFootprint> actions)
+    {
+        ArgumentNullException.ThrowIfNull(reconstruction);
+        ArgumentNullException.ThrowIfNull(reconstruction.Query);
+        ArgumentNullException.ThrowIfNull(reconstruction.EvidenceSet);
+        ArgumentNullException.ThrowIfNull(reconstruction.Candidates);
+        var query = reconstruction.Query;
+        if (!string.Equals(reconstruction.EvidenceSet.QueryId, query.QueryId, StringComparison.Ordinal)
+            || query.EvidenceAvailabilityCutoff < query.TargetTimeWindow.EndTick
+            || targetTick < query.EvidenceAvailabilityCutoff)
+        {
+            throw new InvalidDataException("Reconstruction query, evidence set or projection time is inconsistent.");
+        }
+
+        foreach (var candidate in reconstruction.Candidates)
+        {
+            ArgumentNullException.ThrowIfNull(candidate);
+            ArgumentNullException.ThrowIfNull(candidate.TargetTimeWindow);
+            if (!string.Equals(candidate.QueryId, query.QueryId, StringComparison.Ordinal)
+                || !string.Equals(candidate.TargetEntityId, query.TargetEntityId, StringComparison.Ordinal)
+                || candidate.TargetTimeWindow.StartTick != query.TargetTimeWindow.StartTick
+                || candidate.TargetTimeWindow.EndTick != query.TargetTimeWindow.EndTick)
+            {
+                throw new InvalidDataException("Candidate does not belong to the reconstruction query and exact window.");
+            }
+        }
+
+        var input = new PublicSearchProjectionInput(
+            query.QueryId, query.TargetEntityId, targetTick, query.EvidenceAvailabilityCutoff,
+            reconstruction.Candidates, regionIds, searchUnitIds, regionProjections, unitMappings, actions);
+        // Validate every supplied row before copying; do not prune unavailable or unused declarations.
+        // The projector also snapshots and canonicalizes every candidate metadata collection.
+        var validated = PublicSearchProjector.Project(input);
+        return input with
+        {
+            Candidates = validated.Candidates.Select(item => item.SourceCandidate).ToArray(),
+            RegionIds = Snapshot(regionIds),
+            SearchUnitIds = Snapshot(searchUnitIds),
+            RegionProjections = regionProjections
+                .OrderBy(row => row.HistoricalRegionId, StringComparer.Ordinal)
+                .ThenBy(row => row.StartTick)
+                .ThenBy(row => row.EndTick)
+                .ThenBy(row => row.TargetTick)
+                .Select(row => row with { CurrentRegionIds = Snapshot(row.CurrentRegionIds) }).ToArray(),
+            UnitMappings = unitMappings
+                .OrderBy(row => row.RegionId, StringComparer.Ordinal)
+                .ThenBy(row => row.TargetTick)
+                .Select(row => row with { UnitIds = Snapshot(row.UnitIds) }).ToArray(),
+            Actions = actions.OrderBy(row => row.ActionId, StringComparer.Ordinal)
+                .Select(row => row with { UnitIds = Snapshot(row.UnitIds) }).ToArray()
+        };
+    }
+
+    private static string[] Snapshot(IEnumerable<string> values) =>
+        values.OrderBy(value => value, StringComparer.Ordinal).ToArray();
+}
+
+/// <summary>
 /// Projects public candidates using explicit, time-indexed public relations.
 /// Completeness is a caller's model declaration, not independently verified real-world safety.
 /// Unknown alternatives survive projection; no evidence or search priority is manufactured.

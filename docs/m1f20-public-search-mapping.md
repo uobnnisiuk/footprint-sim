@@ -122,3 +122,25 @@ real geographic coverage and real-data validation remain outside this stage.
 ## Execution status
 
 Preregistered design. Implementation, executable validation and separate review are pending.
+
+## Explicit-declaration adapter design resolution
+
+The adapter source is caller-supplied `PublicRegionProjection` declarations for the entire exact
+inclusive historical window. Query identity, entity and evidence cutoff come from the supplied
+`PastStateReconstructionResult.Query`; all candidates retain their identities and metadata.
+Declarations retain their source, availability and completeness flags. Missing or partial maps
+remain unresolved, and the existing projector validates all rows before the adapter snapshots them.
+No implicit stay transition or automatic completeness declaration is introduced.
+
+The proposed focused test connects an actual `PastStateReconstructor.Compare` result from a
+public two-region model with empty observation/constraint sets to the adapter and projector.
+It checks many-to-one support, declaration-list snapshots and basic query/time rejection.
+This is a limited integration case, not the complete registered acceptance suite: a connected
+nonempty-evidence case through the CLI and broader adapter permutation/metadata checks remain.
+No scripts, build, tests, format checks, scenarios or CLI commands were executed while preparing
+this read-only proposal. Separate review and executable validation remain pending.
+
+An automatic exact-window completeness producer from `PublicHazardEnvelope` remains unavailable.
+Synthetic completeness must be explicitly justified by the declared model; this adapter cannot
+certify arbitrary caller declarations, real geographic coverage or rescue performance.
+The original preregistration and F16–F19 results remain unchanged.

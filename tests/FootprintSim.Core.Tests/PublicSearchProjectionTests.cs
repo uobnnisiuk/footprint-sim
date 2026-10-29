@@ -373,6 +373,82 @@ public sealed class PublicSearchProjectionTests
         }
     }
 
+    [Fact]
+    public void AdapterConnectsPublicReconstructionAndSnapshotsDeclarations()
+    {
+        var query = PastStateQuery.Create(
+            "adapter-fixture", 0, "person-1", InteractionTimeWindow.At(1), "public-query", 8);
+        var reconstruction = new PastStateReconstructor().Compare(
+            new PastStatePublicContext
+            {
+                Query = query,
+                PublicCandidateStates =
+                [
+                    new FootprintSim.Interactions.CandidateWarps.PublicCandidateWarpStateDefinition
+                    {
+                        TimeWindow = query.TargetTimeWindow,
+                        TemporalKind = FootprintSim.Interactions.CandidateWarps.CandidateWarpTemporalKind.EventPoint,
+                        RegionIds = ["r0", "r1"],
+                        EvidenceBoundaryState = FootprintSim.Evidence.EvidenceState.Confirmed
+                    }
+                ],
+                LocalTraversalWindowPaddingTicks = 0
+            },
+            new FootprintSim.Evidence.ObservationSet
+            {
+                ScenarioId = "adapter-fixture", Seed = 0, Observations = []
+            },
+            new FootprintSim.Interactions.Tracing.CausalTracingConstraintSet("adapter-fixture", 0, []))
+            .Reconstruction;
+        var original = JsonDefaults.Serialize(reconstruction);
+        var fixture = Fixture();
+        var targets = new List<string> { "r2" };
+        var units = new List<string> { "u1" };
+        var rows = new List<PublicRegionProjection>
+        {
+            Transition("r0", targets), Transition("r1", targets)
+        };
+        var mappings = new List<PublicSearchUnitMapping> { Mapping("r2", units) };
+        var actions = new List<PublicActionFootprint> { Action("all", units) };
+        var input = PublicPastStateProjectionAdapter.CreateInput(
+            reconstruction, 10, fixture.RegionIds, fixture.SearchUnitIds, rows, mappings, actions);
+        var result = PublicSearchProjector.Project(input);
+        var expected = JsonDefaults.Serialize(result);
+
+        Assert.Equal(query.QueryId, input.QueryId);
+        Assert.Equal(query.TargetEntityId, input.TargetEntityId);
+        Assert.Equal(query.EvidenceAvailabilityCutoff, input.EvidenceCutoff);
+        var ids = reconstruction.Candidates.Select(candidate => candidate.CandidateId)
+            .OrderBy(id => id, StringComparer.Ordinal).ToArray();
+        Assert.Equal(2, ids.Length);
+        Assert.Equal(ids, result.Candidates.Select(candidate => candidate.SourceCandidate.CandidateId));
+        Assert.Equal(new[] { "r2" }, result.KnownCurrentRegionIds);
+        Assert.Equal(new[] { "u1" }, result.KnownUnitIds);
+        Assert.Empty(result.UnresolvedCandidateIds);
+        Assert.Equal(ids, result.Actions[0].KnownIntersectingCandidateIds);
+        Assert.Equal(ids, result.Actions[0].WholeSupportContainedCandidateIds);
+
+        targets.Clear();
+        units.Clear();
+        rows.Clear();
+        mappings.Clear();
+        actions.Clear();
+        Assert.Equal(expected, JsonDefaults.Serialize(PublicSearchProjector.Project(input)));
+        Assert.Equal(original, JsonDefaults.Serialize(reconstruction));
+
+        Assert.Throws<InvalidDataException>(() => PublicPastStateProjectionAdapter.CreateInput(
+            reconstruction, 7, fixture.RegionIds, fixture.SearchUnitIds, [], [], []));
+        Assert.Throws<InvalidDataException>(() => PublicPastStateProjectionAdapter.CreateInput(
+            reconstruction with { EvidenceSet = reconstruction.EvidenceSet with { QueryId = "foreign" } },
+            10, fixture.RegionIds, fixture.SearchUnitIds, [], [], []));
+        Assert.Throws<InvalidDataException>(() => PublicPastStateProjectionAdapter.CreateInput(
+            reconstruction with
+            {
+                Candidates = [reconstruction.Candidates[0] with { TargetTimeWindow = new InteractionTimeWindow(1, 2) }]
+            },
+            10, fixture.RegionIds, fixture.SearchUnitIds, [], [], []));
+    }
+
     private static PublicSearchProjectionInput Fixture() => new(
         "query-1", "person-1", 10, 8,
         [Candidate("c1", "r0"), Candidate("c2", "r1") with { Disposition = PastStateCandidateDisposition.Conflicting }],
