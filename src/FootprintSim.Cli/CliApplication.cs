@@ -19,6 +19,12 @@ public static class CliApplication
         try
         {
             if (args.Length > 0 && string.Equals(
+                args[0], "evaluate-candidate-density", StringComparison.Ordinal))
+            {
+                return await RunCandidateDensityAsync(args[1..]);
+            }
+
+            if (args.Length > 0 && string.Equals(
                 args[0], "evaluate-candidate-interval-width", StringComparison.Ordinal))
             {
                 return await RunCandidateIntervalWidthAsync(args[1..]);
@@ -142,6 +148,42 @@ public static class CliApplication
             Console.Error.WriteLine($"error: {exception.Message}");
             return 2;
         }
+    }
+
+    private static async Task<int> RunCandidateDensityAsync(string[] args)
+    {
+        if (args.Contains("--help", StringComparer.Ordinal))
+        {
+            PrintCandidateDensityUsage();
+            return 0;
+        }
+
+        var options = ParseOptions(args, new HashSet<string>(
+            ["--experiment", "--baseline-experiment", "--seeds", "--output"], StringComparer.Ordinal));
+        var protocolPath = Path.GetFullPath(Require(options, "--experiment"));
+        var baselinePath = Path.GetFullPath(Require(options, "--baseline-experiment"));
+        var seedExpression = Require(options, "--seeds");
+        if (!string.Equals(seedExpression, "0..199", StringComparison.Ordinal))
+        {
+            throw new ArgumentException("M1-F19 requires --seeds 0..199 exactly.");
+        }
+
+        var outputPath = Path.GetFullPath(Require(options, "--output"));
+        var git = GitMetadataReader.Read(Directory.GetCurrentDirectory());
+        var result = new CandidateDensityRunner().Run(new CandidateDensityRequest
+        {
+            Protocol = CandidateDensityProtocolLoader.Load(protocolPath),
+            ProtocolContentSha256 = HashFile(protocolPath),
+            BaselineExperiment = CommonWorldFieldCombinationExperimentLoader.Load(baselinePath),
+            BaselineExperimentContentSha256 = HashFile(baselinePath),
+            Seeds = SeedExpressionParser.Parse(seedExpression),
+            SourceCommitSha = git.CommitSha,
+            DirtyWorkingTree = git.DirtyWorkingTree
+        });
+        await new CandidateDensityOutputWriter().WriteAsync(outputPath, result);
+        Console.WriteLine($"Candidate density evaluation completed: {result.Runs.Count} paired worlds.");
+        Console.WriteLine($"Results: {outputPath}");
+        return 0;
     }
 
     private static async Task<int> RunCandidateIntervalWidthAsync(string[] args)
@@ -1017,6 +1059,15 @@ public static class CliApplication
             "audit-common-world-plateau-domain --experiment <experiment.json> " +
             "--baseline-experiment <f16-experiment.json> --seeds 0..199 --output <directory>");
         PrintCandidateIntervalWidthUsage();
+        PrintCandidateDensityUsage();
+    }
+
+    private static void PrintCandidateDensityUsage()
+    {
+        Console.WriteLine(
+            "Nested candidate density: dotnet run --project src/FootprintSim.Cli -- " +
+            "evaluate-candidate-density --experiment <experiment.json> " +
+            "--baseline-experiment <f16-experiment.json> --seeds 0..199 --output <directory>");
     }
 
     private static void PrintCandidateIntervalWidthUsage()
