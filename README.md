@@ -380,6 +380,13 @@ dotnet run --project src/FootprintSim.Cli -- evaluate-candidate-density \
 集合の入れ子、追加された制約差のwitness、plateau・最小profileへの影響と次の研究判断は
 [M1-F19 nested point-support density](docs/m1f19-nested-point-support-density.md) を参照してください。
 
+Issue #47の再接続で既存F19実装を保全・再利用し、登録済み200世界の全実験を同じclean版で2回実行、
+6成果物の完全一致と独立検証、F16〜F18再現を確認しました。
+[検証済み結果・CI成果物](docs/m1f19-reconciliation-verification.md) と
+[自動担当への引継ぎ状態](docs/research-autodev-state.json) を参照してください。
+F19の未完了実装はありません。次の研究は歴史候補から現在位置・行動範囲への公開mapping契約の別途登録であり、
+この完了記録だけで新規研究や失敗Issueの再試行を開始しません。
+
 ## 構成
 
 - `src/FootprintSim.Core`: world/event/observation/interaction/inference/evaluation の契約と決定論エンジン

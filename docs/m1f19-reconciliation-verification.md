@@ -38,8 +38,51 @@ outputs. F19 uses its unchanged F16-derived lattice and predicates.
 
 Evidence directory names are `f19-a`, `f19-b` and `f19-independent`; the latter contains
 `summary.json` and the independent per-world calculations. Generated results remain untracked.
-At the time of writing, CI, PR publication/merge and operational deployment remain pending;
-local validation is not evidence that those steps have completed.
+At the initial local-report snapshot, CI, PR publication/merge and operational deployment
+were pending. The later verified publication/deployment record below supersedes that status.
+
+### Reviewed publication, CI artifact and deployment
+
+[PR #48](https://github.com/uobnnisiuk/footprint-sim/pull/48) integrated the research baseline
+at `2f182064fa0b9e6eae7319a8cffdcd29505ca702`;
+[PR #49](https://github.com/uobnnisiuk/footprint-sim/pull/49) integrated the reused F19 work
+at `77f7951e1f9bca3beb46f75dffd087e6f13edd37`.
+[PR #50](https://github.com/uobnnisiuk/footprint-sim/pull/50) added the separately reviewed
+fixed research CI and state-file protection at `ab88780d872f958520a619d3e23f795081622aad`.
+All three passed independent agent review and their exact-head GitHub CI; no human GitHub
+approval is implied by that description.
+
+The [full research CI run](https://github.com/uobnnisiuk/footprint-sim/actions/runs/40807614373)
+executed clean source `1e6c8acf8bafc3c164d34c44530de939edd054cd`. It passed 241 Python tests,
+457 .NET tests, build/format, both sources' 18 reference artifacts, two full F19 runs and
+independent verification. Its [artifact](https://github.com/uobnnisiuk/footprint-sim/actions/runs/40807614373/artifacts/12869051226)
+was downloaded and checked: all 68 recorded file hashes match, `complete` is true, and ZIP
+SHA256 is `a5f5b778a49b2d0009b73385454165b646435f1f62651815e43395da7b3224ca`.
+The six CI outputs match the local scientific outputs above; the report and manifest differ
+only in their truthful execution-source SHA. The two CI runs are themselves byte-identical.
+GitHub retention ends on 2026-11-28 at 02:41:30 UTC; the checked ZIP is also preserved locally
+outside Git. The artifact contains full results, independent calculations, logs and hashes.
+
+Production checkout deployment was verified at `ab88780d...`: all 230 tracked source files
+matched that reviewed version, including runner, converter, schema, guard, verifier and CI.
+Detached HEAD and the two known ordinary `.pyc` files were retained. The original research
+worktree and the other original worktrees, all 1,568 original result files, and all 50 prior
+execution-state files remained unchanged. No failed attempt was removed or retried.
+
+The Windows-to-Ubuntu/higuchi login-shell dry-run returned `DRY RUN: queue empty`, exit zero,
+with no model invocation or slot reservation. At 2026-10-29 11:47 JST the existing Daily task
+was restored to Ready with its original eight triggers, ordinary interactive privileges,
+IgnoreNew, zero automatic retries, no wake, and 40-minute limit. Monitor's definition was
+unchanged. Task Scheduler reported the next run as 2026-10-29 12:05 JST at that observation;
+this timestamp is historical evidence, not a forecast for future readers.
+
+The [state file](research-autodev-state.json) records `f19_complete`, the real integrated
+ancestor, runtime hashes and evidence. Final docs-only bookkeeping and checkout identity
+are recorded in [Issue #47](https://github.com/uobnnisiuk/footprint-sim/issues/47).
+There is no remaining F19 implementation to enqueue. Issue #44 stays held; #13/#21 remain
+unlabelled historical failures with incomplete finite-input acceptance, not completed work.
+The next mapping contract still needs separate preregistration and approval. No production
+model success was tested, and no manual model call was made in this work.
 
 ## Immutable inputs and output identity
 
