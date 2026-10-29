@@ -384,7 +384,16 @@ public sealed class CandidateWarpTests
             });
         }
 
-        Assert.Equal(7, typeof(SearchStrategyInput).GetProperties().Length);
+        var strategyProperties = typeof(SearchStrategyInput).GetProperties();
+        Assert.Equal(8, strategyProperties.Length);
+        Assert.Equal(typeof(IReadOnlyList<string>), Assert.Single(strategyProperties,
+            property => property.Name == nameof(SearchStrategyInput.PublicSearchDomainRegionIds)).PropertyType);
+        Assert.All(strategyProperties, property =>
+        {
+            Assert.False(ContainsType(property.PropertyType, typeof(InteractionOccurrence)));
+            Assert.False(ContainsType(property.PropertyType, typeof(SimulationRun)));
+            Assert.False(ContainsType(property.PropertyType, typeof(SimulationEvent)));
+        });
     }
 
     [Fact]
