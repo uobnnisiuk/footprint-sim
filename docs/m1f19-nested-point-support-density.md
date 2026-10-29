@@ -410,3 +410,14 @@ interpreted report are the committed reproduction package.
 The pre-existing S4 `--strategies all` evaluation-domain mismatch is retained independently;
 the three documented S4 strategies succeed. Its repair is a prerequisite to future cross-scenario
 all-strategy comparisons, not to this F16-derived experiment. No cross-scenario claim is made here.
+
+### Reconciliation verification superseding the historical validation status
+
+The implementation/validation record above preserves the original outcome-exposed work, including
+its then-unfixed S4 issue and then-pending clean replay. The
+[reconciliation and clean execution verification](m1f19-reconciliation-verification.md) records
+the subsequent clean execution at `621949087bf1c94fad0e7118c9803befde5bfa26`, independent verification,
+six byte-identical replay artifacts, expanded tests and separate S4 correction. Actual-result
+verification now requires the immutable F18 reference and checks its pinned hash. The frozen
+registration and numerical F19 outcomes are unchanged; consult that newer record for current
+validation status rather than treating this historical paragraph as an unresolved S4 failure.
