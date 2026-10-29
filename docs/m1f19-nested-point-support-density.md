@@ -181,4 +181,232 @@ closed-loop inference updates and real observations/data remain later validation
 
 ## Results
 
-Pending registered execution. No F19 prospective density outcomes have been inspected.
+Reconciliation disclosure (Issue #47, 2026-10-29): the following results and the
+original implementation/validation narrative were already present in the local
+uncommitted research worktree at `9039417314df4c11fe5bc088825bf5f25eaf4d98`.
+They were outcome-exposed before the current integration audit. They are retained
+as prior-work evidence, not a claim of a first unseen prospective run or of final
+clean-source validation. The current audit reuses that implementation, strengthens
+the independent verifier, and requires fresh full runs on one clean integrated
+source revision. Its verified evidence is recorded separately in Issue #47 and
+`docs/research-autodev-state.json`; historical test counts below describe the prior run.
+
+Registration was committed and pushed as `9039417314df4c11fe5bc088825bf5f25eaf4d98` before
+prospective computation. The frozen protocol SHA-256 is
+`f0669251ab8b747fbd4b7517e169d70723f052ae0465d33cfac6d5fe355c6bbd`.
+The first independent Python computation occurred after that push. No support, ordering, density
+level, seed, generator or field definition was tuned in response to outcomes.
+
+The independent public-predicate reference and C# implementation agree on all per-world results,
+paired changes and aggregate tables. The first C# execution records preregistration HEAD with a
+dirty working tree; it is not presented as a clean committed execution.
+
+### Paired validity, truth isolation and safety
+
+All 4,800 primary profile evaluations retain truth, with zero false exclusions and zero invariant
+violations. All 4,800 paired profile checks satisfy both key/native-ID nesting and exact recovery
+when restricted to the older universe; all 7,200 within-arm Joint inclusions hold. The 2,412
+original interval-to-point bridges agree with F18, and the 9,779 full-support candidates each have
+a unique stable/native-ID crosswalk with introduction arm. Old point descriptors and provenance
+are unchanged. Added survivor/exclusion keys match the fixed public predicates exactly.
+
+The original world/truth and raw evidence, source graph, L/T/P constraints and composition rules
+are fixed. All three public density arms finish before primary truth addresses are resolved.
+Compatible truth-candidate and truth-participant substitutions leave public results unchanged;
+input permutation, invalid public support/provenance and usage boundaries are tested. Candidate
+model ancestry is explicitly recorded separately from the fixed L/T/P evidence sources. Work
+increases with the universe according to the unchanged composer rule `N * (1 + active axis count)`;
+it is computational work, not rescue actions or time.
+
+### Support and profile effects
+
+The 2,412 F18 baseline point candidates occupy an average 25.6125% of the fixed support. The
+half-missing arm occupies 62.2803% on average; it fills half the missing cells, not half the entire
+grid. Full support contains 9,779 candidates across the same 200 worlds. Every width remains zero.
+
+| Property (mean across worlds) | Point baseline | Half missing | Full support |
+|---|---:|---:|---:|
+| Candidate universe | 12.060 | 30.235 | 48.895 |
+| Occupied start ticks | 6.145 | 7.000 | 7.000 |
+| Occupied Regions | 5.970 | 6.980 | 6.985 |
+| Unused Region fraction | 13.6135% | 0.0556% | 0% |
+| Worlds with any unused Region | 131 | 1 | 0 |
+
+These occupancy changes are coupled to support filling; no new Region, tick, observation or person
+was introduced. Full-start and Region histograms are retained per world. The width histogram is
+all zero in every arm, removing the new-width-mixture problem found during the design audit.
+
+| Profile | Mean candidates: baseline | Half | Full | Mean reduction fraction vs None: baseline -> full | Changed worlds: baseline -> full |
+|---|---:|---:|---:|---:|---:|
+| None | 12.060 | 30.235 | 48.895 | 0% -> 0% | 200 |
+| L | 6.550 | 15.170 | 24.045 | 45.38% -> 48.73% | 200 |
+| T | 4.190 | 9.495 | 15.090 | 65.35% -> 69.57% | 200 |
+| P | 8.140 | 19.385 | 30.870 | 32.72% -> 35.21% | 200 |
+| L+T | 2.600 | 4.870 | 7.280 | 78.21% -> 84.73% | 193 |
+| L+P | 4.965 | 10.995 | 16.975 | 58.50% -> 63.11% | 200 |
+| T+P | 2.960 | 6.015 | 9.335 | 75.58% -> 80.70% | 198 |
+| Full | 2.045 | 3.465 | 5.015 | 82.76% -> 89.28% | 176 |
+
+Fractions are averages of within-world fractions, not ratios of aggregate means. Their direction
+is empirical, not a nesting theorem. Full candidates increase while the fraction removed increases:
+absolute candidate burden and relative reduction answer different questions. Neither is calibrated
+search work. Exact sets, count changes, distributions, original/introduced memberships and exclusion
+witnesses are retained rather than inferring membership changes from counts alone.
+Full medians are 2/3/4 and ranges 1..7 / 1..11 / 1..15. Its candidate set remains unchanged in
+24 baseline-to-full worlds despite the larger universe. The report JSON includes means, medians,
+ranges, complete distributions, and zero-effect frequencies for all profiles and paired changes.
+
+### Conditional effects and plateau transitions
+
+| Addition | Mean reduction: baseline | Half | Full | Newly positive effects, baseline -> full |
+|---|---:|---:|---:|---:|
+| T to L | 3.950 | 10.300 | 16.765 | 8 |
+| P to L | 1.585 | 4.175 | 7.070 | 9 |
+| L to T | 1.590 | 4.625 | 7.810 | 41 |
+| P to T | 1.230 | 3.480 | 5.755 | 54 |
+| L to P | 3.175 | 8.390 | 13.895 | 11 |
+| T to P | 5.180 | 13.370 | 21.535 | 2 |
+| P to L+T | 0.555 | 1.405 | 2.265 | 56 |
+| T to L+P | 2.920 | 7.530 | 11.960 | 20 |
+| L to T+P | 0.915 | 2.550 | 4.320 | 65 |
+
+The nine comparisons per world total 1,800 comparisons per arm. All previously positive effects
+remain positive. Half filling reveals 213 effects; completing the remaining support reveals 53
+more. The 266 new effects are represented counterexamples to prior candidate-set equality, not new
+independent evidence or changes to the public constraints. No effect becomes undetectable.
+
+| Corrected F17 classification | Baseline | Half | Full |
+|---|---:|---:|---:|
+| Additional candidate reduction | 1322 | 1535 | 1588 |
+| Observation-to-constraint plateau | 74 | 82 | 84 |
+| Constraint overlap plateau | 103 | 119 | 127 |
+| Constraint-to-candidate plateau | 168 | 44 | 0 |
+| One-candidate saturation | 133 | 20 | 1 |
+| All plateaus | 478 | 265 | 212 |
+
+Baseline-to-full changes 300 classifications across 137 worlds. The complete matrix below separates
+newly positive effects from saturation losing priority. Per-comparison matrices, both adjacent-arm
+matrices, flags and affected seeds are also retained.
+
+| Baseline / full | Reduction | Observation | Overlap | Candidate plateau | Saturation |
+|---|---:|---:|---:|---:|---:|
+| Reduction | 1322 | 0 | 0 | 0 | 0 |
+| Observation | 0 | 74 | 0 | 0 | 0 |
+| Overlap | 0 | 0 | 103 | 0 | 0 |
+| Candidate plateau | 168 | 0 | 0 | 0 | 0 |
+| Saturation | 98 | 10 | 24 | 0 | 1 |
+
+The disappearance of candidate plateaus at full Cartesian support was preregistered as an
+algebraic consequence. Its occurrence is a contract check, not a newly discovered performance
+benefit. The empirical findings are how many sparse-world effects were hidden, where half filling
+is sufficient, and which minima depend on those witnesses. Observation/overlap labels increase
+because unchanged logic becomes visible after saturation ceases to take priority.
+All recorded Region top/implication and Time-top flags are unchanged in this cohort; allowed
+Time-top true-to-false transitions occur zero times. Thus these observed label changes are fully
+explained by membership and saturation, not altered diagnostic domains or public constraints.
+
+### Equivalence and minimum families
+
+| Paired change | Worlds with changed minimum count | Worlds with changed minimal family | Lost equivalences / affected worlds |
+|---|---:|---:|---:|
+| Baseline -> half | 133 | 95 | 303 / 111 |
+| Half -> full | 143 | 30 | 66 / 36 |
+| Baseline -> full | 176 | 115 | 369 / 127 |
+
+The three contrasts reuse the same worlds; their counts must not be pooled as independent samples.
+Existing nonequivalence never disappears. At-minimum profile sets only lose members, but the
+inclusion-minimal family can acquire a larger profile when a smaller one ceases to attain Full's
+result. In 85 worlds the entire baseline minimum family survives to full support unchanged; in
+115 worlds (57.5%) it does not.
+
+| Profile | At-minimum worlds: baseline / half / full | Inclusion-minimal worlds: baseline / half / full |
+|---|---:|---:|
+| None | 0 / 0 / 0 | 0 / 0 / 0 |
+| L | 2 / 0 / 0 | 2 / 0 / 0 |
+| T | 31 / 6 / 1 | 31 / 6 / 1 |
+| P | 0 / 0 / 0 | 0 / 0 / 0 |
+| L+T | 124 / 87 / 68 | 91 / 81 / 67 |
+| L+P | 20 / 0 / 0 | 18 / 0 / 0 |
+| T+P | 89 / 36 / 24 | 58 / 30 / 23 |
+| Full | 200 / 200 / 200 | 31 / 91 / 114 |
+
+Multiple profiles can be minimal in one world, so columns need not sum to 200. The smallest field
+count attaining the minimum has distributions (one/two/three fields): baseline 33/136/31,
+half 6/103/91, full 1/85/114. Means are 1.990/2.425/2.565. Full attaining the minimum always
+follows from Joint inclusion; Full being necessary within these eight profiles does not.
+The smallest field count changes in 106 baseline-to-full worlds, compared with 115 changed
+families and 176 changed candidate minima. These metrics are not interchangeable.
+
+### Research decision after F16-F19
+
+Do not elevate these minima to general field requirements or proceed automatically to field
+ablation. F18 changed 16% of families by interval representation; this fixed-point support completion
+changes 57.5%. The figures refer to different manipulations/baselines and are not comparable causal
+effect sizes. What survives is paired safety in the purified family, Joint monotonicity and fixed
+public evidence semantics. Counts, equivalence and descriptive field sufficiency remain dependent
+on the represented candidate support.
+
+At the same time, further arbitrary density levels or tick/Region label counts have diminishing
+value here. At complete point support the result is exactly the product of surviving registered
+Regions and surviving start ticks, and every remaining plateau is accounted for by top/overlap or
+saturation. Abstract candidate-count stability is not the objective. The next priority is an explicit
+public spatial/temporal mapping toward search units, rather than another uncalibrated scalar factor.
+
+The transition should proceed only with a contract that maps a historical candidate to possible
+current search locations using declared public transitions, then maps locations to action coverage.
+It must support many-to-one and one-to-many mappings, retain unknown/unmapped possibilities, and
+test outer-safe coverage without selecting by truth. A historical Region must not silently become
+a current building, floor or check location. Compare candidate counts with mapped location counts
+and action coverage before adding times or costs. This makes the next uncertainty concrete: what
+does each surviving hypothesis require a rescuer to check, and what public mapping justifies it?
+
+Action-generated observations and inference updates can then support a closed loop. Expected
+discovery time, personnel/equipment, wrong-area cost and dog/calling/acoustic/vibration/camera handoff
+need explicit action models and subsequent calibration; cross-domain SAR and real-data validation
+remain later. No current result estimates those quantities or validates actual rescue safety.
+
+### Implementation and validation record
+
+The implementation adds a public-only support transform, typed evaluation/audit records, a runner
+reusing F18 public reconstruction and F14 composition, a six-artifact writer and CLI. No old core
+inference, generator or frozen experiment file is changed. The protocol loader and runner enforce
+the exact registration, file hashes and seed set. A compile-only test typo was corrected from the
+nonexistent enum `Unknown` to the existing `Indeterminate`; four canonical-support boundary tests
+were added. Neither correction changes the registered manipulation or any computed outcome.
+
+Environment/build/format verification pass; build reports zero warnings/errors. All 403 tests pass
+(357 baseline plus 46 F19 cases). F16/F17/F18 replays preserve all 18 scientific artifacts: only
+manifest source commit/dirty metadata may differ. The supported sample/legacy command regression
+set and known S4 failure are recorded separately in ignored validation artifacts.
+
+The independent verifier uses immutable original F16 rows (SHA-256
+`6c114058f7e9479ae29e3d16030f10843ddfb71b8b8bc861d13f8840c0cd4c81`) and optionally anchors native
+point identities to the original F18 rows (SHA-256
+`c5b62f9bbad305e1ee3176b86105d1a631d4e3ebeb6868703d41d5c76c0d4d81`). It independently reconstructs
+7,367 missing cells and their ranking, computes all public memberships before truth checking, and
+verifies 4,800 profile results, 5,400 conditional diagnostics, 16,800 profile equivalences, all
+600 arm minima/occupancies and all 600 paired-world comparisons. Full-support analytic counts
+agree in all 1,600 profile checks. Native coordinates, provenance, old IDs and crosswalks agree;
+native ID hashing itself is not independently reimplemented. Integer sets/counts/distributions
+must match exactly; only decimal fraction arithmetic uses tolerance `1e-12` for Python/C# numeric
+representation. Every aggregate distribution/matrix and every CSV column is checked.
+
+```bash
+python3 scripts/verify-candidate-density.py \
+  --baseline-runs results/m1f17-baseline-audit/f16-a/common-world-field-combination-runs.jsonl \
+  --point-reference-runs results/m1f18-final-a/candidate-interval-width-runs.jsonl \
+  --actual-runs results/m1f19-final-a/candidate-density-runs.jsonl \
+  --expected-source-sha "$(git rev-parse HEAD)" \
+  --output results/m1f19-final-independent
+```
+
+For clean-commit reproduction run the registered CLI twice with output directories
+`results/m1f19-final-a` and `results/m1f19-final-b`; require all six artifacts byte-identical and
+run the independent verifier on the clean output. The manifest records the actual execution
+commit and dirty state. Profile/conditional/crosswalk CSV contain 4,800 / 5,400 / 9,779 rows.
+Generated outputs and validation logs remain ignored; frozen inputs, code, verifier and this
+interpreted report are the committed reproduction package.
+
+The pre-existing S4 `--strategies all` evaluation-domain mismatch is retained independently;
+the three documented S4 strategies succeed. Its repair is a prerequisite to future cross-scenario
+all-strategy comparisons, not to this F16-derived experiment. No cross-scenario claim is made here.

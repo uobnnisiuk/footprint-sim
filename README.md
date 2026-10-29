@@ -362,6 +362,22 @@ dotnet run --project src/FootprintSim.Cli -- evaluate-candidate-interval-width \
 集合の等号/包含、境界を跨ぐinterval、F17修正分類によるplateau遷移、最小profileへの影響と
 解釈境界は [M1-F18 candidate interval-width sensitivity](docs/m1f18-candidate-interval-width-paired.md) を参照してください。
 
+M1-F19はF18のpoint表現を全armで固定し、公開された7 start ticks × 登録Regionの
+空きセルを半分・全部と段階的に埋めます。各armは基準のpoint候補とnative IDを保持し、
+L/T/P evidenceと制約を共有します。densityはこの有限supportの占有率です。
+元のmixed intervalを保った密度実験や、物理的な探索場所の増加とは解釈しません。
+
+```bash
+dotnet run --project src/FootprintSim.Cli -- evaluate-candidate-density \
+  --experiment experiments/m1f19_nested_point_support_density/experiment.json \
+  --baseline-experiment experiments/m1f16_common_world_field_combination/experiment.json \
+  --seeds 0..199 \
+  --output results/m1f19-candidate-density
+```
+
+集合の入れ子、追加された制約差のwitness、plateau・最小profileへの影響と次の研究判断は
+[M1-F19 nested point-support density](docs/m1f19-nested-point-support-density.md) を参照してください。
+
 ## 構成
 
 - `src/FootprintSim.Core`: world/event/observation/interaction/inference/evaluation の契約と決定論エンジン
