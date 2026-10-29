@@ -1,5 +1,11 @@
 # M1-A evaluation harness
 
+This document retains the original M1-A metric definitions. The integrated
+research baseline also includes M1-B through F18 and all eight registered
+strategies; the historical list below describes the original four adapters.
+Later stochastic, weft, tracing and reconstruction work is already implemented,
+not a new backlog inferred from this historical milestone document.
+
 ## Purpose and scope
 
 M1-A measures synthetic M0 search outcomes across multiple scenarios, seeds, and strategies. It answers whether a strategy retained the simulated person's evaluation position, how much of the declared search universe it returned, whether it made an unsupported device-to-person promotion, and when it first produced useful guidance. It does not add a probabilistic hazard propagator, calibrated observation channels, a complete EBPC adapter, a search-priority policy, or a user interface.
@@ -32,7 +38,16 @@ Candidate order is deterministic. Priority-bearing M0 output retains priority or
 
 A run is one scenario, seed, and strategy combination. The final strategy result is produced at the later of the maximum ground-truth event tick and the maximum observation availability tick, so delayed evidence is not silently omitted. `TimeToUsefulGuidance` additionally evaluates the same strategy at each integer tick from zero through that final tick, with only observations available at that tick.
 
-`searchable regions` is the set of all distinct region IDs declared in the scenario, sorted ordinally. Passability and connection direction do not remove a region from this evaluation universe: they affect strategy reachability, while the denominator represents every region where the synthetic truth model can place an entity. A strategy result containing a region outside this universe is rejected.
+`searchable regions` defaults to all distinct scenario region IDs, sorted ordinally.
+If `EvaluationSearchableRegionIds` declares a subset, that fixed public subset is
+the query scope and evaluation denominator. Batch evaluation supplies it before
+any truth-based scoring; strategies retain the complete public topology and
+evidence for reasoning, then project their reported candidate/standing/evidence
+classification sets and provenance to this public scope. Omitted regions are not
+logical exclusions or a claim that the target cannot be there. Unknown map IDs
+remain invalid. The evaluator still rejects results outside its declared universe.
+This explicitly repairs the pre-existing S4 scope mismatch without changing its
+11-region denominator, 24-unit radius, input scenario or internal causal graph.
 
 - `GroundTruthContainment`: available when the true final person region is in the searchable universe. Its boolean value is whether that region is a candidate; numerator is 1 or 0 and denominator is 1.
 - `CandidateRegionCount`: number of distinct candidate region IDs in the final result.
@@ -68,11 +83,15 @@ M1-A introduced output schema version `1`; M1-B extended it to `2` without reusi
 - `runs.csv`: the same run identities, result fields, and metrics in a fixed analysis-oriented column order;
 - `aggregate.json`: stable scenario/strategy groups with rates and distributions;
 - `aggregate.csv`: the principal aggregate fields in a fixed column order;
+- `conditions.csv` and `paired.csv`: research condition and paired-comparison fields;
 - `manifest.json`: schema version, sorted scenario IDs, seeds and strategy IDs, run count, source commit SHA, dirty-tree flag, and scenario content SHA-256 values.
+
+S4 and S5 additionally emit their causal-tracing or past-state reconstruction
+JSON/CSV artifacts. Those are covered by the corresponding research contracts.
 
 Aggregate groups contain run and metric-available counts; containment and false-exclusion numerator, denominator, and rate; total device-only promotion violations; mean, median, minimum, and maximum for candidate count, search-space fraction, search-space reduction, and available time-to-guidance values; all evidence-state counts; and unique outcome count. `metricCompleteRunCount` counts runs where every non-time core metric is available; time-to-guidance has its own available count because failure to satisfy its condition is a valid unavailable outcome. Median is the middle value for odd samples and the arithmetic mean of the two middle values for even samples.
 
-JSON property order follows declared record property order. Scenario, seed, strategy, manifest, group, candidate, and set-like region orders are normalized or otherwise explicitly stable. CSV uses invariant culture, LF line endings, UTF-8 without a byte-order mark, a fixed column order, and `.` as the decimal separator. Current time, absolute paths, and random run IDs are not written. With identical scenario bytes, source state, selected inputs, SDK-compatible implementation, and command options, all five files are byte-identical.
+JSON property order follows declared record property order. Scenario, seed, strategy, manifest, group, candidate, and set-like region orders are normalized or otherwise explicitly stable. CSV uses invariant culture, LF line endings, UTF-8 without a byte-order mark, a fixed column order, and `.` as the decimal separator. Current time, absolute paths, and random run IDs are not written. With identical scenario bytes, source state, selected inputs, SDK-compatible implementation, and command options, all seven standard files and applicable research extensions are byte-identical.
 
 `results/` remains ignored by Git. The manifest records the current commit and dirty flag so a result from modified source is not mistaken for a clean baseline.
 

@@ -106,14 +106,14 @@ internal static class CausalTracingStrategySupport
             rationale,
             [],
             WeftStrategySupport.CandidateProvenance(tracing.CandidateWarps, input.CurrentTick));
-        return result with
+        return PublicSearchDomainProjection.Apply(input, result with
         {
             PreferredCandidateRegionIds = preferred,
             OuterPlausibleCandidateRegionIds = outer,
             ConflictedCandidateRegionIds = conflicted,
             HasCandidateStandingSets = true,
             CausalTracingResult = tracing
-        };
+        });
     }
 
     private static IReadOnlyList<CausalTracingConstraint> SelectSingle(

@@ -16,6 +16,12 @@ public sealed record SearchStrategyInput
 
     public required RescueContext PublicContext { get; init; }
 
+    /// <summary>
+    /// Predeclared public search scope, not evidence that other regions are impossible.
+    /// Null retains the full public map; an empty list declares an empty search scope.
+    /// </summary>
+    public IReadOnlyList<string>? PublicSearchDomainRegionIds { get; init; }
+
     public required ObservationSet AvailableEvidence { get; init; }
 
     public CrossThreadConstraintSet? AvailableCrossThreadConstraints { get; init; }
