@@ -88,6 +88,13 @@ class StructuredEditsTests(unittest.TestCase):
     def proposal(*edits):
         return {"version": 1, "status": "changes", "edits": list(edits)}
 
+    def test_existing_research_handoff_state_cannot_be_promoted_by_model(self):
+        path = "docs/research-autodev-state.json"
+        self.write(path, b'{"phase":"integrating"}\n')
+        self.commit()
+        self.reject(self.proposal(self.edit("integrating", "f19_complete", path)),
+                    reason="disallowed_path")
+
     def invoke(self, value=None, *, raw=None, base=None, env=None, output=None):
         if raw is None:
             raw = json.dumps(value, ensure_ascii=False).encode("utf-8")
