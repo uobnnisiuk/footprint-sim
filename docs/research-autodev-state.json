@@ -1,19 +1,21 @@
 {
   "schema_version": 1,
   "transition_issue": 47,
-  "phase": "integrating",
+  "phase": "f19_complete",
   "research_head_sha": "9039417314df4c11fe5bc088825bf5f25eaf4d98",
   "integrated_main_sha": "2f182064fa0b9e6eae7319a8cffdcd29505ca702",
   "local_work_reconciled": true,
   "research_milestone": {
     "baseline": "M1-F18",
-    "active": "M1-F19",
+    "active": null,
     "protocol_id": "m1f19-nested-point-support-density",
     "worlds": 200,
     "primary_evaluations_per_run": 4800,
     "complete_clean_runs": 2,
     "reference_runs_are_independent_samples": false,
-    "prior_results_already_observed": true
+    "prior_results_already_observed": true,
+    "completed": "M1-F19",
+    "remaining_f19_implementation": []
   },
   "registered_protocol_paths": [
     {
@@ -36,16 +38,14 @@
     "f19_two_clean_full_runs",
     "independent_verification",
     "six_artifact_byte_equality",
-    "interpreted_results_and_limits"
-  ],
-  "remaining_steps": [
+    "interpreted_results_and_limits",
     "f19_pr_review_ci_and_merge",
     "fixed_research_ci_artifact_publication",
     "reviewed_runtime_deployment",
     "original_work_and_attempt_preservation_recheck",
-    "windows_dry_run_queue_check_and_daily_restore",
-    "final_issue47_handoff"
+    "windows_dry_run_queue_check_and_daily_restore"
   ],
+  "remaining_steps": [],
   "runner_capabilities": {
     "response_schema_version": 1,
     "existing_file_exact_replacement": true,
@@ -64,9 +64,9 @@
     "experiment_paths": false,
     "verifier_scripts_paths": false,
     "candidate_execution_with_owner_credentials": false,
-    "registered_research_ci": false,
-    "research_artifact_upload_ci": false,
-    "research_execution_route": "Work credential-isolated fixed commands; reviewed CI addition pending",
+    "registered_research_ci": true,
+    "research_artifact_upload_ci": true,
+    "research_execution_route": "Fixed reviewed GitHub research-f19.yml; credential-isolated local Work route",
     "research_state_enforced_by_runner": false,
     "dependency_gate_enforced_by_runner": false,
     "model_access": "read-only",
@@ -74,7 +74,8 @@
     "api_fallback": false,
     "max_model_attempts_per_issue": 1,
     "max_daily_slots": 8,
-    "retry_attempted_issues": false
+    "retry_attempted_issues": false,
+    "research_handoff_state_protected_from_model_edits": true
   },
   "validation_evidence": {
     "integration_pr": "https://github.com/uobnnisiuk/footprint-sim/pull/48",
@@ -85,7 +86,9 @@
     "preservation_archive_sha256": "270279a65c0f8bcff77a9851cd326cb96ba6697702e4f7aff121c8687450ac03",
     "local_execution_source_sha": "621949087bf1c94fad0e7118c9803befde5bfa26",
     "local_execution_clean": true,
-    "python_tests": 217,
+    "python_tests": 241,
+    "local_python_tests_at_6219490": 217,
+    "ci_python_tests_at_1e6c8ac": 241,
     "dotnet_tests": 457,
     "all_scenario_evaluations": 1120,
     "legacy_scientific_artifacts_verified": 18,
@@ -128,12 +131,201 @@
     "public_output_signature": "3b7a8b49be6258616bdbfda05a3551f39d0283edd3c815173f4dc0f46343026a",
     "report_path": "docs/m1f19-reconciliation-verification.md",
     "local_artifact_directory": "$HOME/.local/state/footprint-research-reconnect/20261029T1046/sandboxes/f19-v1/out",
-    "remote_artifact": null,
-    "deployment_status": "pending"
+    "remote_artifact": {
+      "id": 12869051226,
+      "url": "https://github.com/uobnnisiuk/footprint-sim/actions/runs/40807614373/artifacts/12869051226",
+      "archive_sha256": "a5f5b778a49b2d0009b73385454165b646435f1f62651815e43395da7b3224ca",
+      "expires_at_utc": "2026-11-28T02:41:30Z",
+      "downloaded_and_hash_verified": true,
+      "verified_file_hashes": 68,
+      "complete": true,
+      "retained_locally_beyond_expiry": true
+    },
+    "deployment_status": "verified",
+    "f19_pr": "https://github.com/uobnnisiuk/footprint-sim/pull/49",
+    "f19_merge_sha": "77f7951e1f9bca3beb46f75dffd087e6f13edd37",
+    "f19_ci": "https://github.com/uobnnisiuk/footprint-sim/actions/runs/40806708659",
+    "f19_independent_review": "https://github.com/uobnnisiuk/footprint-sim/pull/49#issuecomment-6486287216",
+    "infrastructure_pr": "https://github.com/uobnnisiuk/footprint-sim/pull/50",
+    "infrastructure_merge_sha": "ab88780d872f958520a619d3e23f795081622aad",
+    "infrastructure_independent_review": "https://github.com/uobnnisiuk/footprint-sim/pull/50#issuecomment-6486449369",
+    "infrastructure_ci": "https://github.com/uobnnisiuk/footprint-sim/actions/runs/40807614338",
+    "research_ci": "https://github.com/uobnnisiuk/footprint-sim/actions/runs/40807614373",
+    "deployed_main_general_ci": "https://github.com/uobnnisiuk/footprint-sim/actions/runs/40808144621",
+    "deployed_main_research_ci": "https://github.com/uobnnisiuk/footprint-sim/actions/runs/40808144649",
+    "deployed_main_ci_conclusion": "success",
+    "research_ci_source_sha": "1e6c8acf8bafc3c164d34c44530de939edd054cd",
+    "ci_f19_outputs": [
+      {
+        "file": "candidate-density.json",
+        "sha256": "35dfec1319e7c2eafb818ebac8270200f1d88b641c837ed5a1c89c2860ef71f8",
+        "bytes": 1977358,
+        "byte_identical": true
+      },
+      {
+        "file": "candidate-density-runs.jsonl",
+        "sha256": "f2427db96d118afa5214d5e264de6b3c343a8fff4feb2ccc0011329a03891a3a",
+        "bytes": 77767374,
+        "byte_identical": true
+      },
+      {
+        "file": "candidate-density-profiles.csv",
+        "sha256": "82157963b7b14366089346a669480d0dd49de97ec5e61ab2a1780e4d1b258950",
+        "bytes": 4210249,
+        "byte_identical": true
+      },
+      {
+        "file": "candidate-density-conditionals.csv",
+        "sha256": "cd373e3615b18d51caf6e1f0ed6dea6fe9e6bbac7b8877b68f6f9a86031be414",
+        "bytes": 1414962,
+        "byte_identical": true
+      },
+      {
+        "file": "candidate-density-crosswalk.csv",
+        "sha256": "345c5a6c4462062e12e0426131e5dfb42b1f60c4cfce837511e599c7a64942c5",
+        "bytes": 2766513,
+        "byte_identical": true
+      },
+      {
+        "file": "candidate-density-manifest.json",
+        "sha256": "b56736043e1f432161534a32e5796c8d68b1723704e5f4f17f67d3f2f77da115",
+        "bytes": 2842,
+        "byte_identical": true
+      }
+    ],
+    "ci_independent_verification": {
+      "actualRowsSha256": "f2427db96d118afa5214d5e264de6b3c343a8fff4feb2ccc0011329a03891a3a",
+      "reportSha256": "35dfec1319e7c2eafb818ebac8270200f1d88b641c837ed5a1c89c2860ef71f8",
+      "pointReferenceSha256": "c5b62f9bbad305e1ee3176b86105d1a631d4e3ebeb6868703d41d5c76c0d4d81",
+      "expectedSourceCommit": "1e6c8acf8bafc3c164d34c44530de939edd054cd",
+      "cleanSourceManifestVerified": true,
+      "contentSignatureVerification": "independent registered ASCII/integer JSON checksums; native ID factory not reimplemented",
+      "worldCount": 200,
+      "checks": {
+        "missingCellHashAndCoordinateChecks": 7367,
+        "nativeCoordinatesProvenanceAndRetentionChecks": 18238,
+        "profileMembershipWorkReductionChecks": 4800,
+        "conditionalMembershipAndDiagnosticChecks": 5400,
+        "profileEquivalenceChecks": 16800,
+        "minimumAndOccupancyChecks": 600,
+        "originalIntervalBridgeChecks": 2412,
+        "densityIdentityCrosswalkChecks": 9779,
+        "pairedProfileChangeChecks": 4800,
+        "pairedConditionalChangeChecks": 5400,
+        "pairedEquivalenceChangeChecks": 16800,
+        "pairedMinimumChangeChecks": 600,
+        "fixedTruthMappingChecks": 200
+      },
+      "allVerified": true,
+      "summaryVerification": {
+        "allVerified": true
+      },
+      "csvVerification": {
+        "profiles": {
+          "rowCount": 4800,
+          "sha256": "82157963b7b14366089346a669480d0dd49de97ec5e61ab2a1780e4d1b258950",
+          "allColumnsVerified": true
+        },
+        "conditionals": {
+          "rowCount": 5400,
+          "sha256": "cd373e3615b18d51caf6e1f0ed6dea6fe9e6bbac7b8877b68f6f9a86031be414",
+          "allColumnsVerified": true
+        },
+        "crosswalk": {
+          "rowCount": 9779,
+          "sha256": "345c5a6c4462062e12e0426131e5dfb42b1f60c4cfce837511e599c7a64942c5",
+          "allColumnsVerified": true
+        }
+      }
+    },
+    "local_scientific_outputs_match_ci": true,
+    "deployment": {
+      "observed_main_sha": "ab88780d872f958520a619d3e23f795081622aad",
+      "observed_at_jst": "2026-10-29T11:47:28.8230962+09:00",
+      "dedicated_checkout": "/home/higuchi/personal/me/footprint-sim/footprint-sim-local-autodev-pr6",
+      "detached": true,
+      "tracked_files_verified": 230,
+      "known_pyc_preserved": 2,
+      "runtime_file_sha256": {
+        ".github/scripts/local_autodev_response.schema.json": "db5b801e9fd2fcce3fe5c7ab77f468b63f87983ab50c3e9e08227a64be3c4250",
+        ".github/scripts/make_prompt.py": "ce3f5154b6a9350d0c495b21e111fbec44d8135fee611220154dc4c931ea62d4",
+        ".github/scripts/patch_guard.py": "3ad6bcdac287c137ce0be672dfac351c5b9f40c7fdbb5b43a8a1400a1ec90e7a",
+        ".github/scripts/run_f19_research_validation.py": "63d412d9a935a50fdbf1e23bd7578b98fa0b52137c5a8241e6cf42a2319ec1ca",
+        ".github/scripts/structured_edits.py": "3fbc3ca7fe353270f17916b0bd5b0e92c1ad3fa83f0bdb560370970992e684c0",
+        ".github/scripts/test_autodev_planner_snapshot.py": "1f0d43f35e0e461edace522adb270d3a123ba07db5ff467756c81b627a5e9d32",
+        ".github/scripts/test_autodev_planner_validate.py": "04e3a5c6600cc368b0735332c158909829960339fb9dac935c2c2c5ad1eb8c60",
+        ".github/scripts/test_candidate_density_verifier.py": "dc1d4fe5d5ee3e79dbce39c65ca0208110f3cec62d8ee6ee223806be906126cb",
+        ".github/scripts/test_local_autodev.py": "ad5a2b9d6be28d764cbefe0d7896540d85e07478e0d1379ee8591a28e7750f0f",
+        ".github/scripts/test_local_autodev_daily.py": "b57429e33d331faf721a373902c1955efb7a2796d125e5839f9e697fbfd36a1d",
+        ".github/scripts/test_local_autodev_queue.py": "8081873fd38f5f7e1ee865baec2baf74200810aebfff5a6a16ec550de430f937",
+        ".github/scripts/test_local_autodev_structured.py": "7a6cca8698104eae414f86b820668d8734e38fce05c5b285f2f0a68c095c7f8f",
+        ".github/scripts/test_make_prompt.py": "b3f04be465985339ea2228cf4b3a15cae6145a4d8d87ac7941b82e6598fe1146",
+        ".github/scripts/test_patch_guard.py": "f8ad82d9f5b8331480b373efd9b536c8184da25eb4a40ceda8ddee1b8f419402",
+        ".github/scripts/test_research_validation.py": "73f8bb8de30fed54fba9ec99d4bae2b640275a82d520e473c743446e0515f0f6",
+        ".github/scripts/test_structured_edits.py": "ca8288a02713b48d21e700ff0e5d927d9f1ed39171b7bc3db62f9f5624ed3b4c",
+        ".github/workflows/autodev.yml": "412697d121f1009f9d948d1b84c316f1959a20a0b76660abec9d6e868b439b01",
+        ".github/workflows/ci.yml": "de5aa274e031e91fbcb7ad8a44b20a6adbc47c6990fc6bca9455763aad13d37b",
+        ".github/workflows/research-f19.yml": "c8e2543746b48b0437c0a20fd06ee13b6b5e365d49d54749d3ad8093466cf559",
+        "scripts/verify-candidate-density.py": "9ddc34744b5f810ffd8a802a0075e77614e50fdf7eb4ad85af6521d94b4063ca",
+        "tools/autodev_planner_snapshot.py": "8ddbb3194e45f9f9440d7c21e1ce704c0321dc30c89ed3e0b3f80d6eb9ad1683",
+        "tools/autodev_planner_validate.py": "08db402b9e85ade56c8e50ddbf9325caa1644da0395b6b19f710e8d104670ec8",
+        "tools/install_local_autodev_daily.ps1": "b282019a9ab69467c441920e76c151529e79f3b91258d5c8df728393ec25719c",
+        "tools/local_autodev.py": "fd5009bbcbb3db3724430f856876e060996f2a3a48d9b2c53669ffb1391f79dc",
+        "tools/local_autodev_daily.py": "dc9c76862acdbb20287796014e3ae9016fea9853fd4befc306d534508c7df5e1",
+        "tools/local_autodev_queue.py": "285e9ade63a4e9d4cce9e9bd7c46f1482e19f69e765c7e992aad025af1f0268e",
+        "tools/run_local_autodev_daily.sh": "2eefedaacb16bdbce6bba11d6e1d95bf66602d5fa20479f15270b923319f4176"
+      },
+      "bookkeeping_note": "This is the actual deployment observation before this docs-only handoff commit. Later docs commits do not change the recorded runtime bundle; Issue #47 records the final checkout verification."
+    },
+    "preservation": {
+      "original_other_worktrees_unchanged": 5,
+      "original_results_unchanged": 1568,
+      "prior_execution_state_files": 50,
+      "immutable_execution_state_unchanged": true,
+      "existing_monitor_changes": [],
+      "new_state_paths": []
+    },
+    "windows_task": {
+      "name": "Footprint Local AutoDev Daily",
+      "state": "Ready",
+      "enabled": true,
+      "triggers_jst": [
+        "00:05",
+        "03:05",
+        "06:05",
+        "09:05",
+        "12:05",
+        "15:05",
+        "18:05",
+        "21:05"
+      ],
+      "observed_next_run_jst": "2026-10-29T12:05:00.0000000+09:00",
+      "observed_at_jst": "2026-10-29T11:47:28.8230962+09:00",
+      "normal_privileges": true,
+      "interactive_logon_only": true,
+      "ignore_new_instances": true,
+      "restart_count": 0,
+      "wake_to_run": false,
+      "execution_time_limit": "PT40M",
+      "original_definition_restored": true,
+      "monitor_definition_unchanged": true
+    },
+    "windows_to_wsl_dry_run": {
+      "ubuntu_user": "higuchi",
+      "login_shell": true,
+      "exit_code": 0,
+      "result": "DRY RUN: queue empty",
+      "issue_selected": null,
+      "model_called": false,
+      "slot_reserved": false
+    },
+    "manual_model_calls": 0,
+    "production_model_success_tested": false,
+    "transition_issue_url": "https://github.com/uobnnisiuk/footprint-sim/issues/47"
   },
   "allowed_automatic_paths": [],
   "automation_handoff": {
-    "work_scope_active": true,
+    "work_scope_active": false,
     "automatic_f19_start": false,
     "automatic_new_research_start": false,
     "integration_auto_merge": false,
@@ -144,11 +336,36 @@
       13,
       21
     ],
-    "state_is_policy_not_runtime_authority": true
+    "state_is_policy_not_runtime_authority": true,
+    "f19_scope_complete": true,
+    "do_not_recreate_or_retry_f19": true,
+    "consult_verified_evidence_not_phase_alone": true,
+    "existing_cloud_tasks_duplicated": false
   },
   "next_decision": {
-    "owner": "current_work_task",
-    "action": "finish_reviewed_publication_and_deployment; then preregister public historical-state-to-current-location/action-coverage mapping",
-    "automatic_execution_allowed": false
+    "owner": "existing research registration and approval reviewers",
+    "action": "Prepare a separately preregistered public historical-candidate to current-location and action-coverage contract; retain unknown/unmapped possibilities and many-to-one/one-to-many mappings.",
+    "requires_new_preregistration": true,
+    "automatic_execution_allowed": false,
+    "f19_remaining_work": [],
+    "interpretation_boundary": "Fixed synthetic lattice sensitivity; no general field requirements, calibrated probabilities, rescue costs or real-world safety claim."
+  },
+  "historical_backlog": {
+    "13": {
+      "state": "open_unlabelled",
+      "acceptance_complete": false,
+      "retry_permitted": false,
+      "remaining": "Observation NaN/offset, some hazard and position finite-input checks remain incomplete; preserve recorded failure."
+    },
+    "21": {
+      "state": "open_unlabelled",
+      "acceptance_complete": false,
+      "retry_permitted": false,
+      "remaining": "Observation probability NaN and nonfinite offsets plus focused acceptance tests remain incomplete."
+    },
+    "44": {
+      "state": "open_unlabelled_transition_hold",
+      "automatic_requeue_permitted": false
+    }
   }
 }
