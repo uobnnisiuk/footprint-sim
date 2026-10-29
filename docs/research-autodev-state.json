@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "transition_issue": 47,
+  "phase": "integrating",
+  "research_head_sha": "9039417314df4c11fe5bc088825bf5f25eaf4d98",
+  "integrated_main_sha": "2f182064fa0b9e6eae7319a8cffdcd29505ca702",
+  "local_work_reconciled": true,
+  "research_milestone": {
+    "baseline": "M1-F18",
+    "active": "M1-F19",
+    "protocol_id": "m1f19-nested-point-support-density",
+    "worlds": 200,
+    "primary_evaluations_per_run": 4800,
+    "complete_clean_runs": 2,
+    "reference_runs_are_independent_samples": false,
+    "prior_results_already_observed": true
+  },
+  "registered_protocol_paths": [
+    {
+      "commit": "9039417314df4c11fe5bc088825bf5f25eaf4d98",
+      "path": "docs/m1f19-nested-point-support-density.md",
+      "sha256": "ea27087640df341c43af4fafc3dadc21987bb60548d91a8cf470e53cb12e43a6"
+    },
+    {
+      "commit": "9039417314df4c11fe5bc088825bf5f25eaf4d98",
+      "path": "experiments/m1f19_nested_point_support_density/experiment.json",
+      "sha256": "f0669251ab8b747fbd4b7517e169d70723f052ae0465d33cfac6d5fe355c6bbd"
+    }
+  ],
+  "completed_steps": [
+    "original_work_preserved",
+    "local_f19_implementation_reused",
+    "research_baseline_reviewed_and_merged",
+    "known_s4_failure_reproduced_and_corrected",
+    "f16_f17_f18_scientific_replays",
+    "f19_two_clean_full_runs",
+    "independent_verification",
+    "six_artifact_byte_equality",
+    "interpreted_results_and_limits"
+  ],
+  "remaining_steps": [
+    "f19_pr_review_ci_and_merge",
+    "fixed_research_ci_artifact_publication",
+    "reviewed_runtime_deployment",
+    "original_work_and_attempt_preservation_recheck",
+    "windows_dry_run_queue_check_and_daily_restore",
+    "final_issue47_handoff"
+  ],
+  "runner_capabilities": {
+    "response_schema_version": 1,
+    "existing_file_exact_replacement": true,
+    "new_files": false,
+    "delete_files": false,
+    "rename_files": false,
+    "guard_roots": [
+      "src/",
+      "tests/",
+      "docs/",
+      "scenarios/"
+    ],
+    "guard_files": [
+      "README.md"
+    ],
+    "experiment_paths": false,
+    "verifier_scripts_paths": false,
+    "candidate_execution_with_owner_credentials": false,
+    "registered_research_ci": false,
+    "research_artifact_upload_ci": false,
+    "research_execution_route": "Work credential-isolated fixed commands; reviewed CI addition pending",
+    "research_state_enforced_by_runner": false,
+    "dependency_gate_enforced_by_runner": false,
+    "model_access": "read-only",
+    "authentication": "chatgpt",
+    "api_fallback": false,
+    "max_model_attempts_per_issue": 1,
+    "max_daily_slots": 8,
+    "retry_attempted_issues": false
+  },
+  "validation_evidence": {
+    "integration_pr": "https://github.com/uobnnisiuk/footprint-sim/pull/48",
+    "integration_ci": "https://github.com/uobnnisiuk/footprint-sim/actions/runs/40806256094",
+    "integration_ci_head": "9a18147586e428913900c0443eccefe6ed30d53b",
+    "integration_review": "https://github.com/uobnnisiuk/footprint-sim/pull/48#issuecomment-6486210648",
+    "preservation_manifest_sha256": "95449dda9c8d035b382f4d6e98e6d1852a00d3225ccef3df6428f91bc959ad7c",
+    "preservation_archive_sha256": "270279a65c0f8bcff77a9851cd326cb96ba6697702e4f7aff121c8687450ac03",
+    "local_execution_source_sha": "621949087bf1c94fad0e7118c9803befde5bfa26",
+    "local_execution_clean": true,
+    "python_tests": 217,
+    "dotnet_tests": 457,
+    "all_scenario_evaluations": 1120,
+    "legacy_scientific_artifacts_verified": 18,
+    "s4_unchanged_scientific_artifacts": 9,
+    "full_f19_outputs": [
+      {
+        "path": "candidate-density-conditionals.csv",
+        "size": 1414962,
+        "sha256": "cd373e3615b18d51caf6e1f0ed6dea6fe9e6bbac7b8877b68f6f9a86031be414"
+      },
+      {
+        "path": "candidate-density-crosswalk.csv",
+        "size": 2766513,
+        "sha256": "345c5a6c4462062e12e0426131e5dfb42b1f60c4cfce837511e599c7a64942c5"
+      },
+      {
+        "path": "candidate-density-manifest.json",
+        "size": 2842,
+        "sha256": "7651e77360e2f463587dafddfd236d42b69da1e29c88e7ce1461abf3b092ef2e"
+      },
+      {
+        "path": "candidate-density-profiles.csv",
+        "size": 4210249,
+        "sha256": "82157963b7b14366089346a669480d0dd49de97ec5e61ab2a1780e4d1b258950"
+      },
+      {
+        "path": "candidate-density-runs.jsonl",
+        "size": 77767374,
+        "sha256": "f2427db96d118afa5214d5e264de6b3c343a8fff4feb2ccc0011329a03891a3a"
+      },
+      {
+        "path": "candidate-density.json",
+        "size": 1977358,
+        "sha256": "bd24212c69afa2e867a3ba8275a09a68bce4cd56f8b17f2803efad195b8c6d7a"
+      }
+    ],
+    "independent_summary_sha256": "58de58230c009b1e0cc175691f4a55898d9a48bdfb0389a3d49ca1c1f61d8890",
+    "independent_all_verified": true,
+    "fixed_input_signature": "673e6a5a9785c782ccebb1571465ddc48d2602f46350f39fdcd4b319be34cc9c",
+    "public_output_signature": "3b7a8b49be6258616bdbfda05a3551f39d0283edd3c815173f4dc0f46343026a",
+    "report_path": "docs/m1f19-reconciliation-verification.md",
+    "local_artifact_directory": "$HOME/.local/state/footprint-research-reconnect/20261029T1046/sandboxes/f19-v1/out",
+    "remote_artifact": null,
+    "deployment_status": "pending"
+  },
+  "allowed_automatic_paths": [],
+  "automation_handoff": {
+    "work_scope_active": true,
+    "automatic_f19_start": false,
+    "automatic_new_research_start": false,
+    "integration_auto_merge": false,
+    "held_issues": [
+      44
+    ],
+    "immutable_failed_attempts": [
+      13,
+      21
+    ],
+    "state_is_policy_not_runtime_authority": true
+  },
+  "next_decision": {
+    "owner": "current_work_task",
+    "action": "finish_reviewed_publication_and_deployment; then preregister public historical-state-to-current-location/action-coverage mapping",
+    "automatic_execution_allowed": false
+  }
+}
