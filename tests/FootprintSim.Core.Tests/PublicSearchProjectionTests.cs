@@ -243,6 +243,136 @@ public sealed class PublicSearchProjectionTests
         Assert.All(result.Candidates, item => Assert.Equal(new[] { "shared" }, item.TransitionSourceIds));
     }
 
+    [Theory]
+    [InlineData("many-to-one")]
+    [InlineData("one-to-many")]
+    [InlineData("missing-transition")]
+    [InlineData("partial-mapping")]
+    public async Task CliWritesDeterministicPublicReports(string mode)
+    {
+        var input = Fixture();
+        input = mode switch
+        {
+            "one-to-many" => input with
+            {
+                Candidates = [Candidate("c1", "r0")],
+                RegionProjections = [Transition("r0", ["r2", "r3"])],
+                UnitMappings = [Mapping("r2", ["u1"]), Mapping("r3", ["u2"])],
+                Actions = [Action("all", ["u1", "u2"]), Action("partial", ["u1"])]
+            },
+            "missing-transition" => input with { RegionProjections = [] },
+            "partial-mapping" => input with
+            {
+                UnitMappings = [Mapping("r2", ["u1"]) with { IsComplete = false }]
+            },
+            _ => input
+        };
+        var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var inputPath = Path.Combine(directory, "public.json");
+            var outputPath = Path.Combine(directory, "report.json");
+            var expected = JsonDefaults.Serialize(PublicSearchProjector.Project(input)) + "\n";
+            byte[]? first = null;
+            for (var iteration = 0; iteration < 3; iteration++)
+            {
+                var supplied = iteration == 2 ? input with
+                {
+                    Candidates = input.Candidates.Reverse().Select(candidate => candidate with
+                    {
+                        SourceAncestryIds = candidate.SourceAncestryIds.Reverse().ToArray()
+                    }).ToArray(),
+                    RegionIds = input.RegionIds.Reverse().ToArray(),
+                    SearchUnitIds = input.SearchUnitIds.Reverse().ToArray(),
+                    RegionProjections = input.RegionProjections.Reverse().Select(row => row with
+                    {
+                        CurrentRegionIds = row.CurrentRegionIds.Reverse().ToArray()
+                    }).ToArray(),
+                    UnitMappings = input.UnitMappings.Reverse().Select(row => row with
+                    {
+                        UnitIds = row.UnitIds.Reverse().ToArray()
+                    }).ToArray(),
+                    Actions = input.Actions.Reverse().Select(action => action with
+                    {
+                        UnitIds = action.UnitIds.Reverse().ToArray()
+                    }).ToArray()
+                } : input;
+                await File.WriteAllTextAsync(inputPath, JsonDefaults.Serialize(supplied));
+                Assert.Equal(0, await FootprintSim.Cli.CliApplication.RunAsync(
+                    ["evaluate-public-search-projection", "--input", inputPath, "--output", outputPath]));
+                Assert.Equal(expected, await File.ReadAllTextAsync(outputPath));
+                var bytes = await File.ReadAllBytesAsync(outputPath);
+                Assert.Equal(System.Text.Encoding.UTF8.GetBytes(expected), bytes);
+                if (first is not null)
+                {
+                    Assert.Equal(first, bytes);
+                }
+
+                first = bytes;
+            }
+
+            Assert.Equal(2, Directory.GetFiles(directory).Length);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("broken-json")]
+    [InlineData("null")]
+    [InlineData("future-row")]
+    [InlineData("foreign-query")]
+    [InlineData("foreign-entity")]
+    [InlineData("invalid-id")]
+    [InlineData("invalid-time")]
+    public async Task CliRejectsInvalidPublicInputWithoutPublishingAReport(string mode)
+    {
+        var input = Fixture();
+        input = mode switch
+        {
+            "future-row" => input with
+            {
+                RegionProjections = [input.RegionProjections[0] with { AvailableTick = 9 }]
+            },
+            "foreign-query" => input with
+            {
+                Candidates = [input.Candidates[0] with { QueryId = "foreign" }]
+            },
+            "foreign-entity" => input with
+            {
+                Candidates = [input.Candidates[0] with { TargetEntityId = "device-1" }]
+            },
+            "invalid-id" => input with { QueryId = " " },
+            "invalid-time" => input with { EvidenceCutoff = -1 },
+            _ => input
+        };
+        var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var inputPath = Path.Combine(directory, "public.json");
+            var outputPath = Path.Combine(directory, "report.json");
+            var json = mode switch
+            {
+                "broken-json" => "{",
+                "null" => "null",
+                _ => JsonDefaults.Serialize(input)
+            };
+            await File.WriteAllTextAsync(inputPath, json);
+            Assert.Equal(2, await FootprintSim.Cli.CliApplication.RunAsync(
+                ["evaluate-public-search-projection", "--input", inputPath, "--output", outputPath]));
+            Assert.False(File.Exists(outputPath));
+            Assert.Single(Directory.GetFiles(directory));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     private static PublicSearchProjectionInput Fixture() => new(
         "query-1", "person-1", 10, 8,
         [Candidate("c1", "r0"), Candidate("c2", "r1") with { Disposition = PastStateCandidateDisposition.Conflicting }],

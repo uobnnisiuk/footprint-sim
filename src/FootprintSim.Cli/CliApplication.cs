@@ -19,6 +19,12 @@ public static class CliApplication
         try
         {
             if (args.Length > 0 && string.Equals(
+                args[0], "evaluate-public-search-projection", StringComparison.Ordinal))
+            {
+                return await RunPublicSearchProjectionAsync(args[1..]);
+            }
+
+            if (args.Length > 0 && string.Equals(
                 args[0], "evaluate-candidate-density", StringComparison.Ordinal))
             {
                 return await RunCandidateDensityAsync(args[1..]);
@@ -148,6 +154,51 @@ public static class CliApplication
             Console.Error.WriteLine($"error: {exception.Message}");
             return 2;
         }
+    }
+
+    private static async Task<int> RunPublicSearchProjectionAsync(string[] args)
+    {
+        if (args.Length == 1 && string.Equals(args[0], "--help", StringComparison.Ordinal))
+        {
+            Console.WriteLine(
+                "Public search projection: evaluate-public-search-projection " +
+                "--input <public-json> --output <report-json>");
+            return 0;
+        }
+
+        var options = ParseOptions(args, new HashSet<string>(
+            ["--input", "--output"], StringComparer.Ordinal));
+        var inputPath = Path.GetFullPath(Require(options, "--input"));
+        var outputPath = Path.GetFullPath(Require(options, "--output"));
+        var input = JsonSerializer.Deserialize<
+            FootprintSim.Inference.SearchProjection.PublicSearchProjectionInput>(
+                await File.ReadAllTextAsync(inputPath), JsonDefaults.Options)
+            ?? throw new JsonException("Public projection input cannot be null.");
+        FootprintSim.Inference.SearchProjection.PublicSearchProjectionResult result;
+        try
+        {
+            result = FootprintSim.Inference.SearchProjection.PublicSearchProjector.Project(input);
+        }
+        catch (InvalidDataException exception)
+        {
+            throw new ArgumentException(exception.Message, exception);
+        }
+
+        var report = JsonDefaults.Serialize(result) + "\n";
+        // Publish only a complete report; failed writes leave no partial success file.
+        var temporaryPath = outputPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            await File.WriteAllTextAsync(temporaryPath, report);
+            File.Move(temporaryPath, outputPath, overwrite: true);
+        }
+        finally
+        {
+            File.Delete(temporaryPath);
+        }
+
+        Console.WriteLine("Public search projection report completed.");
+        return 0;
     }
 
     private static async Task<int> RunCandidateDensityAsync(string[] args)
