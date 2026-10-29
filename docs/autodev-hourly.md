@@ -12,11 +12,29 @@ The original three-hour controller, launcher and installer remain unchanged.
 Merging this change alone does **not** change Windows's existing triggers or
 action. After independent code review and CI, Work must update only the dedicated
 checkout and run `tools/install_local_autodev_hourly.ps1` in normal Windows
-PowerShell. It backs up and replaces the existing Daily definition (no duplicate
-task), performs a read-only preflight, verifies 24 enabled triggers, and never
-starts a model or manually starts the task. Monitor is untouched. Normal
-interactive logon, IgnoreNew, no automatic retry, no wake, no missed-run catch-up
-and the 40-minute task limit remain. Windows must use Tokyo Standard Time.
+PowerShell. It stages the replacement Daily definition **disabled** (no duplicate
+task), performs a read-only preflight, verifies all 24 daily triggers, action,
+principal and safety settings, and never starts a model or manually starts the
+task. Monitor is untouched. Normal interactive logon, IgnoreNew, no automatic
+retry, no wake, no missed-run catch-up, battery behavior and the 40-minute task
+limit remain. Windows must use Tokyo Standard Time.
+
+Before changing the checkout, save the original Daily XML and enabled state
+outside the repository. Work away from a trigger; confirm the task is idle,
+disable it, then inspect actual WSL processes and acquire the existing
+`daily/daily.lock`, `runner.lock` and `controller.lock` without blocking. A
+scheduler state check alone is not an atomic deployment barrier. Do not kill
+an in-flight model or continue when a lock is busy. Hold the locks across the
+fast-forward, source verification, dry-run and installer invocation. The
+installer rejects an enabled task and an elevated PowerShell process. Its own
+backup is the already disabled definition, so keep the original backup too.
+
+After the staged definition and unchanged ledgers/Monitor are verified, restore
+the saved enabled state, release the deployment locks and read the actual
+`Get-ScheduledTaskInfo` NextRunTime. If verification fails, leave Daily disabled,
+retain all records and report the incomplete step; do not enable or roll back
+by guessing. No `Start-ScheduledTask`, production `--execute` or model invocation
+is part of deployment validation.
 
 ## Reservation and migration
 
@@ -42,8 +60,9 @@ old binary cannot understand the new ledger. If reverting is necessary, disable
 Daily for the remainder of that JST day, retain every marker, and restore the
 reviewed old definition for a later date after checking no in-flight process.
 Changing the task action while a run is in progress is forbidden. The installer
-checks twice but this is not an OS-wide atomic deployment lock; Work must perform
-the change away from a trigger with the existing task quiescent.
+requires a disabled task and leaves the replacement disabled; the operator must
+also establish process quiescence and hold the shared WSL locks as described
+above. Disabled scheduler state alone does not prove a previous process ended.
 
 The new process defers if its imported runtime changes during automatic checkout
 refresh. This avoids using old loaded policy with newly written source. No slot
