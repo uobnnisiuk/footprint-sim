@@ -103,6 +103,8 @@ public sealed class BatchEvaluationRunner
         foreach (var scenarioInput in scenarios)
         {
             var scenario = scenarioInput.Scenario;
+            // Fix the public query scope before simulation; truth never selects its regions.
+            // Keep the full public topology separately for evidence and causal reasoning.
             var searchableRegionIds = (scenario.EvaluationSearchableRegionIds.Count > 0
                     ? scenario.EvaluationSearchableRegionIds
                     : scenario.Regions.Select(region => region.Id))
@@ -316,6 +318,7 @@ public sealed class BatchEvaluationRunner
                         seed,
                         finalTick,
                         publicContext,
+                        searchableRegionIds,
                         simulation.ObservationSet,
                         simulation.CrossThreadConstraints,
                         simulation.CausalTracingConstraints);
@@ -419,6 +422,7 @@ public sealed class BatchEvaluationRunner
         int seed,
         long finalTick,
         RescueContext publicContext,
+        IReadOnlyList<string> publicSearchDomainRegionIds,
         ObservationSet completeEvidence,
         CrossThreadConstraintSet? completeCrossThreadConstraints,
         CausalTracingConstraintSet? completeCausalTracingConstraints)
@@ -440,6 +444,7 @@ public sealed class BatchEvaluationRunner
                 Seed = seed,
                 CurrentTick = tick,
                 PublicContext = publicContext,
+                PublicSearchDomainRegionIds = publicSearchDomainRegionIds,
                 AvailableEvidence = availableEvidence,
                 AvailableCrossThreadConstraints = completeCrossThreadConstraints?
                     .PubliclyAvailableAt(tick),

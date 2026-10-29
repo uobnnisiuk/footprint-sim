@@ -428,6 +428,95 @@ public sealed class SimulationContractTests
         ScenarioValidator.Validate(CopyWithObservationDelayRange(baseline, minimumDelayTicks, maximumDelayTicks));
     }
 
+    [Fact]
+    public void ScenarioRejectsDuplicateDeclaredRegionIds()
+    {
+        var baseline = LoadScenario("s1_debris_transport");
+        ScenarioValidator.Validate(baseline);
+        var original = baseline.Regions.Single(region => region.Id == "hillside-building");
+
+        FootprintSim.Model.RegionDefinition CopyRegion(string id) => new()
+        {
+            Id = id,
+            Type = original.Type,
+            Center = new FootprintSim.Model.Position(
+                original.Center.X, original.Center.Y, original.Center.Elevation, id),
+            Passability = original.Passability,
+            Connections = original.Connections
+        };
+
+        var valid = CopyWithWorldDeclarations(
+            baseline, baseline.Regions.Append(CopyRegion("additional-building")).ToArray(), baseline.Entities);
+        ScenarioValidator.Validate(valid);
+        var invalid = CopyWithWorldDeclarations(
+            baseline, baseline.Regions.Append(CopyRegion(original.Id)).ToArray(), baseline.Entities);
+
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var exception = Assert.Throws<InvalidDataException>(() => ScenarioValidator.Validate(invalid));
+
+            Assert.Equal("Duplicate region id 'hillside-building'.", exception.Message);
+        }
+
+        ScenarioValidator.Validate(baseline);
+    }
+
+    [Fact]
+    public void ScenarioRejectsDeviceIdDuplicatingPersonId()
+    {
+        var baseline = LoadScenario("s1_debris_transport");
+        ScenarioValidator.Validate(baseline);
+        var person = baseline.Entities.Persons.Single(item => item.Id == baseline.TargetPersonId);
+
+        ScenarioDefinition AppendDevice(string id) => CopyWithWorldDeclarations(
+            baseline,
+            baseline.Regions,
+            new FootprintSim.Model.ScenarioEntities
+            {
+                Persons = baseline.Entities.Persons,
+                Devices = baseline.Entities.Devices.Append(new FootprintSim.Model.DeviceDefinition
+                {
+                    Id = id,
+                    InitialPosition = person.InitialPosition
+                }).ToArray(),
+                Carriers = baseline.Entities.Carriers,
+                Rescuers = baseline.Entities.Rescuers,
+                Hazards = baseline.Entities.Hazards
+            });
+
+        ScenarioValidator.Validate(AppendDevice("additional-device"));
+        var invalid = AppendDevice(person.Id);
+
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var exception = Assert.Throws<InvalidDataException>(() => ScenarioValidator.Validate(invalid));
+
+            Assert.Equal("Duplicate entity id 'person-mika'.", exception.Message);
+        }
+
+        ScenarioValidator.Validate(baseline);
+    }
+
+    private static ScenarioDefinition CopyWithWorldDeclarations(
+        ScenarioDefinition baseline,
+        IReadOnlyList<FootprintSim.Model.RegionDefinition> regions,
+        FootprintSim.Model.ScenarioEntities entities)
+    {
+        return new ScenarioDefinition
+        {
+            SchemaVersion = baseline.SchemaVersion,
+            Id = baseline.Id,
+            Title = baseline.Title,
+            Description = baseline.Description,
+            TargetPersonId = baseline.TargetPersonId,
+            NormalWalkingRadius = baseline.NormalWalkingRadius,
+            HazardTransportEnvelopeRegionIds = baseline.HazardTransportEnvelopeRegionIds,
+            Regions = regions,
+            Entities = entities,
+            Steps = baseline.Steps
+        };
+    }
+
     private static ScenarioDefinition CopyWithObservationDelayRange(
         ScenarioDefinition baseline, int minimumDelayTicks, int maximumDelayTicks)
     {

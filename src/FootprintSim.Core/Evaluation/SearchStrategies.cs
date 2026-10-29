@@ -274,7 +274,7 @@ internal static class StrategySupport
             .ThenBy(item => item.SourceIdentifier, StringComparer.Ordinal)
             .ToList();
 
-        return new SearchStrategyResult
+        return PublicSearchDomainProjection.Apply(input, new SearchStrategyResult
         {
             StrategyId = strategy.Id,
             ScenarioId = input.ScenarioId,
@@ -292,7 +292,7 @@ internal static class StrategySupport
             PreferredCandidateRegionIds = orderedCandidates,
             OuterPlausibleCandidateRegionIds = orderedCandidates,
             HasCandidateStandingSets = true
-        };
+        });
     }
 
     public static IReadOnlyList<CandidateRegionProvenance> LastConfirmedProvenance(

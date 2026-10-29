@@ -242,7 +242,9 @@ public sealed class InteractionModelTests
     public void PublicInteractionContractsDoNotExposeTruthOccurrenceObjects()
     {
         var strategyProperties = typeof(SearchStrategyInput).GetProperties();
-        Assert.Equal(7, strategyProperties.Length);
+        Assert.Equal(8, strategyProperties.Length);
+        Assert.Equal(typeof(IReadOnlyList<string>), Assert.Single(strategyProperties,
+            property => property.Name == nameof(SearchStrategyInput.PublicSearchDomainRegionIds)).PropertyType);
         Assert.DoesNotContain(strategyProperties, property =>
             property.PropertyType == typeof(InteractionOccurrence) ||
             property.PropertyType == typeof(InteractionObservationSet));

@@ -95,9 +95,11 @@ dotnet run --project src/FootprintSim.Cli -- evaluate \
 
 `--scenarios` には単一の scenario JSON または `scenario.json` を再帰検索するディレクトリ、`--seeds` には単一値・包含範囲（`0..19`）・カンマ区切り、`--strategies` には `all` または strategy ID のカンマ区切りを指定できます。
 
-現在、上の一括コマンドはS4の`cross-thread-constrained`で、公開Regionと評価対象領域の
-不一致により`person-b-home`のエラーになります（F17監査で既存版でも再現）。S4は後述の
-3戦略を指定して個別実行してください。F17ではこのS4評価契約を変更していません。
+旧F18では上の一括コマンドがS4の`cross-thread-constrained`で`person-b-home`の
+評価領域エラーになりました。Issue #47の統合修正では、固定scenarioが宣言する公開探索範囲を
+推論入力へ明示し、全地形・観測・因果構造を維持したまま最終結果の範囲を揃えます。
+評価分母11、半径24、登録済みscenarioは変更しません。範囲外は証拠による否定ではなく
+当該queryの対象外です。旧版での再現と限定修正の検証は研究再接続の記録に分離します。
 
 S2だけを200 seedで評価する例です。`--scenario` は単一ファイル用の別名です。
 

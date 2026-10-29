@@ -130,13 +130,13 @@ internal static class WeftStrategySupport
                 : ["own-evidence-candidate-warp", "cross-thread-ablation"],
             [],
             CandidateProvenance(warps, input.CurrentTick));
-        return result with
+        return PublicSearchDomainProjection.Apply(input, result with
         {
             PreferredCandidateRegionIds = preferred,
             OuterPlausibleCandidateRegionIds = outer,
             ConflictedCandidateRegionIds = conflicted,
             CrossThreadConstraintAudits = audits
-        };
+        });
     }
 
     internal static IReadOnlyList<CandidateRegionProvenance> CandidateProvenance(

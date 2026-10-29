@@ -23,11 +23,12 @@ public sealed class EvaluationHarnessTests
         var properties = typeof(SearchStrategyInput).GetProperties()
             .ToDictionary(property => property.Name, property => property.PropertyType);
 
-        Assert.Equal(7, properties.Count);
+        Assert.Equal(8, properties.Count);
         Assert.Equal(typeof(string), properties[nameof(SearchStrategyInput.ScenarioId)]);
         Assert.Equal(typeof(int), properties[nameof(SearchStrategyInput.Seed)]);
         Assert.Equal(typeof(long), properties[nameof(SearchStrategyInput.CurrentTick)]);
         Assert.Equal(typeof(RescueContext), properties[nameof(SearchStrategyInput.PublicContext)]);
+        Assert.Equal(typeof(IReadOnlyList<string>), properties[nameof(SearchStrategyInput.PublicSearchDomainRegionIds)]);
         Assert.Equal(typeof(ObservationSet), properties[nameof(SearchStrategyInput.AvailableEvidence)]);
         Assert.Equal(
             typeof(CrossThreadConstraintSet),
