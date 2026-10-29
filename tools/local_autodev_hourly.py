@@ -45,6 +45,10 @@ def _unique_keys(pairs: list[tuple[str, object]]) -> dict:
     return value
 
 
+def _invalid_constant(value: str) -> None:
+    raise ValueError("Non-JSON numeric constant")
+
+
 def _read_marker(path: Path) -> dict:
     # O_NOFOLLOW and fstat validate the opened object, not an earlier path lookup.
     fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0))
@@ -57,8 +61,9 @@ def _read_marker(path: Path) -> dict:
     if len(data) > MAX_MARKER_BYTES:
         raise RuntimeError("Attempt ledger entry exceeds size limit")
     try:
-        value = json.loads(data.decode("utf-8"), object_pairs_hook=_unique_keys)
-    except (UnicodeError, ValueError):
+        value = json.loads(data.decode("utf-8"), object_pairs_hook=_unique_keys,
+                           parse_constant=_invalid_constant)
+    except (UnicodeError, ValueError, RecursionError):
         raise RuntimeError("Unreadable attempt ledger; no execution permitted") from None
     if not isinstance(value, dict):
         raise RuntimeError("Malformed attempt ledger; no execution permitted")
@@ -72,13 +77,105 @@ def _clock_now(clock: Callable[[], datetime]) -> datetime:
     return value.astimezone(daily.JST)
 
 
-def read_budget(state: Path, now: datetime) -> Budget:
-    """Read only. Count reservations, not successful runs; malformed state fails closed.
+def _canonical_date(value: object) -> str:
+    if not isinstance(value, str):
+        raise RuntimeError("Missing attempt date")
+    try:
+        canonical = datetime.strptime(value, "%Y-%m-%d").date().isoformat()
+    except ValueError:
+        raise RuntimeError("Invalid attempt date") from None
+    if canonical != value:
+        raise RuntimeError("Noncanonical attempt date")
+    return value
 
-    Old four-/three-hour reservations each consume one allowance. Their entire
-    original three-hour bucket is blocked conservatively during migration.
-    A former one-per-day reservation still blocks the whole day. An orphaned
-    same-day Issue marker also consumes allowance; never reclaim failed work.
+
+def _reservation_identity(stem: str) -> tuple[str, str | None, int | None]:
+    match = re.fullmatch(r"(\d{4}-\d{2}-\d{2})(?:-(hour|3h-slot|slot)-([0-9]+))?", stem)
+    if not match:
+        raise RuntimeError("Unknown attempt reservation format")
+    date, kind, raw_index = match.groups()
+    _canonical_date(date)
+    index = int(raw_index) if raw_index is not None else None
+    if kind is not None:
+        if str(index) != raw_index or not 0 <= index < {"hour": 24, "3h-slot": 8, "slot": 4}[kind]:
+            raise RuntimeError("Invalid attempt reservation index")
+    return date, kind, index
+
+
+def _validate_record(value: dict, identity: tuple[str, str | None, int | None],
+                     role: str) -> dict:
+    """Validate the actual historic schemas; return comparable identity fields."""
+    date, kind, index = identity
+    fields = {"dateJst", "issue", "status"}
+    if kind is not None:
+        fields.add("hour" if kind == "hour" else "slot")
+    if kind == "hour":
+        fields.add("policy")
+        if role != "result":
+            fields.add("attemptedAtJst")
+    if role == "result":
+        if ("exitCode" in value) == ("failureType" in value):
+            raise RuntimeError("Invalid attempt result schema")
+        fields.add("exitCode" if "exitCode" in value else "failureType")
+    if set(value) != fields:
+        raise RuntimeError("Unexpected attempt ledger fields")
+    if (value["dateJst"] != date or type(value["issue"]) is not int
+            or value["issue"] < 1):
+        raise RuntimeError("Inconsistent attempt reservation")
+    if kind is not None:
+        field = "hour" if kind == "hour" else "slot"
+        if type(value[field]) is not int or value[field] != index:
+            raise RuntimeError("Inconsistent attempt reservation index")
+    if kind == "hour":
+        if value["policy"] != POLICY:
+            raise RuntimeError("Unknown hourly ledger policy")
+        if role != "result":
+            timestamp = value["attemptedAtJst"]
+            try:
+                recorded = datetime.fromisoformat(timestamp) if isinstance(timestamp, str) else None
+            except ValueError:
+                recorded = None
+            if (recorded is None or recorded.isoformat() != timestamp
+                    or recorded.utcoffset() != daily.JST.utcoffset(recorded)
+                    or recorded.date().isoformat() != date or recorded.hour != index):
+                raise RuntimeError("Inconsistent hourly attempt timestamp")
+    if role == "result":
+        if "exitCode" in value:
+            code = value["exitCode"]
+            if type(code) is not int or value["status"] != ("succeeded" if code == 0 else "failed"):
+                raise RuntimeError("Inconsistent attempt result")
+        elif (value["status"] != "failed" or not isinstance(value["failureType"], str)
+              or value["failureType"] not in {
+                "OSError", "TimeoutExpired", "BlockingIOError", "ChildProcessError",
+                "ConnectionError", "BrokenPipeError", "ConnectionAbortedError",
+                "ConnectionRefusedError", "ConnectionResetError", "FileExistsError",
+                "FileNotFoundError", "InterruptedError", "IsADirectoryError",
+                "NotADirectoryError", "PermissionError", "ProcessLookupError", "TimeoutError"}):
+            raise RuntimeError("Invalid attempt failure type")
+    elif value["status"] != ("attempted" if role == "issue" else "reserved" if kind == "hour" else "started"):
+        raise RuntimeError("Invalid attempt reservation status")
+    return {key: item for key, item in value.items()
+            if key not in ("status", "exitCode", "failureType")}
+
+
+def _validate_log(path: Path) -> None:
+    # Never read candidate output while accounting for attempts.
+    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1:
+            raise RuntimeError("Invalid attempt log object")
+    finally:
+        os.close(fd)
+
+
+def read_budget(state: Path, now: datetime) -> Budget:
+    """Read only: count reservations and validate the entire immutable ledger.
+
+    Every historic reservation must have exactly one consistent per-Issue marker.
+    Incomplete writes and orphan results/logs stop all execution, including on a
+    later date; they must never make a possibly attempted Issue eligible again.
+    Missing results/logs are valid (a crash can occur before either is created).
     """
     if now.tzinfo is None or now.utcoffset() is None:
         raise ValueError("An aware clock is required")
@@ -95,61 +192,71 @@ def read_budget(state: Path, now: datetime) -> Budget:
         entries.append(path)
         if len(entries) > MAX_LEDGER_ENTRIES:
             raise RuntimeError("Attempt ledger exceeds bounded entry count")
-    used, blocked = 0, None
-    represented_issues: set[int] = set()
-    prefix = f"day-{date}"
-    pattern = re.compile(rf"day-{re.escape(date)}-(?:(hour|3h-slot|slot)-([0-9]+))\.json\Z")
+    reservations: dict[str, tuple[tuple[str, str | None, int | None], dict]] = {}
+    issues: dict[int, dict] = {}
+    results: dict[str, dict] = {}
+    logs: set[str] = set()
     for path in entries:
         name = path.name
-        if not name.startswith(prefix):
+        if name == "daily.lock":
             continue
-        value = _read_marker(path)
-        issue = value.get("issue")
-        if value.get("dateJst") != date or type(issue) is not int or issue < 1:
-            raise RuntimeError("Inconsistent attempt reservation")
-        represented_issues.add(issue)
-        used += 1  # Deliberately do not deduplicate two reservation files.
-        if name == f"day-{date}.json":
-            blocked = "legacy daily reservation"
+        match = re.fullmatch(r"issue-([1-9][0-9]*)\.json", name)
+        if match:
+            number = int(match[1])
+            value = _read_marker(path)
+            if type(value.get("issue")) is not int or value["issue"] != number:
+                raise RuntimeError("Inconsistent per-Issue ledger")
+            _canonical_date(value.get("dateJst"))
+            issues[number] = value
             continue
-        match = pattern.fullmatch(name)
+        match = re.fullmatch(r"(day|result|log)-(.+)\.(json|txt)", name)
         if not match:
+            raise RuntimeError("Unknown attempt ledger entry")
+        role, stem, extension = match.groups()
+        if extension != ("txt" if role == "log" else "json"):
             raise RuntimeError("Unknown attempt reservation format")
-        kind, raw_index = match.groups()
-        index = int(raw_index)
-        limit = {"hour": 24, "3h-slot": 8, "slot": 4}[kind]
-        if str(index) != raw_index or not 0 <= index < limit:
-            raise RuntimeError("Invalid attempt reservation index")
-        field = "hour" if kind == "hour" else "slot"
-        if type(value.get(field)) is not int or value[field] != index:
-            raise RuntimeError("Inconsistent attempt reservation index")
-        if kind == "hour":
+        identity = _reservation_identity(stem)
+        if role == "log":
+            _validate_log(path)
+            logs.add(stem)
+        else:
+            value = _validate_record(_read_marker(path), identity, role)
+            if role == "day":
+                reservations[stem] = (identity, value)
+            else:
+                results[stem] = value
+    if (set(results) | logs) - set(reservations):
+        raise RuntimeError("Orphaned attempt result or log; review required")
+    represented_issues: set[int] = set()
+    used, blocked = 0, None
+    for stem, (identity, value) in reservations.items():
+        issue = value["issue"]
+        if issue in represented_issues:
+            raise RuntimeError("Duplicate Issue reservations; review required")
+        represented_issues.add(issue)
+        if issue not in issues:
+            raise RuntimeError("Missing per-Issue reservation; review required")
+        if _validate_record(issues[issue], identity, "issue") != value:
+            raise RuntimeError("Inconsistent per-Issue reservation identity")
+        if stem in results:
+            expected_result = {key: item for key, item in value.items() if key != "attemptedAtJst"}
+            if results[stem] != expected_result:
+                raise RuntimeError("Inconsistent result reservation identity")
+        recorded_date, kind, index = identity
+        if recorded_date != date:
+            continue
+        used += 1
+        if kind is None:
+            blocked = "legacy daily reservation"
+        elif kind == "hour":
             if index == hour:
                 blocked = blocked or "hour already reserved"
         else:
             old_hour = index * 3 if kind == "3h-slot" else daily.LEGACY_SLOT_HOURS_JST[index]
             if hour // 3 == old_hour // 3:
                 blocked = blocked or "legacy execution window already reserved"
-    for path in entries:
-        if not re.fullmatch(r"issue-[1-9][0-9]*\.json", path.name):
-            continue
-        value = _read_marker(path)
-        issue = int(path.name[6:-5])
-        if type(value.get("issue")) is not int or value["issue"] != issue:
-            raise RuntimeError("Inconsistent per-Issue ledger")
-        recorded_date = value.get("dateJst")
-        if not isinstance(recorded_date, str):
-            raise RuntimeError("Missing per-Issue attempt date")
-        try:
-            parsed_date = datetime.strptime(recorded_date, "%Y-%m-%d").date().isoformat()
-        except ValueError:
-            raise RuntimeError("Invalid per-Issue attempt date") from None
-        if parsed_date != recorded_date:
-            raise RuntimeError("Noncanonical per-Issue attempt date")
-        if recorded_date == date and issue not in represented_issues:
-            used += 1
-            # With the reservation missing, the attempt's exact window is uncertain.
-            blocked = blocked or "orphaned same-day Issue reservation; review required"
+    if set(issues) != represented_issues:
+        raise RuntimeError("Orphaned per-Issue reservation; review required")
     if used >= MAX_DAILY_ATTEMPTS:
         blocked = blocked or "daily attempt cap reached"
     return Budget(used, blocked)

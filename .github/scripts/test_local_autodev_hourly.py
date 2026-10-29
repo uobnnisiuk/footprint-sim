@@ -38,12 +38,19 @@ class HourlyTests(unittest.TestCase):
         name = f'day-{date}.json' if kind == 'daily' else f'day-{date}-{kind}-{index}.json'
         data = {'dateJst': date, 'issue': issue, 'status': 'started'}
         if kind != 'daily': data['hour' if kind == 'hour' else 'slot'] = index
+        if kind == 'hour':
+            data.update(policy=hourly.POLICY, attemptedAtJst=at(index, day).isoformat(), status='reserved')
         (self.state / name).write_text(json.dumps(data), encoding='utf-8')
+        issue_path = self.state / f'issue-{issue}.json'
+        if not issue_path.exists():
+            issue_path.write_text(json.dumps({**data, 'status': 'attempted'}), encoding='utf-8')
         return self.state / name
 
     def issue_marker(self, issue, day=29):
         self.state.mkdir(exist_ok=True)
         path = self.state / f'issue-{issue}.json'
+        if path.exists():
+            return path
         path.write_text(json.dumps({'issue': issue, 'dateJst': f'2026-10-{day}', 'status': 'attempted'}))
         return path
 
@@ -164,10 +171,11 @@ class HourlyTests(unittest.TestCase):
         self.marker('daily',0,10)
         self.assertEqual(hourly.read_budget(self.state,at(23)).blocked,'legacy daily reservation')
 
-    def test_failed_reservations_are_not_deduplicated(self):
+    def test_duplicate_issue_reservations_fail_closed(self):
         self.marker('hour',1,10)
         self.marker('3h-slot',1,10)
-        self.assertEqual(hourly.read_budget(self.state,at(10)).used,2)
+        with self.assertRaisesRegex(RuntimeError, 'Duplicate|Inconsistent|Unexpected'):
+            hourly.read_budget(self.state,at(10))
 
     def test_matching_issue_marker_not_counted_twice(self):
         self.marker('hour',1,10); self.issue_marker(10)
@@ -175,9 +183,8 @@ class HourlyTests(unittest.TestCase):
 
     def test_orphan_issue_marker_fails_closed(self):
         self.issue_marker(10)
-        budget=hourly.read_budget(self.state,at())
-        self.assertEqual(budget.used,1)
-        self.assertIn('orphaned',budget.blocked)
+        with self.assertRaisesRegex(RuntimeError, 'Orphaned'):
+            hourly.read_budget(self.state,at())
 
     def test_partial_reservation_write_cannot_release_allowance(self):
         self.state.mkdir()
@@ -201,9 +208,12 @@ class HourlyTests(unittest.TestCase):
     def test_invalid_index_rejected(self):
         for kind,index in (('hour',24),('3h-slot',8),('slot',4)):
             with self.subTest(kind=kind):
-                p=self.marker(kind,index,10)
+                p=self.marker(kind,0,10)
+                invalid=self.state/f'day-2026-10-29-{kind}-{index}.json'
+                p.rename(invalid)
                 with self.assertRaises(RuntimeError): hourly.read_budget(self.state,at())
-                p.unlink()
+                invalid.unlink()
+                (self.state/'issue-10.json').unlink()
 
     def test_symlink_state_and_reservations_rejected(self):
         target=Path(self.temp.name)/'real';target.mkdir()
@@ -218,8 +228,8 @@ class HourlyTests(unittest.TestCase):
         with self.assertRaises(RuntimeError): hourly.read_budget(self.state,at())
 
     def test_jst_day_resets_budget_but_not_issue_history(self):
-        for i in range(8): self.marker('hour',i,100+i,day=28)
-        self.issue_marker(56,day=28)
+        for i in range(7): self.marker('hour',i,100+i,day=28)
+        self.marker('hour',7,56,day=28)
         result,calls,_,_=self.run_controller(now=at(0),issues=(56,57))
         self.assertIn('#57 completed',result);self.assertEqual(calls,1)
         self.assertEqual(hourly.read_budget(self.state,at(1)).used,1)
@@ -281,8 +291,155 @@ class HourlyTests(unittest.TestCase):
             original(path,data)
         with patch.object(hourly.daily,'create_private',side_effect=second_write_fails):
             with self.assertRaises(OSError): hourly.reserve_attempt(self.state,at(),56)
-        budget=hourly.read_budget(self.state,at())
-        self.assertEqual(budget.used,1);self.assertIsNotNone(budget.blocked)
+        for now in (at(), at(11), at(0, 30)):
+            with self.subTest(now=now), self.assertRaisesRegex(RuntimeError, 'Missing per-Issue'):
+                hourly.read_budget(self.state,now)
+
+    def test_missing_historical_issue_marker_stops_before_queries_or_call(self):
+        self.marker('3h-slot', 6, 56, day=28)
+        (self.state/'issue-56.json').unlink()
+        with patch.object(hourly.daily, 'verify_checkout'), \
+             patch.object(hourly.daily, 'refresh_checkout') as refresh, \
+             patch.object(hourly.daily.queue, 'list_issues') as listing, \
+             patch.object(hourly.daily, 'invoke_once') as invoke:
+            for execute in (False, True):
+                with self.subTest(execute=execute), self.assertRaisesRegex(RuntimeError, 'Missing per-Issue'):
+                    hourly.run_hourly(ROOT, self.state, execute=execute,
+                                      acknowledge_credit_risk=True, clock=lambda: at())
+            refresh.assert_not_called()
+            listing.assert_not_called()
+            invoke.assert_not_called()
+
+    def test_historical_orphan_issue_never_becomes_safe_at_midnight(self):
+        self.issue_marker(56, day=28)
+        with self.assertRaisesRegex(RuntimeError, 'Orphaned'):
+            self.run_controller(issues=(57,))
+
+    def test_missing_day_marker_with_result_or_log_stops(self):
+        self.state.mkdir()
+        for filename, content in (
+            ('result-2026-10-28-3h-slot-6.json', json.dumps({
+                'dateJst':'2026-10-28', 'slot':6, 'issue':56, 'status':'failed', 'exitCode':1})),
+            ('log-2026-10-28-3h-slot-6.txt', 'DO_NOT_READ_OR_DISCLOSE_LOG_SECRET'),
+        ):
+            with self.subTest(filename=filename):
+                path = self.state/filename
+                path.write_text(content)
+                with self.assertRaisesRegex(RuntimeError, 'Orphaned') as error:
+                    self.run_controller(issues=(56,))
+                self.assertNotIn('DO_NOT_READ', str(error.exception))
+                path.unlink()
+
+    def test_issue_date_slot_hour_and_timestamp_must_match_reservation(self):
+        self.marker('hour', 1, 56)
+        path = self.state/'issue-56.json'
+        original = json.loads(path.read_text())
+        mutations = ({'dateJst':'2026-10-28'}, {'hour':2}, {'hour':True},
+                     {'attemptedAtJst':at(1).replace(minute=6).isoformat()},
+                     {'policy':'unknown'}, {'status':'succeeded'}, {'slot':1})
+        for mutation in mutations:
+            with self.subTest(mutation=mutation):
+                path.write_text(json.dumps({**original, **mutation}))
+                with self.assertRaises(RuntimeError):
+                    hourly.read_budget(self.state, at())
+        path.write_text(json.dumps(original))
+
+    def test_hourly_schema_policy_timestamp_and_types_are_strict(self):
+        path = self.marker('hour', 1, 56)
+        original = json.loads(path.read_text())
+        mutations = ({'extra':'no'}, {'policy':None}, {'issue':True}, {'hour':1.0},
+                     {'attemptedAtJst':'2026-10-29T01:05:00'},
+                     {'attemptedAtJst':'2026-10-29T01:05:00+00:00'},
+                     {'attemptedAtJst':'2026-10-29T02:05:00+09:00'},
+                     {'attemptedAtJst':None}, {'status':'started'})
+        for mutation in mutations:
+            with self.subTest(mutation=mutation):
+                path.write_text(json.dumps({**original, **mutation}))
+                with self.assertRaises(RuntimeError):
+                    hourly.read_budget(self.state, at())
+        for missing in ('policy', 'status', 'attemptedAtJst'):
+            value = dict(original)
+            del value[missing]
+            path.write_text(json.dumps(value))
+            with self.subTest(missing=missing), self.assertRaises(RuntimeError):
+                hourly.read_budget(self.state, at())
+
+    def test_result_must_link_to_same_date_slot_and_issue(self):
+        self.marker('3h-slot', 1, 56)
+        path = self.state/'result-2026-10-29-3h-slot-1.json'
+        original = {'dateJst':'2026-10-29', 'slot':1, 'issue':56, 'status':'failed', 'exitCode':1}
+        for mutation in ({'dateJst':'2026-10-28'}, {'slot':2}, {'issue':57},
+                         {'exitCode':True}, {'status':'succeeded'}, {'extra':1},
+                         {'failureType':'OSError'}):
+            with self.subTest(mutation=mutation):
+                path.write_text(json.dumps({**original, **mutation}))
+                with self.assertRaises(RuntimeError):
+                    hourly.read_budget(self.state, at())
+        path.write_text(json.dumps(original))
+        self.assertEqual(hourly.read_budget(self.state, at()).used, 1)
+
+    def test_result_failure_type_strict_and_supported_os_subclasses(self):
+        self.marker('3h-slot', 1, 56)
+        path = self.state/'result-2026-10-29-3h-slot-1.json'
+        original = {'dateJst':'2026-10-29', 'slot':1, 'issue':56, 'status':'failed'}
+        for failure in ('OSError', 'TimeoutExpired', 'FileNotFoundError', 'PermissionError'):
+            path.write_text(json.dumps({**original, 'failureType':failure}))
+            self.assertEqual(hourly.read_budget(self.state, at()).used, 1)
+        for failure in (None, [], 'arbitrary stderr'):
+            path.write_text(json.dumps({**original, 'failureType':failure}))
+            with self.subTest(failure=failure), self.assertRaises(RuntimeError):
+                hourly.read_budget(self.state, at())
+
+    def test_absent_result_and_log_are_valid_uncertain_consumed_attempt(self):
+        self.marker('3h-slot', 1, 56)
+        self.assertEqual(hourly.read_budget(self.state, at()).used, 1)
+        result, calls, _, _ = self.run_controller(issues=(56, 57))
+        self.assertIn('#57 completed', result)
+        self.assertEqual(calls, 1)
+
+    def test_all_three_slot_formats_share_cap_without_deduplication(self):
+        for index in (0, 1): self.marker('slot', index, 10+index)
+        for index in (0, 1): self.marker('3h-slot', index, 20+index)
+        for index in (6, 7, 8): self.marker('hour', index, 30+index)
+        result, calls, _, _ = self.run_controller(now=at(18))
+        self.assertEqual(calls, 1)
+        self.assertIn('#56 completed', result)
+        result, calls, _, _ = self.run_controller(now=at(19), issues=(57,))
+        self.assertIn('daily attempt cap reached', result)
+        self.assertEqual(calls, 0)
+
+    def test_invalid_historical_records_are_not_ignored(self):
+        path = self.marker('3h-slot', 1, 56, day=28)
+        path.write_text('{"dateJst":"2026-10-28","issue":56,"slot":1,"status":"started","x":NaN}')
+        with self.assertRaisesRegex(RuntimeError, 'Unreadable'):
+            hourly.read_budget(self.state, at())
+
+    def test_marker_input_limits_utf8_and_unknown_filenames(self):
+        path = self.marker('3h-slot', 1, 56)
+        for content in (b'x'*(hourly.MAX_MARKER_BYTES+1), b'\xff', b'{"x":1,"x":2}', b'['*2000):
+            path.write_bytes(content)
+            with self.subTest(size=len(content)), self.assertRaises(RuntimeError):
+                hourly.read_budget(self.state, at())
+        path.write_text(json.dumps({'dateJst':'2026-10-29','slot':1,'issue':56,'status':'started'}))
+        unknown = self.state/'issue-056.json'
+        unknown.write_text('{}')
+        with self.assertRaisesRegex(RuntimeError, 'Unknown'):
+            hourly.read_budget(self.state, at())
+
+    def test_logs_are_validated_without_reading_content(self):
+        self.marker('3h-slot', 1, 56)
+        path = self.state/'log-2026-10-29-3h-slot-1.txt'
+        path.write_bytes(b'\xff\x00DO_NOT_READ_OR_DISCLOSE_LOG_SECRET')
+        self.assertEqual(hourly.read_budget(self.state, at()).used, 1)
+        path.unlink()
+        path.symlink_to(self.state/'issue-56.json')
+        with self.assertRaises((OSError, RuntimeError)):
+            hourly.read_budget(self.state, at())
+
+    def test_bound_on_entire_ledger_count(self):
+        self.marker('3h-slot', 1, 56)
+        with patch.object(hourly, 'MAX_LEDGER_ENTRIES', 1), self.assertRaisesRegex(RuntimeError, 'entry count'):
+            hourly.read_budget(self.state, at())
 
 
 if __name__=='__main__':
