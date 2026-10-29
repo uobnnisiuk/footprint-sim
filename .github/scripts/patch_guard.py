@@ -25,6 +25,7 @@ PROTECTED_NAMES = {
     "packages.lock.json", "project.json", "project.assets.json",
     "package.json", "package-lock.json", "npm-shrinkwrap.json", "yarn.lock",
     "pnpm-lock.yaml", "dotnet-tools.json", "dotnettoolsettings.xml", "sdk.json",
+    "research-autodev-state.json",
 }
 PROTECTED_SUFFIXES = {
     ".csproj", ".fsproj", ".vbproj", ".vcxproj", ".esproj", ".proj",

@@ -127,6 +127,7 @@ class PatchGuardTests(unittest.TestCase):
         paths = [
             ".github/workflows/pwn.yml", "AGENTS.md", "scripts/pwn.py",
             "src/AGENTS.md", "docs/aGeNtS.Md", "tests/global.json",
+            "docs/research-autodev-state.json", "docs/Research-AutoDev-State.JSON",
             "src/sub/Directory.Build.props", "tests/custom.targets",
             "src/project.CSPROJ", "docs/tool.sln", "docs/other.slnx",
             "src/NuGet.Config", "src/packages.lock.json", "src/package-lock.json",
