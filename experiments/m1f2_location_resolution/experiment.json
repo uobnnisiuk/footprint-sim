@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "id": "m1f2-s5-later-trace-a-location-resolution",
+  "scenarioPath": "../../scenarios/s5_distributed_past_evidence/scenario.json",
+  "scenarioId": "s5-distributed-past-evidence",
+  "sourceObservationKey": "later-trace-a",
+  "levels": [
+    {
+      "id": "current",
+      "informationOrder": 0,
+      "description": "The unchanged later-trace-a fork-level location payload.",
+      "observedRegionIds": ["fork-east", "fork-west"],
+      "generateConstraint": true
+    },
+    {
+      "id": "target-window-broad",
+      "informationOrder": 1,
+      "description": "All three Region candidates in the fixed target-window public state.",
+      "observedRegionIds": ["alternate-route", "fork-east", "fork-west"],
+      "generateConstraint": true
+    },
+    {
+      "id": "scenario-wide-broad",
+      "informationOrder": 2,
+      "description": "Every Region in the fixed S5 evaluation-searchable set.",
+      "observedRegionIds": [
+        "release", "alternate-route", "fork-west", "fork-east", "terminal-west", "terminal-east"
+      ],
+      "generateConstraint": true
+    },
+    {
+      "id": "unknown",
+      "informationOrder": 3,
+      "description": "Subject, observed time, relation, availability, and ancestry remain, but no location is available.",
+      "observedRegionIds": [],
+      "generateConstraint": false
+    }
+  ]
+}

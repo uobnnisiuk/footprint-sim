@@ -1,0 +1,179 @@
+{
+  "schemaVersion": 4,
+  "id": "s4-multi-weft-tracing",
+  "title": "S4: Synthetic multi-weft causal tracing",
+  "description": "A synthetic operational-causal-tracing scenario. Its topology, evidence conditions, and branch weights are uncalibrated and do not model real Search and Rescue performance.",
+  "targetPersonId": "person-a",
+  "normalWalkingRadius": 24.0,
+  "evaluationSearchableRegionIds": [
+    "target-home", "staging", "alternate-staging", "release", "alternate-release",
+    "fork-west", "fork-east", "terminal-north", "terminal-central", "terminal-south", "downstream-bank"
+  ],
+  "hazardTransportEnvelopeRegionIds": [
+    "release", "fork-west", "fork-east", "terminal-north", "terminal-central", "terminal-south", "downstream-bank"
+  ],
+  "causalTracingEvaluation": {
+    "evaluationEndTick": 32,
+    "conditionCycle": [
+      "twoIndependentConsistentWefts", "twoSameSourceDerivedConstraints", "confirmedAndUncertain",
+      "independentConflictingSources", "upstreamAndLocal", "localAndDownstream", "causalSandwich",
+      "delayedConstraint", "unavailableConstraint", "deviceOnlyConstraint"
+    ],
+    "baseCandidateStates": [
+      { "startTick": 4, "endTick": 4, "temporalKind": "eventPoint", "regionIds": ["staging", "alternate-staging"] },
+      { "startTick": 8, "endTick": 9, "temporalKind": "stateInterval", "regionIds": ["release", "alternate-release"] },
+      { "startTick": 13, "endTick": 14, "temporalKind": "stateInterval", "regionIds": ["fork-west", "fork-east"] },
+      { "startTick": 15, "endTick": 32, "temporalKind": "stateInterval", "regionIds": ["terminal-north", "terminal-central", "terminal-south", "downstream-bank"] }
+    ],
+    "constraints": [
+      {
+        "id": "b-upstream", "sourceObservationKey": "person-b-encounter", "directSourceId": "witness-b",
+        "sourceAncestryIds": ["record-b"], "sourceKind": "crossThreadObservation", "relationKind": "person-person-encounter",
+        "otherEntityId": "person-b", "role": "upstream", "observedStartTick": 4, "observedEndTick": 4,
+        "constrainedStartTick": 4, "constrainedEndTick": 4, "allowedRegionIds": ["staging"], "availableAtTick": 6,
+        "evidenceState": "confirmed", "isPersonEvidence": true, "isDeviceOnlyEvidence": false,
+        "derivationKind": "encounter-co-location", "occurrenceStepId": "encounter-b",
+        "appliesToConditions": ["twoIndependentConsistentWefts", "twoSameSourceDerivedConstraints", "confirmedAndUncertain", "upstreamAndLocal", "causalSandwich", "delayedConstraint"]
+      },
+      {
+        "id": "b-same-source-local", "sourceObservationKey": "person-b-encounter", "directSourceId": "witness-b",
+        "sourceAncestryIds": ["record-b"], "sourceKind": "crossThreadObservation", "relationKind": "person-person-encounter-derived",
+        "otherEntityId": "person-b", "role": "local", "observedStartTick": 4, "observedEndTick": 4,
+        "constrainedStartTick": 8, "constrainedEndTick": 9, "allowedRegionIds": ["release"], "availableAtTick": 9,
+        "evidenceState": "confirmed", "isPersonEvidence": true, "isDeviceOnlyEvidence": false,
+        "derivationKind": "same-observation-forward-derivation", "occurrenceStepId": "encounter-b",
+        "appliesToConditions": ["twoSameSourceDerivedConstraints"]
+      },
+      {
+        "id": "c-local-confirmed", "sourceObservationKey": "person-c-encounter", "directSourceId": "witness-c",
+        "sourceAncestryIds": ["record-c"], "sourceKind": "crossThreadObservation", "relationKind": "person-person-encounter",
+        "otherEntityId": "person-c", "role": "local", "observedStartTick": 8, "observedEndTick": 9,
+        "constrainedStartTick": 8, "constrainedEndTick": 9, "allowedRegionIds": ["release"], "availableAtTick": 10,
+        "evidenceState": "confirmed", "isPersonEvidence": true, "isDeviceOnlyEvidence": false,
+        "derivationKind": "encounter-co-location", "occurrenceStepId": "encounter-c",
+        "appliesToConditions": ["twoIndependentConsistentWefts", "upstreamAndLocal", "localAndDownstream", "causalSandwich"]
+      },
+      {
+        "id": "c-local-uncertain", "sourceObservationKey": "person-c-uncertain", "directSourceId": "witness-c-uncertain",
+        "sourceAncestryIds": ["record-c-uncertain"], "sourceKind": "crossThreadObservation", "relationKind": "person-person-encounter",
+        "otherEntityId": "person-c", "role": "local", "observedStartTick": 8, "observedEndTick": 9,
+        "constrainedStartTick": 8, "constrainedEndTick": 9, "allowedRegionIds": ["release"], "availableAtTick": 10,
+        "evidenceState": "supportedButUncertain", "isPersonEvidence": true, "isDeviceOnlyEvidence": false,
+        "derivationKind": "uncertain-encounter-co-location", "occurrenceStepId": "encounter-c",
+        "appliesToConditions": ["confirmedAndUncertain"]
+      },
+      {
+        "id": "conflicting-local", "sourceObservationKey": "conflicting-witness", "directSourceId": "witness-conflict",
+        "sourceAncestryIds": ["record-conflict"], "sourceKind": "crossThreadObservation", "relationKind": "person-person-encounter",
+        "otherEntityId": "person-c", "role": "local", "observedStartTick": 8, "observedEndTick": 9,
+        "constrainedStartTick": 8, "constrainedEndTick": 9, "allowedRegionIds": ["alternate-release"], "availableAtTick": 10,
+        "evidenceState": "conflicting", "isPersonEvidence": true, "isDeviceOnlyEvidence": false,
+        "derivationKind": "conflicting-encounter-report",
+        "appliesToConditions": ["independentConflictingSources"]
+      },
+      {
+        "id": "confirmed-against-conflict", "sourceObservationKey": "person-c-encounter", "directSourceId": "witness-c",
+        "sourceAncestryIds": ["record-c"], "sourceKind": "crossThreadObservation", "relationKind": "person-person-encounter",
+        "otherEntityId": "person-c", "role": "local", "observedStartTick": 8, "observedEndTick": 9,
+        "constrainedStartTick": 8, "constrainedEndTick": 9, "allowedRegionIds": ["release"], "availableAtTick": 10,
+        "evidenceState": "confirmed", "isPersonEvidence": true, "isDeviceOnlyEvidence": false,
+        "derivationKind": "encounter-co-location", "occurrenceStepId": "encounter-c",
+        "appliesToConditions": ["independentConflictingSources"]
+      },
+      {
+        "id": "downstream-environment", "sourceObservationKey": "public-terminal-access", "directSourceId": "public-environment-record",
+        "sourceAncestryIds": ["public-environment-model"], "sourceKind": "publicEnvironmentalObservation", "relationKind": "public-downstream-state",
+        "otherEntityId": "person-c", "role": "downstream", "observedStartTick": 24, "observedEndTick": 24,
+        "constrainedStartTick": 24, "constrainedEndTick": 24, "allowedRegionIds": ["terminal-north", "terminal-central"], "availableAtTick": 25,
+        "evidenceState": "supportedButUncertain", "isPersonEvidence": true, "isDeviceOnlyEvidence": false,
+        "derivationKind": "public-downstream-consistency",
+        "appliesToConditions": ["localAndDownstream", "causalSandwich"]
+      },
+      {
+        "id": "delayed-local", "sourceObservationKey": "person-c-delayed", "directSourceId": "witness-c-delayed",
+        "sourceAncestryIds": ["record-c-delayed"], "sourceKind": "crossThreadObservation", "relationKind": "person-person-encounter",
+        "otherEntityId": "person-c", "role": "local", "observedStartTick": 8, "observedEndTick": 9,
+        "constrainedStartTick": 8, "constrainedEndTick": 9, "allowedRegionIds": ["release"], "availableAtTick": 20,
+        "evidenceState": "confirmed", "isPersonEvidence": true, "isDeviceOnlyEvidence": false,
+        "derivationKind": "delayed-encounter-co-location", "occurrenceStepId": "encounter-c",
+        "appliesToConditions": ["delayedConstraint"]
+      },
+      {
+        "id": "unavailable-local", "sourceObservationKey": "private-person-c", "directSourceId": "private-witness-c",
+        "sourceAncestryIds": ["private-record-c"], "sourceKind": "crossThreadObservation", "relationKind": "person-person-encounter",
+        "otherEntityId": "person-c", "role": "local", "observedStartTick": 8, "observedEndTick": 9,
+        "constrainedStartTick": 8, "constrainedEndTick": 9, "allowedRegionIds": ["release"], "availableAtTick": 10,
+        "evidenceState": "confirmed", "isPersonEvidence": true, "isDeviceOnlyEvidence": false, "visibility": "privateEvidence",
+        "derivationKind": "private-encounter-co-location", "occurrenceStepId": "encounter-c",
+        "appliesToConditions": ["unavailableConstraint"]
+      },
+      {
+        "id": "device-only-local", "sourceObservationKey": "device-d-fix", "directSourceId": "device-d-radio",
+        "sourceAncestryIds": ["device-record-d"], "sourceKind": "deviceOnlyObservation", "relationKind": "device-location-observation",
+        "otherEntityId": "device-d", "role": "local", "observedStartTick": 8, "observedEndTick": 9,
+        "constrainedStartTick": 8, "constrainedEndTick": 9, "allowedRegionIds": ["release"], "availableAtTick": 10,
+        "evidenceState": "confirmed", "isPersonEvidence": false, "isDeviceOnlyEvidence": true,
+        "derivationKind": "device-only-location",
+        "appliesToConditions": ["deviceOnlyConstraint"]
+      }
+    ]
+  },
+  "stochasticHazard": {
+    "hazardId": "hazard-s4-synthetic-transport", "sourceRegionId": "release", "startTick": 10,
+    "deviceId": "device-d", "separationProbability": 0.8, "maximumTransitionsPerEntity": 10,
+    "nodes": [
+      { "regionId": "release", "minimumArrivalTick": 8, "maximumArrivalTick": 10, "depositionProbability": 0.0, "trappingProbability": 0.0, "releaseProbability": 0.0, "minimumReleaseDelayTicks": 0, "maximumReleaseDelayTicks": 0, "isTerminal": false, "isRequiredTerminal": false, "publiclyVisible": true, "publishedAtTick": 0, "publicProvenanceId": "s4-public-release" },
+      { "regionId": "fork-west", "minimumArrivalTick": 10, "maximumArrivalTick": 14, "depositionProbability": 0.0, "trappingProbability": 0.0, "releaseProbability": 0.0, "minimumReleaseDelayTicks": 0, "maximumReleaseDelayTicks": 0, "isTerminal": false, "isRequiredTerminal": false, "publiclyVisible": true, "publishedAtTick": 0, "publicProvenanceId": "s4-public-west" },
+      { "regionId": "fork-east", "minimumArrivalTick": 10, "maximumArrivalTick": 14, "depositionProbability": 0.0, "trappingProbability": 0.0, "releaseProbability": 0.0, "minimumReleaseDelayTicks": 0, "maximumReleaseDelayTicks": 0, "isTerminal": false, "isRequiredTerminal": false, "publiclyVisible": true, "publishedAtTick": 0, "publicProvenanceId": "s4-public-east" },
+      { "regionId": "terminal-north", "minimumArrivalTick": 12, "maximumArrivalTick": 22, "depositionProbability": 1.0, "trappingProbability": 0.2, "releaseProbability": 0.0, "minimumReleaseDelayTicks": 0, "maximumReleaseDelayTicks": 0, "isTerminal": true, "isRequiredTerminal": true, "publiclyVisible": true, "publishedAtTick": 0, "publicProvenanceId": "s4-public-north" },
+      { "regionId": "terminal-central", "minimumArrivalTick": 12, "maximumArrivalTick": 22, "depositionProbability": 1.0, "trappingProbability": 0.3, "releaseProbability": 0.0, "minimumReleaseDelayTicks": 0, "maximumReleaseDelayTicks": 0, "isTerminal": true, "isRequiredTerminal": true, "publiclyVisible": true, "publishedAtTick": 0, "publicProvenanceId": "s4-public-central" },
+      { "regionId": "terminal-south", "minimumArrivalTick": 12, "maximumArrivalTick": 22, "depositionProbability": 1.0, "trappingProbability": 0.2, "releaseProbability": 0.45, "minimumReleaseDelayTicks": 1, "maximumReleaseDelayTicks": 3, "isTerminal": true, "isRequiredTerminal": true, "publiclyVisible": true, "publishedAtTick": 0, "publicProvenanceId": "s4-public-south" },
+      { "regionId": "downstream-bank", "minimumArrivalTick": 16, "maximumArrivalTick": 31, "depositionProbability": 1.0, "trappingProbability": 0.1, "releaseProbability": 0.0, "minimumReleaseDelayTicks": 0, "maximumReleaseDelayTicks": 0, "isTerminal": true, "isRequiredTerminal": true, "publiclyVisible": true, "publishedAtTick": 0, "publicProvenanceId": "s4-public-downstream" }
+    ],
+    "transitions": [
+      { "id": "release-west", "sourceRegionId": "release", "destinationRegionId": "fork-west", "weight": 0.5, "minimumTravelTicks": 2, "maximumTravelTicks": 4, "transportType": "hazardDriven", "activation": "anyEntity", "publiclyVisible": true, "provenanceId": "s4-public-release-west" },
+      { "id": "release-east", "sourceRegionId": "release", "destinationRegionId": "fork-east", "weight": 0.5, "minimumTravelTicks": 2, "maximumTravelTicks": 4, "transportType": "hazardDriven", "activation": "anyEntity", "publiclyVisible": true, "provenanceId": "s4-public-release-east" },
+      { "id": "west-north", "sourceRegionId": "fork-west", "destinationRegionId": "terminal-north", "weight": 0.55, "minimumTravelTicks": 2, "maximumTravelTicks": 5, "transportType": "hazardDriven", "activation": "anyEntity", "publiclyVisible": true, "provenanceId": "s4-public-west-north" },
+      { "id": "west-central", "sourceRegionId": "fork-west", "destinationRegionId": "terminal-central", "weight": 0.45, "minimumTravelTicks": 2, "maximumTravelTicks": 5, "transportType": "hazardDriven", "activation": "anyEntity", "publiclyVisible": true, "provenanceId": "s4-public-west-central" },
+      { "id": "east-central", "sourceRegionId": "fork-east", "destinationRegionId": "terminal-central", "weight": 0.5, "minimumTravelTicks": 2, "maximumTravelTicks": 5, "transportType": "hazardDriven", "activation": "anyEntity", "publiclyVisible": true, "provenanceId": "s4-public-east-central" },
+      { "id": "east-south", "sourceRegionId": "fork-east", "destinationRegionId": "terminal-south", "weight": 0.5, "minimumTravelTicks": 2, "maximumTravelTicks": 5, "transportType": "hazardDriven", "activation": "anyEntity", "publiclyVisible": true, "provenanceId": "s4-public-east-south" },
+      { "id": "south-downstream", "sourceRegionId": "terminal-south", "destinationRegionId": "downstream-bank", "weight": 1.0, "minimumTravelTicks": 3, "maximumTravelTicks": 6, "transportType": "secondaryTransport", "activation": "anyEntity", "publiclyVisible": true, "provenanceId": "s4-public-secondary" }
+    ]
+  },
+  "regions": [
+    { "id": "target-home", "type": "building", "center": { "x": 0, "y": 0, "elevation": 50, "regionId": "target-home" }, "passability": 0.8, "connections": [{ "toRegionId": "staging", "travelCost": 1, "passable": true }] },
+    { "id": "person-b-home", "type": "building", "center": { "x": -20, "y": 10, "elevation": 52, "regionId": "person-b-home" }, "passability": 0.8, "connections": [{ "toRegionId": "staging", "travelCost": 1, "passable": true }] },
+    { "id": "person-c-home", "type": "building", "center": { "x": -10, "y": -20, "elevation": 48, "regionId": "person-c-home" }, "passability": 0.8, "connections": [{ "toRegionId": "release", "travelCost": 1, "passable": true }] },
+    { "id": "staging", "type": "other", "center": { "x": 20, "y": 0, "elevation": 42, "regionId": "staging" }, "passability": 0.4, "connections": [{ "toRegionId": "release", "travelCost": 1, "passable": true }] },
+    { "id": "alternate-staging", "type": "other", "center": { "x": 20, "y": 12, "elevation": 42, "regionId": "alternate-staging" }, "passability": 0.4, "connections": [{ "toRegionId": "alternate-release", "travelCost": 1, "passable": true }] },
+    { "id": "release", "type": "other", "center": { "x": 45, "y": 0, "elevation": 34, "regionId": "release" }, "passability": 0.1, "connections": [{ "toRegionId": "fork-west", "travelCost": 1, "passable": false }, { "toRegionId": "fork-east", "travelCost": 1, "passable": false }] },
+    { "id": "alternate-release", "type": "other", "center": { "x": 45, "y": 15, "elevation": 34, "regionId": "alternate-release" }, "passability": 0.1, "connections": [{ "toRegionId": "fork-east", "travelCost": 1, "passable": false }] },
+    { "id": "fork-west", "type": "other", "center": { "x": 70, "y": -12, "elevation": 24, "regionId": "fork-west" }, "passability": 0, "connections": [{ "toRegionId": "terminal-north", "travelCost": 1, "passable": false }, { "toRegionId": "terminal-central", "travelCost": 1, "passable": false }] },
+    { "id": "fork-east", "type": "other", "center": { "x": 70, "y": 12, "elevation": 24, "regionId": "fork-east" }, "passability": 0, "connections": [{ "toRegionId": "terminal-central", "travelCost": 1, "passable": false }, { "toRegionId": "terminal-south", "travelCost": 1, "passable": false }] },
+    { "id": "terminal-north", "type": "other", "center": { "x": 100, "y": -25, "elevation": 10, "regionId": "terminal-north" }, "passability": 0.2, "connections": [] },
+    { "id": "terminal-central", "type": "other", "center": { "x": 105, "y": 0, "elevation": 9, "regionId": "terminal-central" }, "passability": 0.2, "connections": [] },
+    { "id": "terminal-south", "type": "other", "center": { "x": 100, "y": 25, "elevation": 8, "regionId": "terminal-south" }, "passability": 0.2, "connections": [{ "toRegionId": "downstream-bank", "travelCost": 1, "passable": false }] },
+    { "id": "downstream-bank", "type": "other", "center": { "x": 140, "y": 35, "elevation": 5, "regionId": "downstream-bank" }, "passability": 0.3, "connections": [] }
+  ],
+  "entities": {
+    "persons": [
+      { "id": "person-a", "initialPosition": { "x": 0, "y": 0, "elevation": 50, "regionId": "target-home" } },
+      { "id": "person-b", "initialPosition": { "x": -20, "y": 10, "elevation": 52, "regionId": "person-b-home" } },
+      { "id": "person-c", "initialPosition": { "x": -10, "y": -20, "elevation": 48, "regionId": "person-c-home" } }
+    ],
+    "devices": [{ "id": "device-d", "initialPosition": { "x": 0, "y": 0, "elevation": 50, "regionId": "target-home" } }],
+    "carriers": [], "rescuers": [],
+    "hazards": [{ "id": "hazard-s4-synthetic-transport", "kind": "synthetic-generic-passive-transport", "routeRegionIds": ["release", "fork-west", "fork-east", "terminal-north", "terminal-central", "terminal-south", "downstream-bank"], "minimumSpeedPerTick": 1, "maximumSpeedPerTick": 10, "stopProbability": 0.25 }]
+  },
+  "steps": [
+    { "id": "associate-device", "tick": 0, "kind": "personDeviceAssociated", "subjectIds": ["person-a"], "relatedEntityIds": ["device-d"], "regionId": "target-home", "payload": { "relationship": "carried" } },
+    { "id": "last-confirmed", "tick": 1, "kind": "regionEntered", "movementKind": "voluntary", "subjectIds": ["person-a", "device-d"], "position": { "x": 0, "y": 0, "elevation": 50, "regionId": "target-home" }, "observation": { "evidenceType": "syntheticAccessRecord", "reportedSubjectIds": ["person-a"], "reportedPosition": { "x": 0, "y": 0, "elevation": 50, "regionId": "target-home" }, "reportedRegionId": "target-home", "emissionProbability": 1, "dropProbability": 0, "minimumDelayTicks": 0, "maximumDelayTicks": 0, "state": "confirmed", "conflictProbability": 0, "publicPayload": { "source": "synthetic-own-record" } } },
+    { "id": "target-staging", "tick": 4, "kind": "voluntaryMovement", "movementKind": "voluntary", "subjectIds": ["person-a", "device-d"], "position": { "x": 20, "y": 0, "elevation": 42, "regionId": "staging" } },
+    { "id": "person-b-staging", "tick": 4, "kind": "voluntaryMovement", "movementKind": "voluntary", "subjectIds": ["person-b"], "position": { "x": 20, "y": 0, "elevation": 42, "regionId": "staging" } },
+    { "id": "encounter-b", "tick": 4, "kind": "encounter", "subjectIds": ["person-a", "person-b"], "causeStepId": "target-staging", "position": { "x": 20, "y": 0, "elevation": 42, "regionId": "staging" }, "regionId": "staging", "payload": { "modality": "synthetic-co-presence" } },
+    { "id": "target-release", "tick": 8, "kind": "voluntaryMovement", "movementKind": "voluntary", "subjectIds": ["person-a", "device-d"], "position": { "x": 45, "y": 0, "elevation": 34, "regionId": "release" }, "observation": { "evidenceType": "syntheticOwnCoarseObservation", "reportedSubjectIds": ["person-a"], "reportedRegionId": "release", "emissionProbability": 1, "dropProbability": 0, "minimumDelayTicks": 2, "maximumDelayTicks": 2, "state": "supportedButUncertain", "conflictProbability": 0, "publicPayload": { "source": "synthetic-own-evidence" } } },
+    { "id": "person-c-release", "tick": 8, "kind": "voluntaryMovement", "movementKind": "voluntary", "subjectIds": ["person-c"], "position": { "x": 45, "y": 0, "elevation": 34, "regionId": "release" } },
+    { "id": "encounter-c", "tick": 9, "kind": "encounter", "subjectIds": ["person-a", "person-c"], "causeStepId": "target-release", "position": { "x": 45, "y": 0, "elevation": 34, "regionId": "release" }, "regionId": "release", "payload": { "modality": "synthetic-co-presence" } },
+    { "id": "device-only-fix", "tick": 18, "kind": "communicationLost", "subjectIds": ["device-d"], "observation": { "evidenceType": "syntheticDeviceOnlyFix", "reportedSubjectIds": ["device-d"], "reportedRegionId": "downstream-bank", "emissionProbability": 1, "dropProbability": 0, "minimumDelayTicks": 1, "maximumDelayTicks": 1, "state": "supportedButUncertain", "conflictProbability": 0, "publicPayload": { "source": "synthetic-device-only", "subjectType": "device" } } }
+  ]
+}

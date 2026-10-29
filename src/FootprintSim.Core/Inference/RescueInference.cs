@@ -1,5 +1,8 @@
 using FootprintSim.Evidence;
+using FootprintSim.Hazards;
 using FootprintSim.Model;
+using FootprintSim.Interactions;
+using FootprintSim.Interactions.CandidateWarps;
 
 namespace FootprintSim.Inference;
 
@@ -14,6 +17,28 @@ public sealed record RescueContext
     public IReadOnlyList<RegionDefinition> PublicRegions { get; init; } = [];
 
     public IReadOnlyList<string> DeclaredHazardEnvelopeRegionIds { get; init; } = [];
+
+    public PublicHazardEnvelope? PublicHazardEnvelope { get; init; }
+
+    public IReadOnlyList<string> PublicDeviceIds { get; init; } = [];
+
+    public PublicCandidateWarpDefinition? PublicCandidateWarp { get; init; }
+
+    public PublicCausalTracingModel? PublicCausalTracingModel { get; init; }
+}
+
+public sealed record PublicCausalTracingModel
+{
+    public IReadOnlyList<PublicCandidateWarpStateDefinition> CandidateStates { get; init; } = [];
+}
+
+public sealed record PublicCandidateWarpDefinition
+{
+    public required InteractionTimeWindow HistoricalTimeWindow { get; init; }
+
+    public required long AvailableAtTick { get; init; }
+
+    public IReadOnlyList<string> HistoricalCandidateRegionIds { get; init; } = [];
 }
 
 public sealed record SearchZoneSummary

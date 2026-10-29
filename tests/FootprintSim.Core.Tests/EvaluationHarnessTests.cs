@@ -6,6 +6,8 @@ using FootprintSim.Evidence;
 using FootprintSim.Evaluation;
 using FootprintSim.Evaluation.Truth;
 using FootprintSim.Inference;
+using FootprintSim.Interactions;
+using FootprintSim.Interactions.Tracing;
 using FootprintSim.Scenarios;
 using FootprintSim.Serialization;
 using FootprintSim.Simulation;
@@ -21,12 +23,18 @@ public sealed class EvaluationHarnessTests
         var properties = typeof(SearchStrategyInput).GetProperties()
             .ToDictionary(property => property.Name, property => property.PropertyType);
 
-        Assert.Equal(5, properties.Count);
+        Assert.Equal(7, properties.Count);
         Assert.Equal(typeof(string), properties[nameof(SearchStrategyInput.ScenarioId)]);
         Assert.Equal(typeof(int), properties[nameof(SearchStrategyInput.Seed)]);
         Assert.Equal(typeof(long), properties[nameof(SearchStrategyInput.CurrentTick)]);
         Assert.Equal(typeof(RescueContext), properties[nameof(SearchStrategyInput.PublicContext)]);
         Assert.Equal(typeof(ObservationSet), properties[nameof(SearchStrategyInput.AvailableEvidence)]);
+        Assert.Equal(
+            typeof(CrossThreadConstraintSet),
+            properties[nameof(SearchStrategyInput.AvailableCrossThreadConstraints)]);
+        Assert.Equal(
+            typeof(CausalTracingConstraintSet),
+            properties[nameof(SearchStrategyInput.AvailableCausalTracingConstraints)]);
 
         var evaluate = typeof(ISearchStrategy).GetMethod(nameof(ISearchStrategy.Evaluate));
         Assert.NotNull(evaluate);
@@ -43,14 +51,27 @@ public sealed class EvaluationHarnessTests
     }
 
     [Fact]
-    public void AllFourStrategiesRunThroughOneContract()
+    public void AllEightStrategiesRunThroughOneContract()
     {
         var scenario = LoadScenario("s1_debris_transport");
         var simulation = new SimulationEngine().Run(scenario, 42);
         var input = CreateFinalInput(scenario, simulation, 42);
         var publicRegionIds = scenario.Regions.Select(region => region.Id).ToHashSet();
 
-        Assert.Equal(4, SearchStrategyRegistry.All.Count);
+        Assert.Equal(
+            new[]
+            {
+                SearchStrategyIds.LastConfirmedOnly,
+                SearchStrategyIds.VoluntaryReachability,
+                SearchStrategyIds.HazardAware,
+                SearchStrategyIds.EvidenceAwareCurrent,
+                SearchStrategyIds.OwnEvidenceConstrained,
+                SearchStrategyIds.CrossThreadConstrained,
+                SearchStrategyIds.SingleWeft,
+                SearchStrategyIds.MultiWeftTracing
+            }.OrderBy(identifier => identifier, StringComparer.Ordinal),
+            SearchStrategyRegistry.All.Select(strategy => strategy.Id)
+                .OrderBy(identifier => identifier, StringComparer.Ordinal));
         foreach (var strategy in SearchStrategyRegistry.All)
         {
             var result = strategy.Evaluate(input);
@@ -87,7 +108,7 @@ public sealed class EvaluationHarnessTests
             }
         ];
 
-        Assert.Equal(4, SearchStrategyRegistry.All.Count);
+        Assert.Equal(8, SearchStrategyRegistry.All.Count);
         foreach (var strategy in SearchStrategyRegistry.All)
         {
             foreach (var invalidInput in invalidInputs)
@@ -144,7 +165,7 @@ public sealed class EvaluationHarnessTests
         Assert.Equal(available.ScenarioId, available.AvailableEvidence.ScenarioId);
         Assert.Equal(available.Seed, available.AvailableEvidence.Seed);
 
-        Assert.Equal(4, SearchStrategyRegistry.All.Count);
+        Assert.Equal(8, SearchStrategyRegistry.All.Count);
         foreach (var strategy in SearchStrategyRegistry.All)
         {
             Assert.Throws<ArgumentException>(() => strategy.Evaluate(premature));
@@ -313,6 +334,21 @@ public sealed class EvaluationHarnessTests
         Assert.Equal(seeds.Length, aggregate.GroundTruthContainment.Denominator);
         Assert.Equal((decimal)presentSeeds.Count / seeds.Length, aggregate.GroundTruthContainment.Rate);
         Assert.True(aggregate.CandidateRegionCount.Minimum < aggregate.CandidateRegionCount.Maximum);
+    }
+
+    [Fact]
+    public void S1EvidenceAwareSeparatesFirstUsefulGuidanceFromFinalUsefulness()
+    {
+        var result = RunBatch(["s1_debris_transport"], [42]);
+        var evidenceAware = Assert.Single(result.Runs, run =>
+            run.StrategyId == SearchStrategyIds.EvidenceAwareCurrent);
+
+        Assert.True(evidenceAware.TimeToUsefulGuidance.Available);
+        Assert.Equal(0, evidenceAware.TimeToUsefulGuidance.Value);
+        Assert.Equal(6, evidenceAware.CandidateRegionCount.Value);
+        Assert.Equal(0m, evidenceAware.SearchSpaceReduction.Value);
+        Assert.Equal(false, evidenceAware.FinalGuidanceUseful.Value);
+        Assert.Equal(true, evidenceAware.GuidanceRegressedAfterUseful.Value);
     }
 
     [Fact]
@@ -658,7 +694,18 @@ public sealed class EvaluationHarnessTests
             ProducedAtTick = tick,
             CandidateRegionIds = candidates,
             EvidenceBoundaryState = EvidenceState.SupportedButUncertain,
-            RationaleCodes = ["fixture"]
+            RationaleCodes = ["fixture"],
+            CandidateRegionProvenance = candidates.Select(regionId =>
+                new CandidateRegionProvenance
+                {
+                    RegionId = regionId,
+                    SourceKind = CandidateSourceKind.Unsupported,
+                    SourceIdentifier = "fixture",
+                    AvailableAtTick = tick,
+                    IsPersonEvidence = false,
+                    IsDeviceOnlyEvidence = false,
+                    EvidenceBoundaryState = EvidenceState.UnsupportedForQuery
+                }).ToArray()
         };
     }
 

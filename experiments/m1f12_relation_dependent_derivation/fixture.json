@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "id": "m1f12-relation-dependent-derivation",
+  "scenarioId": "m1f12-same-time-relation-fixture",
+  "seed": 0,
+  "targetEntityId": "person-a",
+  "targetEntityKind": "person",
+  "otherParticipantId": "person-b",
+  "otherParticipantEntityKind": "person",
+  "relationSourceEvidenceIdentifier": "public-relation-assertion",
+  "relationStartTick": 10,
+  "relationEndTick": 10,
+  "relationAvailableAtTick": 11,
+  "evidenceAvailabilityCutoff": 11,
+  "relationEvidenceState": "confirmed",
+  "relationSourceAncestryIds": [
+    "public-relation-source-group"
+  ],
+  "participantLocationEvidence": {
+    "sourceEvidenceIdentifier": "public-location-person-b",
+    "participantId": "person-b",
+    "entityKind": "person",
+    "applicableStartTick": 10,
+    "applicableEndTick": 10,
+    "allowedRegionIds": ["east"],
+    "availableAtTick": 11,
+    "evidenceState": "confirmed",
+    "visibility": "publicEvidence",
+    "usageRole": "candidateGeneration",
+    "sourceAncestryIds": ["participant-b-location-source-group"]
+  },
+  "candidateStates": [
+    {
+      "startTick": 10,
+      "endTick": 10,
+      "temporalKind": "eventPoint",
+      "regionIds": ["east"]
+    },
+    {
+      "startTick": 10,
+      "endTick": 10,
+      "temporalKind": "eventPoint",
+      "regionIds": ["west"]
+    },
+    {
+      "startTick": 10,
+      "endTick": 10,
+      "temporalKind": "eventPoint",
+      "regionIds": ["north"]
+    }
+  ],
+  "truthRelationReference": "evaluation-only-person-person-encounter",
+  "truthCandidateStartTick": 10,
+  "truthCandidateEndTick": 10,
+  "truthCandidateRegionId": "east",
+  "profiles": [
+    {
+      "id": "exact",
+      "informationOrder": 0,
+      "description": "The public relation assertion exactly identifies PersonPersonEncounter.",
+      "relationKnowledge": "exact",
+      "exactRelationKind": "personPersonEncounter"
+    },
+    {
+      "id": "unknown",
+      "informationOrder": 1,
+      "description": "A public binary relation is asserted, but its kind is unknown.",
+      "relationKnowledge": "unknownKind",
+      "exactRelationKind": null
+    }
+  ]
+}

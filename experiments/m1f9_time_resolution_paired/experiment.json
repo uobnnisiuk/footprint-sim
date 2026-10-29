@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "id": "m1f9-bounded-duration-time-resolution-paired",
+  "scenarioId": "m1f9-seeded-bounded-duration-worlds",
+  "requiredSeedStart": 0,
+  "requiredSeedEnd": 199,
+  "targetEntityId": "person-a",
+  "sourceEvidenceIdentifier": "seeded-later-event-observation",
+  "laterEventKind": "seeded-later-checkpoint-event",
+  "predecessorStateKind": "seeded-predecessor-state",
+  "dependencyId": "seeded-predecessor-to-later-checkpoint",
+  "durationSourceId": "seeded-public-transition-duration-bound",
+  "sourceAncestryIds": [
+    "seeded-later-event-observation-family"
+  ],
+  "generator": {
+    "id": "m1f9-simple-predecessor-layer-v1",
+    "candidateCountMinimum": 5,
+    "candidateCountMaximum": 12,
+    "laterEventTickMinimum": 30,
+    "laterEventTickMaximum": 60,
+    "durationMinimumTickMinimum": 3,
+    "durationMinimumTickMaximum": 6,
+    "durationWidthMinimum": 0,
+    "durationWidthMaximum": 3,
+    "candidatePaddingOutsideBroadTicks": 3,
+    "availabilityLagAfterBroadEndTicks": 2,
+    "candidateTickCollisionsAllowed": true
+  },
+  "profiles": [
+    {
+      "id": "exact",
+      "informationOrder": 0,
+      "observedStartOffsetFromLaterTick": 0,
+      "observedEndOffsetFromLaterTick": 0,
+      "occurrenceTimeUnknown": false,
+      "rationale": "A degenerate occurrence-time uncertainty interval at the generated later-event tick."
+    },
+    {
+      "id": "medium",
+      "informationOrder": 1,
+      "observedStartOffsetFromLaterTick": -1,
+      "observedEndOffsetFromLaterTick": 1,
+      "occurrenceTimeUnknown": false,
+      "rationale": "Adds one tick on each side of Exact while remaining hand-checkable."
+    },
+    {
+      "id": "broad",
+      "informationOrder": 2,
+      "observedStartOffsetFromLaterTick": -3,
+      "observedEndOffsetFromLaterTick": 3,
+      "occurrenceTimeUnknown": false,
+      "rationale": "Adds two more ticks on each side, exposing a wider candidate band without changing the rule."
+    },
+    {
+      "id": "unknown",
+      "informationOrder": 3,
+      "observedStartOffsetFromLaterTick": null,
+      "observedEndOffsetFromLaterTick": null,
+      "occurrenceTimeUnknown": true,
+      "rationale": "The later event remains observed but occurrence time supplies no time-derived constraint."
+    }
+  ]
+}

@@ -62,7 +62,7 @@ dotnet run --project src/FootprintSim.Cli -- evaluate \
 
 ## Output schemas
 
-The output schema version is currently `1`. The output directory contains:
+M1-A introduced output schema version `1`; M1-B extended it to `2` without reusing field meanings. The integrated research evaluator and batch manifest use schema `3`, including later candidate-standing and tracing metadata. Scenario schemas are separate and currently support versions 1–5. See [M1-B stochastic hazard](m1b-stochastic-hazard.md) and the later research contracts. The output directory contains:
 
 - `runs.jsonl`: one compact, valid JSON object for each scenario/seed/strategy run;
 - `runs.csv`: the same run identities, result fields, and metrics in a fixed analysis-oriented column order;
@@ -94,4 +94,11 @@ dotnet run --project src/FootprintSim.Cli -- evaluate \
   --output results/s2-evaluation
 ```
 
-The integration test checks both signal forms across these seeds, byte-identical observation JSON and evaluation results for repeated inputs, unchanged physical truth, and no device-only promotion for all four strategies. For `hazard-aware`, retained person evidence selects the four-region hazard envelope; missing evidence selects the two-region normal baseline. Containment and candidate/search metrics therefore vary, and aggregate containment is checked against the observed signal-presence count rather than an assumed random split.
+The integration test checks both signal forms across these seeds, byte-identical observation JSON and evaluation results for repeated inputs, unchanged physical truth, and no device-only promotion for all eight registered strategies. For `hazard-aware`, retained person evidence selects the four-region hazard envelope; missing evidence selects the two-region normal baseline. Containment and candidate/search metrics therefore vary, and aggregate containment is checked against the observed signal-presence count rather than an assumed random split.
+
+The separate research fixture `s2-branching-debris-transport` lives at
+`scenarios/s2_branching_debris_transport/scenario.json`. It uses stochastic physical
+branching and person/device separation (scenario schema 2). It is not the
+intermittent-person-evidence fixture above. Both registered IDs and input files
+are retained unchanged; reports identify them by full ID rather than the short
+historical name “S2”.

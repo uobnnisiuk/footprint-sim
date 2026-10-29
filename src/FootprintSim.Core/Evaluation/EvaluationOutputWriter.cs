@@ -12,6 +12,12 @@ public static class EvaluationOutputNames
     public const string AggregateJson = "aggregate.json";
     public const string AggregateCsv = "aggregate.csv";
     public const string ManifestJson = "manifest.json";
+    public const string ConditionCsv = "conditions.csv";
+    public const string PairedCsv = "paired.csv";
+    public const string CausalTracingJson = "causal-tracing.json";
+    public const string CausalTracingCsv = "causal-tracing.csv";
+    public const string PastStateReconstructionJson = "past-state-reconstruction.json";
+    public const string PastStateReconstructionCsv = "past-state-reconstruction.csv";
 
     public static IReadOnlyList<string> All { get; } =
     [
@@ -19,7 +25,9 @@ public static class EvaluationOutputNames
         RunsCsv,
         AggregateJson,
         AggregateCsv,
-        ManifestJson
+        ManifestJson,
+        ConditionCsv,
+        PairedCsv
     ];
 }
 
@@ -28,6 +36,7 @@ public sealed class EvaluationOutputWriter
     public const string RunsCsvHeader =
         "schema_version,scenario_id,seed,strategy_id,produced_at_tick,evidence_boundary_state," +
         "candidate_regions,confirmed_person_regions,explicitly_excluded_regions,rationale_codes," +
+        "candidate_region_provenance," +
         "searchable_region_count,ground_truth_containment_available,ground_truth_containment_value," +
         "ground_truth_containment_numerator,ground_truth_containment_denominator," +
         "ground_truth_containment_unavailable_reason,candidate_region_count_available," +
@@ -43,7 +52,31 @@ public sealed class EvaluationOutputWriter
         "explicit_false_exclusion_unavailable_reason,device_only_promotion_violation_available," +
         "device_only_promotion_violation_value,device_only_promotion_violation_unavailable_reason," +
         "time_to_useful_guidance_available,time_to_useful_guidance_value," +
-        "time_to_useful_guidance_unavailable_reason";
+        "time_to_useful_guidance_unavailable_reason,final_guidance_useful_available," +
+        "final_guidance_useful_value,final_guidance_useful_numerator," +
+        "final_guidance_useful_denominator,final_guidance_useful_unavailable_reason," +
+        "useful_guidance_tick_count_available,useful_guidance_tick_count_value," +
+        "useful_guidance_tick_count_unavailable_reason,evaluated_tick_count_available," +
+        "evaluated_tick_count_value,evaluated_tick_count_unavailable_reason," +
+        "useful_guidance_persistence_fraction_available," +
+        "useful_guidance_persistence_fraction_value," +
+        "useful_guidance_persistence_fraction_numerator," +
+        "useful_guidance_persistence_fraction_denominator," +
+        "useful_guidance_persistence_fraction_unavailable_reason," +
+        "longest_useful_guidance_streak_available,longest_useful_guidance_streak_value," +
+        "longest_useful_guidance_streak_unavailable_reason," +
+        "guidance_regressed_after_useful_available,guidance_regressed_after_useful_value," +
+        "guidance_regressed_after_useful_numerator,guidance_regressed_after_useful_denominator," +
+        "guidance_regressed_after_useful_unavailable_reason,realized_person_final_region," +
+        "realized_device_final_regions,secondary_transport_event_count,truth_outcome_identifier," +
+        "weft_evidence_condition,preferred_candidate_regions,outer_plausible_candidate_regions," +
+        "conflicted_candidate_regions,preferred_candidate_count,outer_plausible_candidate_count," +
+        "preferred_containment,outer_plausible_containment,preferred_reduction," +
+        "outer_plausible_reduction,preferred_guidance,outer_safe_guidance," +
+        "cross_thread_constraint_available_count,cross_thread_unique_source_observation_count," +
+        "cross_thread_constraint_applied_count,cross_thread_constraint_conflict_count," +
+        "cross_thread_constraint_branch_count,retained_alternative_count," +
+        "cross_thread_constraint_audits";
 
     public const string AggregateCsvHeader =
         "schema_version,scenario_id,strategy_id,run_count,metric_complete_run_count," +
@@ -58,9 +91,51 @@ public sealed class EvaluationOutputWriter
         "search_reduction_available_count,search_reduction_mean,search_reduction_median," +
         "search_reduction_min,search_reduction_max,time_guidance_available_count," +
         "time_guidance_mean,time_guidance_median,time_guidance_min,time_guidance_max," +
+        "final_guidance_available_count,final_guidance_numerator,final_guidance_denominator," +
+        "final_guidance_rate,useful_tick_count_available_count,useful_tick_count_mean," +
+        "useful_tick_count_median,useful_tick_count_min,useful_tick_count_max," +
+        "evaluated_tick_count_available_count,evaluated_tick_count_mean," +
+        "evaluated_tick_count_median,evaluated_tick_count_min,evaluated_tick_count_max," +
+        "persistence_fraction_available_count,persistence_fraction_mean," +
+        "persistence_fraction_median,persistence_fraction_min,persistence_fraction_max," +
+        "longest_streak_available_count,longest_streak_mean,longest_streak_median," +
+        "longest_streak_min,longest_streak_max,regressed_available_count," +
+        "regressed_numerator,regressed_denominator,regressed_rate," +
         "evidence_confirmed_count,evidence_supported_but_uncertain_count,evidence_conflicting_count," +
         "evidence_indeterminate_count,evidence_unsupported_for_query_count,unique_outcome_count," +
-        "seed_sensitivity_note";
+        "seed_sensitivity_note,provenance_source_kind_counts,truth_seed_count," +
+        "person_final_region_counts,device_final_region_counts,unique_truth_outcome_count," +
+        "secondary_transport_run_count,secondary_transport_event_count," +
+        "preferred_containment_rate,outer_plausible_containment_rate," +
+        "preferred_candidate_count_mean,outer_plausible_candidate_count_mean," +
+        "preferred_reduction_mean,outer_plausible_reduction_mean," +
+        "preferred_persistence_mean,outer_safe_persistence_mean," +
+        "preferred_time_to_guidance_mean,preferred_final_guidance_rate," +
+        "preferred_regression_rate,outer_safe_time_to_guidance_mean," +
+        "outer_safe_final_guidance_rate,outer_safe_regression_rate," +
+        "cross_thread_applied_count,cross_thread_conflict_count,cross_thread_branch_count," +
+        "retained_alternative_count,person_device_different_terminal_count," +
+        "weft_evidence_condition_counts";
+
+    public const string ConditionCsvHeader =
+        "schema_version,scenario_id,strategy_id,condition,run_count," +
+        "preferred_containment_rate,outer_plausible_containment_rate," +
+        "preferred_candidate_count_mean,outer_plausible_candidate_count_mean," +
+        "preferred_reduction_mean,outer_plausible_reduction_mean," +
+        "preferred_persistence_mean,outer_safe_persistence_mean," +
+        "preferred_time_to_guidance_mean,preferred_final_guidance_rate," +
+        "preferred_regression_rate,outer_safe_time_to_guidance_mean," +
+        "outer_safe_final_guidance_rate,outer_safe_regression_rate," +
+        "cross_thread_applied_count,cross_thread_conflict_count,cross_thread_branch_count," +
+        "retained_alternative_count,device_only_promotion_violation_count";
+
+    public const string PairedCsvHeader =
+        "schema_version,scenario_id,condition,pair_count," +
+        "preferred_candidate_count_delta_mean,outer_plausible_candidate_count_delta_mean," +
+        "preferred_reduction_delta_mean,outer_plausible_reduction_delta_mean," +
+        "preferred_containment_delta_mean,outer_plausible_containment_delta_mean," +
+        "time_to_guidance_delta_available_count,time_to_guidance_delta_mean," +
+        "persistence_delta_mean";
 
     private static JsonSerializerOptions CompactJsonOptions { get; } =
         new(JsonDefaults.Options) { WriteIndented = false };
@@ -83,9 +158,30 @@ public sealed class EvaluationOutputWriter
             EvaluationOutputNames.AggregateJson,
             JsonDefaults.Serialize(result.Aggregate) + "\n");
         await WriteAsync(EvaluationOutputNames.AggregateCsv, CreateAggregateCsv(result.Aggregate));
+        await WriteAsync(EvaluationOutputNames.ConditionCsv, CreateConditionCsv(result.Aggregate));
+        await WriteAsync(EvaluationOutputNames.PairedCsv, CreatePairedCsv(result.Aggregate));
         await WriteAsync(
             EvaluationOutputNames.ManifestJson,
             JsonDefaults.Serialize(result.Manifest) + "\n");
+        if (result.CausalTracing is not null)
+        {
+            await WriteAsync(
+                EvaluationOutputNames.CausalTracingJson,
+                JsonDefaults.Serialize(result.CausalTracing) + "\n");
+            await WriteAsync(
+                EvaluationOutputNames.CausalTracingCsv,
+                CreateCausalTracingCsv(result.CausalTracing));
+        }
+
+        if (result.PastStateReconstruction is not null)
+        {
+            await WriteAsync(
+                EvaluationOutputNames.PastStateReconstructionJson,
+                JsonDefaults.Serialize(result.PastStateReconstruction) + "\n");
+            await WriteAsync(
+                EvaluationOutputNames.PastStateReconstructionCsv,
+                CreatePastStateReconstructionCsv(result.PastStateReconstruction));
+        }
 
         async Task WriteAsync(string fileName, string content)
         {
@@ -115,6 +211,7 @@ public sealed class EvaluationOutputWriter
                 Join(run.ConfirmedPersonRegionIds),
                 Join(run.ExplicitlyExcludedRegionIds),
                 Join(run.RationaleCodes),
+                JsonSerializer.Serialize(run.CandidateRegionProvenance, CompactJsonOptions),
                 run.SearchableRegionCount.ToString(CultureInfo.InvariantCulture),
                 Boolean(run.GroundTruthContainment.Available),
                 Boolean(run.GroundTruthContainment.Value),
@@ -149,7 +246,54 @@ public sealed class EvaluationOutputWriter
                 run.DeviceOnlyPromotionViolation.UnavailableReason,
                 Boolean(run.TimeToUsefulGuidance.Available),
                 Long(run.TimeToUsefulGuidance.Value),
-                run.TimeToUsefulGuidance.UnavailableReason
+                run.TimeToUsefulGuidance.UnavailableReason,
+                Boolean(run.FinalGuidanceUseful.Available),
+                Boolean(run.FinalGuidanceUseful.Value),
+                Integer(run.FinalGuidanceUseful.Numerator),
+                Integer(run.FinalGuidanceUseful.Denominator),
+                run.FinalGuidanceUseful.UnavailableReason,
+                Boolean(run.UsefulGuidanceTickCount.Available),
+                Integer(run.UsefulGuidanceTickCount.Value),
+                run.UsefulGuidanceTickCount.UnavailableReason,
+                Boolean(run.EvaluatedTickCount.Available),
+                Integer(run.EvaluatedTickCount.Value),
+                run.EvaluatedTickCount.UnavailableReason,
+                Boolean(run.UsefulGuidancePersistenceFraction.Available),
+                Decimal(run.UsefulGuidancePersistenceFraction.Value),
+                Integer(run.UsefulGuidancePersistenceFraction.Numerator),
+                Integer(run.UsefulGuidancePersistenceFraction.Denominator),
+                run.UsefulGuidancePersistenceFraction.UnavailableReason,
+                Boolean(run.LongestUsefulGuidanceStreak.Available),
+                Integer(run.LongestUsefulGuidanceStreak.Value),
+                run.LongestUsefulGuidanceStreak.UnavailableReason,
+                Boolean(run.GuidanceRegressedAfterUseful.Available),
+                Boolean(run.GuidanceRegressedAfterUseful.Value),
+                Integer(run.GuidanceRegressedAfterUseful.Numerator),
+                Integer(run.GuidanceRegressedAfterUseful.Denominator),
+                run.GuidanceRegressedAfterUseful.UnavailableReason,
+                run.RealizedPersonFinalRegionId,
+                Join(run.RealizedDeviceFinalRegionIds.Select(item => $"{item.Key}={item.Value}")),
+                run.SecondaryTransportEventCount.ToString(CultureInfo.InvariantCulture),
+                run.TruthOutcomeIdentifier,
+                run.WeftEvidenceCondition is null ? null : EnumText(run.WeftEvidenceCondition.Value),
+                Join(run.PreferredCandidateRegionIds),
+                Join(run.OuterPlausibleCandidateRegionIds),
+                Join(run.ConflictedCandidateRegionIds),
+                Integer(run.PreferredCandidateRegionCount.Value),
+                Integer(run.OuterPlausibleCandidateRegionCount.Value),
+                Boolean(run.PreferredContainment.Value),
+                Boolean(run.OuterPlausibleContainment.Value),
+                Decimal(run.PreferredReduction.Value),
+                Decimal(run.OuterPlausibleReduction.Value),
+                JsonSerializer.Serialize(run.PreferredGuidance, CompactJsonOptions),
+                JsonSerializer.Serialize(run.OuterSafeGuidance, CompactJsonOptions),
+                Integer(run.CrossThreadConstraintAvailableCount.Value),
+                Integer(run.CrossThreadUniqueSourceObservationCount.Value),
+                Integer(run.CrossThreadConstraintAppliedCount.Value),
+                Integer(run.CrossThreadConstraintConflictCount.Value),
+                Integer(run.CrossThreadConstraintBranchCount.Value),
+                Integer(run.RetainedAlternativeCount.Value),
+                JsonSerializer.Serialize(run.CrossThreadConstraintAudits, CompactJsonOptions)
             ]);
         }
 
@@ -162,6 +306,10 @@ public sealed class EvaluationOutputWriter
         builder.Append(AggregateCsvHeader).Append('\n');
         foreach (var group in report.Groups)
         {
+            var truth = report.TruthGroups.Single(item => string.Equals(
+                item.ScenarioId,
+                group.ScenarioId,
+                StringComparison.Ordinal));
             AppendCsvRow(builder,
             [
                 report.SchemaVersion.ToString(CultureInfo.InvariantCulture),
@@ -202,6 +350,39 @@ public sealed class EvaluationOutputWriter
                 Decimal(group.TimeToUsefulGuidance.Median),
                 Decimal(group.TimeToUsefulGuidance.Minimum),
                 Decimal(group.TimeToUsefulGuidance.Maximum),
+                group.FinalGuidanceUseful.AvailableCount.ToString(CultureInfo.InvariantCulture),
+                group.FinalGuidanceUseful.Numerator.ToString(CultureInfo.InvariantCulture),
+                group.FinalGuidanceUseful.Denominator.ToString(CultureInfo.InvariantCulture),
+                Decimal(group.FinalGuidanceUseful.Rate),
+                group.UsefulGuidanceTickCount.AvailableCount.ToString(CultureInfo.InvariantCulture),
+                Decimal(group.UsefulGuidanceTickCount.Mean),
+                Decimal(group.UsefulGuidanceTickCount.Median),
+                Decimal(group.UsefulGuidanceTickCount.Minimum),
+                Decimal(group.UsefulGuidanceTickCount.Maximum),
+                group.EvaluatedTickCount.AvailableCount.ToString(CultureInfo.InvariantCulture),
+                Decimal(group.EvaluatedTickCount.Mean),
+                Decimal(group.EvaluatedTickCount.Median),
+                Decimal(group.EvaluatedTickCount.Minimum),
+                Decimal(group.EvaluatedTickCount.Maximum),
+                group.UsefulGuidancePersistenceFraction.AvailableCount.ToString(
+                    CultureInfo.InvariantCulture),
+                Decimal(group.UsefulGuidancePersistenceFraction.Mean),
+                Decimal(group.UsefulGuidancePersistenceFraction.Median),
+                Decimal(group.UsefulGuidancePersistenceFraction.Minimum),
+                Decimal(group.UsefulGuidancePersistenceFraction.Maximum),
+                group.LongestUsefulGuidanceStreak.AvailableCount.ToString(
+                    CultureInfo.InvariantCulture),
+                Decimal(group.LongestUsefulGuidanceStreak.Mean),
+                Decimal(group.LongestUsefulGuidanceStreak.Median),
+                Decimal(group.LongestUsefulGuidanceStreak.Minimum),
+                Decimal(group.LongestUsefulGuidanceStreak.Maximum),
+                group.GuidanceRegressedAfterUseful.AvailableCount.ToString(
+                    CultureInfo.InvariantCulture),
+                group.GuidanceRegressedAfterUseful.Numerator.ToString(
+                    CultureInfo.InvariantCulture),
+                group.GuidanceRegressedAfterUseful.Denominator.ToString(
+                    CultureInfo.InvariantCulture),
+                Decimal(group.GuidanceRegressedAfterUseful.Rate),
                 group.EvidenceBoundaryStateCounts.Confirmed.ToString(CultureInfo.InvariantCulture),
                 group.EvidenceBoundaryStateCounts.SupportedButUncertain.ToString(
                     CultureInfo.InvariantCulture),
@@ -210,8 +391,228 @@ public sealed class EvaluationOutputWriter
                 group.EvidenceBoundaryStateCounts.UnsupportedForQuery.ToString(
                     CultureInfo.InvariantCulture),
                 group.UniqueOutcomeCount.ToString(CultureInfo.InvariantCulture),
-                group.SeedSensitivityNote
+                group.SeedSensitivityNote,
+                Join(group.ProvenanceSourceKindCounts.Select(item =>
+                    $"{EnumText(item.SourceKind)}={item.Count.ToString(CultureInfo.InvariantCulture)}")),
+                truth.SeedCount.ToString(CultureInfo.InvariantCulture),
+                Join(truth.PersonFinalRegionCounts.Select(item =>
+                    $"{item.RegionId}={item.Count.ToString(CultureInfo.InvariantCulture)}")),
+                Join(truth.DeviceFinalRegionCounts.Select(item =>
+                    $"{item.DeviceId}:{item.RegionId}={item.Count.ToString(CultureInfo.InvariantCulture)}")),
+                truth.UniqueTruthOutcomeCount.ToString(CultureInfo.InvariantCulture),
+                truth.SecondaryTransportRunCount.ToString(CultureInfo.InvariantCulture),
+                truth.SecondaryTransportEventCount.ToString(CultureInfo.InvariantCulture),
+                Decimal(group.PreferredContainment.Rate),
+                Decimal(group.OuterPlausibleContainment.Rate),
+                Decimal(group.PreferredCandidateRegionCount.Mean),
+                Decimal(group.OuterPlausibleCandidateRegionCount.Mean),
+                Decimal(group.PreferredReduction.Mean),
+                Decimal(group.OuterPlausibleReduction.Mean),
+                Decimal(group.PreferredPersistenceFraction.Mean),
+                Decimal(group.OuterSafePersistenceFraction.Mean),
+                Decimal(group.PreferredTimeToUsefulGuidance.Mean),
+                Decimal(group.PreferredFinalGuidanceUseful.Rate),
+                Decimal(group.PreferredGuidanceRegressedAfterUseful.Rate),
+                Decimal(group.OuterSafeTimeToUsefulGuidance.Mean),
+                Decimal(group.OuterSafeFinalGuidanceUseful.Rate),
+                Decimal(group.OuterSafeGuidanceRegressedAfterUseful.Rate),
+                group.CrossThreadConstraintAppliedCount.ToString(CultureInfo.InvariantCulture),
+                group.CrossThreadConstraintConflictCount.ToString(CultureInfo.InvariantCulture),
+                group.CrossThreadConstraintBranchCount.ToString(CultureInfo.InvariantCulture),
+                group.RetainedAlternativeCount.ToString(CultureInfo.InvariantCulture),
+                truth.PersonDeviceDifferentTerminalCount.ToString(CultureInfo.InvariantCulture),
+                Join(truth.WeftEvidenceConditionCounts.Select(item =>
+                    $"{EnumText(item.Condition)}={item.Count.ToString(CultureInfo.InvariantCulture)}"))
             ]);
+        }
+
+        return builder.ToString();
+    }
+
+    private static string CreateConditionCsv(AggregateReport report)
+    {
+        var builder = new StringBuilder();
+        builder.Append(ConditionCsvHeader).Append('\n');
+        foreach (var item in report.ConditionGroups)
+        {
+            var group = item.Metrics;
+            AppendCsvRow(builder,
+            [
+                report.SchemaVersion.ToString(CultureInfo.InvariantCulture),
+                group.ScenarioId,
+                group.StrategyId,
+                EnumText(item.Condition),
+                group.RunCount.ToString(CultureInfo.InvariantCulture),
+                Decimal(group.PreferredContainment.Rate),
+                Decimal(group.OuterPlausibleContainment.Rate),
+                Decimal(group.PreferredCandidateRegionCount.Mean),
+                Decimal(group.OuterPlausibleCandidateRegionCount.Mean),
+                Decimal(group.PreferredReduction.Mean),
+                Decimal(group.OuterPlausibleReduction.Mean),
+                Decimal(group.PreferredPersistenceFraction.Mean),
+                Decimal(group.OuterSafePersistenceFraction.Mean),
+                Decimal(group.PreferredTimeToUsefulGuidance.Mean),
+                Decimal(group.PreferredFinalGuidanceUseful.Rate),
+                Decimal(group.PreferredGuidanceRegressedAfterUseful.Rate),
+                Decimal(group.OuterSafeTimeToUsefulGuidance.Mean),
+                Decimal(group.OuterSafeFinalGuidanceUseful.Rate),
+                Decimal(group.OuterSafeGuidanceRegressedAfterUseful.Rate),
+                group.CrossThreadConstraintAppliedCount.ToString(CultureInfo.InvariantCulture),
+                group.CrossThreadConstraintConflictCount.ToString(CultureInfo.InvariantCulture),
+                group.CrossThreadConstraintBranchCount.ToString(CultureInfo.InvariantCulture),
+                group.RetainedAlternativeCount.ToString(CultureInfo.InvariantCulture),
+                group.DeviceOnlyPromotionViolationCount.ToString(CultureInfo.InvariantCulture)
+            ]);
+        }
+
+        return builder.ToString();
+    }
+
+    private static string CreatePairedCsv(AggregateReport report)
+    {
+        var builder = new StringBuilder();
+        builder.Append(PairedCsvHeader).Append('\n');
+        foreach (var group in report.PairedWeftGroups)
+        {
+            AppendCsvRow(builder,
+            [
+                report.SchemaVersion.ToString(CultureInfo.InvariantCulture),
+                group.ScenarioId,
+                group.Condition is null ? "all" : EnumText(group.Condition.Value),
+                group.PairCount.ToString(CultureInfo.InvariantCulture),
+                Decimal(group.PreferredCandidateCountDelta.Mean),
+                Decimal(group.OuterPlausibleCandidateCountDelta.Mean),
+                Decimal(group.PreferredReductionDelta.Mean),
+                Decimal(group.OuterPlausibleReductionDelta.Mean),
+                Decimal(group.PreferredContainmentDelta.Mean),
+                Decimal(group.OuterPlausibleContainmentDelta.Mean),
+                group.TimeToGuidanceDelta.AvailableCount.ToString(CultureInfo.InvariantCulture),
+                Decimal(group.TimeToGuidanceDelta.Mean),
+                Decimal(group.PersistenceDelta.Mean)
+            ]);
+        }
+
+        return builder.ToString();
+    }
+
+    private static string CreateCausalTracingCsv(CausalTracingEvaluationReport report)
+    {
+        var builder = new StringBuilder();
+        builder.Append(
+            "schema_version,scenario_id,seed,strategy_id,condition,preferred_candidate_count," +
+            "outer_candidate_count,preferred_containment,outer_containment,preferred_reduction," +
+            "outer_reduction,preferred_persistence,applied_constraint_count," +
+            "applied_unique_source_group_count,supporting_source_group_count," +
+            "conflicting_source_group_count,tracing_step_count,forward_tracing_step_count," +
+            "backward_tracing_step_count,retained_alternative_count,causal_sandwich_applied," +
+            "constraint_order_invariant\n");
+        foreach (var run in report.Runs)
+        {
+            AppendCsvRow(builder,
+            [
+                run.SchemaVersion.ToString(CultureInfo.InvariantCulture),
+                run.ScenarioId,
+                run.Seed.ToString(CultureInfo.InvariantCulture),
+                run.StrategyId,
+                EnumText(run.Condition),
+                run.PreferredCandidateCount.ToString(CultureInfo.InvariantCulture),
+                run.OuterCandidateCount.ToString(CultureInfo.InvariantCulture),
+                Boolean(run.PreferredContainment),
+                Boolean(run.OuterContainment),
+                Decimal(run.PreferredReduction),
+                Decimal(run.OuterReduction),
+                Decimal(run.PreferredPersistence),
+                run.AppliedConstraintCount.ToString(CultureInfo.InvariantCulture),
+                run.AppliedUniqueSourceGroupCount.ToString(CultureInfo.InvariantCulture),
+                run.SupportingSourceGroupCount.ToString(CultureInfo.InvariantCulture),
+                run.ConflictingSourceGroupCount.ToString(CultureInfo.InvariantCulture),
+                run.TracingStepCount.ToString(CultureInfo.InvariantCulture),
+                run.ForwardTracingStepCount.ToString(CultureInfo.InvariantCulture),
+                run.BackwardTracingStepCount.ToString(CultureInfo.InvariantCulture),
+                run.RetainedAlternativeCount.ToString(CultureInfo.InvariantCulture),
+                Boolean(run.CausalSandwichApplied),
+                Boolean(run.ConstraintOrderInvariant)
+            ]);
+        }
+
+        return builder.ToString();
+    }
+
+    private static string CreatePastStateReconstructionCsv(
+        PastStateReconstructionEvaluationReport report)
+    {
+        var builder = new StringBuilder();
+        builder.Append(
+            "schema_version,scenario_id,seed,condition,query_id,target_start_tick,target_end_tick," +
+            "evidence_cutoff,truth_person_region,truth_device_region,method,initial_candidate_count," +
+            "candidate_count,contains_truth,false_exclusion,candidate_reduction,steps," +
+            "candidate_generation_steps,candidate_verification_steps,forward_transition_steps,backward_transition_steps," +
+            "public_relations_inspected,evidence_records_inspected,source_groups_inspected," +
+            "addressable_candidate_count,deterministic_identity_rate,target_candidate_represented," +
+            "supported_candidates,uncertain_candidates,unresolved_candidates,conflicted_candidates,unsupported_candidates," +
+            "unavailable_candidates,independently_supported,independently_refuted," +
+            "conflicting_verification,unresolved_verification,shared_ancestry_only," +
+            "unavailable_verification,generation_source_groups,verification_source_groups," +
+            "shared_ancestry_source_groups,ancestry_overlap,present_evidence_source_groups," +
+            "redundant_same_source_records,conflicting_evidence,uncertain_evidence," +
+            "unavailable_evidence,excluded_future_evidence\n");
+        foreach (var run in report.Runs)
+        {
+            foreach (var method in run.Methods)
+            {
+                AppendCsvRow(builder,
+                [
+                    report.SchemaVersion.ToString(CultureInfo.InvariantCulture),
+                    run.ScenarioId,
+                    run.Seed.ToString(CultureInfo.InvariantCulture),
+                    EnumText(run.Condition),
+                    run.QueryId,
+                    run.TargetStartTick.ToString(CultureInfo.InvariantCulture),
+                    run.TargetEndTick.ToString(CultureInfo.InvariantCulture),
+                    run.EvidenceAvailabilityCutoff.ToString(CultureInfo.InvariantCulture),
+                    run.TruthPersonRegionId,
+                    run.TruthDeviceRegionId,
+                    EnumText(method.Method),
+                    run.InitialCandidateCount.ToString(CultureInfo.InvariantCulture),
+                    method.CandidateCount.ToString(CultureInfo.InvariantCulture),
+                    Boolean(method.ContainsTruth),
+                    Boolean(method.FalseExclusion),
+                    Decimal(method.CandidateReduction),
+                    method.Steps.ToString(CultureInfo.InvariantCulture),
+                    method.CandidateGenerationSteps.ToString(CultureInfo.InvariantCulture),
+                    method.CandidateVerificationSteps.ToString(CultureInfo.InvariantCulture),
+                    method.ForwardTransitionSteps.ToString(CultureInfo.InvariantCulture),
+                    method.BackwardTransitionSteps.ToString(CultureInfo.InvariantCulture),
+                    method.PublicRelationsInspected.ToString(CultureInfo.InvariantCulture),
+                    method.EvidenceRecordsInspected.ToString(CultureInfo.InvariantCulture),
+                    method.SourceGroupsInspected.ToString(CultureInfo.InvariantCulture),
+                    run.AddressableCandidateCount.ToString(CultureInfo.InvariantCulture),
+                    Decimal(run.DeterministicCandidateIdentityRate),
+                    Boolean(run.TargetCandidateRepresented),
+                    run.SupportedCandidateCount.ToString(CultureInfo.InvariantCulture),
+                    run.UncertainCandidateCount.ToString(CultureInfo.InvariantCulture),
+                    run.UnresolvedCandidateCount.ToString(CultureInfo.InvariantCulture),
+                    run.ConflictedCandidateCount.ToString(CultureInfo.InvariantCulture),
+                    run.UnsupportedCandidateCount.ToString(CultureInfo.InvariantCulture),
+                    run.UnavailableCandidateCount.ToString(CultureInfo.InvariantCulture),
+                    run.IndependentlySupportedCandidateCount.ToString(CultureInfo.InvariantCulture),
+                    run.IndependentlyRefutedCandidateCount.ToString(CultureInfo.InvariantCulture),
+                    run.ConflictingVerificationCandidateCount.ToString(CultureInfo.InvariantCulture),
+                    run.UnresolvedVerificationCandidateCount.ToString(CultureInfo.InvariantCulture),
+                    run.SharedAncestryOnlyCandidateCount.ToString(CultureInfo.InvariantCulture),
+                    run.UnavailableVerificationCandidateCount.ToString(CultureInfo.InvariantCulture),
+                    run.GenerationSourceGroupCount.ToString(CultureInfo.InvariantCulture),
+                    run.VerificationSourceGroupCount.ToString(CultureInfo.InvariantCulture),
+                    run.SharedAncestrySourceGroupCount.ToString(CultureInfo.InvariantCulture),
+                    run.GenerationVerificationAncestryOverlapCount.ToString(CultureInfo.InvariantCulture),
+                    run.PresentEvidenceSourceGroupCount.ToString(CultureInfo.InvariantCulture),
+                    run.RedundantSameSourceRecordCount.ToString(CultureInfo.InvariantCulture),
+                    run.ConflictingEvidenceCount.ToString(CultureInfo.InvariantCulture),
+                    run.UncertainEvidenceCount.ToString(CultureInfo.InvariantCulture),
+                    run.UnavailableEvidenceCount.ToString(CultureInfo.InvariantCulture),
+                    run.ExcludedFutureEvidenceCount.ToString(CultureInfo.InvariantCulture)
+                ]);
+            }
         }
 
         return builder.ToString();
@@ -243,6 +644,9 @@ public sealed class EvaluationOutputWriter
         value?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
 
     private static string Decimal(decimal? value) =>
+        value?.ToString("0.############################", CultureInfo.InvariantCulture) ?? string.Empty;
+
+    private static string Decimal(double? value) =>
         value?.ToString("0.############################", CultureInfo.InvariantCulture) ?? string.Empty;
 
     private static string EnumText<T>(T value) where T : struct, Enum =>
