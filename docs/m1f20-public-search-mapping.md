@@ -122,3 +122,44 @@ real geographic coverage and real-data validation remain outside this stage.
 ## Execution status
 
 Preregistered design. Implementation, executable validation and separate review are pending.
+
+## Explicit-declaration adapter design resolution
+
+The adapter source is caller-supplied `PublicRegionProjection` declarations for the entire exact
+inclusive historical window. Query identity, entity and evidence cutoff come from the supplied
+`PastStateReconstructionResult.Query`; all candidates retain their identities and metadata.
+Declarations retain their source, availability and completeness flags. Missing or partial maps
+remain unresolved, and the existing projector validates all rows before the adapter snapshots them.
+No implicit stay transition or automatic completeness declaration is introduced.
+
+### Review follow-up for Issue #56 (2026-10-30)
+
+The initial PR #58 fixture lacked required candidate-state provenance and failed CI before
+exercising the adapter. Its original implementation did not complete the registered verification.
+This follow-up keeps the adapter and projector production semantics unchanged and completes
+candidate-side validation tests in the already authorized test file; it does not weaken assertions.
+
+The corrected fixture calls the real `PastStateReconstructor.Compare` with a provenance-bearing
+public three-region model, a nonempty public observation set and an explicit public constraint.
+It checks that reconstruction narrows the three declared regions to the two permitted regions,
+then passes those actual candidates through the adapter and existing CLI. The temporal transition
+rows are separate explicit synthetic declarations, not inferred physical guarantees.
+
+Connected cases check many-to-one, one-to-many, partial/missing transition or unit mappings,
+known-plus-unknown and all-unknown results. The CLI's emitted JSON is parsed and compared with
+independently enumerated expected candidate IDs, region/unit sets, unresolved IDs, action overlap
+and conditional whole-support inclusion. Repeated and permuted inputs must produce identical
+bytes. Additional checks cover all candidate dispositions, empty candidates, foreign query/entity,
+exact-window mismatch, future/duplicate/complete-empty declarations, and detached snapshots of
+all candidate metadata and nested declaration lists. Original inputs must not be mutated.
+
+These are authored verification cases, not a statement that this follow-up has passed execution.
+The amendment author has no local .NET SDK; exact-head normal CI, F19 research CI and a new
+independent review are required. Their run/commit evidence belongs in PR #58 and parent #52.
+The historical preregistration status above is preserved; successful initial library/CLI delivery
+in PRs #53/#55 must not be confused with this adapter's pending acceptance.
+
+An automatic exact-window completeness producer from `PublicHazardEnvelope` remains unavailable.
+Synthetic completeness must be explicitly justified by the declared model; this adapter cannot
+certify arbitrary caller declarations, real geographic coverage or rescue performance.
+The original preregistration and F16–F19 results remain unchanged.
