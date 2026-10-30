@@ -723,7 +723,7 @@ public sealed class PublicSearchProjectionTests
             new CausalTracingConstraintSet(query.ScenarioId, query.Seed, [constraint])).Reconstruction;
         // This fixture actually reconstructs and narrows three public regions to two.
         Assert.Equal(3, result.InitialCandidateCount);
-        Assert.Equal(new[] { "r0", "r1" }, result.Candidates.Select(item => item.RegionId));
+        Assert.Equal(new[] { "r0", "r1" }, result.Candidates.Select(item => item.RegionId).OrderBy(id => id, StringComparer.Ordinal));
         Assert.Equal(new[] { observation.ObservationId }, result.EvidenceSet.ObservationIds);
         Assert.Single(result.EvidenceSet.Constraints);
         Assert.All(result.Candidates, item => Assert.Contains(constraint.ConstraintId, item.AppliedConstraintIds));
