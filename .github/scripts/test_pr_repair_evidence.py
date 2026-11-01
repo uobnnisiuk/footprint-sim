@@ -113,7 +113,7 @@ class EvidenceTests(unittest.TestCase):
         data["heads"][-1]["acceptance"][0]["review_id"] = None
         r = evidence.normalize(data)
         self.assertEqual(r["current_head_readiness"], "hold_acceptance")
-        self.assertEqual(next(x for x in r["heads"] if x["is_current_head"])["acceptance"][0]["status"], "needs_review")
+        self.assertEqual(next(item for item in next(h for h in r["heads"] if h["is_current_head"])["acceptance"] if item["id"] == "provenance")["status"], "needs_review")
 
     def test_read_only_adapter_gets_only_fixed_api_urls(self):
         urls = []
