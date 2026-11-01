@@ -22,6 +22,18 @@ WORKFLOWS = frozenset(("normal", "research"))
 ACCEPTANCE = frozenset(("not_implemented", "tested_not_run", "passed", "failed", "needs_review"))
 CONCLUSIONS = frozenset(("success", "failure", "cancelled", "skipped", "timed_out", "action_required", "stale"))
 STATUSES = frozenset(("queued", "in_progress", "completed", "waiting", "pending"))
+# These four acceptance items are pinned only for the historical, independently
+# reviewed PR #58 fixture. All other PRs need an external approved baseline;
+# a self-declared snapshot cannot grant one.
+PR58_ACCEPTANCE = frozenset(("provenance", "cli_integration",
+                             "unknown_preservation", "snapshot_integrity"))
+REQUIRED_STEPS = {
+    "normal": frozenset(("Test", "Format", "Check S0 and S1", "Check evaluation harness")),
+    "research": frozenset(("Run fixed research commands without credential environment variables",)),
+}
+REASON_CODES = frozenset(("fixture_provenance", "region_id_order_assumption",
+                          "test_failure", "ci_failure", "unknown_failure"))
+LOG_STATES = frozenset(("verified_available", "unverified", "missing", "expired"))
 
 
 class EvidenceError(ValueError):
@@ -63,6 +75,17 @@ def _unique(items, key, label):
         raise EvidenceError("duplicate " + label)
 
 
+def _safe_hash(value):
+    """Opaque, deterministic identifier: never echo arbitrary source text."""
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _reason(value):
+    if not isinstance(value, str) or value not in REASON_CODES:
+        raise EvidenceError("unapproved failure reason code")
+    return value
+
+
 def canonical_bytes(value):
     return (json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
 
@@ -70,7 +93,7 @@ def canonical_bytes(value):
 def _workflow_run(raw, head_sha):
     _object(raw, (
         "id", "attempt", "workflow", "head_sha", "status", "conclusion",
-        "jobs_complete", "jobs", "passed_tests", "failed_tests", "failures"
+        "jobs_complete", "jobs", "passed_tests", "failed_tests", "failures", "log_evidence"
     ))
     run_id = _positive(raw["id"])
     attempt = _positive(raw["attempt"])
@@ -87,12 +110,22 @@ def _workflow_run(raw, head_sha):
         raise EvidenceError("run completion/conclusion mismatch")
     if type(raw["jobs_complete"]) is not bool or not isinstance(raw["jobs"], list):
         raise EvidenceError("invalid jobs completeness")
+    logs = _object(raw["log_evidence"], ("state", "review_ref"))
+    if logs["state"] not in LOG_STATES:
+        raise EvidenceError("invalid log evidence state")
+    if logs["state"] == "verified_available":
+        _string(logs["review_ref"])
+    elif logs["review_ref"] is not None:
+        raise EvidenceError("unverified log state cannot claim a reviewer")
     passed = _nonnegative(raw["passed_tests"])
     failed = _nonnegative(raw["failed_tests"])
     if not isinstance(raw["failures"], list) or failed != len(raw["failures"]):
         raise EvidenceError("failed test count must match individual records")
 
     jobs = []
+    observed_required = set()
+    unknown_step = False
+    mismatched_required = False
     for job in raw["jobs"]:
         _object(job, ("id", "status", "conclusion", "steps"))
         job_id = _positive(job["id"])
@@ -105,24 +138,39 @@ def _workflow_run(raw, head_sha):
         steps = []
         for step in job["steps"]:
             _object(step, ("name", "required", "status", "conclusion"))
-            if not isinstance(step["name"], str) or len(step["name"]) > 120:
+            name = step["name"]
+            if not isinstance(name, str) or not 1 <= len(name) <= 120:
                 raise EvidenceError("invalid step name")
             if type(step["required"]) is not bool or step["status"] not in STATUSES:
                 raise EvidenceError("invalid required step")
             if step["conclusion"] is not None and step["conclusion"] not in CONCLUSIONS:
                 raise EvidenceError("invalid step conclusion")
-            steps.append(dict(step))
+            # Required status comes from a fixed, reviewed workflow policy, not
+            # the caller's Boolean. Extra or renamed steps cannot imply success.
+            policy_required = name in REQUIRED_STEPS[workflow]
+            if policy_required:
+                observed_required.add(name)
+            else:
+                unknown_step = True
+            if step["required"] is not policy_required:
+                mismatched_required = True
+            # Job/step metadata can be attacker controlled; emit only known
+            # neutral names. Hash unknown names without storing original text.
+            safe_name = name if policy_required else "unverified-step-" + _safe_hash(name)
+            steps.append({"name": safe_name, "required": policy_required,
+                          "status": step["status"], "conclusion": step["conclusion"]})
         _unique(steps, "name", "job step")
         jobs.append({"id": job_id, "status": job["status"], "conclusion": job["conclusion"],
                      "steps": sorted(steps, key=lambda x: x["name"])})
     _unique(jobs, "id", "job ID")
+    required_steps_missing = not REQUIRED_STEPS[workflow].issubset(observed_required)
 
     failures = []
     for item in raw["failures"]:
         _object(item, ("id", "reason_code", "evidence_sha256"))
         failures.append({
-            "id": _string(item["id"]),
-            "reason_code": _string(item["reason_code"]),
+            "id": "failure-" + _safe_hash(_string(item["id"])),
+            "reason_code": _reason(item["reason_code"]),
             "evidence_sha256": _string(item["evidence_sha256"], DIGEST)
         })
     _unique(failures, "id", "failure record")
@@ -143,6 +191,9 @@ def _workflow_run(raw, head_sha):
         outcome = "unknown"
     elif failed != 0:
         outcome = "unknown"
+    elif (logs["state"] != "verified_available" or unknown_step or
+          mismatched_required or required_steps_missing):
+        outcome = "unknown"
     elif any(job["status"] != "completed" or job["conclusion"] != "success"
              or any(step["required"] and (step["status"] != "completed" or step["conclusion"] != "success")
                     for step in job["steps"]) for job in jobs):
@@ -156,6 +207,9 @@ def _workflow_run(raw, head_sha):
         "id": run_id, "attempt": attempt, "workflow": workflow,
         "head_sha": head_sha, "status": status, "conclusion": conclusion,
         "jobs_complete": raw["jobs_complete"], "jobs": sorted(jobs, key=lambda x: x["id"]),
+        "log_evidence": {"state": logs["state"],
+                         "review_ref_sha256": _safe_hash(logs["review_ref"]) if logs["review_ref"] else None},
+        "required_step_policy_complete": not (unknown_step or mismatched_required or required_steps_missing),
         "passed_tests": passed, "failed_tests": failed,
         "failure_groups": groups, "outcome": outcome
     }
@@ -193,8 +247,12 @@ def _acceptance(raw, head_sha, runs):
             "review_id": review_id, "evidence": evidence}
 
 
-def normalize(snapshot):
-    """Normalize a reviewed input snapshot; never grant merge or execution authority."""
+def normalize(snapshot, approved_acceptance_ids=None):
+    """Normalize evidence; only an independently supplied baseline can cover new PRs.
+
+    The optional baseline must come from the external approval/reviewer process,
+    never from the Issue text, snapshot, or model. The CLI cannot supply it.
+    """
     _object(snapshot, ("schema_version", "repository", "pr_number", "issue_number",
                        "main_sha", "current_head_sha", "approval", "heads"))
     if snapshot["schema_version"] != SCHEMA:
@@ -210,6 +268,17 @@ def normalize(snapshot):
     reference = _string(approval["reference"])
     if type(approval["verified"]) is not bool:
         raise EvidenceError("approval verified must be boolean")
+    if approved_acceptance_ids is not None:
+        if not isinstance(approved_acceptance_ids, (list, tuple, frozenset)) or not approved_acceptance_ids:
+            raise EvidenceError("invalid external approval baseline")
+        expected = [_string(x) for x in approved_acceptance_ids]
+        if len(expected) != len(set(expected)):
+            raise EvidenceError("duplicate external acceptance ID")
+        expected_ids = frozenset(expected)
+    elif (repository, pr_number, issue_number) == ("uobnnisiuk/footprint-sim", 58, 56):
+        expected_ids = PR58_ACCEPTANCE
+    else:
+        expected_ids = None  # Not reviewable as complete without an external baseline.
 
     if not isinstance(snapshot["heads"], list) or not snapshot["heads"]:
         raise EvidenceError("heads required")
@@ -227,6 +296,9 @@ def normalize(snapshot):
         checks = [_acceptance(item, sha, runs) for item in head["acceptance"]]
         _unique(checks, "id", "acceptance requirement")
         checks.sort(key=lambda x: x["id"])
+        actual_ids = {item["id"] for item in checks}
+        missing_acceptance = sorted(expected_ids - actual_ids) if expected_ids is not None else []
+        unapproved_acceptance = sorted(actual_ids - expected_ids) if expected_ids is not None else []
         kinds = {kind: [r for r in runs if r["workflow"] == kind] for kind in WORKFLOWS}
         ci_status = {}
         for kind in sorted(WORKFLOWS):
@@ -239,12 +311,16 @@ def normalize(snapshot):
             readiness = "hold_approval_unverified"
         elif any(value != "pass" for value in ci_status.values()):
             readiness = "hold_ci"
-        elif not checks or any(item["status"] != "passed" for item in checks):
+        elif (expected_ids is None or missing_acceptance or unapproved_acceptance or
+              not checks or any(item["status"] != "passed" for item in checks)):
             readiness = "hold_acceptance"
         else:
             readiness = "evidence_complete_for_independent_review"
         heads.append({"sha": sha, "is_current_head": sha == current_head,
                       "ci_status": ci_status, "runs": runs, "acceptance": checks,
+                      "missing_approved_acceptance": missing_acceptance,
+                      "unapproved_acceptance": unapproved_acceptance,
+                      "acceptance_baseline_known": expected_ids is not None,
                       "readiness": readiness})
     _unique(heads, "sha", "head SHA")
     heads.sort(key=lambda x: x["sha"])
@@ -255,7 +331,10 @@ def normalize(snapshot):
         "schema_version": SCHEMA, "repository": repository,
         "pr_number": pr_number, "issue_number": issue_number,
         "main_sha": main_sha, "current_head_sha": current_head,
-        "approval_evidence": {"reference": reference, "verified_claim": approval["verified"]},
+        "approval_evidence": {"reference_sha256": _safe_hash(reference),
+                              "verified_claim": approval["verified"],
+                              "acceptance_baseline_sha256": _safe_hash("|".join(sorted(expected_ids)))
+                              if expected_ids is not None else None},
         "heads": heads, "current_head_readiness": current["readiness"],
         "may_merge": False, "may_repair": False
     }
@@ -296,14 +375,20 @@ def fetch_run_readonly(repository, run_id, get_json=_api_json):
     for job in jobs:
         safe_jobs.append({
             "id": job.get("id"), "status": job.get("status"), "conclusion": job.get("conclusion"),
-            "steps": [{"name": s.get("name"), "status": s.get("status"), "conclusion": s.get("conclusion")}
+            "steps": [{"name_sha256": _safe_hash(str(s.get("name", ""))),
+                       "status": s.get("status") if s.get("status") in STATUSES else "unverified",
+                       "conclusion": s.get("conclusion") if s.get("conclusion") in CONCLUSIONS else None}
                       for s in job.get("steps", [])]
         })
     return {
         "run_id": run_id, "head_sha": run.get("head_sha"),
-        "workflow_name": run.get("name"), "status": run.get("status"),
-        "conclusion": run.get("conclusion"), "attempt": run.get("run_attempt"),
+        "workflow_name_sha256": _safe_hash(str(run.get("name", ""))),
+        "status": run.get("status") if run.get("status") in STATUSES else "unverified",
+        "conclusion": run.get("conclusion") if run.get("conclusion") in CONCLUSIONS else None,
+        "attempt": run.get("run_attempt"),
         "jobs_complete": jobs_complete, "jobs": safe_jobs,
+        "log_evidence": {"state": "unverified", "review_ref": None},
+        "required_steps_verified": False,
         "acceptance_unverified": True, "read_only": True
     }
 

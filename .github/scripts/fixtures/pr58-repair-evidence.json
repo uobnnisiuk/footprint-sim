@@ -62,7 +62,11 @@
               "reason_code": "fixture_provenance",
               "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
             }
-          ]
+          ],
+          "log_evidence": {
+            "state": "unverified",
+            "review_ref": null
+          }
         },
         {
           "id": 40878956054,
@@ -89,7 +93,11 @@
           ],
           "passed_tests": 0,
           "failed_tests": 0,
-          "failures": []
+          "failures": [],
+          "log_evidence": {
+            "state": "unverified",
+            "review_ref": null
+          }
         }
       ],
       "acceptance": [
@@ -306,7 +314,11 @@
               "reason_code": "region_id_order_assumption",
               "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
             }
-          ]
+          ],
+          "log_evidence": {
+            "state": "unverified",
+            "review_ref": null
+          }
         },
         {
           "id": 41040441429,
@@ -333,7 +345,11 @@
           ],
           "passed_tests": 0,
           "failed_tests": 0,
-          "failures": []
+          "failures": [],
+          "log_evidence": {
+            "state": "unverified",
+            "review_ref": null
+          }
         }
       ],
       "acceptance": [
@@ -409,7 +425,11 @@
           ],
           "passed_tests": 531,
           "failed_tests": 0,
-          "failures": []
+          "failures": [],
+          "log_evidence": {
+            "state": "verified_available",
+            "review_ref": "pr58-final-independent-review-5711093164"
+          }
         },
         {
           "id": 41041420353,
@@ -436,7 +456,11 @@
           ],
           "passed_tests": 0,
           "failed_tests": 0,
-          "failures": []
+          "failures": [],
+          "log_evidence": {
+            "state": "verified_available",
+            "review_ref": "pr58-final-independent-review-5711093164"
+          }
         }
       ],
       "acceptance": [

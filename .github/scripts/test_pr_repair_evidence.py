@@ -150,5 +150,87 @@ class EvidenceTests(unittest.TestCase):
             self.assertEqual(sorted(p.name for p in Path(tmp).iterdir()), ["case.json"])
 
 
+    def test_missing_approved_acceptance_is_hold_even_when_ci_green(self):
+        data = copy.deepcopy(self.snapshot)
+        data["heads"][-1]["acceptance"] = [
+            item for item in data["heads"][-1]["acceptance"]
+            if item["id"] != "unknown_preservation"
+        ]
+        normalized = evidence.normalize(data)
+        self.assertEqual(normalized["current_head_readiness"], "hold_acceptance")
+        current = next(head for head in normalized["heads"] if head["is_current_head"])
+        self.assertEqual(current["missing_approved_acceptance"], ["unknown_preservation"])
+        # Even a snapshot that changes its own claimed approval cannot amend
+        # the independently pinned PR58 acceptance baseline.
+        data["approval"]["reference"] = "issue-56-shortened"
+        self.assertEqual(evidence.normalize(data)["current_head_readiness"], "hold_acceptance")
+
+    def test_non_historical_pr_needs_external_approved_baseline(self):
+        data = copy.deepcopy(self.snapshot)
+        data["pr_number"] = 67
+        self.assertEqual(evidence.normalize(data)["current_head_readiness"], "hold_acceptance")
+        self.assertEqual(evidence.normalize(
+            data, approved_acceptance_ids=["provenance", "cli_integration",
+                                           "unknown_preservation", "snapshot_integrity"]
+        )["current_head_readiness"], "evidence_complete_for_independent_review")
+
+    def test_expired_missing_and_unverified_logs_fail_closed(self):
+        for state in ("expired", "missing", "unverified"):
+            data = copy.deepcopy(self.snapshot)
+            data["heads"][-1]["runs"][0]["log_evidence"] = {
+                "state": state, "review_ref": None
+            }
+            normalized = evidence.normalize(data)
+            self.assertEqual(normalized["current_head_readiness"], "hold_ci")
+            current = next(head for head in normalized["heads"] if head["is_current_head"])
+            self.assertEqual(current["ci_status"]["normal"], "unknown")
+        data = copy.deepcopy(self.snapshot)
+        data["heads"][-1]["runs"][0]["log_evidence"]["review_ref"] = None
+        with self.assertRaises(evidence.EvidenceError):
+            evidence.normalize(data)
+
+    def test_required_step_cannot_be_declassified_by_snapshot(self):
+        data = copy.deepcopy(self.snapshot)
+        data["heads"][-1]["runs"][0]["jobs"][0]["steps"][0]["required"] = False
+        normalized = evidence.normalize(data)
+        self.assertEqual(normalized["current_head_readiness"], "hold_ci")
+        current = next(head for head in normalized["heads"] if head["is_current_head"])
+        self.assertFalse(current["runs"][0]["required_step_policy_complete"])
+        data = copy.deepcopy(self.snapshot)
+        data["heads"][-1]["runs"][0]["jobs"][0]["steps"].pop(0)
+        self.assertEqual(evidence.normalize(data)["current_head_readiness"], "hold_ci")
+
+    def test_untrusted_names_and_reason_codes_never_echo(self):
+        secret_step = "token=ghp_NotARealCredential_TEST"
+        data = copy.deepcopy(self.snapshot)
+        data["heads"][-1]["runs"][0]["jobs"][0]["steps"].append(
+            {"name": secret_step, "required": False,
+             "status": "completed", "conclusion": "success"})
+        result = evidence.normalize(data)
+        self.assertEqual(result["current_head_readiness"], "hold_ci")
+        self.assertNotIn(secret_step, evidence.canonical_bytes(result).decode("utf-8"))
+        secret_reason = "ghp_NotARealCredential_TEST"
+        data = copy.deepcopy(self.snapshot)
+        data["heads"][1]["runs"][0]["failures"][0]["reason_code"] = secret_reason
+        with self.assertRaises(evidence.EvidenceError) as caught:
+            evidence.normalize(data)
+        self.assertNotIn(secret_reason, str(caught.exception))
+
+    def test_adapter_redacts_remote_untrusted_step_names(self):
+        secret = "ghp_NotARealCredential_TEST"
+        def fake(url):
+            if "jobs?" in url:
+                return {"total_count": 1, "jobs": [
+                    {"id": 7, "status": "completed", "conclusion": "success",
+                     "steps": [{"name": secret, "status": "completed", "conclusion": "success"}]}
+                ]}
+            return {"id": 13, "name": secret, "run_attempt": 1,
+                    "status": "completed", "conclusion": "success", "head_sha": "a" * 40}
+        result = evidence.fetch_run_readonly("uobnnisiuk/footprint-sim", 13, get_json=fake)
+        self.assertEqual(result["log_evidence"]["state"], "unverified")
+        self.assertFalse(result["required_steps_verified"])
+        self.assertNotIn(secret, evidence.canonical_bytes(result).decode("utf-8"))
+
+
 if __name__ == "__main__":
     unittest.main()
