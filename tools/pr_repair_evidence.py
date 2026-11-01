@@ -28,10 +28,42 @@ STATUSES = frozenset(("queued", "in_progress", "completed", "waiting", "pending"
 PR58_ACCEPTANCE = frozenset(("provenance", "cli_integration",
                              "unknown_preservation", "snapshot_integrity"))
 TEST_REFERENCE_KINDS = frozenset(("synthetic", "claimed_observed"))
+# Names pinned from full job-step metadata for the reviewed normal/F19
+# workflow revisions (including checkout, environment and post steps).
+# New or changed workflows must be independently re-pinned: fail closed.
 REQUIRED_STEPS = {
-    "normal": frozenset(("Test", "Format", "Check S0 and S1", "Check evaluation harness")),
-    "research": frozenset(("Run fixed research commands without credential environment variables",)),
+    "normal": frozenset((
+        "Set up job",
+        "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+        "Check automation scripts",
+        "Run actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9",
+        "Check environment",
+        "Restore",
+        "Build",
+        "Test",
+        "Format",
+        "Check S0 and S1",
+        "Check evaluation harness",
+        "Post Run actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9",
+        "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+        "Complete job",
+    )),
+    "research": frozenset((
+        "Set up job",
+        "Check out the exact research revision",
+        "Check out the frozen F18 research baseline separately",
+        "Run actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9",
+        "Run fixed research commands without credential environment variables",
+        "Reject symlinks and special files before any artifact upload",
+        "Retain full research results and failure evidence",
+        "Link the immutable artifact in the run summary",
+        "Post Run actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9",
+        "Post Check out the frozen F18 research baseline separately",
+        "Post Check out the exact research revision",
+        "Complete job",
+    )),
 }
+FAILURE_REFERENCE_KINDS = frozenset(("synthetic", "claimed_excerpt"))
 REASON_CODES = frozenset(("fixture_provenance", "region_id_order_assumption",
                           "test_failure", "ci_failure", "unknown_failure"))
 LOG_STATES = frozenset(("verified_available", "unverified", "missing", "expired"))
@@ -169,15 +201,31 @@ def _workflow_run(raw, head_sha):
         jobs.append({"id": job_id, "status": job["status"], "conclusion": job["conclusion"],
                      "steps": sorted(steps, key=lambda x: x["name"])})
     _unique(jobs, "id", "job ID")
-    required_steps_missing = not REQUIRED_STEPS[workflow].issubset(observed_required)
+    # The reviewed workflows have one job each. Combining fragments of
+    # different jobs never creates a complete successful job.
+    required_steps_missing = (len(jobs) != 1 or
+                              not REQUIRED_STEPS[workflow].issubset(observed_required))
 
     failures = []
     for item in raw["failures"]:
-        _object(item, ("id", "reason_code", "evidence_sha256"))
+        _object(item, ("id", "reason_code", "evidence_sha256", "evidence_kind"))
+        kind = item["evidence_kind"]
+        if kind not in FAILURE_REFERENCE_KINDS:
+            raise EvidenceError("invalid failure evidence kind")
+        if kind == "synthetic":
+            # Example failures have no actual source excerpt to hash.
+            if item["evidence_sha256"] is not None:
+                raise EvidenceError("synthetic failure cannot claim a digest")
+            digest = None
+        else:
+            digest = _string(item["evidence_sha256"], DIGEST)
         failures.append({
             "id": "failure-" + _safe_hash(_string(item["id"])),
             "reason_code": _reason(item["reason_code"]),
-            "evidence_sha256": _string(item["evidence_sha256"], DIGEST)
+            "evidence_kind": kind,
+            "evidence_verification": "unverified",
+            "evidence_sha256": None,
+            "claimed_evidence_sha256": digest
         })
     _unique(failures, "id", "failure record")
     failures.sort(key=lambda x: x["id"])

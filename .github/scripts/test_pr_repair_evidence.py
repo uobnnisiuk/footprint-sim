@@ -302,5 +302,75 @@ class EvidenceTests(unittest.TestCase):
             self.assertEqual(caught_exit.exception.code, 2)
             self.assertNotIn(secret, stderr.getvalue())
 
+
+    def test_complete_historical_step_inventory_and_fail_closed_omissions(self):
+        final = self.snapshot["heads"][-1]
+        by_kind = {run["workflow"]: run for run in final["runs"]}
+        for kind, run in by_kind.items():
+            observed = {step["name"] for step in run["jobs"][0]["steps"]}
+            self.assertEqual(observed, evidence.REQUIRED_STEPS[kind])
+        for kind, step_name in (
+            ("normal", "Build"),
+            ("normal", "Check automation scripts"),
+            ("normal", "Restore"),
+            ("research", "Check out the frozen F18 research baseline separately"),
+            ("research", "Reject symlinks and special files before any artifact upload"),
+            ("research", "Retain full research results and failure evidence"),
+        ):
+            for operation in ("omit", "skip"):
+                with self.subTest(kind=kind, step=step_name, operation=operation):
+                    data = copy.deepcopy(self.snapshot)
+                    run = next(r for r in data["heads"][-1]["runs"] if r["workflow"] == kind)
+                    steps = run["jobs"][0]["steps"]
+                    target = next(s for s in steps if s["name"] == step_name)
+                    if operation == "omit":
+                        steps.remove(target)
+                    else:
+                        target["conclusion"] = "skipped"
+                    result = evidence.normalize(data)
+                    current = next(x for x in result["heads"] if x["is_current_head"])
+                    self.assertEqual(current["ci_status"][kind], "unknown")
+                    self.assertEqual(result["current_head_readiness"], "hold_ci")
+
+    def test_split_job_step_inventory_cannot_be_merged_into_a_pass(self):
+        data = copy.deepcopy(self.snapshot)
+        run = next(r for r in data["heads"][-1]["runs"] if r["workflow"] == "normal")
+        original = run["jobs"][0]
+        second_half = original["steps"][7:]
+        original["steps"] = original["steps"][:7]
+        run["jobs"].append({"id": original["id"] + 1,
+                            "status": "completed", "conclusion": "success",
+                            "steps": second_half})
+        normalized = evidence.normalize(data)
+        current = next(h for h in normalized["heads"] if h["is_current_head"])
+        checked = next(r for r in current["runs"] if r["workflow"] == "normal")
+        self.assertFalse(checked["required_step_policy_complete"])
+        self.assertEqual(normalized["current_head_readiness"], "hold_ci")
+
+    def test_synthetic_failure_digest_is_never_presented_as_evidence(self):
+        normalized = evidence.normalize(self.snapshot)
+        for head in normalized["heads"]:
+            for run in head["runs"]:
+                for group in run["failure_groups"]:
+                    for item in group["failures"]:
+                        self.assertEqual(item["evidence_kind"], "synthetic")
+                        self.assertIsNone(item["evidence_sha256"])
+                        self.assertIsNone(item["claimed_evidence_sha256"])
+                        self.assertEqual(item["evidence_verification"], "unverified")
+        self.assertNotIn("1111111111111111111111111111111111111111111111111111111111111111",
+                         evidence.canonical_bytes(normalized).decode("utf-8"))
+        data = copy.deepcopy(self.snapshot)
+        failure = data["heads"][0]["runs"][0]["failures"][0]
+        failure["evidence_sha256"] = "1" * 64
+        with self.assertRaises(evidence.EvidenceError):
+            evidence.normalize(data)
+        failure["evidence_kind"] = "claimed_excerpt"
+        claimed = evidence.normalize(data)
+        run = next(h for h in claimed["heads"] if h["sha"] == data["heads"][0]["sha"])["runs"][0]
+        item = run["failure_groups"][0]["failures"][0]
+        self.assertEqual(item["evidence_verification"], "unverified")
+        self.assertIsNone(item["evidence_sha256"])
+        self.assertEqual(item["claimed_evidence_sha256"], "1" * 64)
+
 if __name__ == "__main__":
     unittest.main()

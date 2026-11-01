@@ -28,6 +28,48 @@
               "conclusion": "failure",
               "steps": [
                 {
+                  "name": "Set up job",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Check automation scripts",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Run actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Check environment",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Restore",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Build",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
                   "name": "Test",
                   "required": true,
                   "status": "completed",
@@ -50,6 +92,24 @@
                   "required": true,
                   "status": "completed",
                   "conclusion": "skipped"
+                },
+                {
+                  "name": "Post Run actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "skipped"
+                },
+                {
+                  "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Complete job",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
                 }
               ]
             }
@@ -60,7 +120,8 @@
             {
               "id": "fixture-provenance",
               "reason_code": "fixture_provenance",
-              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+              "evidence_sha256": null,
+              "evidence_kind": "synthetic"
             }
           ],
           "log_evidence": {
@@ -83,10 +144,76 @@
               "conclusion": "failure",
               "steps": [
                 {
+                  "name": "Set up job",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Check out the exact research revision",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Check out the frozen F18 research baseline separately",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Run actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
                   "name": "Run fixed research commands without credential environment variables",
                   "required": true,
                   "status": "completed",
                   "conclusion": "failure"
+                },
+                {
+                  "name": "Reject symlinks and special files before any artifact upload",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Retain full research results and failure evidence",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Link the immutable artifact in the run summary",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Post Run actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "skipped"
+                },
+                {
+                  "name": "Post Check out the frozen F18 research baseline separately",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Post Check out the exact research revision",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Complete job",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
                 }
               ]
             }
@@ -145,6 +272,48 @@
               "conclusion": "failure",
               "steps": [
                 {
+                  "name": "Set up job",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Check automation scripts",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Run actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Check environment",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Restore",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Build",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
                   "name": "Test",
                   "required": true,
                   "status": "completed",
@@ -167,6 +336,24 @@
                   "required": true,
                   "status": "completed",
                   "conclusion": "skipped"
+                },
+                {
+                  "name": "Post Run actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "skipped"
+                },
+                {
+                  "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Complete job",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
                 }
               ]
             }
@@ -177,142 +364,170 @@
             {
               "id": "region-order-fixture-01",
               "reason_code": "region_id_order_assumption",
-              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+              "evidence_sha256": null,
+              "evidence_kind": "synthetic"
             },
             {
               "id": "region-order-fixture-02",
               "reason_code": "region_id_order_assumption",
-              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+              "evidence_sha256": null,
+              "evidence_kind": "synthetic"
             },
             {
               "id": "region-order-fixture-03",
               "reason_code": "region_id_order_assumption",
-              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+              "evidence_sha256": null,
+              "evidence_kind": "synthetic"
             },
             {
               "id": "region-order-fixture-04",
               "reason_code": "region_id_order_assumption",
-              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+              "evidence_sha256": null,
+              "evidence_kind": "synthetic"
             },
             {
               "id": "region-order-fixture-05",
               "reason_code": "region_id_order_assumption",
-              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+              "evidence_sha256": null,
+              "evidence_kind": "synthetic"
             },
             {
               "id": "region-order-fixture-06",
               "reason_code": "region_id_order_assumption",
-              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+              "evidence_sha256": null,
+              "evidence_kind": "synthetic"
             },
             {
               "id": "region-order-fixture-07",
               "reason_code": "region_id_order_assumption",
-              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+              "evidence_sha256": null,
+              "evidence_kind": "synthetic"
             },
             {
               "id": "region-order-fixture-08",
               "reason_code": "region_id_order_assumption",
-              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+              "evidence_sha256": null,
+              "evidence_kind": "synthetic"
             },
             {
               "id": "region-order-fixture-09",
               "reason_code": "region_id_order_assumption",
-              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+              "evidence_sha256": null,
+              "evidence_kind": "synthetic"
             },
             {
               "id": "region-order-fixture-10",
               "reason_code": "region_id_order_assumption",
-              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+              "evidence_sha256": null,
+              "evidence_kind": "synthetic"
             },
             {
               "id": "region-order-fixture-11",
               "reason_code": "region_id_order_assumption",
-              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+              "evidence_sha256": null,
+              "evidence_kind": "synthetic"
             },
             {
               "id": "region-order-fixture-12",
               "reason_code": "region_id_order_assumption",
-              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+              "evidence_sha256": null,
+              "evidence_kind": "synthetic"
             },
             {
               "id": "region-order-fixture-13",
               "reason_code": "region_id_order_assumption",
-              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+              "evidence_sha256": null,
+              "evidence_kind": "synthetic"
             },
             {
               "id": "region-order-fixture-14",
               "reason_code": "region_id_order_assumption",
-              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+              "evidence_sha256": null,
+              "evidence_kind": "synthetic"
             },
             {
               "id": "region-order-fixture-15",
               "reason_code": "region_id_order_assumption",
-              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+              "evidence_sha256": null,
+              "evidence_kind": "synthetic"
             },
             {
               "id": "region-order-fixture-16",
               "reason_code": "region_id_order_assumption",
-              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+              "evidence_sha256": null,
+              "evidence_kind": "synthetic"
             },
             {
               "id": "region-order-fixture-17",
               "reason_code": "region_id_order_assumption",
-              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+              "evidence_sha256": null,
+              "evidence_kind": "synthetic"
             },
             {
               "id": "region-order-fixture-18",
               "reason_code": "region_id_order_assumption",
-              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+              "evidence_sha256": null,
+              "evidence_kind": "synthetic"
             },
             {
               "id": "region-order-fixture-19",
               "reason_code": "region_id_order_assumption",
-              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+              "evidence_sha256": null,
+              "evidence_kind": "synthetic"
             },
             {
               "id": "region-order-fixture-20",
               "reason_code": "region_id_order_assumption",
-              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+              "evidence_sha256": null,
+              "evidence_kind": "synthetic"
             },
             {
               "id": "region-order-fixture-21",
               "reason_code": "region_id_order_assumption",
-              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+              "evidence_sha256": null,
+              "evidence_kind": "synthetic"
             },
             {
               "id": "region-order-fixture-22",
               "reason_code": "region_id_order_assumption",
-              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+              "evidence_sha256": null,
+              "evidence_kind": "synthetic"
             },
             {
               "id": "region-order-fixture-23",
               "reason_code": "region_id_order_assumption",
-              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+              "evidence_sha256": null,
+              "evidence_kind": "synthetic"
             },
             {
               "id": "region-order-fixture-24",
               "reason_code": "region_id_order_assumption",
-              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+              "evidence_sha256": null,
+              "evidence_kind": "synthetic"
             },
             {
               "id": "region-order-fixture-25",
               "reason_code": "region_id_order_assumption",
-              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+              "evidence_sha256": null,
+              "evidence_kind": "synthetic"
             },
             {
               "id": "region-order-fixture-26",
               "reason_code": "region_id_order_assumption",
-              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+              "evidence_sha256": null,
+              "evidence_kind": "synthetic"
             },
             {
               "id": "region-order-fixture-27",
               "reason_code": "region_id_order_assumption",
-              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+              "evidence_sha256": null,
+              "evidence_kind": "synthetic"
             },
             {
               "id": "region-order-fixture-28",
               "reason_code": "region_id_order_assumption",
-              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+              "evidence_sha256": null,
+              "evidence_kind": "synthetic"
             }
           ],
           "log_evidence": {
@@ -335,10 +550,76 @@
               "conclusion": "failure",
               "steps": [
                 {
+                  "name": "Set up job",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Check out the exact research revision",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Check out the frozen F18 research baseline separately",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Run actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
                   "name": "Run fixed research commands without credential environment variables",
                   "required": true,
                   "status": "completed",
                   "conclusion": "failure"
+                },
+                {
+                  "name": "Reject symlinks and special files before any artifact upload",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Retain full research results and failure evidence",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Link the immutable artifact in the run summary",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Post Run actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "skipped"
+                },
+                {
+                  "name": "Post Check out the frozen F18 research baseline separately",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Post Check out the exact research revision",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Complete job",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
                 }
               ]
             }
@@ -397,6 +678,48 @@
               "conclusion": "success",
               "steps": [
                 {
+                  "name": "Set up job",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Check automation scripts",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Run actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Check environment",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Restore",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Build",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
                   "name": "Test",
                   "required": true,
                   "status": "completed",
@@ -416,6 +739,24 @@
                 },
                 {
                   "name": "Check evaluation harness",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Post Run actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Complete job",
                   "required": true,
                   "status": "completed",
                   "conclusion": "success"
@@ -446,7 +787,73 @@
               "conclusion": "success",
               "steps": [
                 {
+                  "name": "Set up job",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Check out the exact research revision",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Check out the frozen F18 research baseline separately",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Run actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
                   "name": "Run fixed research commands without credential environment variables",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Reject symlinks and special files before any artifact upload",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Retain full research results and failure evidence",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Link the immutable artifact in the run summary",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Post Run actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Post Check out the frozen F18 research baseline separately",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Post Check out the exact research revision",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Complete job",
                   "required": true,
                   "status": "completed",
                   "conclusion": "success"
