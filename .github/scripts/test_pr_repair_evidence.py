@@ -382,8 +382,18 @@ class EvidenceTests(unittest.TestCase):
                 else:
                     runs = data["heads"][-1]["runs"]
                     runs[1]["id"] = runs[0]["id"]
+                    # Distinct attempts bypass the duplicate-attempt guard so
+                    # this case reaches the cross-workflow ownership check.
+                    runs[1]["attempt"] = runs[0]["attempt"] + 1
                 with self.assertRaisesRegex(evidence.EvidenceError, "conflicting head or workflow"):
                     evidence.normalize(data)
+
+    def test_duplicate_attempt_on_same_head_is_still_rejected(self):
+        data = copy.deepcopy(self.snapshot)
+        run = data["heads"][-1]["runs"][0]
+        data["heads"][-1]["runs"].append(copy.deepcopy(run))
+        with self.assertRaisesRegex(evidence.EvidenceError, "duplicate workflow run attempt"):
+            evidence.normalize(data)
 
     def test_another_attempt_on_same_run_does_not_claim_green(self):
         data = copy.deepcopy(self.snapshot)
