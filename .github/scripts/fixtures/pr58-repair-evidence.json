@@ -1,0 +1,498 @@
+{
+  "schema_version": "footprint-pr-repair-evidence-v1",
+  "repository": "uobnnisiuk/footprint-sim",
+  "pr_number": 58,
+  "issue_number": 56,
+  "main_sha": "cca695801c20e2510e0111f57997639e30a81338",
+  "current_head_sha": "179d60fd7022b59edb9387ba3ca1c71969551cfa",
+  "approval": {
+    "reference": "issue-56-owner-approved-research-scope",
+    "verified": true
+  },
+  "heads": [
+    {
+      "sha": "e8927604a4fa3548dca37da9e8246afd2668c667",
+      "runs": [
+        {
+          "id": 40878956092,
+          "attempt": 1,
+          "workflow": "normal",
+          "head_sha": "e8927604a4fa3548dca37da9e8246afd2668c667",
+          "status": "completed",
+          "conclusion": "failure",
+          "jobs_complete": true,
+          "jobs": [
+            {
+              "id": 123465013253,
+              "status": "completed",
+              "conclusion": "failure",
+              "steps": [
+                {
+                  "name": "Test",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "failure"
+                },
+                {
+                  "name": "Format",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "skipped"
+                },
+                {
+                  "name": "Check S0 and S1",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "skipped"
+                },
+                {
+                  "name": "Check evaluation harness",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "skipped"
+                }
+              ]
+            }
+          ],
+          "passed_tests": 503,
+          "failed_tests": 1,
+          "failures": [
+            {
+              "id": "fixture-provenance",
+              "reason_code": "fixture_provenance",
+              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            }
+          ]
+        },
+        {
+          "id": 40878956054,
+          "attempt": 1,
+          "workflow": "research",
+          "head_sha": "e8927604a4fa3548dca37da9e8246afd2668c667",
+          "status": "completed",
+          "conclusion": "failure",
+          "jobs_complete": true,
+          "jobs": [
+            {
+              "id": 123465013168,
+              "status": "completed",
+              "conclusion": "failure",
+              "steps": [
+                {
+                  "name": "Run fixed research commands without credential environment variables",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "failure"
+                }
+              ]
+            }
+          ],
+          "passed_tests": 0,
+          "failed_tests": 0,
+          "failures": []
+        }
+      ],
+      "acceptance": [
+        {
+          "id": "provenance",
+          "status": "failed",
+          "review_id": null,
+          "evidence": []
+        },
+        {
+          "id": "cli_integration",
+          "status": "not_implemented",
+          "review_id": null,
+          "evidence": []
+        },
+        {
+          "id": "unknown_preservation",
+          "status": "not_implemented",
+          "review_id": null,
+          "evidence": []
+        },
+        {
+          "id": "snapshot_integrity",
+          "status": "not_implemented",
+          "review_id": null,
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "sha": "df115a35fac89184373111175b0c1c793c02ad35",
+      "runs": [
+        {
+          "id": 41040441468,
+          "attempt": 1,
+          "workflow": "normal",
+          "head_sha": "df115a35fac89184373111175b0c1c793c02ad35",
+          "status": "completed",
+          "conclusion": "failure",
+          "jobs_complete": true,
+          "jobs": [
+            {
+              "id": 124011624239,
+              "status": "completed",
+              "conclusion": "failure",
+              "steps": [
+                {
+                  "name": "Test",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "failure"
+                },
+                {
+                  "name": "Format",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "skipped"
+                },
+                {
+                  "name": "Check S0 and S1",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "skipped"
+                },
+                {
+                  "name": "Check evaluation harness",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "skipped"
+                }
+              ]
+            }
+          ],
+          "passed_tests": 503,
+          "failed_tests": 28,
+          "failures": [
+            {
+              "id": "region-order-fixture-01",
+              "reason_code": "region_id_order_assumption",
+              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "id": "region-order-fixture-02",
+              "reason_code": "region_id_order_assumption",
+              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "id": "region-order-fixture-03",
+              "reason_code": "region_id_order_assumption",
+              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "id": "region-order-fixture-04",
+              "reason_code": "region_id_order_assumption",
+              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "id": "region-order-fixture-05",
+              "reason_code": "region_id_order_assumption",
+              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "id": "region-order-fixture-06",
+              "reason_code": "region_id_order_assumption",
+              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "id": "region-order-fixture-07",
+              "reason_code": "region_id_order_assumption",
+              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "id": "region-order-fixture-08",
+              "reason_code": "region_id_order_assumption",
+              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "id": "region-order-fixture-09",
+              "reason_code": "region_id_order_assumption",
+              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "id": "region-order-fixture-10",
+              "reason_code": "region_id_order_assumption",
+              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "id": "region-order-fixture-11",
+              "reason_code": "region_id_order_assumption",
+              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "id": "region-order-fixture-12",
+              "reason_code": "region_id_order_assumption",
+              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "id": "region-order-fixture-13",
+              "reason_code": "region_id_order_assumption",
+              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "id": "region-order-fixture-14",
+              "reason_code": "region_id_order_assumption",
+              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "id": "region-order-fixture-15",
+              "reason_code": "region_id_order_assumption",
+              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "id": "region-order-fixture-16",
+              "reason_code": "region_id_order_assumption",
+              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "id": "region-order-fixture-17",
+              "reason_code": "region_id_order_assumption",
+              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "id": "region-order-fixture-18",
+              "reason_code": "region_id_order_assumption",
+              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "id": "region-order-fixture-19",
+              "reason_code": "region_id_order_assumption",
+              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "id": "region-order-fixture-20",
+              "reason_code": "region_id_order_assumption",
+              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "id": "region-order-fixture-21",
+              "reason_code": "region_id_order_assumption",
+              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "id": "region-order-fixture-22",
+              "reason_code": "region_id_order_assumption",
+              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "id": "region-order-fixture-23",
+              "reason_code": "region_id_order_assumption",
+              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "id": "region-order-fixture-24",
+              "reason_code": "region_id_order_assumption",
+              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "id": "region-order-fixture-25",
+              "reason_code": "region_id_order_assumption",
+              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "id": "region-order-fixture-26",
+              "reason_code": "region_id_order_assumption",
+              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "id": "region-order-fixture-27",
+              "reason_code": "region_id_order_assumption",
+              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "id": "region-order-fixture-28",
+              "reason_code": "region_id_order_assumption",
+              "evidence_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            }
+          ]
+        },
+        {
+          "id": 41040441429,
+          "attempt": 1,
+          "workflow": "research",
+          "head_sha": "df115a35fac89184373111175b0c1c793c02ad35",
+          "status": "completed",
+          "conclusion": "failure",
+          "jobs_complete": true,
+          "jobs": [
+            {
+              "id": 124011624395,
+              "status": "completed",
+              "conclusion": "failure",
+              "steps": [
+                {
+                  "name": "Run fixed research commands without credential environment variables",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "failure"
+                }
+              ]
+            }
+          ],
+          "passed_tests": 0,
+          "failed_tests": 0,
+          "failures": []
+        }
+      ],
+      "acceptance": [
+        {
+          "id": "provenance",
+          "status": "passed",
+          "review_id": null,
+          "evidence": []
+        },
+        {
+          "id": "cli_integration",
+          "status": "tested_not_run",
+          "review_id": null,
+          "evidence": []
+        },
+        {
+          "id": "unknown_preservation",
+          "status": "needs_review",
+          "review_id": null,
+          "evidence": []
+        },
+        {
+          "id": "snapshot_integrity",
+          "status": "needs_review",
+          "review_id": null,
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "sha": "179d60fd7022b59edb9387ba3ca1c71969551cfa",
+      "runs": [
+        {
+          "id": 41041420429,
+          "attempt": 1,
+          "workflow": "normal",
+          "head_sha": "179d60fd7022b59edb9387ba3ca1c71969551cfa",
+          "status": "completed",
+          "conclusion": "success",
+          "jobs_complete": true,
+          "jobs": [
+            {
+              "id": 124014881403,
+              "status": "completed",
+              "conclusion": "success",
+              "steps": [
+                {
+                  "name": "Test",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Format",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Check S0 and S1",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                },
+                {
+                  "name": "Check evaluation harness",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                }
+              ]
+            }
+          ],
+          "passed_tests": 531,
+          "failed_tests": 0,
+          "failures": []
+        },
+        {
+          "id": 41041420353,
+          "attempt": 1,
+          "workflow": "research",
+          "head_sha": "179d60fd7022b59edb9387ba3ca1c71969551cfa",
+          "status": "completed",
+          "conclusion": "success",
+          "jobs_complete": true,
+          "jobs": [
+            {
+              "id": 124014881704,
+              "status": "completed",
+              "conclusion": "success",
+              "steps": [
+                {
+                  "name": "Run fixed research commands without credential environment variables",
+                  "required": true,
+                  "status": "completed",
+                  "conclusion": "success"
+                }
+              ]
+            }
+          ],
+          "passed_tests": 0,
+          "failed_tests": 0,
+          "failures": []
+        }
+      ],
+      "acceptance": [
+        {
+          "id": "provenance",
+          "status": "passed",
+          "review_id": "pr58-final-independent-review-5711093164",
+          "evidence": [
+            {
+              "test_id": "pr58-provenance",
+              "head_sha": "179d60fd7022b59edb9387ba3ca1c71969551cfa",
+              "run_id": 41041420429,
+              "attempt": 1
+            }
+          ]
+        },
+        {
+          "id": "cli_integration",
+          "status": "passed",
+          "review_id": "pr58-final-independent-review-5711093164",
+          "evidence": [
+            {
+              "test_id": "pr58-cli_integration",
+              "head_sha": "179d60fd7022b59edb9387ba3ca1c71969551cfa",
+              "run_id": 41041420429,
+              "attempt": 1
+            }
+          ]
+        },
+        {
+          "id": "unknown_preservation",
+          "status": "passed",
+          "review_id": "pr58-final-independent-review-5711093164",
+          "evidence": [
+            {
+              "test_id": "pr58-unknown_preservation",
+              "head_sha": "179d60fd7022b59edb9387ba3ca1c71969551cfa",
+              "run_id": 41041420429,
+              "attempt": 1
+            }
+          ]
+        },
+        {
+          "id": "snapshot_integrity",
+          "status": "passed",
+          "review_id": "pr58-final-independent-review-5711093164",
+          "evidence": [
+            {
+              "test_id": "pr58-snapshot_integrity",
+              "head_sha": "179d60fd7022b59edb9387ba3ca1c71969551cfa",
+              "run_id": 41041420429,
+              "attempt": 1
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
