@@ -372,5 +372,55 @@ class EvidenceTests(unittest.TestCase):
         self.assertIsNone(item["evidence_sha256"])
         self.assertEqual(item["claimed_evidence_sha256"], "1" * 64)
 
+    def test_workflow_run_id_cannot_cross_head_or_workflow(self):
+        # A stable GitHub run ID may have several attempts, but never owners.
+        for conflict in ("head", "workflow"):
+            with self.subTest(conflict=conflict):
+                data = copy.deepcopy(self.snapshot)
+                if conflict == "head":
+                    data["heads"][0]["runs"][0]["id"] = data["heads"][-1]["runs"][0]["id"]
+                else:
+                    runs = data["heads"][-1]["runs"]
+                    runs[1]["id"] = runs[0]["id"]
+                with self.assertRaisesRegex(evidence.EvidenceError, "conflicting head or workflow"):
+                    evidence.normalize(data)
+
+    def test_another_attempt_on_same_run_does_not_claim_green(self):
+        data = copy.deepcopy(self.snapshot)
+        run = data["heads"][-1]["runs"][0]
+        attempt_two = copy.deepcopy(run)
+        attempt_two["attempt"] = run["attempt"] + 1
+        data["heads"][-1]["runs"].append(attempt_two)
+        normalized = evidence.normalize(data)
+        current = next(h for h in normalized["heads"] if h["is_current_head"])
+        self.assertEqual(current["ci_status"][run["workflow"]], "unknown")
+        self.assertEqual(normalized["current_head_readiness"], "hold_ci")
+
+    def test_malformed_nonhashable_enums_fail_closed_without_traceback(self):
+        mutators = (
+            lambda d: d["heads"][-1]["runs"][0].update({"workflow": ["normal"]}),
+            lambda d: d["heads"][-1]["runs"][0].update({"status": ["completed"]}),
+            lambda d: d["heads"][-1]["runs"][0]["jobs"][0].update({"conclusion": ["success"]}),
+            lambda d: d["heads"][-1]["runs"][0]["jobs"][0]["steps"][0].update({"status": ["completed"]}),
+            lambda d: d["heads"][0]["runs"][0]["failures"][0].update({"evidence_kind": ["synthetic"]}),
+            lambda d: d["heads"][-1]["acceptance"][0].update({"status": ["passed"]}),
+        )
+        for mutate in mutators:
+            data = copy.deepcopy(self.snapshot)
+            mutate(data)
+            with self.subTest(mutate=mutate), self.assertRaises(evidence.EvidenceError):
+                evidence.normalize(data)
+        data = copy.deepcopy(self.snapshot)
+        data["heads"][-1]["runs"][0]["workflow"] = ["normal"]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "malformed.json"
+            path.write_text(json.dumps(data), encoding="utf-8")
+            stderr = io.StringIO()
+            with patch("sys.stderr", stderr), self.assertRaises(SystemExit) as caught:
+                evidence.main(["--snapshot", str(path)])
+            self.assertEqual(caught.exception.code, 2)
+            self.assertIn("evidence incomplete:", stderr.getvalue())
+            self.assertNotIn("Traceback", stderr.getvalue())
+
 if __name__ == "__main__":
     unittest.main()

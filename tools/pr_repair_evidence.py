@@ -118,6 +118,11 @@ def _public_acceptance_id(value):
     return value if value in PR58_ACCEPTANCE else "acceptance-" + _safe_hash(value)
 
 
+def _allowed(value, choices):
+    """Test an untrusted enum without hashing malformed JSON arrays/objects."""
+    return isinstance(value, str) and value in choices
+
+
 def _reason(value):
     if not isinstance(value, str) or value not in REASON_CODES:
         raise EvidenceError("unapproved failure reason code")
@@ -136,20 +141,20 @@ def _workflow_run(raw, head_sha):
     run_id = _positive(raw["id"])
     attempt = _positive(raw["attempt"])
     workflow = raw["workflow"]
-    if workflow not in WORKFLOWS:
+    if not _allowed(workflow, WORKFLOWS):
         raise EvidenceError("unknown workflow")
     if _string(raw["head_sha"], SHA) != head_sha:
         raise EvidenceError("workflow belongs to a different head")
     status = raw["status"]
     conclusion = raw["conclusion"]
-    if status not in STATUSES or (conclusion is not None and conclusion not in CONCLUSIONS):
+    if not _allowed(status, STATUSES) or (conclusion is not None and not _allowed(conclusion, CONCLUSIONS)):
         raise EvidenceError("invalid run status")
     if (status == "completed") != (conclusion is not None):
         raise EvidenceError("run completion/conclusion mismatch")
     if type(raw["jobs_complete"]) is not bool or not isinstance(raw["jobs"], list):
         raise EvidenceError("invalid jobs completeness")
     logs = _object(raw["log_evidence"], ("state", "review_ref"))
-    if logs["state"] not in LOG_STATES:
+    if not _allowed(logs["state"], LOG_STATES):
         raise EvidenceError("invalid log evidence state")
     if logs["state"] == "verified_available":
         _string(logs["review_ref"])
@@ -167,9 +172,9 @@ def _workflow_run(raw, head_sha):
     for job in raw["jobs"]:
         _object(job, ("id", "status", "conclusion", "steps"))
         job_id = _positive(job["id"])
-        if job["status"] not in STATUSES:
+        if not _allowed(job["status"], STATUSES):
             raise EvidenceError("invalid job status")
-        if job["conclusion"] is not None and job["conclusion"] not in CONCLUSIONS:
+        if job["conclusion"] is not None and not _allowed(job["conclusion"], CONCLUSIONS):
             raise EvidenceError("invalid job conclusion")
         if not isinstance(job["steps"], list):
             raise EvidenceError("steps must be an array")
@@ -179,9 +184,9 @@ def _workflow_run(raw, head_sha):
             name = step["name"]
             if not isinstance(name, str) or not 1 <= len(name) <= 120:
                 raise EvidenceError("invalid step name")
-            if type(step["required"]) is not bool or step["status"] not in STATUSES:
+            if type(step["required"]) is not bool or not _allowed(step["status"], STATUSES):
                 raise EvidenceError("invalid required step")
-            if step["conclusion"] is not None and step["conclusion"] not in CONCLUSIONS:
+            if step["conclusion"] is not None and not _allowed(step["conclusion"], CONCLUSIONS):
                 raise EvidenceError("invalid step conclusion")
             # Required status comes from a fixed, reviewed workflow policy, not
             # the caller's Boolean. Extra or renamed steps cannot imply success.
@@ -210,7 +215,7 @@ def _workflow_run(raw, head_sha):
     for item in raw["failures"]:
         _object(item, ("id", "reason_code", "evidence_sha256", "evidence_kind"))
         kind = item["evidence_kind"]
-        if kind not in FAILURE_REFERENCE_KINDS:
+        if not _allowed(kind, FAILURE_REFERENCE_KINDS):
             raise EvidenceError("invalid failure evidence kind")
         if kind == "synthetic":
             # Example failures have no actual source excerpt to hash.
@@ -295,7 +300,7 @@ def _external_verified_refs(references):
 def _acceptance(raw, head_sha, runs, externally_verified):
     _object(raw, ("id", "status", "review_id", "evidence"))
     raw_id = _string(raw["id"])
-    if raw["status"] not in ACCEPTANCE:
+    if not _allowed(raw["status"], ACCEPTANCE):
         raise EvidenceError("invalid acceptance status")
     if not isinstance(raw["evidence"], list):
         raise EvidenceError("invalid acceptance evidence")
@@ -310,7 +315,7 @@ def _acceptance(raw, head_sha, runs, externally_verified):
             raise EvidenceError("acceptance evidence from stale head")
         test_id = _string(proof["test_id"])
         kind = proof["reference_kind"]
-        if kind not in TEST_REFERENCE_KINDS:
+        if not _allowed(kind, TEST_REFERENCE_KINDS):
             raise EvidenceError("invalid test reference kind")
         run_id, attempt = _positive(proof["run_id"]), _positive(proof["attempt"])
         attested = (kind == "claimed_observed" and review_id is not None and
@@ -373,6 +378,9 @@ def normalize(snapshot, approved_acceptance_ids=None, verified_test_evidence=Non
     if not isinstance(snapshot["heads"], list) or not snapshot["heads"]:
         raise EvidenceError("heads required")
     heads = []
+    # GitHub run IDs are global within the repository and keep their identity
+    # across attempts. Never attribute one run ID to another head or workflow.
+    run_owners = {}
     for head in snapshot["heads"]:
         _object(head, ("sha", "runs", "acceptance"))
         sha = _string(head["sha"], SHA)
@@ -382,6 +390,11 @@ def normalize(snapshot, approved_acceptance_ids=None, verified_test_evidence=Non
         keys = [(run["id"], run["attempt"]) for run in runs]
         if len(set(keys)) != len(keys):
             raise EvidenceError("duplicate workflow run attempt")
+        for run in runs:
+            owner = (sha, run["workflow"])
+            previous_owner = run_owners.setdefault(run["id"], owner)
+            if previous_owner != owner:
+                raise EvidenceError("workflow run ID has conflicting head or workflow")
         runs.sort(key=lambda x: (x["workflow"], x["id"], x["attempt"]))
         checks = [_acceptance(item, sha, runs, externally_verified)
                   for item in head["acceptance"]]
@@ -467,15 +480,15 @@ def fetch_run_readonly(repository, run_id, get_json=_api_json):
         safe_jobs.append({
             "id": job.get("id"), "status": job.get("status"), "conclusion": job.get("conclusion"),
             "steps": [{"name_sha256": _safe_hash(str(s.get("name", ""))),
-                       "status": s.get("status") if s.get("status") in STATUSES else "unverified",
-                       "conclusion": s.get("conclusion") if s.get("conclusion") in CONCLUSIONS else None}
+                       "status": s.get("status") if _allowed(s.get("status"), STATUSES) else "unverified",
+                       "conclusion": s.get("conclusion") if _allowed(s.get("conclusion"), CONCLUSIONS) else None}
                       for s in job.get("steps", [])]
         })
     return {
         "run_id": run_id, "head_sha": run.get("head_sha"),
         "workflow_name_sha256": _safe_hash(str(run.get("name", ""))),
-        "status": run.get("status") if run.get("status") in STATUSES else "unverified",
-        "conclusion": run.get("conclusion") if run.get("conclusion") in CONCLUSIONS else None,
+        "status": run.get("status") if _allowed(run.get("status"), STATUSES) else "unverified",
+        "conclusion": run.get("conclusion") if _allowed(run.get("conclusion"), CONCLUSIONS) else None,
         "attempt": run.get("run_attempt"),
         "jobs_complete": jobs_complete, "jobs": safe_jobs,
         "log_evidence": {"state": "unverified", "review_ref": None},
