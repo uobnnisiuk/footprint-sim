@@ -254,13 +254,13 @@ class EvidenceTests(unittest.TestCase):
         proof["test_id"] = "example_only_not_a_claim_of_actual_ci"
         proof["reference_kind"] = "claimed_observed"
         ref = (data["current_head_sha"], proof["run_id"], proof["attempt"],
-               proof["test_id"], item["review_id"])
+               item["id"], proof["test_id"], item["review_id"])
         passed = evidence.normalize(data, verified_test_evidence=[ref])
         current = next(h for h in passed["heads"] if h["is_current_head"])
         item_result = next(x for x in current["acceptance"] if x["id"] == "provenance")
         self.assertEqual(item_result["status"], "passed")
         self.assertEqual(passed["current_head_readiness"], "hold_acceptance")
-        wrong = (ref[0], ref[1], ref[2] + 1, ref[3], ref[4])
+        wrong = (ref[0], ref[1], ref[2] + 1, ref[3], ref[4], ref[5])
         mismatched = evidence.normalize(data, verified_test_evidence=[wrong])
         current = next(h for h in mismatched["heads"] if h["is_current_head"])
         self.assertEqual(next(x for x in current["acceptance"] if x["id"] == "provenance")["status"], "needs_review")
@@ -268,6 +268,43 @@ class EvidenceTests(unittest.TestCase):
         synthetic = evidence.normalize(data, verified_test_evidence=[ref])
         current = next(h for h in synthetic["heads"] if h["is_current_head"])
         self.assertEqual(next(x for x in current["acceptance"] if x["id"] == "provenance")["status"], "needs_review")
+
+    def test_external_attestation_is_scoped_to_its_acceptance_requirement(self):
+        # Regression: one real test attestation does not prove unrelated
+        # requirements just because the snapshot repeats the same proof.
+        data = copy.deepcopy(self.snapshot)
+        items = data["heads"][-1]["acceptance"]
+        for item in items:
+            item["review_id"] = "trusted_example_review"
+            item["evidence"][0]["test_id"] = "one_executed_test"
+            item["evidence"][0]["reference_kind"] = "claimed_observed"
+        proof = items[0]["evidence"][0]
+        reference = (data["current_head_sha"], proof["run_id"], proof["attempt"],
+                     items[0]["id"], proof["test_id"], items[0]["review_id"])
+        partial = evidence.normalize(data, verified_test_evidence=[reference])
+        current = next(h for h in partial["heads"] if h["is_current_head"])
+        statuses = {item["id"]: item["status"] for item in current["acceptance"]}
+        self.assertEqual(statuses[items[0]["id"]], "passed")
+        self.assertTrue(all(statuses[item["id"]] == "needs_review"
+                            for item in items[1:]))
+        self.assertEqual(partial["current_head_readiness"], "hold_acceptance")
+
+        # Only the trusted integration may explicitly attest each mapping.
+        references = [(reference[0], reference[1], reference[2],
+                       item["id"], reference[4], reference[5]) for item in items]
+        fully_attested = evidence.normalize(data, verified_test_evidence=references)
+        self.assertEqual(fully_attested["current_head_readiness"],
+                         "evidence_complete_for_independent_review")
+        self.assertIs(False, fully_attested["may_merge"])
+
+    def test_unscoped_external_reference_is_rejected(self):
+        data = copy.deepcopy(self.snapshot)
+        item = data["heads"][-1]["acceptance"][0]
+        proof = item["evidence"][0]
+        unscoped = (data["current_head_sha"], proof["run_id"], proof["attempt"],
+                    proof["test_id"], item["review_id"])
+        with self.assertRaisesRegex(evidence.EvidenceError, "invalid external evidence reference"):
+            evidence.normalize(data, verified_test_evidence=[unscoped])
 
     def test_secret_shaped_identifiers_never_echo(self):
         secret = "ghp_NotARealCredential_TEST"

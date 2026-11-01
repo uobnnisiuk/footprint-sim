@@ -277,8 +277,9 @@ def _workflow_run(raw, head_sha):
 def _external_verified_refs(references):
     """R2 must independently validate actual CI tests and reviewer identities.
 
-    Each ref: (head_sha, run_id, attempt, actual_test_id, review_id).
-    Input snapshots and CLI never supply this trusted side channel.
+    Each ref: (head_sha, run_id, attempt, acceptance_id, actual_test_id,
+    review_id). Attesting a test does not approve its association with every
+    other requirement. Input snapshots and CLI never supply this side channel.
     """
     if references is None:
         return frozenset()
@@ -286,11 +287,11 @@ def _external_verified_refs(references):
         raise EvidenceError("invalid external evidence set")
     verified = set()
     for item in references:
-        if not isinstance(item, (list, tuple)) or len(item) != 5:
+        if not isinstance(item, (list, tuple)) or len(item) != 6:
             raise EvidenceError("invalid external evidence reference")
-        head_sha, run_id, attempt, test_id, review_id = item
+        head_sha, run_id, attempt, acceptance_id, test_id, review_id = item
         ref = (_string(head_sha, SHA), _positive(run_id), _positive(attempt),
-               _string(test_id), _string(review_id))
+               _string(acceptance_id), _string(test_id), _string(review_id))
         if ref in verified:
             raise EvidenceError("duplicate external evidence reference")
         verified.add(ref)
@@ -318,8 +319,10 @@ def _acceptance(raw, head_sha, runs, externally_verified):
         if not _allowed(kind, TEST_REFERENCE_KINDS):
             raise EvidenceError("invalid test reference kind")
         run_id, attempt = _positive(proof["run_id"]), _positive(proof["attempt"])
+        # Require a trusted, requirement-specific link; an observed test alone
+        # cannot establish that unrelated accepted requirements were met.
         attested = (kind == "claimed_observed" and review_id is not None and
-                    (head_sha, run_id, attempt, test_id, review_id) in externally_verified)
+                    (head_sha, run_id, attempt, raw_id, test_id, review_id) in externally_verified)
         evidence.append({
             "test_id_sha256": _safe_hash(test_id), "reference_kind": kind,
             "verification": "externally_verified" if attested else "unverified",
