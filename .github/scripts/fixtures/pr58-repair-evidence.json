@@ -471,6 +471,7 @@
           "evidence": [
             {
               "test_id": "pr58-provenance",
+              "reference_kind": "synthetic",
               "head_sha": "179d60fd7022b59edb9387ba3ca1c71969551cfa",
               "run_id": 41041420429,
               "attempt": 1
@@ -484,6 +485,7 @@
           "evidence": [
             {
               "test_id": "pr58-cli_integration",
+              "reference_kind": "synthetic",
               "head_sha": "179d60fd7022b59edb9387ba3ca1c71969551cfa",
               "run_id": 41041420429,
               "attempt": 1
@@ -497,6 +499,7 @@
           "evidence": [
             {
               "test_id": "pr58-unknown_preservation",
+              "reference_kind": "synthetic",
               "head_sha": "179d60fd7022b59edb9387ba3ca1c71969551cfa",
               "run_id": 41041420429,
               "attempt": 1
@@ -510,6 +513,7 @@
           "evidence": [
             {
               "test_id": "pr58-snapshot_integrity",
+              "reference_kind": "synthetic",
               "head_sha": "179d60fd7022b59edb9387ba3ca1c71969551cfa",
               "run_id": 41041420429,
               "attempt": 1

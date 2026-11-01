@@ -27,6 +27,7 @@ STATUSES = frozenset(("queued", "in_progress", "completed", "waiting", "pending"
 # a self-declared snapshot cannot grant one.
 PR58_ACCEPTANCE = frozenset(("provenance", "cli_integration",
                              "unknown_preservation", "snapshot_integrity"))
+TEST_REFERENCE_KINDS = frozenset(("synthetic", "claimed_observed"))
 REQUIRED_STEPS = {
     "normal": frozenset(("Test", "Format", "Check S0 and S1", "Check evaluation harness")),
     "research": frozenset(("Run fixed research commands without credential environment variables",)),
@@ -47,7 +48,7 @@ def _object(value, required, optional=()):
     missing = set(required) - keys
     extra = keys - set(required) - set(optional)
     if missing or extra:
-        raise EvidenceError("invalid keys: missing=%s unexpected=%s" % (sorted(missing), sorted(extra)))
+        raise EvidenceError("invalid object structure (missing=%d unexpected=%d)" % (len(missing), len(extra)))
     return value
 
 
@@ -78,6 +79,11 @@ def _unique(items, key, label):
 def _safe_hash(value):
     """Opaque, deterministic identifier: never echo arbitrary source text."""
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _public_acceptance_id(value):
+    """Only pinned neutral fixture IDs can be shown verbatim."""
+    return value if value in PR58_ACCEPTANCE else "acceptance-" + _safe_hash(value)
 
 
 def _reason(value):
@@ -215,9 +221,32 @@ def _workflow_run(raw, head_sha):
     }
 
 
-def _acceptance(raw, head_sha, runs):
+def _external_verified_refs(references):
+    """R2 must independently validate actual CI tests and reviewer identities.
+
+    Each ref: (head_sha, run_id, attempt, actual_test_id, review_id).
+    Input snapshots and CLI never supply this trusted side channel.
+    """
+    if references is None:
+        return frozenset()
+    if not isinstance(references, (list, tuple, set, frozenset)):
+        raise EvidenceError("invalid external evidence set")
+    verified = set()
+    for item in references:
+        if not isinstance(item, (list, tuple)) or len(item) != 5:
+            raise EvidenceError("invalid external evidence reference")
+        head_sha, run_id, attempt, test_id, review_id = item
+        ref = (_string(head_sha, SHA), _positive(run_id), _positive(attempt),
+               _string(test_id), _string(review_id))
+        if ref in verified:
+            raise EvidenceError("duplicate external evidence reference")
+        verified.add(ref)
+    return frozenset(verified)
+
+
+def _acceptance(raw, head_sha, runs, externally_verified):
     _object(raw, ("id", "status", "review_id", "evidence"))
-    item_id = _string(raw["id"])
+    raw_id = _string(raw["id"])
     if raw["status"] not in ACCEPTANCE:
         raise EvidenceError("invalid acceptance status")
     if not isinstance(raw["evidence"], list):
@@ -228,30 +257,41 @@ def _acceptance(raw, head_sha, runs):
     evidence = []
     successful_runs = {(run["id"], run["attempt"]) for run in runs if run["outcome"] == "pass"}
     for proof in raw["evidence"]:
-        _object(proof, ("test_id", "head_sha", "run_id", "attempt"))
+        _object(proof, ("test_id", "head_sha", "run_id", "attempt", "reference_kind"))
         if _string(proof["head_sha"], SHA) != head_sha:
             raise EvidenceError("acceptance evidence from stale head")
+        test_id = _string(proof["test_id"])
+        kind = proof["reference_kind"]
+        if kind not in TEST_REFERENCE_KINDS:
+            raise EvidenceError("invalid test reference kind")
+        run_id, attempt = _positive(proof["run_id"]), _positive(proof["attempt"])
+        attested = (kind == "claimed_observed" and review_id is not None and
+                    (head_sha, run_id, attempt, test_id, review_id) in externally_verified)
         evidence.append({
-            "test_id": _string(proof["test_id"]), "head_sha": head_sha,
-            "run_id": _positive(proof["run_id"]), "attempt": _positive(proof["attempt"])
+            "test_id_sha256": _safe_hash(test_id), "reference_kind": kind,
+            "verification": "externally_verified" if attested else "unverified",
+            "head_sha": head_sha, "run_id": run_id, "attempt": attempt
         })
-    evidence.sort(key=lambda x: (x["test_id"], x["run_id"], x["attempt"]))
-    dedupe = [(x["test_id"], x["run_id"], x["attempt"]) for x in evidence]
+    evidence.sort(key=lambda x: (x["test_id_sha256"], x["run_id"], x["attempt"]))
+    dedupe = [(x["test_id_sha256"], x["run_id"], x["attempt"]) for x in evidence]
     if len(set(dedupe)) != len(dedupe):
         raise EvidenceError("duplicate acceptance evidence")
     effective = raw["status"]
     if effective == "passed" and (not review_id or not evidence or
-                                   any((x["run_id"], x["attempt"]) not in successful_runs for x in evidence)):
+                                  any(x["verification"] != "externally_verified" or
+                                      (x["run_id"], x["attempt"]) not in successful_runs
+                                      for x in evidence)):
         effective = "needs_review"
-    return {"id": item_id, "claimed_status": raw["status"], "status": effective,
-            "review_id": review_id, "evidence": evidence}
+    return {"id": _public_acceptance_id(raw_id), "claimed_status": raw["status"],
+            "status": effective,
+            "review_id_sha256": _safe_hash(review_id) if review_id else None,
+            "evidence": evidence}
 
-
-def normalize(snapshot, approved_acceptance_ids=None):
+def normalize(snapshot, approved_acceptance_ids=None, verified_test_evidence=None):
     """Normalize evidence; only an independently supplied baseline can cover new PRs.
 
-    The optional baseline must come from the external approval/reviewer process,
-    never from the Issue text, snapshot, or model. The CLI cannot supply it.
+    External baselines and test attestations must come from independently verified
+    review/CI sources, never from the snapshot or model. CLI cannot supply them.
     """
     _object(snapshot, ("schema_version", "repository", "pr_number", "issue_number",
                        "main_sha", "current_head_sha", "approval", "heads"))
@@ -280,6 +320,8 @@ def normalize(snapshot, approved_acceptance_ids=None):
     else:
         expected_ids = None  # Not reviewable as complete without an external baseline.
 
+    externally_verified = _external_verified_refs(verified_test_evidence)
+
     if not isinstance(snapshot["heads"], list) or not snapshot["heads"]:
         raise EvidenceError("heads required")
     heads = []
@@ -293,12 +335,13 @@ def normalize(snapshot, approved_acceptance_ids=None):
         if len(set(keys)) != len(keys):
             raise EvidenceError("duplicate workflow run attempt")
         runs.sort(key=lambda x: (x["workflow"], x["id"], x["attempt"]))
-        checks = [_acceptance(item, sha, runs) for item in head["acceptance"]]
+        checks = [_acceptance(item, sha, runs, externally_verified)
+                  for item in head["acceptance"]]
         _unique(checks, "id", "acceptance requirement")
         checks.sort(key=lambda x: x["id"])
-        actual_ids = {item["id"] for item in checks}
-        missing_acceptance = sorted(expected_ids - actual_ids) if expected_ids is not None else []
-        unapproved_acceptance = sorted(actual_ids - expected_ids) if expected_ids is not None else []
+        actual_ids = {_string(item["id"]) for item in head["acceptance"]}
+        missing_acceptance = sorted(_public_acceptance_id(x) for x in expected_ids - actual_ids) if expected_ids is not None else []
+        unapproved_acceptance = sorted(_public_acceptance_id(x) for x in actual_ids - expected_ids) if expected_ids is not None else []
         kinds = {kind: [r for r in runs if r["workflow"] == kind] for kind in WORKFLOWS}
         ci_status = {}
         for kind in sorted(WORKFLOWS):
@@ -417,8 +460,9 @@ def main(argv=None):
                 parser.error("--repo required with --fetch-run")
             result = fetch_run_readonly(args.repo, args.fetch_run)
         sys.stdout.buffer.write(canonical_bytes(result))
-    except (EvidenceError, OSError, ValueError) as exc:
-        parser.exit(2, "evidence incomplete: %s\n" % exc)
+    except (EvidenceError, OSError, ValueError):
+        # Never echo raw JSON keys, file paths, or parser details.
+        parser.exit(2, "evidence incomplete: invalid or unverified input\n")
     return 0
 
 

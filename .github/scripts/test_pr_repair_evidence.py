@@ -37,7 +37,10 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(final["ci_status"], {"normal": "pass", "research": "pass"})
         self.assertEqual(final["runs"][0]["passed_tests"], 531)
         self.assertEqual(final["runs"][0]["failed_tests"], 0)
-        self.assertEqual(normalized["current_head_readiness"], "evidence_complete_for_independent_review")
+        self.assertEqual(normalized["current_head_readiness"], "hold_acceptance")
+        self.assertTrue(all(x["status"] == "needs_review" for x in final["acceptance"]))
+        self.assertTrue(all(p["reference_kind"] == "synthetic" and p["verification"] == "unverified"
+                            for x in final["acceptance"] for p in x["evidence"]))
         self.assertIs(False, normalized["may_merge"])
 
     def test_only_latest_head_has_current_readiness(self):
@@ -172,7 +175,7 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(evidence.normalize(
             data, approved_acceptance_ids=["provenance", "cli_integration",
                                            "unknown_preservation", "snapshot_integrity"]
-        )["current_head_readiness"], "evidence_complete_for_independent_review")
+        )["current_head_readiness"], "hold_acceptance")
 
     def test_expired_missing_and_unverified_logs_fail_closed(self):
         for state in ("expired", "missing", "unverified"):
@@ -231,6 +234,73 @@ class EvidenceTests(unittest.TestCase):
         self.assertFalse(result["required_steps_verified"])
         self.assertNotIn(secret, evidence.canonical_bytes(result).decode("utf-8"))
 
+
+    def test_green_run_does_not_attest_invented_test_or_review(self):
+        data = copy.deepcopy(self.snapshot)
+        item = data["heads"][-1]["acceptance"][0]
+        item["evidence"][0]["test_id"] = "made_up_test_not_in_ci"
+        item["evidence"][0]["reference_kind"] = "claimed_observed"
+        item["review_id"] = "claimed_review_without_proof"
+        result = evidence.normalize(data)
+        current = next(h for h in result["heads"] if h["is_current_head"])
+        proof = next(x for x in current["acceptance"] if x["id"] == "provenance")["evidence"][0]
+        self.assertEqual(proof["verification"], "unverified")
+        self.assertEqual(result["current_head_readiness"], "hold_acceptance")
+
+    def test_external_evidence_requires_exact_observed_ref(self):
+        data = copy.deepcopy(self.snapshot)
+        item = data["heads"][-1]["acceptance"][0]
+        proof = item["evidence"][0]
+        proof["test_id"] = "example_only_not_a_claim_of_actual_ci"
+        proof["reference_kind"] = "claimed_observed"
+        ref = (data["current_head_sha"], proof["run_id"], proof["attempt"],
+               proof["test_id"], item["review_id"])
+        passed = evidence.normalize(data, verified_test_evidence=[ref])
+        current = next(h for h in passed["heads"] if h["is_current_head"])
+        item_result = next(x for x in current["acceptance"] if x["id"] == "provenance")
+        self.assertEqual(item_result["status"], "passed")
+        self.assertEqual(passed["current_head_readiness"], "hold_acceptance")
+        wrong = (ref[0], ref[1], ref[2] + 1, ref[3], ref[4])
+        mismatched = evidence.normalize(data, verified_test_evidence=[wrong])
+        current = next(h for h in mismatched["heads"] if h["is_current_head"])
+        self.assertEqual(next(x for x in current["acceptance"] if x["id"] == "provenance")["status"], "needs_review")
+        proof["reference_kind"] = "synthetic"
+        synthetic = evidence.normalize(data, verified_test_evidence=[ref])
+        current = next(h for h in synthetic["heads"] if h["is_current_head"])
+        self.assertEqual(next(x for x in current["acceptance"] if x["id"] == "provenance")["status"], "needs_review")
+
+    def test_secret_shaped_identifiers_never_echo(self):
+        secret = "ghp_NotARealCredential_TEST"
+        for field in ("id", "review_id"):
+            data = copy.deepcopy(self.snapshot)
+            data["heads"][-1]["acceptance"][0][field] = secret
+            self.assertNotIn(secret, evidence.canonical_bytes(evidence.normalize(data)).decode("utf-8"))
+        data = copy.deepcopy(self.snapshot)
+        data["heads"][-1]["acceptance"][0]["evidence"][0]["test_id"] = secret
+        self.assertNotIn(secret, evidence.canonical_bytes(evidence.normalize(data)).decode("utf-8"))
+        data = copy.deepcopy(self.snapshot)
+        data["pr_number"] = 67
+        data["heads"][-1]["acceptance"][0]["id"] = secret
+        trusted_baseline = [secret, "cli_integration", "unknown_preservation", "snapshot_integrity"]
+        public = evidence.canonical_bytes(evidence.normalize(
+            data, approved_acceptance_ids=trusted_baseline)).decode("utf-8")
+        self.assertNotIn(secret, public)
+
+    def test_secret_shaped_unknown_keys_never_echo_in_cli_errors(self):
+        secret = "ghp_NotARealCredential_TEST"
+        data = copy.deepcopy(self.snapshot)
+        data["heads"][-1]["acceptance"][0][secret] = True
+        with self.assertRaises(evidence.EvidenceError) as caught:
+            evidence.normalize(data)
+        self.assertNotIn(secret, str(caught.exception))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "untrusted.json"
+            path.write_text(json.dumps(data), encoding="utf-8")
+            stderr = io.StringIO()
+            with patch("sys.stderr", stderr), self.assertRaises(SystemExit) as caught_exit:
+                evidence.main(["--snapshot", str(path)])
+            self.assertEqual(caught_exit.exception.code, 2)
+            self.assertNotIn(secret, stderr.getvalue())
 
 if __name__ == "__main__":
     unittest.main()
