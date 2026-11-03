@@ -114,7 +114,6 @@ class HandoffTests(unittest.TestCase):
             history[:-3] + [ci(H3, normal="failure"), review(H3)],
             history[:-2] + [review(H3, {"provenance": "pass", "cli": "missing",
                                        "uncertainty": "pass", "region_order": "pass"})],
-            history[:-3] + [ci(H3, normal="unknown"), review(H3)],
         ):
             with self.subTest(reason=events[-2:]):
                 result = run(events)
@@ -157,13 +156,48 @@ class HandoffTests(unittest.TestCase):
         self.assertFalse(result.independently_reviewed)
 
     def test_result_not_approved_if_normal_or_research_not_success(self):
-        for norm, research in (("failure","success"),("success","unknown"),
-                               ("success","failure")):
+        for norm, research in (("failure","success"),("success","failure")):
             with self.subTest(norm=norm, research=research):
                 prefix = sample()[:5]
                 result = run(prefix + [ci(H2, norm, research), review(H2)])
                 self.assertEqual(result.state, "NEEDS_DECISION")
                 self.assertFalse(result.independently_reviewed)
+
+    def test_pending_ci_reobserved_on_same_head(self):
+        prefix = sample()[:-3]  # Published second repair, before CI/review.
+        incomplete_steps = dataclasses.replace(
+            ci(H3), data={**ci(H3).data, "required_steps": False})
+        for waiting in (ci(H3, normal="unknown"), ci(H3, research="unknown"),
+                        ci(H3, complete=False), incomplete_steps,
+                        ci(H3, normal="failure", complete=False)):
+            with self.subTest(waiting=waiting.data):
+                pending = run(prefix + [waiting])
+                self.assertEqual(pending.state, "WAIT_CI")
+                self.assertFalse(pending.ci_at_head)
+                self.assertFalse(pending.independently_reviewed)
+                self.assertEqual(pending.attempts_remaining, 0)
+                self.assertEqual(pending.notifications,
+                                 run(prefix + [waiting, waiting]).notifications)
+                with self.assertRaises(HandoffHold):
+                    run(prefix + [waiting, review(H3)])
+                self.assertEqual(run(prefix + [waiting, ci(H3), review(H3),
+                                                merged(H3)]).state, "INTEGRATED")
+
+    def test_second_round_pending_ci_then_final_failure_exhausts(self):
+        prefix = sample()[:-3]
+        waiting = ci(H3, normal="unknown")
+        result = run(prefix + [waiting])
+        self.assertEqual(result.state, "WAIT_CI")
+        self.assertEqual(result.attempts_consumed, 2)
+        with self.assertRaises(HandoffHold):
+            run(prefix + [waiting, finding(H3, "third_request")])
+        final = prefix + [waiting, ci(H3, normal="failure"), review(H3)]
+        result = run(final)
+        self.assertEqual(result.state, "EXHAUSTED")
+        self.assertEqual(result.attempts_remaining, 0)
+        self.assertIn("exhausted", [n.kind for n in result.notifications])
+        with self.assertRaises(HandoffHold):
+            run(final + [finding(H3, "third_request")])
 
     def test_stale_ci_and_review_fail_closed(self):
         events = sample()[:5]
@@ -254,10 +288,29 @@ class HandoffTests(unittest.TestCase):
             **review(H3).data, "reviewer_independent": False})
         with self.assertRaises(HandoffHold):
             run(prefix + [bad])
-        result = run(prefix + [review(H3, formal=True, formal_present=False)])
+        awaiting = review(H3, formal=True, formal_present=False)
+        approved = review(H3, formal=True, formal_present=True)
+        result = run(prefix + [awaiting])
         self.assertEqual(result.state, "NEEDS_DECISION")
+        self.assertFalse(result.independently_reviewed)
+        self.assertEqual(result.attempts_remaining, 0)
         with self.assertRaises(HandoffHold):
             run(prefix + [merged(H3)])
+        with self.assertRaises(HandoffHold):
+            run(prefix + [awaiting, merged(H3)])
+        with self.assertRaises(HandoffHold):
+            run(prefix + [awaiting, finding(H3, "unneeded_repair")])
+        # Simulated approval is not a real GitHub APPROVED: trusted adapter
+        # must independently recheck the unchanged head and actual protection.
+        self.assertEqual(run(prefix + [awaiting, approved]).state, "ACCEPTED")
+        self.assertEqual(run(prefix + [awaiting, approved, merged(H3)]).state,
+                         "INTEGRATED")
+        altered = dataclasses.replace(approved, data={
+            **approved.data, "review_run": "changed_review"})
+        with self.assertRaises(HandoffHold):
+            run(prefix + [awaiting, altered])
+        with self.assertRaises(HandoffHold):
+            run(prefix + [awaiting, review(H2, formal=True, formal_present=True)])
 
     def test_poll_does_not_repeat_notifications(self):
         e = sample()[:5]

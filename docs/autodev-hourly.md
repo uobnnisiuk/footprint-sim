@@ -112,7 +112,8 @@ must never be restored while repair reservations exist.
 
 `tools/pr_repair_handoff.py` and
 `.github/scripts/test_pr_repair_handoff.py` provide deterministic offline
-state-transition and notification tests only. Their simulated history is
+state-transition, pending-to-final CI, delayed-formal-approval recheck and
+notification tests only. Their simulated history is
 not a saved task update, a Windows deployment, or a successful unattended
 production repair. The live R4 GitHub adapter and its independent trust source
 are still unverified, so production remains disabled. See

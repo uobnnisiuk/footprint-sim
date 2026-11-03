@@ -147,6 +147,7 @@ def replay(root_issue: int, root_pr: int, initial_head: str,
     ci_success = False
     ci_failed = False
     reviewed = False
+    approval_pending_digest: str | None = None
     delivered: set[str] = set()
     notices: list[Notification] = []
 
@@ -175,6 +176,8 @@ def replay(root_issue: int, root_pr: int, initial_head: str,
             # All subsequent polls preserve the observed state and notify none.
             continue
         if event.name == "finding":
+            if approval_pending_digest is not None:
+                hold("formal_approval_pending")
             _exact(d, ("classification", "finding_id", "review_run",
                        "unchanged_contract", "entire_diff_reviewed"))
             if (state not in ("OBSERVED", "WAIT", "NEEDS_DECISION", "WAIT_REVIEW")
@@ -268,11 +271,17 @@ def replay(root_issue: int, root_pr: int, initial_head: str,
             if (state != "WAIT_CI" or event.actor != "ci_observer"
                     or d["run_head"] != head
                     or d["normal"] not in CI or d["research"] not in CI
+                    or type(d["complete"]) is not bool
+                    or type(d["required_steps"]) is not bool
                     or not _true(d["run_receipts_verified"])):
                 hold("stale_or_unverified_ci")
-            ci_success = all((_true(d["complete"]), _true(d["required_steps"]),
-                              d["normal"] == "success", d["research"] == "success"))
-            ci_failed = d["normal"] == "failure" or d["research"] == "failure"
+            # Incomplete verified snapshots are observations, not final verdicts.
+            # Preserve the same-head wait without a new reservation or CI rerun.
+            if (not d["complete"] or not d["required_steps"]
+                    or "unknown" in (d["normal"], d["research"])):
+                continue
+            ci_success = d["normal"] == "success" and d["research"] == "success"
+            ci_failed = not ci_success
             state = "WAIT_REVIEW"
         elif event.name == "review":
             _exact(d, ("review_head", "review_run", "reviewer_independent",
@@ -280,7 +289,10 @@ def replay(root_issue: int, root_pr: int, initial_head: str,
                        "unresolved_blockers", "test_risks",
                        "main_aligned", "formal_approval_required",
                        "formal_approval_present"))
-            if (state != "WAIT_REVIEW" or event.actor != "reviewer"
+            resuming_approval = (state == "NEEDS_DECISION"
+                                 and approval_pending_digest is not None)
+            if ((state != "WAIT_REVIEW" and not resuming_approval)
+                    or event.actor != "reviewer"
                     or d["review_head"] != head or not _id(d["review_run"])
                     or not _id(d["author_id"])
                     or not _true(d["reviewer_independent"])
@@ -295,16 +307,30 @@ def replay(root_issue: int, root_pr: int, initial_head: str,
                     or type(d["formal_approval_required"]) is not bool
                     or type(d["formal_approval_present"]) is not bool):
                 hold("independent_review_unverified")
-            ok = (ci_success and _true(d["whole_diff_checked"])
-                  and d["unresolved_blockers"] == 0 and not d["test_risks"]
-                  and _true(d["main_aligned"])
-                  and (not d["formal_approval_required"]
-                       or d["formal_approval_present"])
-                  and all(x == "pass" for x in d["acceptance"].values()))
+            if resuming_approval:
+                # Full review and head must be identical; only independently
+                # observed formal approval may change on re-evaluation.
+                if (not d["formal_approval_required"]
+                        or not d["formal_approval_present"]
+                        or _digest({**d, "formal_approval_present": False})
+                           != approval_pending_digest):
+                    hold("formal_approval_evidence_changed")
+            technical_ok = (ci_success and _true(d["whole_diff_checked"])
+                            and d["unresolved_blockers"] == 0
+                            and not d["test_risks"] and _true(d["main_aligned"])
+                            and all(x == "pass" for x in d["acceptance"].values()))
+            approval_missing = (technical_ok and d["formal_approval_required"]
+                                and not d["formal_approval_present"])
+            ok = technical_ok and not approval_missing
             reviewed = ok
             if ok:
+                approval_pending_digest = None
                 state = "ACCEPTED"
                 notify("review_passed", d["review_run"])
+            elif approval_missing:
+                approval_pending_digest = _digest(d)
+                state = "NEEDS_DECISION"
+                notify("decision", d["review_run"])
             else:
                 failure = (ci_failed or any(v == "fail" for v in d["acceptance"].values())
                            or d["unresolved_blockers"] > 0 or bool(d["test_risks"]))

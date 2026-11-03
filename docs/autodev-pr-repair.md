@@ -374,9 +374,15 @@ required decision, published repair, exhausted budget and completed integration;
 the fingerprint deterministically deduplicates the exact root/head/event
 reference. No PR text or raw CI output is returned in a notification. Offline
 replays of identical event histories return identical typed notifications.
-`Result.attempts_remaining` is zero after the second reservation. A second
-failed/incomplete CI or acceptance review enters EXHAUSTED immediately, whereas
-a missing administrative GitHub approval alone remains a decision gate.
+`Result.attempts_remaining` is zero after the second reservation. Only a verified final CI result moves WAIT_CI to WAIT_REVIEW: pending,
+unknown, missing required steps or incomplete snapshots stay in WAIT_CI,
+allowing a later independently checked result on the same head without
+spending a third reservation. A final CI failure or failed acceptance on
+the second consumed repair enters EXHAUSTED after independent review.
+If the technical review passes but required formal GitHub approval has not
+arrived, NEEDS_DECISION preserves its exact evidence for a same-head
+recheck. Only the independently observed approval bit may change before
+ACCEPTED, without another repair reservation or self-APPROVE.
 This is **not a durable notification database**: production integration must
 persist delivered keys and reconcile them with existing task history across
 restarts; replay-local deduplication alone cannot prevent repeated delivery.
@@ -408,6 +414,8 @@ restarts; replay-local deduplication alone cannot prevent repeated delivery.
   It uses R4's durable once-only claim, fresh reservation/expiry and
   non-backward-clock checks, one expected-old-head, force=false CAS, and
   independent readback. An uncertain write is consumed, never retransmitted.
+  Unknown or partial same-head CI snapshots remain in WAIT_CI rather than
+  consuming a final review; only fully verified terminal CI advances.
   Only after new-head CI succeeds and the independent reviewer checks every
   original acceptance and unresolved finding may the separate review/merge
   task apply GitHub's actual protection conditions. Same-account COMMENT is
