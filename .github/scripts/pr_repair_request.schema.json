@@ -1,0 +1,404 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Footprint R2 repair contract (reviewer input only)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "approval_snapshot",
+    "repair_request"
+  ],
+  "properties": {
+    "approval_snapshot": {
+      "$ref": "#/$defs/approval"
+    },
+    "repair_request": {
+      "$ref": "#/$defs/request"
+    }
+  },
+  "$defs": {
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "root_issue",
+        "root_pr",
+        "issue_title_sha256",
+        "issue_body_sha256",
+        "reservation_id",
+        "approval_result_id",
+        "protocol_commit",
+        "approved_main_sha",
+        "paths",
+        "acceptance",
+        "required_verifications",
+        "limits"
+      ],
+      "properties": {
+        "schema": {
+          "const": "footprint-pr-repair-request-v1"
+        },
+        "root_issue": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "root_pr": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "issue_title_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "issue_body_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "reservation_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "approval_result_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "protocol_commit": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "approved_main_sha": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "paths": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/approval_path"
+          }
+        },
+        "acceptance": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/acceptance"
+          }
+        },
+        "required_verifications": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/verification"
+          }
+        },
+        "limits": {
+          "$ref": "#/$defs/limits"
+        }
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "policy",
+        "kind",
+        "root_issue",
+        "root_pr",
+        "issue_title_sha256",
+        "issue_body_sha256",
+        "reservation_id",
+        "approval_result_id",
+        "protocol_commit",
+        "approved_main_sha",
+        "current_main_sha",
+        "current_head_sha",
+        "original_pr_base_sha",
+        "review_finding_id",
+        "reviewer_run_id",
+        "workflow",
+        "workflow_run_id",
+        "workflow_attempt",
+        "job_id",
+        "observed_head_sha",
+        "failure_code",
+        "evidence_sha256",
+        "paths",
+        "acceptance",
+        "required_verifications",
+        "limits",
+        "repair_reservation_id",
+        "expires_at",
+        "attempt"
+      ],
+      "properties": {
+        "schema": {
+          "const": "footprint-pr-repair-request-v1"
+        },
+        "policy": {
+          "enum": [
+            "footprint-pr-repair-v1",
+            "footprint-pr-substantive-repair-v1"
+          ]
+        },
+        "kind": {
+          "enum": [
+            "minor",
+            "substantive"
+          ]
+        },
+        "root_issue": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "root_pr": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "issue_title_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "issue_body_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "reservation_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "approval_result_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "protocol_commit": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "approved_main_sha": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "current_main_sha": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "current_head_sha": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "original_pr_base_sha": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "review_finding_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,120}$"
+        },
+        "reviewer_run_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,120}$"
+        },
+        "workflow": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,120}$"
+        },
+        "workflow_run_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "workflow_attempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "job_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "observed_head_sha": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "failure_code": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,120}$"
+        },
+        "evidence_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "paths": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "items": {
+            "$ref": "#/$defs/request_path"
+          }
+        },
+        "acceptance": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/acceptance"
+          }
+        },
+        "required_verifications": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/verification"
+          }
+        },
+        "limits": {
+          "$ref": "#/$defs/request_limits"
+        },
+        "repair_reservation_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,120}$"
+        },
+        "expires_at": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2
+        }
+      }
+    },
+    "approval_path": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "approved_oid",
+        "allowed_operations"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^(README\\.md|(?:src|tests|docs|scenarios)/(?:[A-Za-z0-9][A-Za-z0-9._-]*/)*[A-Za-z0-9][A-Za-z0-9._-]*)$"
+        },
+        "approved_oid": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "allowed_operations": {
+          "type": "array",
+          "const": [
+            "modify"
+          ]
+        }
+      }
+    },
+    "request_path": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "before_oid",
+        "after_oid",
+        "operation"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^(README\\.md|(?:src|tests|docs|scenarios)/(?:[A-Za-z0-9][A-Za-z0-9._-]*/)*[A-Za-z0-9][A-Za-z0-9._-]*)$"
+        },
+        "before_oid": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "after_oid": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "operation": {
+          "const": "modify"
+        }
+      }
+    },
+    "acceptance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "expected_sha256"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,120}$"
+        },
+        "expected_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "command_sha256"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,120}$"
+        },
+        "command_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_files",
+        "max_lines"
+      ],
+      "properties": {
+        "max_files": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30
+        },
+        "max_lines": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 600
+        }
+      }
+    },
+    "request_limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_files",
+        "max_lines"
+      ],
+      "properties": {
+        "max_files": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "max_lines": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 600
+        }
+      }
+    }
+  }
+}
