@@ -241,3 +241,57 @@ The R3 offline tests are included in the existing required \`test\` job:
 and the existing hourly tests remain intact. The R2 preflight, R4
 publication adapter, automatic review/merge and real-machine deployment
 remain separate gates. F22 research is not authorized by this change.
+
+
+## R4: detached candidate publication gate (offline only)
+
+Issue: https://github.com/uobnnisiuk/footprint-sim/issues/62
+
+R4 adds `tools/pr_repair_candidate.py` and `tools/pr_repair_publish.py`
+with two offline test modules under `.github/scripts/`. **No live GitHub
+publisher, scheduling, model call, or production activation exists yet.**
+A candidate must be a detached, one-parent commit whose sole parent is the
+PR's *currently observed* head. The model may describe that candidate but
+cannot update the branch. A separate trusted adapter must GET and verify
+its Git commit/tree/blob objects and complete inventories; a SHA or digest
+in a model response proves nothing.
+
+The offline gate requires a durable R3 reservation, independent R2 contract
+facts, exact-blob approval, checked original base→candidate and
+head→candidate diffs, and a verified *main-derived* guard run within
+disposable Git. The guard must independently validate the **entire** patch,
+and changes must remain in existing normal UTF-8 files. The new candidate
+checker rejects additional paths, changed modes, multiple parents,
+new/deleted files, unsupported paths, and manifest mismatch. It never runs
+candidate code or tests on an owner's credential-bearing computer.
+
+One atomic persistent `claim_once` operation is a required adapter contract:
+under the **same R3 ledger lock**, confirm no other repair has claimed the
+reservation or PR/head and durably append `publish_started` before CAS.
+The current R3 `append_event` API alone is **not sufficient** as this
+claim-and-check primitive. This is an explicit production integration
+blocker, not an invitation to patch the R3 file outside Issue #62 scope.
+
+After claim, the controller performs a final reread and at most **one**
+expected-old-head, `force=false` ref update to the **existing** branch.
+Timeout and ambiguous writes are never retried. Readback distinguishes
+new head, old head and unknown; all outcomes leave the reservation spent.
+Even a verified publication enters CI *pending*, never a preapproved merge.
+The controller does not create Issues/PRs, make a PR Ready, or merge.
+
+Offline tests use a fake Git adapter to inject stale main/Issue/head,
+approval or contract rejection, extra tree changes, guard refusal,
+reservation competition, timeout, and lost CAS responses. Run via:
+
+    python3 -m unittest discover -s .github/scripts -p 'test_pr_repair_*.py' -v
+
+**Remaining R4 verification:** the current GitHub connection supports Git
+commit/tree/ref operations, including `update_ref(expected_sha,force=false)`,
+but this is only an interface-level observation, **not** proof of safe
+detached-object retrieval or a transactional, verified reservation claim.
+No real repository was used as a write-test target. A production-capable
+adapter needs an independently approved test target and R5 runtime/ledger
+checks; without them live publication stays disabled. The fake adapter
+must not be used as authority over live GitHub data. R5 must prevent
+the old minor writer and new substantive writer from ever writing the same
+PR/head independently.
