@@ -50,3 +50,76 @@ This uses two bounded GET requests for the run and its first page of jobs. It **
 - Research runs: 40878956054, 41040441429, 41041420353, respectively.
 
 R2/3/4/5 must land through **separate reviewed infrastructure PRs in dependency order**. Do not label these Issues local-autodev/autodev and do not activate the production repair worker before R5's real-world rollout checks.
+
+## R2: immutable approval/repair contract (offline preflight only)
+
+Issue: https://github.com/uobnnisiuk/footprint-sim/issues/60
+
+R2 adds a **pure preflight** at \`tools/pr_repair_contract.py\` and the closed,
+versioned shape \`.github/scripts/pr_repair_request.schema.json\`. The JSON
+document contains two distinct records: \`approval_snapshot\` (independent
+approval baseline) and \`repair_request\` (narrower proposed repair). The
+request **cannot issue its own approval**. Do not construct \`TrustedFacts\`
+from the request, model text, mutable Issue body, or an unverified manifest.
+A separate independent integration must read and verify the original Issue
+title/body SHA-256, approval reservation/result GitHub records and protocol
+commit, reviewer identity/run and finding, exact observed CI run/attempt/job,
+the current main/head and original PR base, complete Git tree inventories,
+and the persistent attempt ledger. \`approval_digest\` is SHA-256 over
+canonical sorted compact UTF-8 JSON and verifies equality only; it is
+**not a signature** and does not establish independent trust.
+
+The four full \`trees\` inventories are named \`approved\`, \`pr_base\`,
+\`current\`, \`candidate\`. Each requires a root tree SHA and \`complete=true\`,
+with all paths and their Git blob OID, mode, and optional UTF-8 contents.
+The independent adapter MUST verify these root SHAs against the real Git
+trees and ensure inventories are complete **before** constructing
+\`TrustedFacts\`; a flag or hash merely copied from the candidate is not
+proof. Contents for every actually modified file are mandatory and checked
+against Git SHA-1 blob OIDs; unchanged files may omit contents. R2 targets
+this repository's SHA-1 Git object format. Missing inventory, wrong blob,
+unknown schema/key, repeated JSON key, bad UTF-8, unverified provenance,
+expired reservation, stale head, absent reviewer-run identity or missing
+CI mapping causes a fixed-code rejection, not automatic approval.
+
+The checker compares the **entire original PR base → current head**, the
+**entire original PR base → candidate**, and **current head → candidate**.
+Both original and proposed changes must lie within the previously approved
+exact paths. The requested before/after OIDs must match those changes.
+No additions, deletions, renames, special modes, globbed paths, generated
+artifacts, or protected configuration are allowed in the repair. Every
+file present in the approval must have its approval-time OID rechecked.
+Substantive repair is limited to the minimum of original approval, request,
+and 3 distinct existing files/600 cumulative added+removed lines, including
+previous trusted attempts. Minor repair retains the existing 2 files/80
+cumulative lines/one lifetime attempt and initial-PR-changed-file limit.
+An existing test allowed at original approval but untouched by the initial
+PR is eligible only for an independently requested substantive repair.
+The downstream R3/R4 adapter must also run the **unchanged** general
+\`patch_guard.py\` and preserve the legacy immutable ledger.
+
+Acceptance IDs, their expected-evidence digests, and mandatory verification
+command digests must exactly match the independently pinned approval; no
+new acceptance, expected-result change, removal, or silent weakening is
+authorized. Suspected assertion/skip/order changes are **HOLD** unless an
+independent review attests the exact delta and separately documents
+candidate-set membership, count, CandidateId order, and CLI byte
+determinism. Adding \`IsComplete=true\` is rejected. This heuristic is
+only an alarm: passing it is **not** proof that tests or semantics have
+been preserved. Actual code review is still required.
+
+Run R2 offline tests using:
+
+    python3 -m unittest discover -s .github/scripts -p 'test_pr_repair_contract.py' -v
+
+The test matrix uses synthetic old-PR #58 source/test/docs paths and covers
+valid narrowed contracts, approval/source tampering, unsafe extra files,
+both full-diff boundaries, before/after mismatch, changed modes, missing
+tree data, expiry, attempt limits, missing attestation, test expectation
+changes and the order-assert safety boundary. Synthetic paths and OIDs
+are **not** claimed to be historical GitHub CI test names or actual
+attested approvals. R2 invokes no subprocess, GitHub calls, models, timers,
+reservations, or branch writes. Every successful preflight still returns
+\`may_repair=false\`, \`may_merge=false\`, and requires a future independent
+review; only R5 may evaluate actual activation after Windows/WSL and
+shadow/runtime evidence.
