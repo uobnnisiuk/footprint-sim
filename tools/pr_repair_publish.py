@@ -10,7 +10,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import os
 import re
+import sys
 
 import pr_repair_candidate as candidate
 import pr_repair_contract as contract
@@ -52,6 +54,13 @@ def _hash(x):
     return type(x) is str and HASH.fullmatch(x) is not None
 
 
+def _pre_events(events: tuple[str, ...]) -> bool:
+    # A receipt and one generation attempt may precede a publication claim.
+    # Fail closed on timeout, rejection, ambiguous results or repeated starts.
+    return events in ((), ("receipt_sent",), ("candidate_started",),
+                      ("receipt_sent", "candidate_started"))
+
+
 def _same(a: Observation, b: Observation) -> bool:
     # Events can grow only through our own durable claim.
     return (a.main_sha, a.head_sha, a.issue_title_hash, a.issue_body_hash,
@@ -73,7 +82,7 @@ def _check(snapshot: Observation, envelope: dict) -> None:
             or not snapshot.branch or snapshot.branch.startswith("refs/")
             or type(snapshot.open_prs) is not tuple
             or snapshot.open_prs != (snapshot.root_pr,)
-            or type(snapshot.events) is not tuple or snapshot.events
+            or type(snapshot.events) is not tuple or not _pre_events(snapshot.events)
             or type(snapshot.epoch) is not int
             or type(snapshot.reservation) is not dict):
         halt()
@@ -176,13 +185,18 @@ def publish_once(adapter, envelope: dict, *, execute: bool = False) -> dict:
     """
     if type(envelope) is not dict or type(execute) is not bool:
         halt()
-    if execute and type(adapter).__module__ != "test_pr_repair_publish":
+    # Exact class *identity*, not a forgeable __module__ string or isinstance.
+    # Only the offline test fixture may exercise a simulated write. This
+    # is NOT an authentication mechanism for a future production adapter.
+    test_module = sys.modules.get("test_pr_repair_publish")
+    if execute and (test_module is None
+                    or type(adapter) is not getattr(test_module, "FakeAdapter", None)):
         halt("production_adapter_not_verified")
     first = adapter.observe()
     _check(first, envelope)
     result = _preflight(adapter, first, envelope)
     second = adapter.observe()
-    if not _same(first, second) or second.events != ():
+    if not _same(first, second) or second.events != first.events:
         halt("stale_before_publish")
     if not execute:
         return {**result, "state": "dry_run", "ci": "not_run",
@@ -193,7 +207,7 @@ def publish_once(adapter, envelope: dict, *, execute: bool = False) -> dict:
     if adapter.claim_once(first.reservation["id"], first.head_sha) is not True:
         halt("reservation_already_claimed")
     third = adapter.observe()
-    if not _same(first, third) or third.events != ("publish_started",):
+    if not _same(first, third) or third.events != first.events + ("publish_started",):
         halt("changed_after_claim")
     error = None
     try:
@@ -211,7 +225,11 @@ def publish_once(adapter, envelope: dict, *, execute: bool = False) -> dict:
              and final.issue_body_hash == first.issue_body_hash
              and final.root_issue == first.root_issue and final.root_pr == first.root_pr
              and final.branch == first.branch and final.pr_open is True
-             and final.pr_merged is False and final.open_prs == first.open_prs)
+             and final.pr_merged is False and final.open_prs == first.open_prs
+             and final.reservation == first.reservation
+             and final.events == first.events + ("publish_started",)
+             and type(final.epoch) is int
+             and final.epoch < first.reservation["expiresAtEpoch"])
     if valid and final.head_sha == result["new_head"]:
         state, event = "ci_pending", "published"
     elif valid and final.head_sha == first.head_sha:
@@ -220,8 +238,62 @@ def publish_once(adapter, envelope: dict, *, execute: bool = False) -> dict:
         state, event = "unknown_consumed", "response_unknown"
     # Durable receipt already consumed, including on timeout, guard rejection,
     # post-write competition, or unsuccessful event persistence.
-    adapter.record_once(first.reservation["id"], event,
-                        result["new_head"] if state == "ci_pending" else None)
+    try:
+        adapter.record_once(first.reservation["id"], event,
+                            result["new_head"] if state == "ci_pending" else None)
+    except Exception:
+        # Claim and potential CAS remain spent; do not retry either action.
+        halt("event_record_unverified")
     return {**result, "state": state, "ci": "pending" if state == "ci_pending" else
             "unverified", "may_merge": False, "write_attempted": True,
             "response_uncertain": error is not None}
+
+def claim_once_durable(state, reservation_id: str, root_pr: int,
+                       old_head: str, *, clock=None) -> bool:
+    """Offline R4 adapter primitive: atomically claim one PR/head under R3 lock.
+
+    Accepts only an independently verified reservation ID/root/head supplied
+    by the trusted caller. This is NOT a live GitHub adapter or permission to
+    publish: R5 must independently attest the receipt and retire old writers.
+    """
+    import pr_repair_ledger as ledger
+
+    if (type(reservation_id) is not str or ledger.RID.fullmatch(reservation_id) is None
+            or type(root_pr) is not int or root_pr <= 0 or not _sha(old_head)):
+        halt("claim_input_unverified")
+    fd = ledger._lock(state)  # The same exclusive daily.lock as reserve/old runner.
+    try:
+        from datetime import datetime
+        now = ledger._now(clock or (lambda: datetime.now(ledger.daily.JST)))
+        audit = ledger.read_ledger(state, now)
+        matches = [r for r in audit.reservations if r["id"] == reservation_id]
+        if len(matches) != 1:
+            halt("claim_receipt_unverified")
+        receipt = matches[0]
+        if (receipt["rootPr"] != root_pr or receipt["headSha"] != old_head
+                or receipt["kind"] not in ("minor", "substantive")
+                or int(now.timestamp()) >= receipt["expiresAtEpoch"]):
+            return False
+        own = sorted((e for e in audit.events if e["id"] == reservation_id),
+                     key=lambda e: e["sequence"])
+        if not _pre_events(tuple(e["event"] for e in own)):
+            return False
+        # A different minor or substantive reservation cannot take the same
+        # PR/head after an earlier publication claim, even on another day.
+        by_id = {r["id"]: r for r in audit.reservations}
+        for event in audit.events:
+            other = by_id[event["id"]]
+            if (event["event"] == "publish_started"
+                    and other["rootPr"] == root_pr and other["headSha"] == old_head):
+                return False
+        sequence = len(own) + 1
+        entry = {"schema": ledger.SCHEMA, "id": reservation_id,
+                 "sequence": sequence, "event": "publish_started",
+                 "atJst": now.isoformat(), "headBefore": old_head,
+                 "headAfter": None}
+        ledger._write_file(
+            ledger._folder(state) / f"event-{reservation_id}-{sequence:02d}.json",
+            entry)
+        return True
+    finally:
+        os.close(fd)

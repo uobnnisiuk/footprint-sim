@@ -74,3 +74,71 @@ class CandidateTests(unittest.TestCase):
     def test_reject_unsupported_location(self):
         f = list(self.fixture()); f[0]["changed_paths"] = ["tools/secret.py"]
         with self.assertRaises(m.CandidateHalt): self.verify(f)
+
+class DisposableGitTests(unittest.TestCase):
+    """Real git object/ref mechanics in a throwaway repo; never run candidate code."""
+
+    def test_detached_parent_tree_and_expected_old_head_cas(self):
+        import os
+        import subprocess
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as folder:
+            env = dict(os.environ, GIT_CONFIG_NOSYSTEM="1",
+                       GIT_CONFIG_GLOBAL=os.devnull,
+                       GIT_TERMINAL_PROMPT="0")
+            def git(*args, ok=True):
+                run = subprocess.run(
+                    ["git", "-C", folder, *args], env=env,
+                    stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                    check=False)
+                if ok:
+                    self.assertEqual(run.returncode, 0, msg=run.stderr)
+                return run
+            git("init", "-q", "-b", "repair-existing")
+            git("config", "user.name", "Offline Test")
+            git("config", "user.email", "offline@example.invalid")
+            git("config", "commit.gpgsign", "false")
+            hooks = Path(folder) / "empty-hooks"
+            hooks.mkdir()
+            git("config", "core.hooksPath", str(hooks))
+            target = Path(folder) / "src" / "Test.cs"
+            target.parent.mkdir()
+            target.write_text("class Before {}\n", encoding="utf-8")
+            git("add", "src/Test.cs")
+            git("commit", "-q", "-m", "base")
+            old = git("rev-parse", "HEAD").stdout.strip()
+            old_tree = git("rev-parse", "HEAD^{tree}").stdout.strip()
+            before_oid = git("rev-parse", "HEAD:src/Test.cs").stdout.strip()
+            self.assertEqual(len(old_tree), 40)
+            git("checkout", "--detach", "-q", "HEAD")
+            target.write_text("class After {}\n", encoding="utf-8")
+            git("add", "src/Test.cs")
+            git("commit", "-q", "-m", "detached repair")
+            new = git("rev-parse", "HEAD").stdout.strip()
+            new_tree = git("rev-parse", "HEAD^{tree}").stdout.strip()
+            after_oid = git("rev-parse", "HEAD:src/Test.cs").stdout.strip()
+            self.assertEqual(git("rev-list", "--parents", "-n", "1", new).stdout.split(),
+                             [new, old])
+            self.assertEqual(git("rev-parse", "refs/heads/repair-existing").stdout.strip(), old)
+            before = {"src/Test.cs": {"oid": before_oid, "mode": "100644"}}
+            after = {"src/Test.cs": {"oid": after_oid, "mode": "100644"}}
+            commit = {"sha": new, "parents": [old], "tree_sha": new_tree}
+            manifest = {"parent_sha": old, "commit_sha": new,
+                        "tree_sha": new_tree, "changes": [{
+                            "path": "src/Test.cs", "before": before_oid,
+                            "after": after_oid}]}
+            envelope = {"reservation_id": RID, "kind": "substantive",
+                        "parent_sha": old, "commit_sha": new,
+                        "tree_sha": new_tree, "changed_paths": ["src/Test.cs"],
+                        "changes_sha256": m.digest(manifest)}
+            receipt = {"id": RID, "kind": "substantive", "headSha": old}
+            proof = m.verify_candidate(envelope, commit, before, after,
+                                       expected_head=old, reservation=receipt,
+                                       permitted_paths=("src/Test.cs",))
+            self.assertEqual(proof["commit_sha"], new)
+            git("update-ref", "refs/heads/repair-existing", new, old)
+            self.assertEqual(git("rev-parse", "refs/heads/repair-existing").stdout.strip(), new)
+            self.assertNotEqual(git("update-ref", "refs/heads/repair-existing",
+                                    old, old, ok=False).returncode, 0)
+            self.assertEqual(git("rev-parse", "refs/heads/repair-existing").stdout.strip(), new)

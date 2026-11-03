@@ -78,7 +78,7 @@ class FakeAdapter:
                 "isolated": True, "guard_from_main": True}
 
     def claim_once(self, reservation_id, old):
-        if self.events or self.head != old:
+        if not p._pre_events(tuple(self.events)) or self.head != old:
             return False
         self.claims += 1
         self.events.append("publish_started")
@@ -197,3 +197,124 @@ class PublishTests(unittest.TestCase):
         with self.assertRaisesRegex(p.PublishHalt, "production_adapter_not_verified"):
             p.publish_once(network, network.env, execute=True)
         self.assertEqual(network.writes, 0)
+
+    def test_module_name_spoof_cannot_enable_transport(self):
+        class NetworkLike(FakeAdapter): pass
+        NetworkLike.__module__ = FakeAdapter.__module__
+        network = NetworkLike()
+        with self.assertRaisesRegex(p.PublishHalt, "production_adapter_not_verified"):
+            p.publish_once(network, network.env, execute=True)
+        self.assertEqual(network.writes, 0)
+
+    def test_candidate_generation_timeout_and_second_candidate_hold(self):
+        for event in ("candidate_timeout", "candidate_rejected",
+                      "failed", "response_unknown"):
+            self.a.events = ["candidate_started", event]
+            with self.assertRaises(p.PublishHalt):
+                p.publish_once(self.a, self.a.env, execute=True)
+            self.assertEqual(self.a.writes, 0)
+        self.a.events = ["candidate_started", "candidate_started"]
+        with self.assertRaises(p.PublishHalt):
+            p.publish_once(self.a, self.a.env, execute=True)
+        self.a.events = []
+        with self.assertRaises(p.PublishHalt):
+            p.publish_once(self.a, {}, execute=True)
+        self.assertEqual(self.a.writes, 0)
+
+    def test_one_generated_candidate_is_consumed_once(self):
+        self.a.events = ["receipt_sent", "candidate_started"]
+        out = p.publish_once(self.a, self.a.env, execute=True)
+        self.assertEqual(out["state"], "ci_pending")
+        self.assertEqual(self.a.events, ["receipt_sent", "candidate_started",
+                                         "publish_started", "published"])
+        with self.assertRaises(p.PublishHalt):
+            p.publish_once(self.a, self.a.env, execute=True)
+        self.assertEqual(self.a.writes, 1)
+
+    def test_lost_event_persistence_never_retries_write(self):
+        self.a.record_once = lambda *args: (_ for _ in ()).throw(OSError("disk"))
+        with self.assertRaisesRegex(p.PublishHalt, "event_record_unverified"):
+            p.publish_once(self.a, self.a.env, execute=True)
+        self.assertEqual(self.a.writes, 1)
+        self.assertEqual(self.a.claims, 1)
+
+    def test_r2_contract_is_actually_validated(self):
+        # Reuse the REAL R2 fixture; this test does not mock contract.validate.
+        from test_pr_repair_contract import fixture, SOURCE
+        approval, request, trees, trusted = fixture()
+        self.contract_patch.stop()
+        a = self.a
+        a.main, a.head = request["current_main_sha"], request["current_head_sha"]
+        a.title, a.body = approval["issue_title_sha256"], approval["issue_body_sha256"]
+        a.receipt.update({"id": RID, "mainSha": a.main, "headSha": a.head,
+                          "approvedTitleHash": a.title, "approvedBodyHash": a.body,
+                          "expiresAtEpoch": 2000000000})
+        request["repair_reservation_id"] = RID
+        trusted = replace(trusted, repair_reservation_id=RID)
+        a.before = {k: {"oid": v["oid"], "mode": v["mode"]}
+                    for k, v in trees["current"]["entries"].items()}
+        a.after = {k: {"oid": v["oid"], "mode": v["mode"]}
+                   for k, v in trees["candidate"]["entries"].items()}
+        new_head, root = "c"*40, trees["candidate"]["root_sha"]
+        a.commit = {"sha": new_head, "parents": [a.head], "tree_sha": root}
+        manifest = {"parent_sha": a.head, "commit_sha": new_head,
+                    "tree_sha": root, "changes": [
+                        {"path": SOURCE, "before": a.before[SOURCE]["oid"],
+                         "after": a.after[SOURCE]["oid"]}]}
+        a.env = {"reservation_id": RID, "kind": "substantive",
+                 "parent_sha": a.head, "commit_sha": new_head, "tree_sha": root,
+                 "changed_paths": [SOURCE], "changes_sha256": c.digest(manifest)}
+        a.trusted_bundle = lambda snap: (approval, request, trees, trusted)
+        a.observe = lambda: p.Observation(
+            a.main, a.head, a.title, a.body, True, False, "existing-pr-branch",
+            56, 58, (58,), a.receipt.copy(), tuple(a.events), 1800000000)
+        out = p.publish_once(a, a.env)
+        self.assertEqual(out["state"], "dry_run")
+        self.assertEqual(a.writes, 0)
+        request["acceptance"] = []
+        with self.assertRaises(p.PublishHalt):
+            p.publish_once(a, a.env, execute=True)
+        self.assertEqual(a.writes, 0)
+
+
+class DurableClaimTests(unittest.TestCase):
+    """Actual R3 append-only files and daily.lock, disposable local state only."""
+
+    def setUp(self):
+        from test_pr_repair_ledger import LedgerTests
+        self.ledger_test = LedgerTests("test_dry_run_zero_state_or_model_writes")
+        self.ledger_test.setUp()
+        self.addCleanup(self.ledger_test.doCleanups)
+
+    def test_same_pr_head_minor_substantive_compete(self):
+        from test_pr_repair_ledger import at
+        import pr_repair_ledger as ledger
+        old = "d"*40
+        minor = self.ledger_test.reserve(kind="minor", hour=10)
+        self.assertTrue(p.claim_once_durable(
+            self.ledger_test.state, minor["id"], 58, old,
+            clock=lambda: at(10)))
+        self.assertFalse(p.claim_once_durable(
+            self.ledger_test.state, minor["id"], 58, old,
+            clock=lambda: at(10)))
+        substantive = self.ledger_test.reserve(kind="substantive", hour=11)
+        self.assertFalse(p.claim_once_durable(
+            self.ledger_test.state, substantive["id"], 58, old,
+            clock=lambda: at(11)))
+        audit = ledger.read_ledger(self.ledger_test.state, at(11))
+        self.assertEqual([e["event"] for e in audit.events], ["publish_started"])
+        self.assertEqual(len(audit.reservations), 2)
+
+    def test_timeout_and_expired_reservation_never_claim(self):
+        from test_pr_repair_ledger import at
+        import pr_repair_ledger as ledger
+        receipt = self.ledger_test.reserve(hour=10)
+        ledger.append_event(self.ledger_test.state, receipt["id"],
+                            "candidate_timeout", clock=lambda: at(10))
+        self.assertFalse(p.claim_once_durable(
+            self.ledger_test.state, receipt["id"], 58, "d"*40,
+            clock=lambda: at(10)))
+        self.assertFalse(p.claim_once_durable(
+            self.ledger_test.state, receipt["id"], 58, "d"*40,
+            clock=lambda: at(11)))
+        self.assertEqual(len(ledger.read_ledger(self.ledger_test.state, at(11)).events), 1)

@@ -295,3 +295,29 @@ checks; without them live publication stays disabled. The fake adapter
 must not be used as authority over live GitHub data. R5 must prevent
 the old minor writer and new substantive writer from ever writing the same
 PR/head independently.
+
+### R4 independent-review remediation (offline tests only)
+
+The first Draft R4 head failed the Python check because the simulated write
+accepted a subclass sharing the test module's name. The offline simulation
+now permits only the exact `FakeAdapter` class object; a subclass with a
+forged `__module__` string fails before any write. This identity check is
+**not** a live authentication boundary and must never authorize production.
+
+The R4 tests now exercise the actual R2 validator on the R2 synthetic
+approval/tree fixture (including a tampered acceptance failure), a disposable
+local Git repository with a detached single-parent candidate and
+compare-and-swap `update-ref` semantics, candidate timeout/repeated generation
+failures, and R3's persistent receipt/event storage. An R4 offline
+`claim_once_durable` helper takes R3's same `daily.lock`, checks the
+receipt and all historical claims for the same PR/head, and durably appends
+one `publish_started` event. The minor/substantive competition fixture
+verifies only one publisher wins. No candidate code or test is run inside
+that Git repository, and no GitHub/Windows state is modified by these tests.
+
+**Not established:** a production-grade independent source of trusted R1/R2
+facts, an independently verified live Git-object/ref adapter, an approved
+GitHub write-test target, and the deployed Windows/WSL controller with the
+old minor publisher retired. The R3 `append_event` method by itself remains
+insufficient as an atomic claim. None of this offline evidence enables
+production. Final exact-head GitHub CI and independent review are required.
