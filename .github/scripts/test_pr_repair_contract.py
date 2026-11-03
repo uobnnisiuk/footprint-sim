@@ -126,6 +126,28 @@ class ContractTests(unittest.TestCase):
         self.a,self.r,self.t,self.v=fixture()
         self.v=replace(self.v,issue_body_sha256="0"*64); self.check("untrusted_provenance")
 
+    def test_original_pr_base_drift_from_exact_approval_blob_is_rejected(self):
+        # The initial PR changed SOURCE. Even with all three diffs confined
+        # to approved paths, its original base B must match approved blob A.
+        old_base = "public class A { int PreExistingUnapproved; }\n"
+        self.t["pr_base"]["entries"][SOURCE]["text"] = old_base
+        self.t["pr_base"]["entries"][SOURCE]["oid"] = contract.blob(old_base)
+        self.assertNotEqual(self.t["approved"]["entries"][SOURCE]["oid"],
+                            self.t["pr_base"]["entries"][SOURCE]["oid"])
+        self.check("approval_blob_mismatch")
+
+    def test_every_approved_path_must_match_original_base_even_if_not_repaired(self):
+        # A path omitted from this repair still carries an exact-blob approval.
+        altered_test_base = "Assert.Equal(0, 1);\n"
+        self.t["pr_base"]["entries"][TEST]["text"] = altered_test_base
+        self.t["pr_base"]["entries"][TEST]["oid"] = contract.blob(altered_test_base)
+        self.check("approval_blob_mismatch")
+        # Missing originally approved files must also fail closed.
+        self.a,self.r,self.t,self.v=fixture()
+        for stage in ("pr_base", "current", "candidate"):
+            del self.t[stage]["entries"][DOC]
+        self.check("approval_blob_mismatch")
+
     def test_full_diff_guard_rejects_unapproved_original_change(self):
         # Initial PR already touched an unapproved file; even when repair only touches source.
         self.t["current"]["entries"][OUTSIDE]["text"]="unauthorized\n"

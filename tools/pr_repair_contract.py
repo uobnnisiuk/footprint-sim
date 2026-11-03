@@ -359,7 +359,12 @@ def validate(approval, request, trees, trusted):
             any(p not in approved for p in approved_paths)):
         reject("out_of_scope")
     for p, oid in approved_paths.items():
-        if approved[p]["oid"] != oid or approved[p]["mode"] != "100644":
+        # Exact-blob approval must match the independently verified original
+        # PR base, not merely a later approval snapshot. Drift requires a
+        # separately approved contract, not a candidate-controlled exception.
+        if (p not in base or approved[p]["oid"] != oid or
+                approved[p]["mode"] != "100644" or
+                base[p]["oid"] != oid or base[p]["mode"] != "100644"):
             reject("approval_blob_mismatch")
     cumulative = trusted.prior_changed_lines
     risky = False

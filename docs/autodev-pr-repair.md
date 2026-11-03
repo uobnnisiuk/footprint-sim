@@ -114,6 +114,15 @@ exact paths. The requested before/after OIDs must match those changes.
 No additions, deletions, renames, special modes, globbed paths, generated
 artifacts, or protected configuration are allowed in the repair. Every
 file present in the approval must have its approval-time OID rechecked.
+**Each approved exact-path blob must also match the same path in the
+independently verified original PR base** (`pr_base`); missing files, mode
+differences or differing Git blob OIDs fail closed as
+`approval_blob_mismatch`, even when base→current, base→candidate and
+current→candidate diffs only touch approved paths. A newer approval
+snapshot does not retroactively authorize a drifted original PR base;
+legitimate baseline changes require separately verified explicit
+reauthorization through a new approved contract, not an exception
+claimed by a repair request.
 Substantive repair is limited to the minimum of original approval, request,
 and 3 distinct existing files/600 cumulative added+removed lines, including
 previous trusted attempts. Minor repair retains the existing 2 files/80
