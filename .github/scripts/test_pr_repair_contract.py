@@ -76,7 +76,13 @@ def fixture():
         observed_head_sha=request["observed_head_sha"],evidence_sha256=request["evidence_sha256"],
         tree_roots=tuple((stage, snap["root_sha"]) for stage,snap in trees.items()),
         now_epoch=1800000000, prior_changed_lines=0, prior_changed_paths=(),
-        first_pr_changed_paths=(SOURCE,), previous_attempts=0)
+        first_pr_changed_paths=(SOURCE,), previous_attempts=0,
+        repair_reservation_id=request["repair_reservation_id"],
+        repair_expires_at=request["expires_at"],
+        repair_policy=request["policy"], repair_kind=request["kind"],
+        repair_root_issue=request["root_issue"], repair_root_pr=request["root_pr"],
+        repair_main_sha=request["current_main_sha"],
+        repair_head_sha=request["current_head_sha"], repair_attempt=request["attempt"])
     return approval, request, trees, trusted
 
 
@@ -154,18 +160,28 @@ class ContractTests(unittest.TestCase):
 
     def test_modified_existing_unedited_test_allowed_only_substantive(self):
         change(self.t,self.r,TEST,"Assert.Equal(1, 1);\nAssert.True(true);\n")
+        self.check("hold_semantic_review")
+        proof=contract.digest({p:(self.t["current"]["entries"][p]["oid"],
+                                  self.t["candidate"]["entries"][p]["oid"])
+                               for p in sorted([SOURCE,TEST])})
+        self.v=replace(self.v,reviewer_semantic_delta_sha256=proof,
+                       reviewer_invariants=tuple(sorted(contract.INVARIANTS)))
         result=contract.validate(self.a,self.r,self.t,self.v)
         self.assertEqual(result["changed_files"],2)
+        self.assertTrue(result["semantic_attestation_required"])
         self.r["kind"]="minor";self.r["policy"]=contract.POLICIES["minor"]
+        self.v=replace(self.v,repair_kind="minor",repair_policy=self.r["policy"])
         self.check("out_of_scope")
 
     def test_minor_policy_two_files_80_lines_and_one_attempt(self):
         self.r["kind"]="minor";self.r["policy"]=contract.POLICIES["minor"]
+        self.v=replace(self.v,repair_kind="minor",repair_policy=self.r["policy"])
         self.assertEqual(contract.validate(self.a,self.r,self.t,self.v)["changed_files"],1)
         self.r["attempt"]=2;self.check("attempt_limit")
         self.a,self.r,self.t,self.v=fixture()
         self.r["kind"]="minor";self.r["policy"]=contract.POLICIES["minor"]
-        self.v=replace(self.v,prior_changed_lines=79)
+        self.v=replace(self.v,repair_kind="minor",repair_policy=self.r["policy"],
+                       prior_changed_lines=79)
         self.check("line_limit")
 
     def test_approval_body_change_after_reservation(self):
@@ -183,6 +199,40 @@ class ContractTests(unittest.TestCase):
         self.r["expires_at"]=self.v.now_epoch;self.check("expired_reservation")
         self.a,self.r,self.t,self.v=fixture()
         self.v=replace(self.v,previous_attempts=1);self.check("attempt_limit")
+
+    def test_reservation_id_expiry_and_binding_not_self_authorized(self):
+        self.r["repair_reservation_id"]="reservation:forged"
+        self.check("untrusted_reservation")
+        self.a,self.r,self.t,self.v=fixture()
+        self.r["expires_at"]+=3600
+        self.check("untrusted_reservation")
+        self.a,self.r,self.t,self.v=fixture()
+        self.v=replace(self.v,repair_root_pr=999)
+        self.check("untrusted_reservation")
+        self.a,self.r,self.t,self.v=fixture()
+        self.v=replace(self.v,repair_head_sha="f"*40)
+        self.check("untrusted_reservation")
+        self.a,self.r,self.t,self.v=fixture()
+        self.v=replace(self.v,repair_policy=contract.POLICIES["minor"])
+        self.check("untrusted_reservation")
+        self.a,self.r,self.t,self.v=fixture()
+        self.v=replace(self.v,repair_attempt=2)
+        self.check("untrusted_reservation")
+
+    def test_inserted_early_return_and_skip_in_test_hold(self):
+        # An inserted early return leaves the original assertion untouched.
+        change(self.t,self.r,TEST,"return;\nAssert.Equal(1, 1);\n")
+        self.check("hold_semantic_review")
+        proof=contract.digest({p:(self.t["current"]["entries"][p]["oid"],
+                                  self.t["candidate"]["entries"][p]["oid"])
+                               for p in sorted([SOURCE,TEST])})
+        self.v=replace(self.v,reviewer_semantic_delta_sha256=proof,
+                       reviewer_invariants=tuple(sorted(contract.INVARIANTS)))
+        result=contract.validate(self.a,self.r,self.t,self.v)
+        self.assertTrue(result["semantic_attestation_required"])
+        self.a,self.r,self.t,self.v=fixture()
+        change(self.t,self.r,TEST,'[Fact(Skip = "disabled")]\nAssert.Equal(1, 1);\n')
+        self.check("hold_semantic_review")
 
     def test_acceptance_and_protected_checks_cannot_disappear(self):
         self.r["acceptance"].pop();self.check("acceptance_changed")

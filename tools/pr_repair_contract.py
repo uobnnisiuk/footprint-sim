@@ -213,6 +213,16 @@ class TrustedFacts:
     prior_changed_paths: tuple
     first_pr_changed_paths: tuple
     previous_attempts: int
+    # Fields from an independently verified, persistent reservation record.
+    repair_reservation_id: str
+    repair_expires_at: int
+    repair_policy: str
+    repair_kind: str
+    repair_root_issue: int
+    repair_root_pr: int
+    repair_main_sha: str
+    repair_head_sha: str
+    repair_attempt: int
     reviewer_semantic_delta_sha256: str | None = None
     reviewer_invariants: tuple = ()
 
@@ -285,6 +295,19 @@ def validate(approval, request, trees, trusted):
         reject("acceptance_changed")
     if type(trusted.now_epoch) is not int or request["expires_at"] <= trusted.now_epoch:
         reject("expired_reservation")
+    # R3's independent ledger reader must supply this receipt, not the
+    # request or an approval snapshot. Claiming a new ID or extending a
+    # deadline must never make an unverified reservation scope-valid.
+    if (request["repair_reservation_id"] != trusted.repair_reservation_id or
+            request["expires_at"] != trusted.repair_expires_at or
+            request["policy"] != trusted.repair_policy or
+            request["kind"] != trusted.repair_kind or
+            request["root_issue"] != trusted.repair_root_issue or
+            request["root_pr"] != trusted.repair_root_pr or
+            request["current_main_sha"] != trusted.repair_main_sha or
+            request["current_head_sha"] != trusted.repair_head_sha or
+            request["attempt"] != trusted.repair_attempt):
+        reject("untrusted_reservation")
     if (type(trusted.previous_attempts) is not int or trusted.previous_attempts < 0
             or request["attempt"] != trusted.previous_attempts+1
             or request["attempt"] > (1 if request["kind"] == "minor" else 2)):
@@ -341,7 +364,11 @@ def validate(approval, request, trees, trusted):
         if any("IsComplete" in line and re.search(r"\btrue\b", line, re.I)
                for line in added):
             reject("prohibited_semantic_change")
-        if any(RISK.search(line) for line in removed):
+        # Test edits may add an early return or skip attribute while leaving
+        # every existing Assert untouched. Hold ALL edits in tests/ until a
+        # separate exact-delta semantic attestation; added markers outside
+        # tests/ are also risky. Heuristics are not semantic validation.
+        if p.startswith("tests/") or any(RISK.search(line) for line in (*removed, *added)):
             risky = True
     if cumulative > line_cap:
         reject("line_limit")

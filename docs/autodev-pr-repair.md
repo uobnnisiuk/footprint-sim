@@ -82,6 +82,14 @@ unknown schema/key, repeated JSON key, bad UTF-8, unverified provenance,
 expired reservation, stale head, absent reviewer-run identity or missing
 CI mapping causes a fixed-code rejection, not automatic approval.
 
+The trusted adapter must read the persistent **repair reservation** from
+an independent ledger and verify its ID, recorded expiry, policy and kind,
+root Issue/PR, current main/head, and attempt before filling the matching
+fields in `TrustedFacts`. The request itself is NOT a trusted reservation
+source. Forging a new ID or extending the deadline, even while preserving
+all valid CI facts, must fail closed. The R3 ledger adapter is not included
+in R2; without its receipt, R2 cannot approve the request.
+
 The checker compares the **entire original PR base → current head**, the
 **entire original PR base → candidate**, and **current head → candidate**.
 Both original and proposed changes must lie within the previously approved
@@ -101,10 +109,12 @@ The downstream R3/R4 adapter must also run the **unchanged** general
 Acceptance IDs, their expected-evidence digests, and mandatory verification
 command digests must exactly match the independently pinned approval; no
 new acceptance, expected-result change, removal, or silent weakening is
-authorized. Suspected assertion/skip/order changes are **HOLD** unless an
-independent review attests the exact delta and separately documents
-candidate-set membership, count, CandidateId order, and CLI byte
-determinism. Adding \`IsComplete=true\` is rejected. This heuristic is
+authorized. **All edits in `tests/` require independent semantic
+attestation**, even changes that only add control flow or skip attributes
+and leave the original asserts untouched. Suspected assertion/skip/order
+changes elsewhere also require the exact-delta review and separate
+verification of candidate-set membership, count, CandidateId order, and
+CLI byte determinism. Adding \`IsComplete=true\` is rejected. This heuristic is
 only an alarm: passing it is **not** proof that tests or semantics have
 been preserved. Actual code review is still required.
 
