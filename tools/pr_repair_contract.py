@@ -202,6 +202,10 @@ class TrustedFacts:
     original_pr_base_sha: str
     finding_id: str
     reviewer_run_id: str
+    # Independently verified classification of the exact CI evidence receipt.
+    # Neither value may be copied from a proposed repair request.
+    observed_workflow: str
+    observed_failure_code: str
     workflow_run_id: int
     workflow_attempt: int
     job_id: int
@@ -278,6 +282,14 @@ def validate(approval, request, trees, trusted):
               "reservation_id", "approval_result_id", "protocol_commit", "approved_main_sha")
     if any(request[k] != approval[k] for k in shared):
         reject("approval_mismatch")
+    # The independent evidence reader must bind these two classifications to
+    # the same authenticated run / attempt / job / head and evidence digest.
+    # A syntactically valid value on the request is not evidence.
+    if (type(trusted.observed_workflow) is not str or
+            not ID.fullmatch(trusted.observed_workflow) or
+            type(trusted.observed_failure_code) is not str or
+            not ID.fullmatch(trusted.observed_failure_code)):
+        reject("stale_or_unverified_evidence")
     if (request["current_main_sha"] != trusted.current_main_sha or
             request["current_head_sha"] != trusted.current_head_sha or
             request["original_pr_base_sha"] != trusted.original_pr_base_sha or
@@ -285,6 +297,8 @@ def validate(approval, request, trees, trusted):
             request["observed_head_sha"] != trusted.observed_head_sha or
             request["review_finding_id"] != trusted.finding_id or
             request["reviewer_run_id"] != trusted.reviewer_run_id or
+            request["workflow"] != trusted.observed_workflow or
+            request["failure_code"] != trusted.observed_failure_code or
             request["workflow_run_id"] != trusted.workflow_run_id or
             request["workflow_attempt"] != trusted.workflow_attempt or
             request["job_id"] != trusted.job_id or

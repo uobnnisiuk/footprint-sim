@@ -71,7 +71,10 @@ def fixture():
         approval_result_id=approval["approval_result_id"], protocol_commit=approval["protocol_commit"],
         current_main_sha=request["current_main_sha"], current_head_sha=request["current_head_sha"],
         original_pr_base_sha=request["original_pr_base_sha"], finding_id=request["review_finding_id"],
-        reviewer_run_id=request["reviewer_run_id"], workflow_run_id=request["workflow_run_id"],
+        reviewer_run_id=request["reviewer_run_id"],
+        observed_workflow=request["workflow"],
+        observed_failure_code=request["failure_code"],
+        workflow_run_id=request["workflow_run_id"],
         workflow_attempt=request["workflow_attempt"],job_id=request["job_id"],
         observed_head_sha=request["observed_head_sha"],evidence_sha256=request["evidence_sha256"],
         tree_roots=tuple((stage, snap["root_sha"]) for stage,snap in trees.items()),
@@ -194,6 +197,32 @@ class ContractTests(unittest.TestCase):
         self.r["workflow_run_id"]=1;self.check("stale_or_unverified_evidence")
         self.a,self.r,self.t,self.v=fixture()
         self.t["candidate"]["complete"]=False;self.check("incomplete_tree")
+
+    def test_workflow_and_failure_classification_are_independently_bound(self):
+        # Do not accept a candidate-selected CI workflow or failure cause.
+        self.r["workflow"] = "Unrelated-CI"
+        self.check("stale_or_unverified_evidence")
+        self.a,self.r,self.t,self.v=fixture()
+        self.r["failure_code"] = "candidate_selected_error"
+        self.check("stale_or_unverified_evidence")
+        # The trusted receipt must also match exactly; it cannot be absent,
+        # incomplete, or from another independently verified run.
+        self.a,self.r,self.t,self.v=fixture()
+        self.v=replace(self.v,observed_workflow="Other-CI")
+        self.check("stale_or_unverified_evidence")
+        self.a,self.r,self.t,self.v=fixture()
+        self.v=replace(self.v,observed_failure_code="different_failure")
+        self.check("stale_or_unverified_evidence")
+        self.a,self.r,self.t,self.v=fixture()
+        self.v=replace(self.v,observed_workflow=None)
+        self.check("stale_or_unverified_evidence")
+        self.a,self.r,self.t,self.v=fixture()
+        self.v=replace(self.v,observed_failure_code="")
+        self.check("stale_or_unverified_evidence")
+        # The fixture's independently supplied pair remains valid.
+        self.a,self.r,self.t,self.v=fixture()
+        self.assertEqual(contract.validate(self.a,self.r,self.t,self.v)["status"],
+                         "scope_valid_for_independent_review")
 
     def test_expired_or_replayed_reservation_hold(self):
         self.r["expires_at"]=self.v.now_epoch;self.check("expired_reservation")

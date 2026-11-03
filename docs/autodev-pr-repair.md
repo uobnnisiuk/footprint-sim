@@ -82,6 +82,23 @@ unknown schema/key, repeated JSON key, bad UTF-8, unverified provenance,
 expired reservation, stale head, absent reviewer-run identity or missing
 CI mapping causes a fixed-code rejection, not automatic approval.
 
+The independent CI evidence adapter must also bind **both** the normalized
+workflow identity and the failure classification to the same verified
+run ID, attempt, job ID, observed PR head and evidence digest. In R2,
+`TrustedFacts.observed_workflow` and `TrustedFacts.observed_failure_code`
+must come from that independently verified run/failure receipt, not from the
+candidate's `repair_request.workflow`, `failure_code`, mutable Issue text
+or an unverified classification. An unmatched or missing pair fails closed
+with `stale_or_unverified_evidence`, even if all other provenance and tree
+checks succeed. The workflow token must be mapped from a verified workflow
+identity (for example R1's reviewed `normal` / `research` class); a
+display name, copied SHA-256 or model-chosen failure label alone is not
+independent attestation. When multiple failures exist, the adapter must
+select the independently reviewed finding and its evidence, not let the
+candidate decide which failure it is repairing. R2 supplies this strict
+interface only; actual trusted GitHub/R1 receipt acquisition is a separate
+downstream adapter and is not claimed to be implemented here.
+
 The trusted adapter must read the persistent **repair reservation** from
 an independent ledger and verify its ID, recorded expiry, policy and kind,
 root Issue/PR, current main/head, and attempt before filling the matching
