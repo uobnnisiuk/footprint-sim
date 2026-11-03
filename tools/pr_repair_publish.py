@@ -246,8 +246,11 @@ def publish_once(adapter, envelope: dict, *, execute: bool = False) -> dict:
              and final.pr_merged is False and final.open_prs == first.open_prs
              and final.reservation == first.reservation
              and final.events == first.events + ("publish_started",)
+             # A completed CAS is read back as a fact, not a fresh write.
+             # Expiry *after* the checked write cannot hide a known head.
+             # A rolled-back or missing clock still makes the result unknown.
              and type(final.epoch) is int
-             and final.epoch < first.reservation["expiresAtEpoch"])
+             and final.epoch >= third.epoch)
     if valid and final.head_sha == result["new_head"]:
         state, event = "ci_pending", "published"
     elif valid and final.head_sha == first.head_sha:

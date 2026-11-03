@@ -134,6 +134,48 @@ class PublishTests(unittest.TestCase):
         self.assertEqual(self.a.writes, 1)
         self.assertEqual(self.a.events[-1], "response_unknown")
 
+    def test_lost_response_new_head_readback_after_expiry_is_known(self):
+        # The ref write was authorized at t=199; the readback at t=201
+        # cannot retroactively turn a verified new head into "unknown".
+        self.a.timeout = True
+        self._observe_at(100, 150, 199, 201)
+        out = p.publish_once(self.a, self.a.env, execute=True)
+        self.assertEqual(out["state"], "ci_pending")
+        self.assertEqual(out["ci"], "pending")
+        self.assertTrue(out["response_uncertain"])
+        self.assertFalse(out["may_merge"])
+        self.assertEqual(self.a.events, ["publish_started", "published"])
+        self.assertEqual(self.a.writes, 1)
+        self.assertEqual(self.a.claims, 1)
+        with self.assertRaises(p.PublishHalt):
+            p.publish_once(self.a, self.a.env, execute=True)
+        self.assertEqual(self.a.writes, 1)
+
+    def test_lost_response_old_head_readback_after_expiry_is_known(self):
+        self.a.timeout = self.a.no_write = True
+        self._observe_at(100, 150, 199, 201)
+        out = p.publish_once(self.a, self.a.env, execute=True)
+        self.assertEqual(out["state"], "not_applied_consumed")
+        self.assertEqual(out["ci"], "unverified")
+        self.assertTrue(out["response_uncertain"])
+        self.assertFalse(out["may_merge"])
+        self.assertEqual(self.a.events, ["publish_started", "response_unknown"])
+        self.assertEqual(self.a.writes, 1)
+        self.assertEqual(self.a.claims, 1)
+        with self.assertRaises(p.PublishHalt):
+            p.publish_once(self.a, self.a.env, execute=True)
+        self.assertEqual(self.a.writes, 1)
+
+    def test_post_write_clock_rollback_still_unknown(self):
+        self.a.timeout = True
+        self._observe_at(100, 150, 199, 198)
+        out = p.publish_once(self.a, self.a.env, execute=True)
+        self.assertEqual(out["state"], "unknown_consumed")
+        self.assertEqual(out["ci"], "unverified")
+        self.assertFalse(out["may_merge"])
+        self.assertEqual(self.a.writes, 1)
+        self.assertEqual(self.a.events, ["publish_started", "response_unknown"])
+
     def test_concurrent_writer_head_unknown_consumed(self):
         self.a.race = True
         out = p.publish_once(self.a, self.a.env, execute=True)

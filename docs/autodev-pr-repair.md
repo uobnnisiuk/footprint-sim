@@ -281,6 +281,12 @@ reuse the first snapshot. The controller then performs at most **one**
 expected-old-head, `force=false` ref update to the **existing** branch.
 Timeout and ambiguous writes are never retried. Readback distinguishes
 new head, old head and unknown; all outcomes leave the reservation spent.
+The deadline is a strict **pre-CAS write gate**, not a post-write evidence
+gate: after a valid CAS attempt, independently verified readback may occur
+after expiry and still establish a known new or old head. A missing or
+backward clock, changed Issue/main/PR/reservation, or third-party head still
+produces an unknown result without reattempting the write. Regression tests
+cover lost responses on both known heads after expiry and clock rollback.
 Even a verified publication enters CI *pending*, never a preapproved merge.
 The controller does not create Issues/PRs, make a PR Ready, or merge.
 
