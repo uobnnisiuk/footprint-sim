@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import stat
 import sys
+import threading
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -256,6 +257,161 @@ class LedgerTests(unittest.TestCase):
                 self.reserve()
         with self.assertRaises(ledger.LedgerHalt):
             self.reserve(hour=11, day=4)
+
+
+    def test_crash_matrix_preserves_reservations_at_external_boundaries(self):
+        # R3 records state only; these stages simulate the R4 external flow.
+        # No model, GitHub API, candidate code or real ref write is invoked.
+        checkpoints = (
+            "after_reservation", "before_receipt", "after_receipt",
+            "before_candidate", "after_candidate", "before_ref", "after_ref",
+            "receipt_response_unknown", "candidate_timeout",
+            "ref_response_unknown",
+        )
+        original_state = self.state
+        try:
+            with patch.object(hourly.daily, "invoke_once") as model:
+                for checkpoint in checkpoints:
+                    with self.subTest(checkpoint=checkpoint):
+                        with tempfile.TemporaryDirectory() as root:
+                            self.state = Path(root) / "daily"
+                            receipt = None
+
+                            def simulate():
+                                nonlocal receipt
+                                receipt = self.reserve()
+                                if checkpoint == "after_reservation":
+                                    raise OSError("injected crash")
+                                if checkpoint == "receipt_response_unknown":
+                                    ledger.append_event(
+                                        self.state, receipt["id"],
+                                        "response_unknown", clock=lambda: at(11))
+                                    raise OSError("injected unknown response")
+
+                                def boundary(name, event, hour):
+                                    if checkpoint == "before_" + name:
+                                        raise OSError("injected crash")
+                                    ledger.append_event(
+                                        self.state, receipt["id"], event,
+                                        clock=lambda: at(hour))
+                                    if checkpoint == "after_" + name:
+                                        raise OSError("injected crash")
+
+                                boundary("receipt", "receipt_sent", 11)
+                                if checkpoint == "candidate_timeout":
+                                    ledger.append_event(
+                                        self.state, receipt["id"],
+                                        "candidate_timeout", clock=lambda: at(12))
+                                    raise OSError("injected timeout")
+                                boundary("candidate", "candidate_started", 12)
+                                ledger.append_event(
+                                    self.state, receipt["id"],
+                                    "publish_started", clock=lambda: at(13))
+                                if checkpoint == "ref_response_unknown":
+                                    ledger.append_event(
+                                        self.state, receipt["id"],
+                                        "response_unknown", clock=lambda: at(14))
+                                    raise OSError("injected unknown response")
+                                boundary("ref", "published", 14)
+
+                            with self.assertRaisesRegex(OSError, "injected"):
+                                simulate()
+                            self.assertIsNotNone(receipt)
+                            original_file = (self.state.parent / "pr-repair-ledger"
+                                             / f'reservation-{receipt["id"]}.json')
+                            original_bytes = original_file.read_bytes()
+                            history = ledger.read_ledger(self.state, at(10, 4))
+                            self.assertEqual(len(history.reservations), 1)
+                            self.assertEqual(history.reservations[0]["attempt"], 1)
+                            self.assertEqual(history.today, 0)
+                            # A crash cannot free this hour or replay attempt 1.
+                            with self.assertRaises(ledger.LedgerHalt):
+                                self.reserve(hour=10)
+                            # Any separately authorized later attempt must consume
+                            # the second lifetime slot, not overwrite this record.
+                            second = self.reserve(hour=11, day=4)
+                            self.assertEqual(second["attempt"], 2)
+                            self.assertEqual(original_file.read_bytes(),
+                                             original_bytes)
+                            with self.assertRaisesRegex(
+                                    ledger.LedgerHalt, "lifetime"):
+                                self.reserve(hour=12, day=5)
+                model.assert_not_called()
+        finally:
+            self.state = original_state
+
+    def test_crash_before_reservation_write_does_not_invent_receipt(self):
+        with patch.object(ledger, "_write_file",
+                          side_effect=OSError("injected before write")):
+            with self.assertRaisesRegex(OSError, "injected"):
+                self.reserve()
+        self.assertFalse(ledger.read_ledger(self.state, at()).reservations)
+        # There is no durable receipt to consume or silently repair.
+        self.assertEqual(self.reserve()["attempt"], 1)
+        self.assertEqual(ledger.read_ledger(self.state, at()).today, 1)
+
+    def test_initial_minor_substantive_race_one_shared_daily_lock(self):
+        # Mirror the initial runner's actual lock -> budget -> reserve order.
+        # No Local AutoDev command, candidate or GitHub operation is run.
+        original_state = self.state
+        try:
+            with patch.object(hourly.daily, "invoke_once") as model:
+                for trial in range(3):
+                    with self.subTest(trial=trial):
+                        with tempfile.TemporaryDirectory() as root:
+                            self.state = Path(root) / "daily"
+                            hourly.daily.ensure_private_state(self.state)
+                            barrier = threading.Barrier(3)
+
+                            def contender(kind):
+                                barrier.wait(timeout=10)
+                                try:
+                                    if kind == "initial":
+                                        fd = os.open(
+                                            self.state / "daily.lock",
+                                            os.O_CREAT | os.O_RDWR
+                                            | getattr(os, "O_NOFOLLOW", 0),
+                                            0o600)
+                                        try:
+                                            fcntl.flock(
+                                                fd, fcntl.LOCK_EX
+                                                | fcntl.LOCK_NB)
+                                            budget = hourly.read_budget(
+                                                self.state, at())
+                                            if budget.blocked:
+                                                return None
+                                            hourly.reserve_attempt(
+                                                self.state, at(), 123)
+                                        finally:
+                                            os.close(fd)
+                                    else:
+                                        self.reserve(kind)
+                                    return kind
+                                except (BlockingIOError, RuntimeError):
+                                    return None
+
+                            with ThreadPoolExecutor(max_workers=3) as pool:
+                                futures = [pool.submit(contender, kind)
+                                           for kind in ("initial", "minor",
+                                                        "substantive")]
+                                outcomes = [future.result() for future
+                                            in futures]
+                            winners = [value for value in outcomes if value]
+                            self.assertEqual(len(winners), 1, outcomes)
+                            self.assertEqual(
+                                hourly.read_budget(self.state, at()).used, 1)
+                            self.assertTrue(
+                                hourly.read_budget(self.state, at()).blocked)
+                            audit = ledger.read_ledger(self.state, at())
+                            self.assertEqual(
+                                len(audit.reservations),
+                                0 if winners[0] == "initial" else 1)
+                            self.assertEqual(
+                                len(list(self.state.glob("day-*.json"))),
+                                1 if winners[0] == "initial" else 0)
+                model.assert_not_called()
+        finally:
+            self.state = original_state
 
     def test_legacy_incomplete_creation_stops_next_day(self):
         self.state.mkdir()
