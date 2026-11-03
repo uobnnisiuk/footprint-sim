@@ -366,6 +366,15 @@ any uncertain publication -> BLOCKED (reservation remains spent)
 two lifetime repair reservations consumed -> zero remaining; never reserve a third
 ```
 
+A repairable independent finding enters REQUESTED when fewer than two lifetime
+reservations have been consumed, even if the complete R3 ledger has no receipt
+for the **future** attempt. REQUESTED does not reserve credit or permit code
+generation. Only the shared manager can create and independently verify the
+matching current-head R3 receipt before accepting the RESERVE transition.
+A missing future receipt is not EXHAUSTED; a missing receipt **at reserve time**
+fails closed. Once two reservations are consumed, any further request remains
+EXHAUSTED, including after failed or uncertain outcomes.
+
 The first normal read-only poll moves OBSERVED to WAIT; further polls preserve
 the state and issue no notices. New independent findings may move WAIT into
 REQUESTED or NEEDS_DECISION. Each notification is a fixed, non-sensitive

@@ -190,7 +190,10 @@ def replay(root_issue: int, root_pr: int, initial_head: str,
             elif (d["classification"] == "repairable"
                   and _true(d["unchanged_contract"])
                   and _true(d["entire_diff_reviewed"])):
-                if used >= 2 or len(receipts) <= used:
+                # An unreserved future attempt has no ledger receipt yet.
+                # Exhaustion is determined by consumed lifetime reservations;
+                # the shared manager verifies the matching receipt at reserve.
+                if used >= 2:
                     state = "EXHAUSTED"
                     notify("exhausted", d["finding_id"])
                 else:

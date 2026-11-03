@@ -108,6 +108,39 @@ class HandoffTests(unittest.TestCase):
         self.assertEqual([n.kind for n in requested.notifications], ["failure"])
         self.assertEqual(requested.attempts_remaining, 2)
 
+    def test_unreserved_future_attempt_is_not_lifetime_exhaustion(self):
+        # R3's complete ledger contains only reservations already persisted.
+        # The independent finding precedes the shared manager's reservation.
+        first = finding(H1, "initial_repair_finding")
+        requested = run([first], receipts=())
+        self.assertEqual(requested.state, "REQUESTED")
+        self.assertEqual(requested.attempts_consumed, 0)
+        self.assertEqual(requested.attempts_remaining, 2)
+        self.assertEqual([n.kind for n in requested.notifications], ["failure"])
+        # A request is not permission to author: no matching R3 receipt.
+        with self.assertRaises(HandoffHold):
+            run([first, reservation(R1)], receipts=())
+
+        # After one completed repair, the next independent finding must
+        # remain requestable even before the second reservation exists.
+        before_second_reservation = sample()[:8]
+        requested_again = run(before_second_reservation, receipts=(R1,))
+        self.assertEqual(requested_again.state, "REQUESTED")
+        self.assertEqual(requested_again.attempts_consumed, 1)
+        self.assertEqual(requested_again.attempts_remaining, 1)
+        with self.assertRaises(HandoffHold):
+            run(before_second_reservation + [reservation(R2)], receipts=(R1,))
+        # Only after a valid, independently supplied matching reservation may
+        # the shared manager transition the request into RESERVED.
+        reserved = run(before_second_reservation + [reservation(R2)],
+                       receipts=(R1, R2))
+        self.assertEqual(reserved.state, "RESERVED")
+        self.assertEqual(reserved.attempts_consumed, 2)
+        self.assertEqual(reserved.attempts_remaining, 0)
+        with self.assertRaises(HandoffHold):
+            run(before_second_reservation + [reservation(
+                dataclasses.replace(R2, id="f" * 32))], receipts=(R1, R2))
+
     def test_second_failed_ci_or_acceptance_exhausts_immediately(self):
         history = sample()
         for events in (
