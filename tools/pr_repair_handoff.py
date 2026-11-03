@@ -24,6 +24,9 @@ ACTIVE = frozenset(("OBSERVED", "WAIT", "NEEDS_DECISION", "REQUESTED",
 STOPPED = frozenset(("STALE", "BLOCKED", "EXHAUSTED", "INTEGRATED"))
 KINDS = frozenset(("minor", "substantive"))
 CI = frozenset(("success", "failure", "unknown"))
+# These are fixed, non-sensitive classes, not messages from a PR or model.
+NOTICE_KINDS = frozenset(("failure", "decision", "exhausted", "published",
+                           "publication_unknown", "review_passed", "completed"))
 RISKS = frozenset(("test_deleted", "test_skipped", "threshold_relaxed",
                    "unknown_elided", "truth_used", "research_reinterpreted",
                    "guard_bypassed", "contract_expanded"))
@@ -83,11 +86,18 @@ class Event:
     data: dict
 
 @dataclass(frozen=True)
+class Notification:
+    """Non-sensitive event category plus deterministic replay fingerprint."""
+    kind: str
+    fingerprint: str
+
+@dataclass(frozen=True)
 class Result:
     state: str
     head: str
     attempts_consumed: int
-    notifications: tuple[str, ...]
+    attempts_remaining: int
+    notifications: tuple[Notification, ...]
     ci_at_head: bool
     independently_reviewed: bool
     merged_and_main_verified: bool
@@ -135,15 +145,20 @@ def replay(root_issue: int, root_pr: int, initial_head: str,
     candidate_author = ""
     candidate_id = ""
     ci_success = False
+    ci_failed = False
     reviewed = False
     delivered: set[str] = set()
-    notices: list[str] = []
+    notices: list[Notification] = []
 
     def notify(kind: str, reference: str) -> None:
+        # A fixed kind and an opaque fingerprint are the entire public payload.
+        # Neither PR text, secret-like strings nor raw CI output may leak here.
+        if kind not in NOTICE_KINDS or not _id(reference):
+            hold("invalid_notification_receipt")
         key = _digest((POLICY, root_issue, root_pr, head, kind, reference))
         if key not in delivered:
             delivered.add(key)
-            notices.append(key)
+            notices.append(Notification(kind, key))
 
     for event in events:
         if (type(event) is not Event or not _id(event.name)
@@ -155,11 +170,14 @@ def replay(root_issue: int, root_pr: int, initial_head: str,
         if event.name == "poll":
             if event.actor != "observer" or d:
                 hold()
+            if state == "OBSERVED":
+                state = "WAIT"
+            # All subsequent polls preserve the observed state and notify none.
             continue
         if event.name == "finding":
             _exact(d, ("classification", "finding_id", "review_run",
                        "unchanged_contract", "entire_diff_reviewed"))
-            if (state not in ("OBSERVED", "NEEDS_DECISION", "WAIT_REVIEW")
+            if (state not in ("OBSERVED", "WAIT", "NEEDS_DECISION", "WAIT_REVIEW")
                     or event.actor != "reviewer" or not _id(d["finding_id"])
                     or not _id(d["review_run"])):
                 hold("independent_finding_required")
@@ -174,7 +192,9 @@ def replay(root_issue: int, root_pr: int, initial_head: str,
                     notify("exhausted", d["finding_id"])
                 else:
                     state = "REQUESTED"
+                    notify("failure", d["finding_id"])
                 ci_success = False
+                ci_failed = False
                 reviewed = False
             else:
                 hold("scope_or_interpretation_not_approved")
@@ -252,6 +272,7 @@ def replay(root_issue: int, root_pr: int, initial_head: str,
                 hold("stale_or_unverified_ci")
             ci_success = all((_true(d["complete"]), _true(d["required_steps"]),
                               d["normal"] == "success", d["research"] == "success"))
+            ci_failed = d["normal"] == "failure" or d["research"] == "failure"
             state = "WAIT_REVIEW"
         elif event.name == "review":
             _exact(d, ("review_head", "review_run", "reviewer_independent",
@@ -285,8 +306,20 @@ def replay(root_issue: int, root_pr: int, initial_head: str,
                 state = "ACCEPTED"
                 notify("review_passed", d["review_run"])
             else:
-                state = "NEEDS_DECISION"
-                notify("review_incomplete", d["review_run"])
+                failure = (ci_failed or any(v == "fail" for v in d["acceptance"].values())
+                           or d["unresolved_blockers"] > 0 or bool(d["test_risks"]))
+                # Two consumed attempts cannot be reopened with a fresh request.
+                # A merely missing GitHub approval remains a decision gate, not
+                # a false claim that the second repair's code failed.
+                repair_unsuccessful = not ci_success or any(
+                    v != "pass" for v in d["acceptance"].values())
+                if used >= 2 and (repair_unsuccessful or failure):
+                    state = "EXHAUSTED"
+                else:
+                    state = "NEEDS_DECISION"
+                notify("failure" if failure else "decision", d["review_run"])
+                if state == "EXHAUSTED":
+                    notify("exhausted", d["review_run"])
         elif event.name == "merge_observed":
             _exact(d, ("merged_head", "method", "github_merge_verified",
                        "main_contains_head", "main_push_ci_success",
@@ -300,11 +333,11 @@ def replay(root_issue: int, root_pr: int, initial_head: str,
                          "protection_satisfied"))):
                 hold("merge_evidence_unverified")
             state = "INTEGRATED"
-            notify("integrated", head)
+            notify("completed", head)
         else:
             hold("unknown_handoff_event")
-    return Result(state, head, used, tuple(notices), ci_success, reviewed,
-                  state == "INTEGRATED")
+    return Result(state, head, used, 2 - used, tuple(notices), ci_success,
+                  reviewed, state == "INTEGRATED")
 
 def rollout_gate(checks: dict) -> dict:
     """Read-only activation checklist. No production-enabling code path.

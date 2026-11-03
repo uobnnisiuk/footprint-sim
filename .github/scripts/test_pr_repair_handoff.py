@@ -6,7 +6,8 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
-from pr_repair_handoff import Event, HandoffHold, Receipt, replay, rollout_gate, ROLLOUT_CHECKS
+from pr_repair_handoff import (Event, HandoffHold, Notification, Receipt, replay,
+                               rollout_gate, ROLLOUT_CHECKS)
 
 # Actual PR #58 commit identifiers are used as fixed historical anchors.
 # Acceptance IDs and review receipts below are SYNTHETIC offline test data,
@@ -94,6 +95,57 @@ class HandoffTests(unittest.TestCase):
         self.assertTrue(outcome.independently_reviewed)
         self.assertTrue(outcome.merged_and_main_verified)
         self.assertFalse(outcome.production_active)
+
+    def test_initial_observation_enters_wait_then_independent_finding(self):
+        polls = [ev("poll", "observer", H1), ev("poll", "observer", H1)]
+        waiting = run(polls)
+        self.assertEqual(waiting.state, "WAIT")
+        self.assertEqual(waiting.notifications, ())
+        requested = run(polls + [finding(H1, "initial_repair_finding")])
+        direct = run([finding(H1, "initial_repair_finding")])
+        self.assertEqual(requested.state, "REQUESTED")
+        self.assertEqual(requested.notifications, direct.notifications)
+        self.assertEqual([n.kind for n in requested.notifications], ["failure"])
+        self.assertEqual(requested.attempts_remaining, 2)
+
+    def test_second_failed_ci_or_acceptance_exhausts_immediately(self):
+        history = sample()
+        for events in (
+            history[:-3] + [ci(H3, normal="failure"), review(H3)],
+            history[:-2] + [review(H3, {"provenance": "pass", "cli": "missing",
+                                       "uncertainty": "pass", "region_order": "pass"})],
+            history[:-3] + [ci(H3, normal="unknown"), review(H3)],
+        ):
+            with self.subTest(reason=events[-2:]):
+                result = run(events)
+                self.assertEqual(result.state, "EXHAUSTED")
+                self.assertEqual(result.attempts_consumed, 2)
+                self.assertEqual(result.attempts_remaining, 0)
+                self.assertIn("exhausted", [n.kind for n in result.notifications])
+                with self.assertRaises(HandoffHold):
+                    run(events + [finding(H3, "third_request")])
+        # A successful full second review remains eligible for integration.
+        self.assertEqual(run(history).state, "INTEGRATED")
+
+    def test_structured_notifications_stable_and_non_sensitive(self):
+        result = run(sample())
+        self.assertEqual(result.notifications, run(sample()).notifications)
+        kinds = [note.kind for note in result.notifications]
+        self.assertIn("failure", kinds)
+        self.assertIn("published", kinds)
+        self.assertEqual(kinds[-1], "completed")
+        for note in result.notifications:
+            self.assertIsInstance(note, Notification)
+            self.assertRegex(note.fingerprint, r"^[0-9a-f]{64}$")
+            self.assertNotIn("region_id_order_review", str(note))
+        decision = ev("finding", "reviewer", H1, classification="needs_decision",
+                      finding_id="new_policy", review_run="independent_review_1",
+                      unchanged_contract=False, entire_diff_reviewed=True)
+        notice = run([decision]).notifications
+        self.assertEqual([n.kind for n in notice], ["decision"])
+        self.assertEqual(notice, run([ev("poll", "observer", H1), decision]).notifications)
+        self.assertEqual(run([decision]).state, "NEEDS_DECISION")
+        self.assertEqual(result.attempts_remaining, 0)
 
     def test_green_ci_alone_does_not_approve_missing_acceptance(self):
         events = sample()[:5] + [ci(H2), review(H2, {

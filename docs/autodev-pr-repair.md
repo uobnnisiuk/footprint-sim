@@ -355,19 +355,31 @@ model call, public mutator or production permission switch. It implements
 the state transition contract:
 
 ```
-OBSERVED -> REQUESTED / NEEDS_DECISION
+OBSERVED -> WAIT / REQUESTED / NEEDS_DECISION
+WAIT -> WAIT / REQUESTED / NEEDS_DECISION
 REQUESTED -> RESERVED -> AUTHORING -> CANDIDATE_READY
 CANDIDATE_READY -> PUBLISHED -> WAIT_CI -> WAIT_REVIEW
 WAIT_REVIEW -> ACCEPTED / NEEDS_DECISION
+WAIT_REVIEW -> EXHAUSTED immediately if second repair's CI or acceptance fails
 ACCEPTED -> INTEGRATED (only after actual normal merge and main CI readback)
 any uncertain publication -> BLOCKED (reservation remains spent)
-two lifetime repair reservations consumed -> EXHAUSTED
+two lifetime repair reservations consumed -> zero remaining; never reserve a third
 ```
 
-Normal read-only polls do not generate notices. A deterministic fingerprint
-suppresses repeated result notices. This is **not a durable notification
-database**: the production integration must persist delivered keys and
-reconcile them with existing task history across restarts.
+The first normal read-only poll moves OBSERVED to WAIT; further polls preserve
+the state and issue no notices. New independent findings may move WAIT into
+REQUESTED or NEEDS_DECISION. Each notification is a fixed, non-sensitive
+`Notification(kind, fingerprint)`: the kind distinguishes new failure,
+required decision, published repair, exhausted budget and completed integration;
+the fingerprint deterministically deduplicates the exact root/head/event
+reference. No PR text or raw CI output is returned in a notification. Offline
+replays of identical event histories return identical typed notifications.
+`Result.attempts_remaining` is zero after the second reservation. A second
+failed/incomplete CI or acceptance review enters EXHAUSTED immediately, whereas
+a missing administrative GitHub approval alone remains a decision gate.
+This is **not a durable notification database**: production integration must
+persist delivered keys and reconcile them with existing task history across
+restarts; replay-local deduplication alone cannot prevent repeated delivery.
 
 ### Handoff boundaries
 
