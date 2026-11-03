@@ -293,6 +293,9 @@ def claim_once_durable(state, reservation_id: str, root_pr: int,
         receipt = matches[0]
         if (receipt["rootPr"] != root_pr or receipt["headSha"] != old_head
                 or receipt["kind"] not in ("minor", "substantive")
+                # A claimed event must never predate its durable reservation.
+                # A wall-clock rollback is not permission to poison the ledger.
+                or now < ledger._iso(receipt["createdAtJst"])
                 or int(now.timestamp()) >= receipt["expiresAtEpoch"]):
             return False
         own = sorted((e for e in audit.events if e["id"] == reservation_id),

@@ -390,6 +390,27 @@ class DurableClaimTests(unittest.TestCase):
         self.assertEqual([e["event"] for e in audit.events], ["publish_started"])
         self.assertEqual(len(audit.reservations), 2)
 
+    def test_clock_rollback_before_creation_never_poison_ledger(self):
+        from test_pr_repair_ledger import at
+        import local_autodev_hourly as hourly
+        import pr_repair_ledger as ledger
+        receipt = self.ledger_test.reserve(hour=10)
+        old = "d"*40
+        # Reserve at 10:05, then observe clocks earlier on the same JST day.
+        for premature in (at(9), at(10).replace(minute=4)):
+            self.assertFalse(p.claim_once_durable(
+                self.ledger_test.state, receipt["id"], 58, old,
+                clock=lambda when=premature: when))
+            self.assertEqual(ledger.read_ledger(self.ledger_test.state, at(11)).events, ())
+            self.assertEqual(hourly.read_budget(self.ledger_test.state, at(11)).used, 1)
+        # No poisoned event was durably appended, so a valid claim still works.
+        self.assertTrue(p.claim_once_durable(
+            self.ledger_test.state, receipt["id"], 58, old,
+            clock=lambda: at(10)))
+        self.assertEqual([e["event"] for e in
+                          ledger.read_ledger(self.ledger_test.state, at(11)).events],
+                         ["publish_started"])
+
     def test_timeout_and_expired_reservation_never_claim(self):
         from test_pr_repair_ledger import at
         import pr_repair_ledger as ledger

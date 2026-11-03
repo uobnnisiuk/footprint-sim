@@ -322,7 +322,10 @@ compare-and-swap `update-ref` semantics, candidate timeout/repeated generation
 failures, and R3's persistent receipt/event storage. An R4 offline
 `claim_once_durable` helper takes R3's same `daily.lock`, checks the
 receipt and all historical claims for the same PR/head, and durably appends
-one `publish_started` event. The minor/substantive competition fixture
+one `publish_started` event. It refuses to append events when the observed
+clock is earlier than the reservation's durable `createdAtJst`, preserving
+R3's ledger-read and shared-budget invariants after a clock rollback.
+The minor/substantive competition fixture
 verifies only one publisher wins. No candidate code or test is run inside
 that Git repository, and no GitHub/Windows state is modified by these tests.
 
