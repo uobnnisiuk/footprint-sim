@@ -442,5 +442,35 @@ class HourlyTests(unittest.TestCase):
             hourly.read_budget(self.state, at())
 
 
+    def test_new_repair_reservation_blocks_same_hour_initial_runner(self):
+        import pr_repair_ledger as repair
+        now = at(10)
+        gate = repair.Gate(
+            root_issue=56, root_pr=58, trusted_roots=((56, 58),),
+            approval_reservation_id=10, approval_result_id=11,
+            approved_title_hash="a" * 64, approved_body_hash="b" * 64,
+            observed_title_hash="a" * 64, observed_body_hash="b" * 64,
+            requested_main_sha="c" * 40, observed_main_sha="c" * 40,
+            requested_head_sha="d" * 40, observed_head_sha="d" * 40,
+            open_pr_numbers=(58,), expires_at_epoch=int(now.timestamp()) + 900)
+        repair.reserve(self.state, gate, "substantive", execute=True,
+                       clock=lambda: now)
+        budget = hourly.read_budget(self.state, now)
+        self.assertEqual(budget.used, 1)
+        self.assertIn("repair operation", budget.blocked)
+        result, calls, _, _ = self.run_controller(now=now)
+        self.assertIn("repair operation", result)
+        self.assertEqual(calls, 0)
+
+    def test_corrupt_repair_ledger_stops_existing_hourly_runner(self):
+        self.state.mkdir()
+        repair_dir = self.state.parent / "pr-repair-ledger"
+        repair_dir.mkdir(mode=0o700)
+        (repair_dir / "unknown.json").write_text("{}")
+        with self.assertRaises(RuntimeError):
+            self.run_controller(now=at())
+        self.assertFalse(list(self.state.glob("day-*")))
+
+
 if __name__=='__main__':
     unittest.main()

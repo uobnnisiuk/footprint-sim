@@ -159,3 +159,85 @@ reservations, or branch writes. Every successful preflight still returns
 \`may_repair=false\`, \`may_merge=false\`, and requires a future independent
 review; only R5 may evaluate actual activation after Windows/WSL and
 shadow/runtime evidence.
+
+
+## R3: shared reservation accounting (INACTIVE, offline contract)
+
+Issue: https://github.com/uobnnisiuk/footprint-sim/issues/61
+
+The R3 module \`tools/pr_repair_ledger.py\` implements an **append-only** repair
+reservation ledger in a private sibling directory of the old daily state:
+\`<old-state-parent>/pr-repair-ledger\`. It neither edits nor migrates old
+\`day-*.json\`, \`issue-*.json\`, result, log, or \`daily.lock\` records.
+Records are written with exclusive create, file sync and directory sync.
+Partial/truncated/malformed records, unexpected entries, symlinks, orphan
+events, approval/root aliases or missing old reservation counterparts are
+fatal on **all future days**, not silently dropped as unused capacity.
+
+\`local_autodev_hourly.read_budget()\` now reads both ledgers. The same
+\`daily.lock\` is required for the original initial Issue runner and new
+repair reservations, with fresh Japan-local time **inside** the lock.
+Initial implementation still has one irreversible Issue-lifetime attempt.
+For repair, the maximum is two combined minor/substantive reservations per
+original root Issue+PR, at most one minor, at most two substantive, and
+two substantive reservations per JST day. Initial + minor + substantive +
+explicit active CI reruns share **eight** JST daily reservations and **one
+start per hour**. Active CI reruns require a separately verified explicit authorization
+(`Gate.ci_rerun_approved=True`) and are limited to one per exact head.
+Normal CI/research CI automatically triggered after a candidate commit
+are not booked a second time. Read-only polling consumes no reservation.
+
+\`Gate\` is an **input boundary, not a proof of trust**: the downstream R4
+adapter must independently construct its full approved Issue→root PR map,
+original immutable approval IDs, Issue title/body hashes, current GitHub
+main/head, open-PR inventory and expiry, and verify these against the
+approved R2 contract and live sources **before** calling \`reserve()\`.
+The ledger will reject drift, aliases, a second Open PR, expired receipts,
+repeated head CI reruns and an unrecognized root. No Issue body, proposed
+repair request, model response or user-supplied root text is trusted
+just because it can be formatted as a \`Gate\`. There is currently **no
+production trusted adapter** and no external action is authorized.
+
+Use \`reserve(state, gate, kind, execute=False)\` for a read-only preview.
+\`execute=True\` creates **only** the persisted reservation and never
+calls a model, GitHub, a command or a scheduler. Follow-up lifecycle
+observations are separate immutable \`append_event\` records. No result
+event, lost external receipt, generation timeout, response unknown,
+failed write, stale expiry or crash consumes anything *less* than the
+original reservation. Never generate a second candidate or resend
+an uncertain write: the R4 adapter must read back the external state,
+record an unambiguous result or stop.
+
+### Required R5 rollout and rollback gates
+
+R1–R4 **do not enable PR repair**. The existing Local AutoDev executable,
+old minor-correction task, Windows/WSL state and scheduled execution remain
+unchanged by this PR. Production activation requires a separately approved
+R5 integration and the following verified conditions:
+
+1. Read and archive exact SHA-256 and mode of the old daily/issue/results,
+   active scheduler/task settings and runtime module fingerprint *without
+   modifying old data*. Validate no damaged/orphan markers.
+2. Confirm the deployed hourly runtime actually includes the new shared
+   \`read_budget\` and \`pr_repair_ledger.py\`; any older runner that ignores
+   the new ledger **must be stopped before repair reservations can begin**.
+   An unverified or old 3-hour/daily/one-shot controller may not run
+   concurrently; a GitHub commit alone does not deploy local Windows files.
+3. Ensure old minor-fix tasks cannot write in parallel with the new
+   repair controller, and the owner-approved initial Issue timer shares
+   the same local \`daily.lock\` and eight-per-day accounting.
+4. Perform offline mixed-legacy/repair, corruption, concurrency, UTC↔JST
+   boundary, expiry and crash-injection tests; then shadow-observe without
+   consuming reservations, before an explicitly approved single production
+   attempt with verified trusted facts and independent review.
+5. Do **not** simply roll back to a runtime that ignores the new ledger.
+   Stop all writers first; reconcile every outstanding reservation, result,
+   unknown response and shared budget with independent evidence.
+   Restart only a verified compatible version. Never delete/rewrite old
+   markers, new receipts or unresolved failures as a rollback technique.
+
+The R3 offline tests are included in the existing required \`test\` job:
+\`python3 -m unittest discover -s .github/scripts -p 'test_pr_repair_ledger.py' -v\`
+and the existing hourly tests remain intact. The R2 preflight, R4
+publication adapter, automatic review/merge and real-machine deployment
+remain separate gates. F22 research is not authorized by this change.
