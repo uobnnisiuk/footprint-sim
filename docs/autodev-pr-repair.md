@@ -272,7 +272,12 @@ The current R3 `append_event` API alone is **not sufficient** as this
 claim-and-check primitive. This is an explicit production integration
 blocker, not an invitation to patch the R3 file outside Issue #62 scope.
 
-After claim, the controller performs a final reread and at most **one**
+After initial validation, the controller checks a newly observed, non-backward
+clock against the reservation deadline before claiming. After claim, it
+rereads the reservation and time once more, failing closed when the deadline
+has passed; that claim stays consumed and there is no retry. The trusted
+adapter must independently resample time on each observation, rather than
+reuse the first snapshot. The controller then performs at most **one**
 expected-old-head, `force=false` ref update to the **existing** branch.
 Timeout and ambiguous writes are never retried. Readback distinguishes
 new head, old head and unknown; all outcomes leave the reservation spent.

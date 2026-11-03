@@ -185,6 +185,49 @@ class PublishTests(unittest.TestCase):
             p.publish_once(self.a, self.a.env, execute=True)
         self.assertEqual(self.a.writes, 0)
 
+
+    def _observe_at(self, *epochs):
+        original = self.a.observe
+        clock = iter(epochs)
+        def reread():
+            return replace(original(), epoch=next(clock, epochs[-1]))
+        self.a.observe = reread
+
+    def test_expiry_between_first_and_second_prevents_claim(self):
+        self._observe_at(100, 200)
+        with self.assertRaisesRegex(p.PublishHalt, "stale_before_publish"):
+            p.publish_once(self.a, self.a.env, execute=True)
+        self.assertEqual(self.a.claims, 0)
+        self.assertEqual(self.a.writes, 0)
+        self.assertEqual(self.a.events, [])
+
+    def test_expiry_after_claim_before_final_reread_consumes_claim(self):
+        self._observe_at(100, 150, 200)
+        with self.assertRaisesRegex(p.PublishHalt, "changed_after_claim"):
+            p.publish_once(self.a, self.a.env, execute=True)
+        self.assertEqual(self.a.claims, 1)
+        self.assertEqual(self.a.writes, 0)
+        self.assertEqual(self.a.events, ["publish_started"])
+        with self.assertRaises(p.PublishHalt):
+            p.publish_once(self.a, self.a.env, execute=True)
+        self.assertEqual(self.a.claims, 1)
+        self.assertEqual(self.a.writes, 0)
+
+    def test_expiry_after_second_before_cas_is_fail_closed(self):
+        self._observe_at(100, 199, 201)
+        with self.assertRaisesRegex(p.PublishHalt, "changed_after_claim"):
+            p.publish_once(self.a, self.a.env, execute=True)
+        self.assertEqual(self.a.claims, 1)
+        self.assertEqual(self.a.writes, 0)
+        self.assertEqual(self.a.events, ["publish_started"])
+
+    def test_clock_rollback_before_claim_is_fail_closed(self):
+        self._observe_at(100, 99)
+        with self.assertRaisesRegex(p.PublishHalt, "stale_before_publish"):
+            p.publish_once(self.a, self.a.env, execute=True)
+        self.assertEqual(self.a.claims, 0)
+        self.assertEqual(self.a.writes, 0)
+
     def test_never_run_candidate_scripts(self):
         import subprocess
         with patch.object(subprocess, "run", side_effect=AssertionError("executed")):

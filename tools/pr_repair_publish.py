@@ -71,6 +71,20 @@ def _same(a: Observation, b: Observation) -> bool:
             b.open_prs, b.reservation)
 
 
+def _deadline_valid(previous: Observation, current: Observation) -> bool:
+    """Require a new, non-backward clock observation before any ref write.
+
+    Receipt equality is separately checked with _same(); this checks the
+    currently observed expiry after slow validation and after the durable
+    claim. A clock rollback or missing timestamp fails closed.
+    """
+    return (type(current) is Observation and type(current.epoch) is int
+            and type(current.reservation) is dict
+            and type(current.reservation.get("expiresAtEpoch")) is int
+            and previous.epoch <= current.epoch
+            < current.reservation["expiresAtEpoch"])
+
+
 def _check(snapshot: Observation, envelope: dict) -> None:
     if (type(snapshot) is not Observation or not _sha(snapshot.main_sha)
             or not _sha(snapshot.head_sha)
@@ -196,7 +210,8 @@ def publish_once(adapter, envelope: dict, *, execute: bool = False) -> dict:
     _check(first, envelope)
     result = _preflight(adapter, first, envelope)
     second = adapter.observe()
-    if not _same(first, second) or second.events != first.events:
+    if (not _deadline_valid(first, second) or not _same(first, second)
+            or second.events != first.events):
         halt("stale_before_publish")
     if not execute:
         return {**result, "state": "dry_run", "ci": "not_run",
@@ -207,7 +222,10 @@ def publish_once(adapter, envelope: dict, *, execute: bool = False) -> dict:
     if adapter.claim_once(first.reservation["id"], first.head_sha) is not True:
         halt("reservation_already_claimed")
     third = adapter.observe()
-    if not _same(first, third) or third.events != first.events + ("publish_started",):
+    # A successful durable claim does not extend the reservation deadline.
+    # Re-read time and reservation after claim, immediately before CAS.
+    if (not _deadline_valid(second, third) or not _same(first, third)
+            or third.events != first.events + ("publish_started",)):
         halt("changed_after_claim")
     error = None
     try:
