@@ -335,3 +335,167 @@ GitHub write-test target, and the deployed Windows/WSL controller with the
 old minor publisher retired. The R3 `append_event` method by itself remains
 insufficient as an atomic claim. None of this offline evidence enables
 production. Final exact-head GitHub CI and independent review are required.
+
+
+## R5: review-to-repair handoff and guarded rollout (OFFLINE ONLY)
+
+Issue: https://github.com/uobnnisiuk/footprint-sim/issues/63
+
+`tools/pr_repair_handoff.py` is the **read-only, event-replay handoff
+contract**, not a live orchestrator. Its offline tests use PR #58's three fixed
+historical Git heads, but all acceptance IDs, reviewer receipts and authoring
+records are explicitly **synthetic**. The simulation models the first
+provenance repair, the independent determination that the RegionId-ordering
+problem remains, the second bounded repair, new-head CI, full acceptance
+review, normal merge and main readback. These fixtures do not prove that any
+historical acceptance test actually ran or that a GitHub reviewer APPROVED.
+
+The implementation has no network client, file write, scheduler integration,
+model call, public mutator or production permission switch. It implements
+the state transition contract:
+
+```
+OBSERVED -> WAIT / REQUESTED / NEEDS_DECISION
+WAIT -> WAIT / REQUESTED / NEEDS_DECISION
+REQUESTED -> RESERVED -> AUTHORING -> CANDIDATE_READY
+CANDIDATE_READY -> PUBLISHED -> WAIT_CI -> WAIT_REVIEW
+WAIT_REVIEW -> ACCEPTED / NEEDS_DECISION
+WAIT_REVIEW -> EXHAUSTED immediately if second repair's CI or acceptance fails
+ACCEPTED -> INTEGRATED (only after actual normal merge and main CI readback)
+any uncertain publication -> BLOCKED (reservation remains spent)
+two lifetime repair reservations consumed -> zero remaining; never reserve a third
+```
+
+A repairable independent finding enters REQUESTED when fewer than two lifetime
+reservations have been consumed, even if the complete R3 ledger has no receipt
+for the **future** attempt. REQUESTED does not reserve credit or permit code
+generation. Only the shared manager can create and independently verify the
+matching current-head R3 receipt before accepting the RESERVE transition.
+A missing future receipt is not EXHAUSTED; a missing receipt **at reserve time**
+fails closed. Once two reservations are consumed, any further request remains
+EXHAUSTED, including after failed or uncertain outcomes.
+
+The first normal read-only poll moves OBSERVED to WAIT; further polls preserve
+the state and issue no notices. New independent findings may move WAIT into
+REQUESTED or NEEDS_DECISION. Each notification is a fixed, non-sensitive
+`Notification(kind, fingerprint)`: the kind distinguishes new failure,
+required decision, published repair, exhausted budget and completed integration;
+the fingerprint deterministically deduplicates the exact root/head/event
+reference. No PR text or raw CI output is returned in a notification. Offline
+replays of identical event histories return identical typed notifications.
+`Result.attempts_remaining` is zero after the second reservation. Only a verified final CI result moves WAIT_CI to WAIT_REVIEW: pending,
+unknown, missing required steps or incomplete snapshots stay in WAIT_CI,
+allowing a later independently checked result on the same head without
+spending a third reservation. A final CI failure or failed acceptance on
+the second consumed repair enters EXHAUSTED after independent review.
+If the technical review passes but required formal GitHub approval has not
+arrived, NEEDS_DECISION preserves its exact evidence for a same-head
+recheck. Only the independently observed approval bit may change before
+ACCEPTED, without another repair reservation or self-APPROVE.
+This is **not a durable notification database**: production integration must
+persist delivered keys and reconcile them with existing task history across
+restarts; replay-local deduplication alone cannot prevent repeated delivery.
+
+### Handoff boundaries
+
+- The **initial runner** retains its original one-issue/one-attempt policy and
+  does not receive R5 repair authorization. A separately authorized independent
+  reviewer classifies current-head failure evidence from R1, checks the original
+  approval/acceptance criteria in R2 and issues a bounded request. A reviewer
+  finding that requires a new expected result, interpretation or research
+  authority produces NEEDS_DECISION, not an automatic repair.
+- The **shared manager** alone owns R3 reservation/budget/lock state. Minor
+  `footprint-pr-repair-v1` and substantive
+  `footprint-pr-substantive-repair-v1` are distinct kinds; never dispatch the
+  same reservation to both. A minor exhausted attempt is not an implicit
+  upgrade to substantive. Lifetime two combined repair attempts per original
+  Issue+PR, one minor maximum, two substantive maximum, daily substantive two,
+  shared JST daily eight and at most one operation started per hour still apply.
+  Neither an issue clone, a new day nor a different request ID restores credit.
+- A **repair author** may prepare exactly one candidate on the reserved head
+  and cannot Ready, approve, merge, add Issue approvals, or write a branch ref.
+  Unknown semantic risk, deleted/skipped tests, relaxed assertions, removal of
+  unknown results, private truth use, altered research interpretation or
+  extended approval scope fails closed. R2 preflight, verified complete trees,
+  original main-sourced isolated guard and full base→candidate diff are still
+  required.
+- The **shared publisher** must be the *only writer* for both repair kinds.
+  It uses R4's durable once-only claim, fresh reservation/expiry and
+  non-backward-clock checks, one expected-old-head, force=false CAS, and
+  independent readback. An uncertain write is consumed, never retransmitted.
+  Incomplete or missing-step same-head CI snapshots remain in WAIT_CI;
+  success plus unknown also waits for the remaining CI. With a complete,
+  independently verified required-step receipt, one confirmed CI failure
+  may proceed to independent failure review even when the other CI is unknown.
+  This never permits merge or treats unknown as successful.
+  Only after new-head CI succeeds and the independent reviewer checks every
+  original acceptance and unresolved finding may the separate review/merge
+  task apply GitHub's actual protection conditions. Same-account COMMENT is
+  not a distinct-account APPROVE if GitHub requires the latter.
+
+The `Receipt` and `Event` inputs to `replay()` are **not authentication**.
+A boolean such as `ledger_verified=True` or `reviewer_independent=True`
+originating from a model or mutable PR body does not grant authority.
+Before production, a real adapter must independently read and reconcile
+R1 evidence, original approval, exact R2 manifests, the complete R3
+persistent old/new history, current GitHub PR/main/CI/review records,
+R4 detached Git objects, and scheduler/runtime state. No such trusted
+production adapter or safe live write test exists in R5's offline code.
+Do not treat state INTEGRATED in the simulator as a real merge.
+
+### Saved automation configuration and rollout boundary
+
+The R5 `rollout_gate()` returns separate offline, saved-config, machine and
+real-operation statuses and a list of missing checks. It **always returns
+`production_enabled=false` and `may_activate=false`**, even if a synthetic
+input marks every check true. It does not edit task settings. A saved task
+update is not an observed Windows deployment, and an offline merge is neither
+a successful real repair nor proof of unattended completion.
+
+The required rollout sequence remains:
+
+1. Verify all R1–R4 normal PR integrations, final-head reviews, main CI,
+   original authorized scope and the R5 latest-head CI/review. Confirm every
+   existing active task by its *persisted ID and exact configuration*, not by
+   display name. If task reads fail, STOP. Do not create a replacement timer.
+2. On the Windows/WSL owner runtime, archive original task XML and enabled
+   state, exact executable/runtime SHA, old daily/issue/results and new repair
+   ledger SHA-256 plus modes, and process/lock state **before modification**.
+   Verify the deployed hourly code actually reads R3 shared budget; a
+   legacy runner that cannot see repair reservations may not remain active.
+   All backups are outside the repository; no old ledger rewrites/deletions.
+3. Observe the existing tasks and shared ledgers in a read-only shadow phase,
+   across meaningful hourly and JST-day boundaries. Polling must not reserve
+   model credits, trigger extra models or generate repair attempts.
+4. Under the existing shared lock and confirmed process quiescence, migrate
+   the **old minor writer** from direct ref changes to the same verified R4
+   gateway and reconcile the independent review request format with both
+   repair kinds. A partially saved/failed task reconfiguration leaves the
+   substantive worker **disabled** and must not leave two writers enabled.
+   Preserve the old configuration and old accounting records.
+5. Only with explicit owner-approved target and separately verified live
+   adapter may an operator consider a bounded attempt. Record reservation,
+   detached candidate, single CAS, latest head CI, full independent review,
+   ordinary merge and main CI. A historical closed PR #58 is **never**
+   reopened as a live target. Log any human action; do not report it as
+   unattended success. A normal merge by itself does not complete Issue #63.
+
+Rollback must stop **all writers** and inspect every reserved, timed-out or
+unknown attempt; never restore an old controller that ignores the R3 ledger,
+discard reservations, reset the day counter, or start a parallel timer. If
+verification fails, keep new substantive repair disabled and record the
+specific missing receipt. Do not activate F22, relax research or CI contracts,
+or add paid model invocations.
+
+Offline checks (also included in the required existing Python CI step):
+
+```
+python3 -m unittest discover -s .github/scripts -p 'test_pr_repair_handoff.py' -v
+python3 -m unittest discover -s .github/scripts -p 'test_pr_repair_*.py' -v
+```
+
+**Current evidence distinction:** R1–R4 are integrated; R5 is an offline
+handoff/rollout implementation proposal until its PR receives CI and separate
+independent review. Saved-task rewiring, Windows/WSL machine inspection,
+production-grade adapter, safe live write test, shadow observation, and
+one new owner-approved real end-to-end cycle remain **unverified**.

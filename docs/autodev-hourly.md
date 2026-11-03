@@ -81,3 +81,40 @@ or live Codex test. On Windows verify the actual action, 24 enabled triggers,
 ordinary user/Ubuntu/higuchi, unchanged Monitor/attempt files and the actual
 NextRunTime. Perform only a dry run. Record deployment SHA and definition in
 GitHub; the cloud monitor must not infer hourly activation from a merge alone.
+
+
+## R5 repair handoff: no scheduling changes at merge time
+
+R5 is an **offline handoff and rollout policy**, not a new hourly task or an
+additional daily model allowance. The existing 24 hourly *checks* remain
+read-only unless the independently authorized single shared manager books a
+work operation under the same existing `daily.lock`. The eight JST daily
+reservation cap, one start per hour, first Issue lifetime one-shot, minor
+lifetime one, substantive lifetime maximum two and combined repair lifetime
+maximum two all remain strict. Automatic CI following a published fix is not
+another active rerun; separately authorized active CI reruns do consume a
+shared slot and can run once per exact head.
+
+Old minor and new substantive worker must not both update the same PR/head.
+A production transition requires the old minor direct-ref writer to use the
+verified shared publisher *before* substantive can be enabled, or the latter
+stays disabled. Do not trust a task's friendly name: read all saved task IDs,
+exact prompts, enabled flags and schedules. If only some configuration
+updates persist, stop; do not compensate by adding a new automation.
+
+On Windows/WSL, independently archive exact old XML/enabled states, code SHA,
+old/new reservation file hashes and modes, process state and all live locks.
+Read the deployed runtime, not merely GitHub main. Observe shadow polling
+without reservations; verify a safe, specifically authorized target before
+any real operation. Preserve all unknown/timeout histories and the old
+ledgers on rollback. A controller that cannot count R3 repair reservations
+must never be restored while repair reservations exist.
+
+`tools/pr_repair_handoff.py` and
+`.github/scripts/test_pr_repair_handoff.py` provide deterministic offline
+state-transition, pending-to-final CI, delayed-formal-approval recheck and
+notification tests only. Their simulated history is
+not a saved task update, a Windows deployment, or a successful unattended
+production repair. The live R4 GitHub adapter and its independent trust source
+are still unverified, so production remains disabled. See
+`docs/autodev-pr-repair.md` for the full handoff, safety and activation gates.
