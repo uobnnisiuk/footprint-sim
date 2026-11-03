@@ -96,6 +96,7 @@ class LedgerTests(unittest.TestCase):
         self.assertEqual(ledger.read_ledger(self.state, at(3)).substantive_today, 2)
 
     def test_shared_hour_across_kinds_and_legacy(self):
+        hourly.daily.ensure_private_state(self.state)
         hourly.reserve_attempt(self.state, at(10), 31)
         with self.assertRaisesRegex(ledger.LedgerHalt, "hour"):
             self.reserve(hour=10)
@@ -105,6 +106,7 @@ class LedgerTests(unittest.TestCase):
         self.assertIsNone(budget.blocked)
 
     def test_seven_legacy_plus_one_new_rejects_ninth(self):
+        hourly.daily.ensure_private_state(self.state)
         for hour in range(7):
             hourly.reserve_attempt(self.state, at(hour), 100 + hour)
         self.reserve(hour=7)
@@ -113,6 +115,7 @@ class LedgerTests(unittest.TestCase):
             self.reserve(hour=8, root=57, pr=59)
 
     def test_old_ledger_bytes_modes_never_rewritten(self):
+        hourly.daily.ensure_private_state(self.state)
         hourly.reserve_attempt(self.state, at(9), 31)
         old = {p.name: (p.read_bytes(), stat.S_IMODE(p.stat().st_mode))
                for p in self.state.iterdir() if p.is_file() and p.name != "daily.lock"}
