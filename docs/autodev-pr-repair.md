@@ -414,8 +414,11 @@ restarts; replay-local deduplication alone cannot prevent repeated delivery.
   It uses R4's durable once-only claim, fresh reservation/expiry and
   non-backward-clock checks, one expected-old-head, force=false CAS, and
   independent readback. An uncertain write is consumed, never retransmitted.
-  Unknown or partial same-head CI snapshots remain in WAIT_CI rather than
-  consuming a final review; only fully verified terminal CI advances.
+  Incomplete or missing-step same-head CI snapshots remain in WAIT_CI;
+  success plus unknown also waits for the remaining CI. With a complete,
+  independently verified required-step receipt, one confirmed CI failure
+  may proceed to independent failure review even when the other CI is unknown.
+  This never permits merge or treats unknown as successful.
   Only after new-head CI succeeds and the independent reviewer checks every
   original acceptance and unresolved finding may the separate review/merge
   task apply GitHub's actual protection conditions. Same-account COMMENT is

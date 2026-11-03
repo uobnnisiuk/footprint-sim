@@ -275,12 +275,17 @@ def replay(root_issue: int, root_pr: int, initial_head: str,
                     or type(d["required_steps"]) is not bool
                     or not _true(d["run_receipts_verified"])):
                 hold("stale_or_unverified_ci")
-            # Incomplete verified snapshots are observations, not final verdicts.
-            # Preserve the same-head wait without a new reservation or CI rerun.
-            if (not d["complete"] or not d["required_steps"]
-                    or "unknown" in (d["normal"], d["research"])):
+            # Never turn an incomplete or missing-step snapshot into a verdict.
+            # Once verified complete, a terminal failure of *either* required CI
+            # is independently reviewable even if another CI is still unknown.
+            # Success requires both to be final; otherwise stay on this head
+            # in WAIT_CI and allow later observations without rerunning CI.
+            if not d["complete"] or not d["required_steps"]:
                 continue
-            ci_success = d["normal"] == "success" and d["research"] == "success"
+            statuses = (d["normal"], d["research"])
+            if "failure" not in statuses and "unknown" in statuses:
+                continue
+            ci_success = all(status == "success" for status in statuses)
             ci_failed = not ci_success
             state = "WAIT_REVIEW"
         elif event.name == "review":

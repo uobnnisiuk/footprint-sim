@@ -199,6 +199,55 @@ class HandoffTests(unittest.TestCase):
         with self.assertRaises(HandoffHold):
             run(final + [finding(H3, "third_request")])
 
+    def test_verified_ci_failure_decidable_while_other_ci_unknown(self):
+        # PR #58's first repair had a confirmed normal CI failure while
+        # the independent research run was not yet known. Its failure can
+        # be reviewed without ever treating the missing run as successful.
+        first_round = sample()[:5]
+        failed = ci(H2, normal="failure", research="unknown")
+        outcome = run(first_round + [failed])
+        self.assertEqual(outcome.state, "WAIT_REVIEW")
+        self.assertFalse(outcome.ci_at_head)
+        self.assertEqual(run(first_round + [failed, review(H2)]).state,
+                         "NEEDS_DECISION")
+        with self.assertRaises(HandoffHold):
+            run(first_round + [failed, merged(H2)])
+
+        # A confirmed failure in the other required CI is symmetric.
+        second_round = sample()[:-3]
+        for status in (ci(H3, normal="failure", research="unknown"),
+                       ci(H3, normal="unknown", research="failure")):
+            with self.subTest(status=status.data):
+                outcome = run(second_round + [status])
+                self.assertEqual(outcome.state, "WAIT_REVIEW")
+                self.assertFalse(outcome.ci_at_head)
+                exhausted = run(second_round + [status, review(H3)])
+                self.assertEqual(exhausted.state, "EXHAUSTED")
+                self.assertEqual(exhausted.attempts_remaining, 0)
+                with self.assertRaises(HandoffHold):
+                    run(second_round + [status, review(H3),
+                                        finding(H3, "third_request")])
+
+    def test_incomplete_failure_evidence_remains_pending(self):
+        prefix = sample()[:-3]
+        terminal_failure = ci(H3, normal="failure", research="unknown")
+        for evidence in (
+            dataclasses.replace(terminal_failure,
+                data={**terminal_failure.data, "complete": False}),
+            dataclasses.replace(terminal_failure,
+                data={**terminal_failure.data, "required_steps": False}),
+            ci(H3, normal="success", research="unknown"),
+        ):
+            with self.subTest(evidence=evidence.data):
+                self.assertEqual(run(prefix + [evidence]).state, "WAIT_CI")
+                with self.assertRaises(HandoffHold):
+                    run(prefix + [evidence, review(H3)])
+                self.assertEqual(run(prefix + [evidence, ci(H3),
+                                               review(H3), merged(H3)]).state,
+                                 "INTEGRATED")
+                with self.assertRaises(HandoffHold):
+                    run(prefix + [evidence, ci(H2)])
+
     def test_stale_ci_and_review_fail_closed(self):
         events = sample()[:5]
         with self.assertRaises(HandoffHold):
