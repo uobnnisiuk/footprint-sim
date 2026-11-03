@@ -132,6 +132,16 @@ def _bad_constant(_: str) -> None:
     _halt()
 
 
+def _fsync_directory(folder: Path) -> None:
+    """Persist directory entries, including a newly created ledger directory."""
+    fd = os.open(folder, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+                 | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 def _private_directory(folder: Path, *, create: bool) -> bool:
     if create:
         folder.mkdir(mode=0o700, exist_ok=True)
@@ -142,6 +152,10 @@ def _private_directory(folder: Path, *, create: bool) -> bool:
     if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
             or info.st_mode & 0o077):
         _halt()
+    if create:
+        # The new directory entry must survive a crash before any receipt
+        # within it can be considered durable.
+        _fsync_directory(folder.parent)
     return True
 
 
@@ -176,11 +190,7 @@ def _write_file(path: Path, value: dict) -> None:
         stream.write(raw)
         stream.flush()
         os.fsync(stream.fileno())
-    fd = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-    try:
-        os.fsync(fd)
-    finally:
-        os.close(fd)
+    _fsync_directory(path.parent)
 
 
 def _folder(state: Path) -> Path:
@@ -412,7 +422,8 @@ def reserve(state: Path, gate: Gate, kind: str, *,
         history = [r for r in audit.reservations
                    if r["rootIssue"] == gate.root_issue
                    or r["rootPr"] == gate.root_pr
-                   or r["approvalReservationId"] == gate.approval_reservation_id]
+                   or r["approvalReservationId"] == gate.approval_reservation_id
+                   or r["approvalResultId"] == gate.approval_result_id]
         for prior in history:
             if (prior["rootIssue"] != gate.root_issue
                     or prior["rootPr"] != gate.root_pr

@@ -73,6 +73,39 @@ class LedgerTests(unittest.TestCase):
         with self.assertRaisesRegex(ledger.LedgerHalt, "lifetime"):
             self.reserve(hour=12, day=5)
 
+    def test_first_ledger_directory_entry_is_fsynced(self):
+        # A synced receipt in an unsynced newly created directory is unsafe.
+        folder = self.state.parent / "pr-repair-ledger"
+        with patch.object(ledger, "_fsync_directory",
+                          wraps=ledger._fsync_directory) as sync:
+            receipt = self.reserve()
+        self.assertEqual([call.args[0] for call in sync.call_args_list],
+                         [self.state.parent, folder])
+        self.assertTrue((folder / f'reservation-{receipt["id"]}.json').is_file())
+        self.assertEqual(ledger.read_ledger(self.state, at()).today, 1)
+
+    def test_first_directory_parent_sync_failure_aborts_receipt(self):
+        # Do not report a reservation as durable if the parent sync fails.
+        with patch.object(ledger, "_fsync_directory",
+                          side_effect=OSError("injected parent sync failure")):
+            with self.assertRaisesRegex(OSError, "parent sync failure"):
+                self.reserve()
+        folder = self.state.parent / "pr-repair-ledger"
+        self.assertTrue(folder.is_dir())
+        self.assertEqual(list(folder.iterdir()), [])
+        self.assertEqual(ledger.read_ledger(self.state, at()).today, 0)
+
+    def test_approval_result_alias_refused_before_ledger_write(self):
+        first = self.reserve("minor")
+        with self.assertRaises(ledger.LedgerHalt):
+            self.reserve("minor", hour=11, root=57, pr=59,
+                         approval_result_id=first["approvalResultId"])
+        # The rejected alias must not poison the historic ledger or budget.
+        self.assertEqual(ledger.read_ledger(self.state, at(11)).today, 1)
+        second = self.reserve("minor", hour=11, root=57, pr=59)
+        self.assertNotEqual(first["id"], second["id"])
+        self.assertEqual(ledger.read_ledger(self.state, at(12)).today, 2)
+
     def test_minor_plus_substantive_lifetime_two(self):
         self.reserve("minor")
         with self.assertRaisesRegex(ledger.LedgerHalt, "shared|reserved"):
