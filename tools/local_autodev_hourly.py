@@ -36,6 +36,13 @@ class Budget:
     blocked: str | None
 
 
+def _combined_budget(state: Path, now: datetime, legacy: Budget) -> Budget:
+    # R3: include the adjacent append-only repair ledger in the SAME eight-slot
+    # daily and hourly budget. No write and no model call in this read path.
+    import pr_repair_ledger as repair
+    return repair.merge_budget(state, now, legacy)
+
+
 def _unique_keys(pairs: list[tuple[str, object]]) -> dict:
     value: dict = {}
     for key, item in pairs:
@@ -184,7 +191,7 @@ def read_budget(state: Path, now: datetime) -> Budget:
     if state.is_symlink():
         raise RuntimeError("Symlinked daily state directory refused")
     if not state.exists():
-        return Budget(0, None)
+        return _combined_budget(state, now, Budget(0, None))
     if not state.is_dir() or state.stat().st_uid != os.getuid():
         raise RuntimeError("Invalid daily state directory")
     entries = []
@@ -259,7 +266,7 @@ def read_budget(state: Path, now: datetime) -> Budget:
         raise RuntimeError("Orphaned per-Issue reservation; review required")
     if used >= MAX_DAILY_ATTEMPTS:
         blocked = blocked or "daily attempt cap reached"
-    return Budget(used, blocked)
+    return _combined_budget(state, now, Budget(used, blocked))
 
 
 def reserve_attempt(state: Path, now: datetime, issue: int) -> tuple[Path, Path]:
@@ -291,7 +298,8 @@ def reserve_attempt(state: Path, now: datetime, issue: int) -> tuple[Path, Path]
 
 def runtime_fingerprint(repo: Path) -> tuple[tuple[str, str], ...]:
     paths = ["tools/local_autodev_hourly.py", "tools/local_autodev_daily.py",
-             "tools/local_autodev_queue.py", "tools/local_autodev.py"]
+             "tools/local_autodev_queue.py", "tools/local_autodev.py",
+              "tools/pr_repair_ledger.py"]
     result = []
     for relative in paths:
         path = repo / relative
