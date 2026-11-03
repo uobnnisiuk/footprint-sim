@@ -241,3 +241,97 @@ The R3 offline tests are included in the existing required \`test\` job:
 and the existing hourly tests remain intact. The R2 preflight, R4
 publication adapter, automatic review/merge and real-machine deployment
 remain separate gates. F22 research is not authorized by this change.
+
+
+## R4: detached candidate publication gate (offline only)
+
+Issue: https://github.com/uobnnisiuk/footprint-sim/issues/62
+
+R4 adds `tools/pr_repair_candidate.py` and `tools/pr_repair_publish.py`
+with two offline test modules under `.github/scripts/`. **No live GitHub
+publisher, scheduling, model call, or production activation exists yet.**
+A candidate must be a detached, one-parent commit whose sole parent is the
+PR's *currently observed* head. The model may describe that candidate but
+cannot update the branch. A separate trusted adapter must GET and verify
+its Git commit/tree/blob objects and complete inventories; a SHA or digest
+in a model response proves nothing.
+
+The offline gate requires a durable R3 reservation, independent R2 contract
+facts, exact-blob approval, checked original base→candidate and
+head→candidate diffs, and a verified *main-derived* guard run within
+disposable Git. The guard must independently validate the **entire** patch,
+and changes must remain in existing normal UTF-8 files. The new candidate
+checker rejects additional paths, changed modes, multiple parents,
+new/deleted files, unsupported paths, and manifest mismatch. It never runs
+candidate code or tests on an owner's credential-bearing computer.
+
+One atomic persistent `claim_once` operation is a required adapter contract:
+under the **same R3 ledger lock**, confirm no other repair has claimed the
+reservation or PR/head and durably append `publish_started` before CAS.
+The current R3 `append_event` API alone is **not sufficient** as this
+claim-and-check primitive. This is an explicit production integration
+blocker, not an invitation to patch the R3 file outside Issue #62 scope.
+
+After initial validation, the controller checks a newly observed, non-backward
+clock against the reservation deadline before claiming. After claim, it
+rereads the reservation and time once more, failing closed when the deadline
+has passed; that claim stays consumed and there is no retry. The trusted
+adapter must independently resample time on each observation, rather than
+reuse the first snapshot. The controller then performs at most **one**
+expected-old-head, `force=false` ref update to the **existing** branch.
+Timeout and ambiguous writes are never retried. Readback distinguishes
+new head, old head and unknown; all outcomes leave the reservation spent.
+The deadline is a strict **pre-CAS write gate**, not a post-write evidence
+gate: after a valid CAS attempt, independently verified readback may occur
+after expiry and still establish a known new or old head. A missing or
+backward clock, changed Issue/main/PR/reservation, or third-party head still
+produces an unknown result without reattempting the write. Regression tests
+cover lost responses on both known heads after expiry and clock rollback.
+Even a verified publication enters CI *pending*, never a preapproved merge.
+The controller does not create Issues/PRs, make a PR Ready, or merge.
+
+Offline tests use a fake Git adapter to inject stale main/Issue/head,
+approval or contract rejection, extra tree changes, guard refusal,
+reservation competition, timeout, and lost CAS responses. Run via:
+
+    python3 -m unittest discover -s .github/scripts -p 'test_pr_repair_*.py' -v
+
+**Remaining R4 verification:** the current GitHub connection supports Git
+commit/tree/ref operations, including `update_ref(expected_sha,force=false)`,
+but this is only an interface-level observation, **not** proof of safe
+detached-object retrieval or a transactional, verified reservation claim.
+No real repository was used as a write-test target. A production-capable
+adapter needs an independently approved test target and R5 runtime/ledger
+checks; without them live publication stays disabled. The fake adapter
+must not be used as authority over live GitHub data. R5 must prevent
+the old minor writer and new substantive writer from ever writing the same
+PR/head independently.
+
+### R4 independent-review remediation (offline tests only)
+
+The first Draft R4 head failed the Python check because the simulated write
+accepted a subclass sharing the test module's name. The offline simulation
+now permits only the exact `FakeAdapter` class object; a subclass with a
+forged `__module__` string fails before any write. This identity check is
+**not** a live authentication boundary and must never authorize production.
+
+The R4 tests now exercise the actual R2 validator on the R2 synthetic
+approval/tree fixture (including a tampered acceptance failure), a disposable
+local Git repository with a detached single-parent candidate and
+compare-and-swap `update-ref` semantics, candidate timeout/repeated generation
+failures, and R3's persistent receipt/event storage. An R4 offline
+`claim_once_durable` helper takes R3's same `daily.lock`, checks the
+receipt and all historical claims for the same PR/head, and durably appends
+one `publish_started` event. It refuses to append events when the observed
+clock is earlier than the reservation's durable `createdAtJst`, preserving
+R3's ledger-read and shared-budget invariants after a clock rollback.
+The minor/substantive competition fixture
+verifies only one publisher wins. No candidate code or test is run inside
+that Git repository, and no GitHub/Windows state is modified by these tests.
+
+**Not established:** a production-grade independent source of trusted R1/R2
+facts, an independently verified live Git-object/ref adapter, an approved
+GitHub write-test target, and the deployed Windows/WSL controller with the
+old minor publisher retired. The R3 `append_event` method by itself remains
+insufficient as an atomic claim. None of this offline evidence enables
+production. Final exact-head GitHub CI and independent review are required.
