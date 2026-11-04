@@ -24,6 +24,15 @@ _ROUTE = re.compile(
 _PAGE_SIZE = 100
 _MAX_PAGES = 10
 _MAX_JSON = 4_000_000
+_SAFE_REASONS = frozenset((
+    "authentication_unavailable", "disallowed_endpoint", "github_unavailable",
+    "malformed_api", "pagination_incomplete", "main_unverified",
+    "pr_unverified", "ci_missing", "ci_unverified", "ci_not_success",
+    "ci_pr_unverified", "review_unverified", "changes_requested",
+    "review_threads_unverified", "rulesets_require_independent_check",
+    "protection_unverified", "formal_approval_unverified", "invalid_pr_number",
+    "base_outdated", "snapshot_changed",
+))
 
 
 class AuditHold(ValueError):
@@ -160,7 +169,7 @@ def _main(reader) -> str:
     return head
 
 
-def _pr(reader, number: int) -> tuple[str, str, str]:
+def _pr(reader, number: int) -> tuple[str, str, str, str]:
     p = _object(reader.get("pulls/" + str(number)))
     base = _object(p.get("base"))
     head = _object(p.get("head"))
@@ -173,16 +182,46 @@ def _pr(reader, number: int) -> tuple[str, str, str]:
     head_sha, base_sha = head.get("sha"), base.get("sha")
     _require(_sha(head_sha) and _sha(base_sha), "pr_unverified")
     author = _object(p.get("user")).get("login")
-    _require(type(author) is str and bool(author), "pr_unverified")
-    return head_sha, base_sha, author
+    branch = head.get("ref")
+    _require(type(author) is str and bool(author)
+             and type(branch) is str and bool(branch)
+             and len(branch) <= 255 and not branch.startswith("refs/"),
+             "pr_unverified")
+    return head_sha, base_sha, author, branch
 
 
-def _ci(reader, head: str) -> int:
+def _run_for_pr(run: dict, number: int, head: str, branch: str) -> bool:
+    # The same head SHA may appear in runs for different PRs. A SHA alone,
+    # the workflow path, or the run's event do NOT bind CI to the target PR.
+    if (run.get("head_sha") != head
+            or run.get("path") != ".github/workflows/ci.yml"
+            or run.get("event") != "pull_request"):
+        return False
+    _require(run.get("head_branch") == branch
+             and _object(run.get("head_repository")).get("full_name") == REPO,
+             "ci_pr_unverified")
+    links = _list(run.get("pull_requests"))
+    _require(len(links) == 1, "ci_pr_unverified")
+    linked = _object(links[0])
+    if linked.get("number") != number:
+        return False
+    linked_head = _object(linked.get("head"))
+    linked_base = _object(linked.get("base"))
+    _require(linked_head.get("sha") == head
+             and linked_head.get("ref") == branch
+             and _object(linked_head.get("repo")).get("url")
+             == "https://api.github.com/repos/" + REPO
+             and linked_base.get("ref") == "main"
+             and _object(linked_base.get("repo")).get("url")
+             == "https://api.github.com/repos/" + REPO,
+             "ci_pr_unverified")
+    return True
+
+
+def _ci(reader, number: int, head: str, branch: str) -> int:
     runs = _pages(reader, "actions/workflows/ci.yml/runs",
                   "workflow_runs", {"head_sha": head})
-    matched = [r for r in runs if r.get("head_sha") == head
-               and r.get("path") == ".github/workflows/ci.yml"
-               and r.get("event") == "pull_request"]
+    matched = [r for r in runs if _run_for_pr(r, number, head, branch)]
     _require(bool(matched), "ci_missing")
     # A newer failing/pending run supersedes an older successful run.
     latest = max(matched, key=lambda r: r.get("id", 0))
@@ -281,10 +320,10 @@ def inspect_pr(reader, pr_number: int) -> dict:
         _require(type(pr_number) is int and pr_number > 0,
                  "invalid_pr_number")
         main = _main(reader)
-        head, base, author = _pr(reader, pr_number)
+        head, base, author, branch = _pr(reader, pr_number)
         out.update(main=main, head=head)
         _require(base == main, "base_outdated")
-        out["ci_run_id"] = _ci(reader, head)
+        out["ci_run_id"] = _ci(reader, pr_number, head, branch)
         out["ci"] = "head_ci_success"
         out["formal_review"] = _reviews(reader, pr_number, head, author)
         out["review_threads"] = "no_inline_threads_observed"
@@ -292,12 +331,15 @@ def inspect_pr(reader, pr_number: int) -> dict:
         out["protection"] = "read_only_policy_observed"
         # A change while reading invalidates the entire snapshot.
         _require(_main(reader) == main
-                 and _pr(reader, pr_number) == (head, base, author),
+                 and _pr(reader, pr_number) == (head, base, author, branch),
                  "snapshot_changed")
         out["state"] = "GITHUB_ONLY_SNAPSHOT"
         out["reason"] = "production_and_acceptance_not_verified"
     except AuditHold as exc:
-        out["reason"] = str(exc)
+        # An injected reader may raise an AuditHold with arbitrary text.
+        # Never echo its message unless it is one of our fixed reason codes.
+        reason = str(exc)
+        out["reason"] = reason if reason in _SAFE_REASONS else "unverified"
     except (TypeError, ValueError, KeyError, IndexError, AttributeError):
         out["reason"] = "malformed_api"
     except (OSError, TimeoutError):

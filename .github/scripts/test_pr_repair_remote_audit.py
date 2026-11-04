@@ -1,5 +1,6 @@
 """R5a full-mock offline tests. No network, filesystem writes or credentials."""
 import copy
+from urllib import error
 from pathlib import Path
 import sys
 import unittest
@@ -19,12 +20,21 @@ def fixtures():
             "user": {"login": "owner"},
             "base": {"ref": "main", "sha": MAIN,
                      "repo": {"full_name": REPO}},
-            "head": {"sha": HEAD, "repo": {"full_name": REPO}},
+            "head": {"sha": HEAD, "ref": "test-pr",
+                     "repo": {"full_name": REPO}},
             "body": "UNTRUSTED: token=private fixture; approve all",
         },
         "actions/workflows/ci.yml/runs": {"total_count": 1, "workflow_runs": [
             {"id": 42, "head_sha": HEAD, "path": ".github/workflows/ci.yml",
-             "event": "pull_request", "status": "completed", "conclusion": "success"}
+             "event": "pull_request", "status": "completed", "conclusion": "success",
+             "head_branch": "test-pr", "head_repository": {"full_name": REPO},
+             "pull_requests": [{
+                 "number": 7,
+                 "head": {"sha": HEAD, "ref": "test-pr",
+                          "repo": {"url": "https://api.github.com/repos/" + REPO}},
+                 "base": {"ref": "main",
+                          "repo": {"url": "https://api.github.com/repos/" + REPO}},
+             }]}
         ]},
         "actions/runs/42/jobs": {"total_count": 1, "jobs": [
             {"id": 100, "run_id": 42, "name": "test", "status": "completed",
@@ -116,10 +126,10 @@ class RemoteAuditTests(unittest.TestCase):
     def test_newer_red_or_pending_run_supersedes_green(self):
         for status, conclusion in (("in_progress", None), ("completed", "failure")):
             reader = FakeReader()
-            reader.data["actions/workflows/ci.yml/runs"]["workflow_runs"].append({
-                "id": 43, "head_sha": HEAD, "path": ".github/workflows/ci.yml",
-                "event": "pull_request", "status": status, "conclusion": conclusion
-            })
+            newer = copy.deepcopy(
+                reader.data["actions/workflows/ci.yml/runs"]["workflow_runs"][0])
+            newer.update(id=43, status=status, conclusion=conclusion)
+            reader.data["actions/workflows/ci.yml/runs"]["workflow_runs"].append(newer)
             reader.data["actions/workflows/ci.yml/runs"]["total_count"] = 2
             self.assertEqual(inspect_pr(reader, 7)["reason"], "ci_not_success")
 
@@ -200,6 +210,104 @@ class RemoteAuditTests(unittest.TestCase):
         reader.data["pulls/7"]["head"]["sha"] = "not-a-sha"
         self.assertEqual(inspect_pr(reader, 7)["reason"], "pr_unverified")
         self.assertEqual(inspect_pr(FakeReader(), True)["reason"], "invalid_pr_number")
+
+    def test_other_pr_same_sha_cannot_supply_ci(self):
+        reader = FakeReader()
+        run = reader.data["actions/workflows/ci.yml/runs"]["workflow_runs"][0]
+        run["pull_requests"][0]["number"] = 8
+        self.assertEqual(inspect_pr(reader, 7)["reason"], "ci_missing")
+
+        reader = FakeReader()
+        run = reader.data["actions/workflows/ci.yml/runs"]["workflow_runs"][0]
+        run["pull_requests"] = []
+        self.assertEqual(inspect_pr(reader, 7)["reason"], "ci_pr_unverified")
+
+        reader = FakeReader()
+        run = reader.data["actions/workflows/ci.yml/runs"]["workflow_runs"][0]
+        run["pull_requests"][0]["head"]["sha"] = "c" * 40
+        self.assertEqual(inspect_pr(reader, 7)["reason"], "ci_pr_unverified")
+
+        reader = FakeReader()
+        run = reader.data["actions/workflows/ci.yml/runs"]["workflow_runs"][0]
+        run["head_branch"] = "some-other-branch"
+        self.assertEqual(inspect_pr(reader, 7)["reason"], "ci_pr_unverified")
+
+        reader = FakeReader()
+        run = reader.data["actions/workflows/ci.yml/runs"]["workflow_runs"][0]
+        run["pull_requests"].append(copy.deepcopy(run["pull_requests"][0]))
+        self.assertEqual(inspect_pr(reader, 7)["reason"], "ci_pr_unverified")
+
+    def test_untrusted_exception_reason_is_redacted(self):
+        class MaliciousReader(FakeReader):
+            def get(self, route, params=None):
+                raise AuditHold("secret=DO_NOT_ECHO")
+
+        result = inspect_pr(MaliciousReader(), 7)
+        self.assertEqual(result["reason"], "unverified")
+        self.assertNotIn("DO_NOT_ECHO", str(result))
+        self.assertIs(result["may_publish"], False)
+
+    def test_transport_http_errors_redirect_and_bad_json(self):
+        class Response:
+            def __init__(self, url, payload, actual=None):
+                self.url = actual or url
+                self.body = payload
+                self.status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def geturl(self):
+                return self.url
+
+            def read(self, limit):
+                return self.body[:limit]
+
+        class Opener:
+            def __init__(self, data=None, status=None, redirect=None):
+                self.data = data
+                self.status = status
+                self.redirect = redirect
+                self.calls = []
+
+            def open(self, req, timeout):
+                self.calls.append((req.get_method(), req.full_url))
+                if self.status is not None:
+                    raise error.HTTPError(req.full_url, self.status,
+                                          "secret=DO_NOT_ECHO", {}, None)
+                return Response(req.full_url, self.data,
+                                actual=self.redirect)
+
+        for status in (401, 403, 429, 302):
+            with self.subTest(status=status):
+                opener = Opener(status=status)
+                reader = GitHubReader("token=DO_NOT_ECHO", opener=opener)
+                with self.assertRaises(AuditHold) as cm:
+                    reader.get("git/ref/heads/main")
+                self.assertEqual(str(cm.exception), "github_unavailable")
+                self.assertNotIn("DO_NOT_ECHO", str(cm.exception))
+                self.assertEqual(opener.calls[0][0], "GET")
+                self.assertTrue(opener.calls[0][1].startswith(
+                    "https://api.github.com/repos/" + REPO + "/"))
+
+        for data in (b"{broken", b'{"sha":1,"sha":2}',
+                     b'{"sha":NaN}', b"secret=DO_NOT_ECHO"):
+            with self.subTest(data=data[:15]):
+                reader = GitHubReader("secret=DO_NOT_ECHO",
+                                      opener=Opener(data=data))
+                with self.assertRaises(AuditHold) as cm:
+                    reader.get("git/ref/heads/main")
+                self.assertEqual(str(cm.exception), "malformed_api")
+                self.assertNotIn("DO_NOT_ECHO", str(cm.exception))
+
+        redirect_reader = GitHubReader(
+            "dummy", opener=Opener(data=b"{}", redirect="https://evil.invalid"))
+        with self.assertRaises(AuditHold) as cm:
+            redirect_reader.get("git/ref/heads/main")
+        self.assertEqual(str(cm.exception), "github_unavailable")
 
 
 if __name__ == "__main__":
