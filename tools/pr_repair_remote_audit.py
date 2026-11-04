@@ -85,7 +85,7 @@ class GitHubReader:
         self._opener = opener or request.build_opener(
             request.ProxyHandler({}), _DenyRedirects())
 
-    def get(self, route: str, params: dict | None = None):
+    def _validate_endpoint(self, route: str, params: dict | None) -> dict:
         _require(type(route) is str and _ROUTE.fullmatch(route) is not None,
                  "disallowed_endpoint")
         _require(params is None or type(params) is dict, "disallowed_endpoint")
@@ -98,6 +98,10 @@ class GitHubReader:
             else:
                 _require(type(value) is int and 1 <= value <= 100,
                          "disallowed_endpoint")
+        return params
+
+    def get(self, route: str, params: dict | None = None):
+        params = self._validate_endpoint(route, params)
         suffix = "?" + parse.urlencode(params) if params else ""
         url = API + route + suffix
         req = request.Request(url, headers={

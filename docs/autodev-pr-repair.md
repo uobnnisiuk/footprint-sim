@@ -494,11 +494,13 @@ python3 -m unittest discover -s .github/scripts -p 'test_pr_repair_handoff.py' -
 python3 -m unittest discover -s .github/scripts -p 'test_pr_repair_*.py' -v
 ```
 
-**Current evidence distinction:** R1–R4 are integrated; R5 is an offline
-handoff/rollout implementation proposal until its PR receives CI and separate
-independent review. Saved-task rewiring, Windows/WSL machine inspection,
-production-grade adapter, safe live write test, shadow observation, and
-one new owner-approved real end-to-end cycle remain **unverified**.
+**Evidence update (2026-11-04):** R1–R5 and R5a have completed independent
+technical review, normal main integration and post-merge CI. See the final
+records on Issues #63 and #71; earlier proposal/dependency wording is not a
+current blocker. K8 read-only machine inspection is recorded in UOB-6.
+Saved-task rewiring, the complete production publisher, safe live write test,
+real-time boundary shadow and a new approved real end-to-end cycle remain
+**unverified**. Technical COMMENT is not formal GitHub APPROVED.
 
 
 ## R5a: GitHub-only read-only audit (Issue #71)
@@ -530,3 +532,122 @@ Run offline: \`python3 -m unittest discover -s .github/scripts -p 'test_pr_repai
 The preexisting CI workflow runs these tests through its unmodified
 \`test_*.py\` discovery. No Windows task, GitHub write API, model call,
 automatic repair run or R5 rollout is performed by this module.
+
+## UOB-6: operational evidence and complete local history, writer disabled
+
+This infrastructure change implements the **read side** of the operational
+adapter. It does not claim that the R4 production publisher or rollout is
+finished. No activation switch is added; R4 still rejects every real adapter
+on its execution path. No scheduled task imports the new modules.
+
+- `pr_repair_adapter.GitHubEvidenceReader` extends the existing R5a pinned
+  repository, GET-only, no-redirect transport. It accepts no log, write,
+  arbitrary URL or arbitrary query route. Authentication is supplied by a
+  separately managed caller; no token discovery, authentication-file access,
+  environment dump or credential persistence exists in the adapter.
+- `GitObjects` retrieves commit identities from authenticated GitHub Git
+  endpoints, walks non-recursive trees, recomputes each tree OID and verifies
+  exact blob bytes/OIDs. Bounds, truncated/missing entries, path collisions,
+  empty subtrees, special changes and malformed encodings fail closed.
+  GitHub's commit metadata is not a local rehash or signature verification of
+  every raw signed-commit byte. R2-shaped inventories and R4 candidate checks
+  use independently retrieved objects rather than the candidate's manifest.
+- CI observations bind the PR, head, workflow run, attempt and jobs, and
+  reread both the run and latest-run list. A newer pending run invalidates an
+  older green snapshot. Job/step success is metadata, not proof that all
+  independently approved acceptance requirements executed. No logs are read.
+- `pr_repair_provenance` rereads original Issue/approval records and an exact
+  submitted review against **separately provisioned operator anchors**.
+  Source IDs, numeric actors, unedited bodies, timestamps, original Issue
+  content, protocol commit and the complete R2 approval digest must agree.
+  A Python object, digest, mutable Issue or request cannot authenticate its
+  own anchor. Existing prose approvals do not automatically become R2 scope
+  manifests. Missing independent bindings are explicit holds.
+- An exact COMMENT and an APPROVED review remain different observations.
+  CHANGES_REQUESTED is retained as a hold. Same-account technical-review
+  independence needs a separately verified agent-run source; it is not
+  inferred from a claimed reviewer name or run ID.
+- `pr_repair_guard_adapter.validate_detached_guard()` connects the reviewed
+  main guard to complete independently verified trees. It fetches only the
+  approved changed blobs and main's guard, verifies the guard against a
+  code-reviewed allowlist, and applies full and repair patches inside private
+  scratch Git with a fixed credential-free process environment. Candidate
+  code is never run. Exact post-application tree/blob checks are required.
+  Scratch commits are explicitly synthetic anchors for the verified trees;
+  they are not presented as the original remote commits. Unchanged blob
+  bodies are not fetched or claimed verified. This is an explicit isolated
+  validation operation, not part of read-only `inspect()` or shadow polling,
+  and has only been exercised on synthetic sources in this change.
+- `pr_repair_history.audit_history(state_root, aware_time)` reads old
+  `daily`, separate `attempts` and adjacent `pr-repair-ledger` without
+  acquiring locks or writing. It reuses R3/hourly validation and checks
+  cross-store duplicates, overlapping slots, shared daily limits, event
+  transitions, clock rollback and before/after content/metadata snapshots.
+  Unknown/missing results stay consumed. An invalid store returns unknown
+  counts, never zero available credit. Logs are statted, not read.
+
+### Existing K8 records and Monitor cause
+
+UOB-6's real read-only check found ten daily reservations with ten matching
+Issue markers, plus a separate consumed Issue #10 manual invocation. The
+new repair directory did not yet exist. The new history reader reconciled
+all eleven initial Issues, with zero reservations for the observation day
+and unchanged snapshots. Daily results contain eight `succeeded` and two
+`failed` labels; these are runner records, not independent PR-success proof.
+Issue #10's record is a consumed historical invocation, not fresh authority
+derived from the record's authorization prose.
+
+The old minor writer's complete GitHub reservation/result history is not
+established by those local files. `legacy_minor_history_unverified` remains
+an explicit hold. No history is copied into a new reservation, discounted,
+deleted, overwritten or re-enabled. Local observation is not an atomic
+reservation barrier; future authorized execution must reconcile under the
+existing shared lock.
+
+The deployed Monitor pins `local_autodev.py` to PR #6's final content.
+PR #20 changed that content on October 28; PR #35 subsequently introduced
+the current structured-edits runner. The Windows and WSL copies of
+`common.py` match each other. The cause is stale Monitor pinning against a
+checkout that follows main, not transfer corruption. Its check fails before
+the queue is read. Fixed-schema state records show October 28 at 09:00 was
+okay, then October 29 through November 4 reported `preflight_failed` with
+no AI invocation. Those records do not identify every historical failure's
+sole cause.
+
+Daily does not import that Monitor wrapper and uses its own runtime
+fingerprint. The pin mismatch itself therefore blocks the Monitor, not
+Daily. The Monitor only checks the old queue and cannot verify the R3 shared
+budget or repair success even if repaired. Its dry-run also writes state,
+locks and ACLs. It was not executed or modified. Any future pin update needs
+a review of the wrapper's current semantics, not blind hash replacement or
+restoration of an obsolete runner.
+
+### Verification boundary and remaining integration
+
+Offline tests use synthetic GitHub records and temporary private state.
+They exercise missing/edited sources, caller-self-approval, malformed trees,
+exact blobs, same-head reruns/new runs, history races, duplicate attempts,
+conflicting publication/CI events and consumed unknown outcomes. The full
+existing Python suite and repository CI remain required.
+
+The fixed `inspect()` result always has `may_publish=false`,
+`may_activate=false` and `production_enabled=false`. Remaining integration
+must provide independently authorized anchor provisioning, reviewer-run and
+CI-failure/acceptance classification, complete old minor history and the R4
+trusted bundle. R1/R2 booleans or a caller-built `TrustedFacts` cannot fill
+those gaps. A reviewed source guard and verified Git data are separate from
+an approved repair decision.
+
+There is no live CAS transport in this change. GitHub REST reference updates
+document `sha` and `force`, not a transactional expected-old-head parameter:
+[GitHub reference API](https://docs.github.com/en/rest/git/refs#update-a-reference).
+A connector argument alone does not prove server-side CAS. Implementing or
+testing a writer must not silently replace the expected-head contract with
+GET-then-PATCH. A safe approved target, conflict/timeout/readback validation,
+single-writer cutover and durable notification delivery are still required.
+
+Keep the existing daily eight/hourly one limits and lifetime caps. Preserve
+all three local stores and old minor records on rollback; never restore a
+controller that ignores R3 reservations. The owner has authorized this
+implementation PR and independent review, not merge, task/Automation changes,
+model calls, production reservations, write experiments or production rollout.
