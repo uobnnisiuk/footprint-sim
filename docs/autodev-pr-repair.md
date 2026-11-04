@@ -499,3 +499,34 @@ handoff/rollout implementation proposal until its PR receives CI and separate
 independent review. Saved-task rewiring, Windows/WSL machine inspection,
 production-grade adapter, safe live write test, shadow observation, and
 one new owner-approved real end-to-end cycle remain **unverified**.
+
+
+## R5a: GitHub-only read-only audit (Issue #71)
+
+The standalone \`tools/pr_repair_remote_audit.py\` provides a pinned-repository,
+**GET-only** GitHub REST reader and \`inspect_pr(reader, pr_number)\`. It checks
+a stable main/PR head, same-repository main target, latest-head Actions CI
+run and successful job/step records, distinct legacy commit statuses, submitted
+reviews, REST inline review comments and branch protection/ruleset reads.
+It uses bounded, complete API pagination and fails closed on missing pages,
+403/401, stale head, red or pending checks, review objections or unknown
+GitHub rules. REST cannot establish whether nonempty inline review threads
+are resolved, so their existence remains a hold rather than assumed closure.
+The transport refuses redirects, arbitrary URLs and methods other than GET.
+No token, untrusted PR/Issue/review text or raw job logs enter diagnostic output.
+
+Only the fixed, sanitized GitHub-only diagnostic state can be observed.
+This **does not** authenticate independent technical acceptance, original Issue
+approval, R1/R2 scope, R3 persistent ledgers, R4 publisher, saved automations,
+Windows/WSL, shared locks, shadow observation, or real operations. Even an
+apparently complete GitHub snapshot returns
+\`may_publish=false\`, \`may_activate=false\`,
+\`production_enabled=false\`. A future independently authorized operator must
+validate every other R5 gate; this module is not a production adapter.
+The full-mock tests live at
+\`.github/scripts/test_pr_repair_remote_audit.py\`.
+
+Run offline: \`python3 -m unittest discover -s .github/scripts -p 'test_pr_repair_remote_audit.py' -v\`.
+The preexisting CI workflow runs these tests through its unmodified
+\`test_*.py\` discovery. No Windows task, GitHub write API, model call,
+automatic repair run or R5 rollout is performed by this module.
