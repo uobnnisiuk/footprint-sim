@@ -163,6 +163,41 @@ class MigrationTests(unittest.TestCase):
             result = self.evaluate(changes=lambda r, o: o["current"].update({key: value}))
             self.assertEqual(result["reasons"], ["budget_window_unknown"])
 
+    def test_unknown_hour_anywhere_on_jst_day_blocks_daily_budget(self):
+        for section in ("boundary", "current"):
+            for unknown in ("2026-11-08T10:00:00+09:00", "2026-11-08T18:00:00+09:00",
+                            "2026-11-07T15:00:00+00:00", "2026-11-08T01:00:00+00:00"):
+                with self.subTest(section=section, hour=unknown):
+                    request, obs, now = fixture()
+                    obs[section]["unknown_hours"] = [unknown]
+                    before = deepcopy(obs)
+                    result = migration.evaluate(request, obs, now=now)
+                    self.assertEqual(result["reasons"], ["budget_window_unknown"])
+                    self.assertEqual(obs, before)
+                    for key in ("may_reserve", "may_publish", "may_activate", "may_repair", "may_merge", "production_enabled"):
+                        self.assertIs(result[key], False)
+
+    def test_unknown_hour_on_different_jst_day_remains_quarantined(self):
+        for section in ("boundary", "current"):
+            request, obs, now = fixture()
+            # This UTC date is today, but the actual JST date is tomorrow.
+            obs[section]["unknown_hours"] = ["2026-11-08T15:00:00+00:00", "2026-11-07T10:00:00+09:00"]
+            before = deepcopy(obs)
+            result = migration.evaluate(request, obs, now=now)
+            self.assertEqual(result["state"], "CONTRACT_SATISFIED")
+            self.assertEqual(result["legacy_history"], "unknown/HOLD")
+            self.assertEqual(obs, before)
+
+    def test_known_revoked_generation_cannot_exceed_high_water(self):
+        request, obs, now = fixture()
+        obs["current"]["revoked_generations"] = [1, 2, 4]
+        before = deepcopy(obs)
+        result = migration.evaluate(request, obs, now=now)
+        self.assertEqual(result["reasons"], ["generation_history_contradiction"])
+        self.assertEqual(obs, before)
+        for key in ("may_reserve", "may_publish", "may_activate", "may_repair", "may_merge", "production_enabled"):
+            self.assertIs(result[key], False)
+
     def test_global_open_inventory(self):
         for kind in ("initial", "minor"):
             for change in ({"complete": False}, {"open_prs": [58]}, {"open_prs": [102, 58]}):
@@ -213,6 +248,31 @@ class MigrationTests(unittest.TestCase):
         result = migration.evaluate(request, obs, now=now)
         self.assertEqual(result["reasons"], ["history_event_conflict"])
 
+    def test_two_old_reservations_cannot_claim_same_pr_head(self):
+        request, obs, now = fixture()
+        records, sources = [], []
+        for attempt, hour in ((1, 2), (2, 3)):
+            rid = str(attempt) * 32
+            src = history.HistorySource(f"pr-repair-ledger/reservation-{rid}.json", "a" * 64, "schema_validated")
+            event_sources = tuple(history.HistorySource(f"pr-repair-ledger/event-{rid}-{seq:02d}.json",
+                                  str(seq) * 64, "schema_validated") for seq in (1, 2))
+            events = tuple(history.HistoryEvent(s.source_id, s.source_sha256, name,
+                                  f"2026-11-04T{hour:02d}:06:00+09:00", "b" * 40, None)
+                           for s, name in zip(event_sources, ("publish_started", "failed")))
+            records.append(history.HistoryRecord(src.source_id, "r3_substantive", 201, 301, rid,
+                           f"2026-11-04T{hour:02d}:05:00+09:00", "2026-11-04", (hour,), "failed",
+                           src.source_sha256, (src, *event_sources), events, (), attempt, "b" * 40, None, 800, 801))
+            sources.extend((src, *event_sources))
+        local = obs["history"]
+        rebind_history(obs, replace(local, records=tuple(records), sources=tuple(sources),
+                                   audit=replace(local.audit, repair_count=2)))
+        before = deepcopy(obs)
+        result = migration.evaluate(request, obs, now=now)
+        self.assertEqual(result["reasons"], ["repair_claim_conflict"])
+        self.assertEqual(obs, before)
+        for key in ("may_reserve", "may_publish", "may_activate", "may_repair", "may_merge", "production_enabled"):
+            self.assertIs(result[key], False)
+
     def test_quiet_day_is_a_complete_jst_day_not_elapsed_timeout(self):
         for change in ({"quiet_start": "2026-11-05T15:00:00+09:00"},
                        {"quiet_end": "2026-11-06T01:00:00+09:00"},
@@ -230,6 +290,74 @@ class MigrationTests(unittest.TestCase):
             with self.subTest(field=key):
                 result = self.evaluate("minor", lambda r, o: o["scope"].update({key: value}))
                 self.assertEqual(result["reasons"], ["scope_binding_mismatch"])
+
+    def test_receipt_numeric_ids_reject_bool_and_float_equivalence(self):
+        for key in ("workflow_run_id", "workflow_attempt", "job_id", "reviewer_id"):
+            for malformed in (True, "float"):
+                with self.subTest(field=key, malformed=malformed):
+                    request, obs, now = fixture()
+                    # Use exact equal numbers, so equality alone would accept.
+                    if malformed is True:
+                        if key == "reviewer_id":
+                            obs["review"]["source"]["actor_id"] = 1
+                            obs["review"]["run_source"]["actor_id"] = 1
+                            obs["target"]["source"]["actor_id"] = 1
+                            obs["scope"]["source"]["actor_id"] = 1
+                            obs["acceptance"]["source"]["actor_id"] = 1
+                        else:
+                            obs["review"][key] = 1
+                        obs["acceptance"][key] = True
+                    else:
+                        obs["acceptance"][key] = float(obs["acceptance"][key])
+                    result = migration.evaluate(request, obs, now=now)
+                    self.assertEqual(result["state"], "HOLD")
+                    self.assertEqual(result["reasons"], ["invalid_or_incomplete_contract"])
+                    for permission in ("may_reserve", "may_publish", "may_activate", "may_repair", "may_merge", "production_enabled"):
+                        self.assertIs(result[permission], False)
+
+    def test_joined_root_ids_reject_bool_and_float_equivalence(self):
+        for section in ("target", "approval", "review", "scope"):
+            for key in ("root_issue", "root_pr"):
+                for malformed in (True, "float"):
+                    with self.subTest(section=section, field=key, malformed=malformed):
+                        request, obs, now = fixture("initial" if key == "root_issue" else "minor")
+                        if malformed is True:
+                            request[key] = 1
+                            for other in ("target", "approval", "review", "scope"):
+                                obs[other][key] = 1
+                            if key == "root_pr":
+                                obs["inventory"]["root_map"] = [[101, 1]]
+                                obs["inventory"]["open_prs"] = [1]
+                            obs["review"]["approval_sha256"] = contract.digest(obs["approval"])
+                            obs["scope"]["approval_sha256"] = contract.digest(obs["approval"])
+                            obs[section][key] = True
+                        else:
+                            obs[section][key] = float(obs[section][key])
+                        result = migration.evaluate(request, obs, now=now)
+                        self.assertEqual(result["state"], "HOLD")
+                        self.assertEqual(result["reasons"], ["invalid_or_incomplete_contract"])
+                        for permission in ("may_reserve", "may_publish", "may_activate", "may_repair", "may_merge", "production_enabled"):
+                            self.assertIs(result[permission], False)
+
+    def test_consumed_issue_set_rejects_boolean_alias_for_issue_one(self):
+        request, obs, now = fixture("minor")
+        request["root_issue"] = 1
+        for section in ("target", "approval", "review", "scope"):
+            obs[section]["root_issue"] = 1
+        obs["inventory"]["root_map"] = [[1, 102]]
+        obs["review"]["approval_sha256"] = contract.digest(obs["approval"])
+        obs["scope"]["approval_sha256"] = contract.digest(obs["approval"])
+        local = obs["history"]
+        converted = tuple(replace(s, source_id="daily/issue-1.json")
+                          if s.source_id == "daily/issue-101.json" else s for s in local.sources)
+        original = local.records[0]
+        record = replace(original, root_issue=1, evidence=converted)
+        rebind_history(obs, replace(local, records=(record,), sources=converted,
+                                   audit=replace(local.audit, consumed_issues=frozenset((True,)))))
+        result = migration.evaluate(request, obs, now=now)
+        self.assertEqual(result["reasons"], ["history_counts_mismatch"])
+        for permission in ("may_reserve", "may_publish", "may_activate", "may_repair", "may_merge", "production_enabled"):
+            self.assertIs(result[permission], False)
 
 
 if __name__ == "__main__":

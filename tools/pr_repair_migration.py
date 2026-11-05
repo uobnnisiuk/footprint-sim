@@ -62,6 +62,14 @@ def _sha(value):
     return contract.string(value, contract.SHA)
 
 
+def _root(value, kind):
+    contract.integer(value["root_issue"])
+    if kind == "initial":
+        _need(value["root_pr"] is None, "invalid_root")
+    else:
+        contract.integer(value["root_pr"])
+
+
 def _ids(values):
     contract.vector(values, low=0, high=20000)
     for value in values:
@@ -128,6 +136,8 @@ def _boundary(request, obs, p, writers, legacy, now):
               "writer_or_legacy_scope_changed")
     contract.integer(c["highest_generation"])
     _ids(c["revoked_generations"])
+    _need(all(generation <= c["highest_generation"] for generation in c["revoked_generations"]),
+          "generation_history_contradiction")
     _need(request["generation"] == b["generation"] == c["generation"]
           == c["highest_generation"] and c["generation"] not in c["revoked_generations"],
           "generation_stale_revoked_or_rolled_back")
@@ -163,8 +173,8 @@ def _boundary(request, obs, p, writers, legacy, now):
             stamp = _time(hour)
             _need(stamp.minute == stamp.second == stamp.microsecond == 0, "invalid_time")
         _need(now.date().isoformat() not in item["unknown_days"]
-              and not any(_time(h) <= now < _time(h) + timedelta(hours=1)
-                          for h in item["unknown_hours"]), "budget_window_unknown")
+              and not any(_time(h).date() == now.date() for h in item["unknown_hours"]),
+              "budget_window_unknown")
     _need(not ts.date() <= now.date() <= tq.date(), "budget_window_unknown")
     return ta
 
@@ -172,6 +182,7 @@ def _boundary(request, obs, p, writers, legacy, now):
 def _target(request, obs, p, ta, now):
     t = _fields(obs["target"], "source root_issue root_pr author_id purpose_sha256 acceptance_sha256 lineage_sha256 needed_at issue_created_at approved_at pr_created_at issue_title_sha256 issue_body_sha256 plan_id lineage")
     _source(t["source"], now)
+    _root(t, request["kind"])
     contract.integer(t["author_id"])
     _digest(t["issue_title_sha256"]); _digest(t["issue_body_sha256"])
     _need(t["source"]["actor_id"] != t["author_id"], "lineage_independence_unverified")
@@ -206,6 +217,7 @@ def _target(request, obs, p, ta, now):
 def _evidence(request, obs, p, t, now):
     a = _fields(obs["approval"], "source root_issue root_pr purpose_sha256 lineage_sha256 acceptance paths max_files max_lines approved_at reservation_id result_id issue_title_sha256 issue_body_sha256")
     _source(a["source"], now)
+    _root(a, request["kind"])
     _need(a["source"]["actor_id"] == p["owner_id"] != t["author_id"], "self_approval")
     for key in ("root_issue", "root_pr", "purpose_sha256", "lineage_sha256"):
         _need(a[key] == request[key], "approval_binding_mismatch")
@@ -228,6 +240,7 @@ def _evidence(request, obs, p, t, now):
     contract.integer(a["max_files"], 1, 30); contract.integer(a["max_lines"], 1, 600)
     r = _fields(obs["review"], "source run_source root_issue root_pr head_sha approval_sha256 lineage_sha256 reviewer_run_id state workflow_run_id workflow_attempt job_id")
     _source(r["source"], now); _source(r["run_source"], now)
+    _root(r, request["kind"]); _sha(r["head_sha"])
     _need(r["source"]["actor_id"] == r["run_source"]["actor_id"]
           and r["source"]["actor_id"] != t["author_id"], "review_independence_unverified")
     _need(r["source"]["record_id"] != r["run_source"]["record_id"], "review_run_missing")
@@ -243,6 +256,9 @@ def _evidence(request, obs, p, t, now):
         contract.integer(r[key])
     receipt = _fields(obs["acceptance"], "source head_sha workflow_run_id workflow_attempt job_id reviewer_id phase results")
     _source(receipt["source"], now)
+    for key in ("workflow_run_id", "workflow_attempt", "job_id", "reviewer_id"):
+        contract.integer(receipt[key])
+    _sha(receipt["head_sha"])
     for key in ("head_sha", "workflow_run_id", "workflow_attempt", "job_id"):
         _need(receipt[key] == r[key], "acceptance_run_mismatch")
     _need(receipt["reviewer_id"] == receipt["source"]["actor_id"] == r["source"]["actor_id"],
@@ -297,6 +313,7 @@ def _history(request, obs, ta, now):
     initials, repairs, minors, substantives, reruns = [], [], [], [], []
     total_today = total_hour = substantive_today = 0
     all_initials = set()
+    claimed_heads = set()
     root_identity, approval_owners, pr_owners, attempts, repair_totals, substantive_days, rerun_heads = {}, {}, {}, {}, {}, {}, set()
     for r in h.records:
         _need(type(r) is history.HistoryRecord, "local_history_invalid")
@@ -392,6 +409,10 @@ def _history(request, obs, ta, now):
             _need(e.head_before == r.head_before
                   and e.source_id == f"pr-repair-ledger/event-{r.reservation_id}-{sequence:02d}.json",
                   "history_event_invalid")
+            if e.event == "publish_started":
+                claim = (r.root_pr, r.head_before)
+                _need(claim not in claimed_heads, "repair_claim_conflict")
+                claimed_heads.add(claim)
             event_objects.append({"event": e.event, "headBefore": e.head_before, "headAfter": e.head_after})
         if not r.kind.startswith("initial_"):
             _need(not history._event_conflict({"kind": r.kind.removeprefix("r3_")}, event_objects),
@@ -444,7 +465,9 @@ def _history(request, obs, ta, now):
               "unresolved_count": sum(r.result == "unknown" for r in h.records),
               "effective_today": total_today, "effective_hour": total_hour}
     _need(all(type(getattr(h.audit, k)) is int and getattr(h.audit, k) == v for k, v in counts.items())
-          and type(h.audit.consumed_issues) is frozenset and h.audit.consumed_issues == all_initials,
+          and type(h.audit.consumed_issues) is frozenset
+          and all(type(issue) is int and issue > 0 for issue in h.audit.consumed_issues)
+          and h.audit.consumed_issues == all_initials,
           "history_counts_mismatch")
     _need(("shared_daily_cap_reached" not in h.audit.holds or total_today >= ledger.DAILY_CAP)
           and ("hour_already_consumed" not in h.audit.holds or total_hour > 0), "history_counts_mismatch")
@@ -486,6 +509,7 @@ def _inventory_and_scope(request, obs, approval, now):
         _need(inv["root_map"] == [], "root_map_invalid")
     scope = _fields(obs["scope"], "source root_issue root_pr head_sha approval_sha256 paths changed_lines initial_paths ci_rerun_authorization")
     _source(scope["source"], now)
+    _root(scope, request["kind"]); _sha(scope["head_sha"]); _digest(scope["approval_sha256"])
     _need(scope["source"]["actor_id"] == obs["review"]["source"]["actor_id"], "scope_review_unverified")
     _need(all(scope[k] == request[k] for k in ("root_issue", "root_pr", "head_sha"))
           and scope["approval_sha256"] == contract.digest(approval)
