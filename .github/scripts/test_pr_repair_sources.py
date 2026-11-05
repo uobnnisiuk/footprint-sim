@@ -177,6 +177,73 @@ class SourcesTests(unittest.TestCase):
         self.assertTrue(value.visible_inventory_complete)
         self.assertEqual(2, len([r for r in value.records if r.kind == "issue_comment"]))
 
+    def test_same_global_comment_id_cannot_bind_to_two_issues(self):
+        reader = Reader()
+        reader.data["issues/comments"].append(comment(number=2))
+        reader.data["issues"][1]["comments"] = 1
+        value = collect(reader)
+        self.assertFalse(value.visible_inventory_complete)
+        self.assertIn("source_inventory_conflict", value.holds)
+        self.assertEqual({1, 2}, {r.parent_number for r in value.records
+                                 if r.kind == "issue_comment" and r.record_id == "300"})
+        self.assertIn("source_inventory_conflict",
+                      next(c for c in value.coverage if c.endpoint == "issues/comments").missing)
+
+    def test_reparented_global_comment_is_retained_as_conflict(self):
+        reader = Reader()
+        def change(r):
+            r.data["issues/comments"] = [comment(number=2)]
+            r.data["issues"][0]["comments"] = 0
+            r.data["issues"][1]["comments"] = 1
+        reader.change = change
+        value = collect(reader)
+        self.assertIn("source_changed_during_collection", value.holds)
+        self.assertIn("source_inventory_conflict", value.holds)
+        self.assertEqual(2, len([r for r in value.records if r.kind == "issue_comment"]))
+
+    def test_platform_id_bindings_cover_issue_pull_review_and_timeline(self):
+        for kind in ("issue", "pull", "review", "review_comment", "timeline", "timeline_node"):
+            with self.subTest(kind=kind):
+                reader = Reader()
+                reader.data["issues"].append(issue(3, pull=True))
+                reader.data["pulls"].append(pull(3))
+                for suffix in ("reviews", "comments", "commits"):
+                    reader.data[f"pulls/3/{suffix}"] = []
+                reader.data["issues/3/timeline"] = []
+                if kind == "issue":
+                    reader.data["issues"][-1]["id"] = reader.data["issues"][0]["id"]
+                elif kind == "pull":
+                    reader.data["pulls"][-1]["id"] = reader.data["pulls"][0]["id"]
+                elif kind in ("review", "review_comment"):
+                    suffix = "reviews" if kind == "review" else "comments"
+                    duplicate = deepcopy(reader.data[f"pulls/2/{suffix}"][0])
+                    duplicate["pull_request_url"] = API + "pulls/3"
+                    reader.data[f"pulls/3/{suffix}"] = [duplicate]
+                elif kind == "timeline":
+                    reader.data["issues/3/timeline"] = [deepcopy(reader.data["issues/2/timeline"][0])]
+                else:
+                    event = {"node_id": "SharedEventNode", "event": "reviewed"}
+                    reader.data["issues/2/timeline"] = [event]
+                    reader.data["issues/3/timeline"] = [deepcopy(event)]
+                value = collect(reader)
+                self.assertIn("source_inventory_conflict", value.holds)
+                self.assertFalse(value.visible_inventory_complete)
+
+    def test_shared_commit_sha_in_multiple_prs_is_not_parent_conflict(self):
+        reader = Reader()
+        reader.data["issues"].append(issue(3, pull=True))
+        reader.data["pulls"].append(pull(3))
+        reader.data["pulls/3/reviews"] = []
+        reader.data["pulls/3/comments"] = []
+        reader.data["pulls/3/commits"] = deepcopy(reader.data["pulls/2/commits"])
+        timeline = {"node_id": "SharedCommitNode", "event": "committed", "sha": SHA}
+        reader.data["issues/2/timeline"] = [timeline]
+        reader.data["issues/3/timeline"] = [deepcopy(timeline)]
+        value = collect(reader)
+        self.assertTrue(value.visible_inventory_complete)
+        self.assertNotIn("source_inventory_conflict", value.holds)
+        self.assertEqual(2, len([r for r in value.records if r.kind == "commit"]))
+
     def test_orphan_comment_and_missing_pull_pair_are_conflicts(self):
         for kind in ("orphan", "missing_pull"):
             reader = Reader()

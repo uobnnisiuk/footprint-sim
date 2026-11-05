@@ -47,6 +47,10 @@ def _number(value):
     return int(value) if type(value) is str and len(value) <= 18 and _NUMBER.fullmatch(value) else None
 
 
+def _mapping(value):
+    return value if type(value) is dict else {}
+
+
 def _ref(record):
     return "github:" + record.kind + ":" + record.record_id
 
@@ -81,13 +85,71 @@ class SourceAttempt:
     consumption: str
     outcome: str
     reasons: tuple[str, ...]
+    related_sources: tuple[str, ...] = ()
 
     def to_dict(self):
         return {"source_kind": self.source_kind, "root_issue": self.root_issue,
                 "root_pr": self.root_pr, "reservation_sources": list(self.reservation_sources),
                 "execution_sources": list(self.execution_sources),
                 "result_sources": list(self.result_sources), "consumption": self.consumption,
-                "outcome": self.outcome, "reasons": list(self.reasons)}
+                "outcome": self.outcome, "reasons": list(self.reasons),
+                "related_sources": list(self.related_sources)}
+
+
+def _local_links(record, collection):
+    """Cross-check local claims against visible roots and exact approval IDs.
+
+    A complete current listing can establish a missing *visible* record, not
+    whether it was deleted or whether a historic model call was refunded.
+    Branch naming is only a root hint and never original-approval authority.
+    """
+    observed = [r for r in collection.records if r.verification == "observed"]
+    reasons, refs = set(), set()
+    missing = "missing" if collection.visible_inventory_complete else "unverified"
+    issues = [r for r in observed if r.kind == "issue" and
+              r.parent_number == record.root_issue and "pull_request" not in r._payload]
+    if not issues:
+        reasons.add("local_root_issue_" + missing)
+    refs.update(_ref(r) for r in issues)
+    if record.root_pr is not None:
+        prs = [r for r in observed if r.kind == "pull" and r.parent_number == record.root_pr]
+        refs.update(_ref(r) for r in prs)
+        if not prs:
+            reasons.add("local_root_pr_" + missing)
+        for pr in prs:
+            branch = _mapping(pr._payload.get("head")).get("ref")
+            match = _BRANCH.fullmatch(branch) if type(branch) is str else None
+            if match and int(match[1]) != record.root_issue:
+                reasons.add("local_pr_root_conflict")
+            else:
+                reasons.add("original_root_unverified")
+    if record.kind.startswith("r3_") or record.kind == "ci_rerun":
+        linked = []
+        for identity in (record.approval_reservation_id, record.approval_result_id):
+            matches = [r for r in observed if r.kind == "issue_comment" and r.record_id == str(identity)]
+            refs.update(_ref(r) for r in matches)
+            if not matches:
+                reasons.add("local_approval_source_" + missing)
+            elif len(matches) != 1:
+                reasons.add("local_approval_source_conflict")
+            linked.append(matches[0] if len(matches) == 1 else None)
+        reservation, result = linked
+        if reservation is not None and result is not None:
+            a, b = _headers(reservation._payload.get("body")), _headers(result._payload.get("body"))
+            if (not a or not b or "Queue-Approval-Reservation" not in a or
+                    "Queue-Approval-Result" not in b or
+                    reservation.parent_number != result.parent_number or
+                    b.get("Reservation-ID") != reservation.record_id or
+                    a.get("Queue-Approval-Reservation") != b.get("Queue-Approval-Result") or
+                    _number(a.get("Issue-Number")) != record.root_issue or
+                    _number(b.get("Issue-Number")) != record.root_issue or
+                    any(a.get(k) != b.get(k) for k in
+                        ("Review-Main-SHA", "Issue-Title-SHA256", "Issue-Body-SHA256"))):
+                reasons.add("local_approval_link_conflict")
+            elif b.get("Outcome") != "success":
+                reasons.add("local_approval_result_conflict")
+            reasons.add("local_approval_authority_unverified")
+    return tuple(sorted(refs)), tuple(sorted(reasons))
 
 
 def _queue_attempts(records):
@@ -182,7 +244,7 @@ def reconcile_sources(collection, local=None):
         marker = [r for r in related if r.verification == "observed"
                   and r.kind in ("issue_comment", "review", "review_comment")
                   and "footprint-pr-repair-v1" in str(r._payload.get("body", ""))]
-        branch = pull._payload.get("head", {}).get("ref")
+        branch = _mapping(pull._payload.get("head")).get("ref")
         match = _BRANCH.fullmatch(branch) if type(branch) is str else None
         if commits and match:
             attempts.append(SourceAttempt(
@@ -197,10 +259,11 @@ def reconcile_sources(collection, local=None):
         for record in local.records:
             evidence = tuple("local:" + x.source_id for x in record.evidence)
             event_refs = tuple("local:" + x.source_id for x in record.events)
+            related, reasons = _local_links(record, collection)
             attempts.append(SourceAttempt(
                 record.kind, record.root_issue, record.root_pr, ("local:" + record.source_id,),
                 event_refs, tuple(x for x in evidence if x != "local:" + record.source_id),
-                "consumed", record.result, tuple(record.reasons)))
+                "consumed", record.result, tuple(sorted(set(record.reasons) | set(reasons))), related))
     return tuple(attempts)
 
 
@@ -224,9 +287,12 @@ class EvidenceSnapshot:
                           "local_history_changed_during_collection") for _, r in self.diagnostics)
         if local is not None:
             local["counts_apply_to_observation_only"] = True
-            local["current_day_counts_verified"] = not stale and local["audit"]["local_valid"]
+            local["counts_are_available_credit"] = False
+            local["observation_day_matches_validation"] = not stale
             if stale:
                 local["audit"]["effective_today"] = None
+                local["audit"]["effective_hour"] = None
+            elif any(r == "local_observation_not_current_hour" for _, r in self.diagnostics):
                 local["audit"]["effective_hour"] = None
         legacy_unknown = counts["legacy_minor_claim"] > 0 or not self.source_collection.visible_inventory_complete
         return {"schema": SCHEMA, "state": "HOLD", "observed_at": self.observed_at,
@@ -256,6 +322,8 @@ def validate_evidence_bundle(snapshot: EvidenceSnapshot, *, now: datetime):
         reasons.add(("conflict", "observation_clock_regression"))
     elif current.astimezone(history.hourly.daily.JST).date() != observed.astimezone(history.hourly.daily.JST).date():
         reasons.add(("unverified", "local_observation_not_current_day"))
+    elif current.astimezone(history.hourly.daily.JST).hour != observed.astimezone(history.hourly.daily.JST).hour:
+        reasons.add(("unverified", "local_observation_not_current_hour"))
     return replace(snapshot, diagnostics=tuple(sorted(reasons)))
 
 
@@ -269,6 +337,16 @@ def collect_evidence(reader, *, state_root: Path | None = None,
     discovery, archive restoration, live guard invocation or authority
     provisioning is attempted. The clock is injectable for offline fixtures.
     """
+    # The connector/test seam may throw arbitrary exception types containing
+    # source values. Sanitize at the external boundary, including main and CI.
+    underlying = reader
+    class SafeReader:
+        def get(self, route, params=None):
+            try:
+                return underlying.get(route, params)
+            except Exception:
+                raise remote.AuditHold("github_unavailable") from None
+    reader = SafeReader()
     clock = clock or (lambda: datetime.now(timezone.utc))
     started = _time(clock())
     for value in (root_issue, pr_number):
@@ -298,9 +376,12 @@ def collect_evidence(reader, *, state_root: Path | None = None,
                      r.verification == "observed" and r.parent_number == pr_number), None)
     if selected is not None:
         raw = selected._payload
-        head = raw.get("head", {})
+        head, base, user = (_mapping(raw.get(k)) for k in ("head", "base", "user"))
         if (remote._sha(head.get("sha")) and type(head.get("ref")) is str and
-                type(raw.get("user", {}).get("id")) is int):
+                remote._sha(base.get("sha")) and base.get("ref") == "main" and
+                _mapping(base.get("repo")).get("full_name") == remote.REPO and
+                _mapping(head.get("repo")).get("full_name") == remote.REPO and
+                type(user.get("id")) is int and user["id"] > 0):
             try:
                 ci = adapter.read_ci(reader, pr_number, head["sha"], head["ref"])
             except (adapter.AdapterHold, remote.AuditHold, OSError, ValueError, TypeError, KeyError):
@@ -354,7 +435,8 @@ def collect_evidence(reader, *, state_root: Path | None = None,
     attempts = reconcile_sources(collection, local)
     for attempt in attempts:
         for reason in attempt.reasons:
-            category = "conflict" if any(x in reason for x in ("conflict", "duplicate", "orphan")) else "unverified"
+            category = ("conflict" if any(x in reason for x in ("conflict", "duplicate", "orphan"))
+                        else "unavailable" if reason.endswith("_missing") else "unverified")
             diagnostics.add((category, reason))
     snapshot = EvidenceSnapshot(_timestamp(started), _timestamp(finished), collection,
                                 attempts, local, approval_state, review_state, formal, ci,

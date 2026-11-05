@@ -210,6 +210,37 @@ def _key(record):
     return record.repository_id, record.kind, record.parent_number or 0, record.record_id
 
 
+def _binding_conflicts(records):
+    """Check platform identity separately from its observed parent binding.
+
+    Including a parent in an observation key preserves both sides of a
+    contradiction, but cannot make the same global comment/review/event ID
+    legitimately belong to two different parents. Git commits are the one
+    intentional many-PR identity: a shared commit, including a timeline
+    commit node, binds to its SHA rather than one PR number.
+    """
+    bindings, conflicts = {}, set()
+    for record in records:
+        if record.verification != "observed":
+            continue
+        identity = (record.repository_id, record.kind, record.record_id)
+        binding = ("parent", record.parent_number)
+        if record.kind == "commit":
+            binding = ("commit", record.record_id)
+        elif record.kind == "timeline":
+            raw = record._payload
+            sha = raw.get("sha")
+            if (raw.get("event") == "committed" and not _positive(raw.get("id"))
+                    and type(sha) is str and _SHA.fullmatch(sha)):
+                binding = ("commit", sha)
+        previous = bindings.setdefault(identity, {})
+        previous.setdefault(binding, set()).add(record.endpoint)
+        if len(previous) > 1:
+            for endpoints in previous.values():
+                conflicts.update(endpoints)
+    return conflicts
+
+
 def _collection_digest(records):
     values = sorted((_key(r), r.content_sha256) for r in records)
     return _digest(json.dumps(values, separators=(",", ":")).encode("ascii"))
@@ -386,6 +417,12 @@ def collect_github_sources(reader, *, now: datetime,
     for record in first.records + second.records:
         unique.setdefault((_key(record), record.content_sha256), record)
     records = tuple(unique[k] for k in sorted(unique))
+    conflicts = _binding_conflicts(records)
+    if conflicts:
+        holds.add("source_inventory_conflict")
+        coverage = [replace(c, missing=tuple(sorted(set(c.missing) |
+                    {"source_inventory_conflict"}))) if c.endpoint in conflicts else c
+                    for c in coverage]
     inventory_holds = holds - {"legacy_execution_history_unavailable", "legacy_required_period_unknown"}
     complete = bool(coverage) and not inventory_holds and all(
         c.terminal and c.reread_terminal and c.reread == "unchanged" and not c.missing for c in coverage)

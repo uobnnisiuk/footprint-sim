@@ -129,6 +129,13 @@ def collect(reader, **kwargs):
 
 
 class SnapshotTests(unittest.TestCase):
+    def local_record(self, **changes):
+        src = history.HistorySource("pr-repair-ledger/reservation-" + "a" * 32 + ".json", "c" * 64, "observed")
+        record = history.HistoryRecord(src.source_id, "r3_minor", 1, 2, "a" * 32,
+                    NOW.isoformat(), "2026-11-05", (9,), "unknown", src.source_sha256,
+                    (src,), (), approval_reservation_id=200, approval_result_id=201)
+        return replace(record, **changes)
+
     def test_observed_zero_is_not_unknown_consumption_or_authority(self):
         value = collect(Reader()).to_dict()
         self.assertTrue(value["sources"]["visible_inventory_complete"])
@@ -258,7 +265,8 @@ class SnapshotTests(unittest.TestCase):
         value = snapshot.validate_evidence_bundle(value, now=NOW + timedelta(days=1))
         output = value.to_dict()
         self.assertIsNone(output["local_history"]["audit"]["effective_today"])
-        self.assertFalse(output["local_history"]["current_day_counts_verified"])
+        self.assertFalse(output["local_history"]["observation_day_matches_validation"])
+        self.assertFalse(output["local_history"]["counts_are_available_credit"])
         self.assertEqual(len(output["local_history"]["sources"]), 1)
 
     def test_local_reader_integration_never_opens_for_write_or_acquires_lock(self):
@@ -292,11 +300,89 @@ class SnapshotTests(unittest.TestCase):
         self.assertIsNone(value.to_dict()["local_history"]["audit"]["effective_today"])
         self.assertEqual(len(value.local_history.sources), 1)
 
+    def test_previous_hour_count_is_not_reused(self):
+        audit = history.HistoryAudit(True, 1, 0, 0, 1, 1, frozenset({1}), 1, (), "c" * 64)
+        local = history.HistoryRecords(audit, (), (), NOW.isoformat(), "c" * 64)
+        value = snapshot.validate_evidence_bundle(replace(collect(Reader()), local_history=local),
+                                                  now=NOW + timedelta(hours=1))
+        self.assertIsNone(value.to_dict()["local_history"]["audit"]["effective_hour"])
+        self.assertEqual(value.to_dict()["local_history"]["audit"]["effective_today"], 1)
+
     def test_invalid_target_does_not_enter_reader(self):
         reader = Reader()
         with self.assertRaisesRegex(ValueError, "invalid_target_identity"):
             collect(reader, pr_number=True)
         self.assertEqual(reader.calls, [])
+
+    def test_malformed_pr_nested_objects_hold_and_preserve_record(self):
+        for key in ("head", "base", "user"):
+            for malformed in (None, [], SECRET):
+                with self.subTest(key=key, malformed=type(malformed).__name__):
+                    reader = Reader(ci=True)
+                    real = reader.get
+                    def get(route, params=None):
+                        value = real(route, params)
+                        if route == "pulls":
+                            for item in value:
+                                item[key] = malformed
+                        elif route == "pulls/2":
+                            value[key] = malformed
+                        return value
+                    reader.get = get
+                    value = collect(reader, root_issue=1, pr_number=2)
+                    self.assertIn(("unverified", "selected_pr_unverified"), value.diagnostics)
+                    self.assertEqual(value.ci["state"], "unobserved")
+                    self.assertTrue(any(r.kind == "pull" for r in value.source_collection.records))
+                    self.assertNotIn(SECRET, snapshot.render_diagnostic(value))
+
+    def test_local_roots_and_approval_links_are_checked_against_github(self):
+        observed = sources.collect_github_sources(Reader([reservation(), result()]), now=NOW)
+        audit = history.HistoryAudit(True, 0, 0, 1, 1, 1, frozenset(), 1, (), "d" * 64)
+        local = history.HistoryRecords(audit, (self.local_record(),), (), NOW.isoformat(), "d" * 64)
+        linked = next(a for a in snapshot.reconcile_sources(observed, local) if a.source_kind == "r3_minor")
+        self.assertIn("github:issue_comment:200", linked.related_sources)
+        self.assertIn("github:issue_comment:201", linked.related_sources)
+        self.assertIn("local_approval_authority_unverified", linked.reasons)
+        self.assertFalse(any("missing" in r or "conflict" in r for r in linked.reasons))
+        bad = replace(local, records=(self.local_record(root_issue=999, root_pr=998,
+                        approval_reservation_id=1234, approval_result_id=1235),))
+        missing = next(a for a in snapshot.reconcile_sources(observed, bad) if a.source_kind == "r3_minor")
+        self.assertIn("local_root_issue_missing", missing.reasons)
+        self.assertIn("local_root_pr_missing", missing.reasons)
+        self.assertIn("local_approval_source_missing", missing.reasons)
+        partial = replace(observed, visible_inventory_complete=False)
+        unknown = next(a for a in snapshot.reconcile_sources(partial, bad) if a.source_kind == "r3_minor")
+        self.assertIn("local_root_issue_unverified", unknown.reasons)
+        self.assertNotIn("local_root_issue_missing", unknown.reasons)
+        self.assertEqual(unknown.consumption, "consumed")
+
+    def test_local_approval_result_wrong_reservation_is_conflict(self):
+        observed = sources.collect_github_sources(Reader([reservation(), result(reservation_id=999)]), now=NOW)
+        audit = history.HistoryAudit(True, 0, 0, 1, 1, 1, frozenset(), 1, (), "d" * 64)
+        local = history.HistoryRecords(audit, (self.local_record(),), (), NOW.isoformat(), "d" * 64)
+        linked = next(a for a in snapshot.reconcile_sources(observed, local) if a.source_kind == "r3_minor")
+        self.assertIn("local_approval_link_conflict", linked.reasons)
+        self.assertEqual(linked.consumption, "consumed")
+
+    def test_connector_exceptions_are_sanitized_at_every_boundary(self):
+        for fail_at in ("main", "ci", "final"):
+            reader = Reader(ci=True)
+            real = reader.get
+            main_count = 0
+            def get(route, params=None):
+                nonlocal main_count
+                if route == "git/ref/heads/main":
+                    main_count += 1
+                if ((fail_at == "main" and route == "git/ref/heads/main") or
+                    (fail_at == "ci" and route.startswith("actions/")) or
+                    (fail_at == "final" and route == "git/ref/heads/main" and main_count == 2)):
+                    raise RuntimeError(SECRET)
+                return real(route, params)
+            reader.get = get
+            value = collect(reader, root_issue=1, pr_number=2)
+            self.assertTrue(value.source_collection.records)
+            self.assertEqual(value.to_dict()["state"], "HOLD")
+            self.assertNotIn(SECRET, snapshot.render_diagnostic(value))
 
 
 if __name__ == "__main__":
