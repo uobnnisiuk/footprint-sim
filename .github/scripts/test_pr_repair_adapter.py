@@ -249,7 +249,7 @@ class TransportBoundaryTests(unittest.TestCase):
         for route in ("https://evil.invalid", "actions/runs/1/logs", "../issues/1",
                       "git/refs/heads/main", "issues/1?secret=x", "git/blobs/" + A + "/"):
             with self.assertRaises(remote.AuditHold): reader._validate_endpoint(route, {})
-        for params in ({"recursive": 1}, {"page": True}, {"state": "all"}):
+        for params in ({"recursive": 1}, {"page": True}, {"state": "invalid"}):
             with self.assertRaises(remote.AuditHold): reader._validate_endpoint("pulls", params)
 
     def test_actual_transport_only_get_fixed_host_and_sanitizes_error(self):

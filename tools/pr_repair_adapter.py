@@ -22,8 +22,9 @@ import pr_repair_evidence as evidence
 import pr_repair_remote_audit as remote
 
 _EXTRA = re.compile(
-    r"(?:issues/[1-9][0-9]*(?:/comments)?|issues/comments/[1-9][0-9]*"
-    r"|pulls|pulls/[1-9][0-9]*/reviews/[1-9][0-9]*"
+    r"(?:|issues|issues/comments|issues/[1-9][0-9]*(?:/(?:comments|timeline))?"
+    r"|issues/comments/[1-9][0-9]*|pulls|pulls/[1-9][0-9]*/commits"
+    r"|pulls/[1-9][0-9]*/reviews/[1-9][0-9]*"
     r"|git/(?:commits|trees|blobs)/[0-9a-f]{40}"
     r"|actions/runs/[1-9][0-9]*(?:/attempts/[1-9][0-9]*/jobs)?)\Z")
 _REASONS = frozenset({
@@ -63,14 +64,14 @@ class GitHubEvidenceReader(remote.GitHubReader):
                         "disallowed_endpoint")
         remote._require(params is None or type(params) is dict, "disallowed_endpoint")
         values = params or {}
-        paged = (route == "pulls" or route.endswith("/comments") or
-                 route.endswith("/jobs"))
+        paged = (route in ("pulls", "issues") or route.endswith("/comments") or
+                 route.endswith(("/jobs", "/commits", "/timeline")))
         allowed = {"per_page", "page"} if paged else set()
-        if route == "pulls":
+        if route in ("pulls", "issues"):
             allowed.add("state")
         remote._require(set(values) <= allowed, "disallowed_endpoint")
         for key, value in values.items():
-            remote._require((key == "state" and value == "open") or
+            remote._require((key == "state" and value in ("open", "closed", "all")) or
                             (key != "state" and type(value) is int and 1 <= value <= 100),
                             "disallowed_endpoint")
         return values

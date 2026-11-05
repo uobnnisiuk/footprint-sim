@@ -10,7 +10,7 @@ local files cannot prove its completeness. No log body is read or returned.
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -56,6 +56,72 @@ class HistoryAudit:
     snapshot_digest: str | None
     may_reserve: bool = False
     may_publish: bool = False
+
+
+@dataclass(frozen=True)
+class HistorySource:
+    """Opaque source identity; never a ledger migration record."""
+    source_id: str
+    source_sha256: str
+    verification: str
+
+
+@dataclass(frozen=True)
+class HistoryEvent:
+    source_id: str
+    source_sha256: str
+    event: str
+    at: str
+    head_before: str
+    head_after: str | None
+
+
+@dataclass(frozen=True)
+class HistoryRecord:
+    """Consumed local observation with safe, schema-checked evidence.
+
+    recorded_success is only the old runner/CI label, never acceptance proof.
+    Legacy buckets retain their interval; they do not invent an exact start.
+    """
+    source_id: str
+    kind: str
+    root_issue: int
+    root_pr: int | None
+    reservation_id: str
+    at: str | None
+    date_jst: str
+    hours_jst: tuple[int, ...]
+    result: str
+    source_sha256: str
+    evidence: tuple[HistorySource, ...]
+    events: tuple[HistoryEvent, ...]
+    reasons: tuple[str, ...] = ()
+    attempt: int | None = None
+    head_before: str | None = None
+    head_after: str | None = None
+    approval_reservation_id: int | None = None
+    approval_result_id: int | None = None
+    consumption: str = "consumed"
+    acceptance_verified: bool = False
+
+
+@dataclass(frozen=True)
+class HistoryRecords:
+    audit: HistoryAudit
+    records: tuple[HistoryRecord, ...]
+    sources: tuple[HistorySource, ...]
+    observed_at: str | None
+    snapshot_digest: str | None
+
+    def to_dict(self):
+        result = asdict(self)
+        result["audit"]["consumed_issues"] = sorted(self.audit.consumed_issues)
+        return result
+
+
+def _source_views(snapshot, verification="unverified"):
+    return tuple(HistorySource(name, hashlib.sha256(raw).hexdigest(), verification)
+                 for name, (_, raw) in sorted(snapshot.items()) if raw is not None)
 
 
 def _halt(reason="local_history_unverified"):
@@ -262,8 +328,15 @@ def _event_conflict(record, events):
     return False
 
 
-def _audit(root: Path, now: datetime) -> HistoryAudit:
+def _audit(root: Path, now: datetime, *, detailed=False, source_capture=None):
     before = _snapshot(root)
+    if source_capture is not None:
+        # Retain opaque references even if a later schema/relationship check
+        # rejects an orphan or duplicate. These remain explicitly unverified.
+        source_capture.extend(_source_views(before))
+    sources = ({s.source_id: s for s in _source_views(before, "schema_validated")}
+               if detailed else {})
+    observations = []
     state = root / "daily"
     budget = hourly.read_budget(state, now)  # Reuse full old + R3 validation.
     repairs = ledger.read_ledger(state, now)
@@ -295,8 +368,20 @@ def _audit(root: Path, now: datetime) -> HistoryAudit:
             hour = index * 3 if kind == "3h-slot" else hourly.daily.LEGACY_SLOT_HOURS_JST[index]
             hours = frozenset(range(hour // 3 * 3, hour // 3 * 3 + 3))
         intervals.append((date, hours))
-        if f"daily/result-{stem}.json" not in before:
+        result_id = f"daily/result-{stem}.json"
+        if result_id not in before:
             unresolved += 1
+        if detailed:
+            result = _json(before[result_id][1]) if result_id in before else None
+            outcome = ("unknown" if result is None else
+                       "recorded_success" if result["status"] == "succeeded" else "failed")
+            observations.append(HistoryRecord(
+                key, "initial_daily", record["issue"], None, key,
+                record.get("attemptedAtJst"), date, tuple(sorted(hours)), outcome,
+                sources[key].source_sha256,
+                tuple(sources[k] for k in (key, f'daily/issue-{record["issue"]}.json', result_id)
+                      if k in sources), (),
+                ("result_missing",) if result is None else ()))
     holds = {"legacy_minor_history_unverified"}
     if manual_at is not None:
         if manual_at > now:
@@ -306,6 +391,17 @@ def _audit(root: Path, now: datetime) -> HistoryAudit:
         consumed.add(10)
         dates[manual_at.date().isoformat()] += 1
         intervals.append((manual_at.date().isoformat(), frozenset((manual_at.hour,))))
+        if detailed:
+            key, result_id = "attempts/issue-10.json", "attempts/issue-10-result.json"
+            result = _json(before[result_id][1]) if result_id in before else None
+            outcome = ("unknown" if manual_unknown else
+                       "recorded_success" if result["exit_code"] == 0 else "failed")
+            observations.append(HistoryRecord(
+                key, "initial_manual", 10, None, key, manual_at.isoformat(),
+                manual_at.date().isoformat(), (manual_at.hour,), outcome,
+                sources[key].source_sha256,
+                tuple(sources[k] for k in (key, result_id) if k in sources), (),
+                ("manual_result_unknown",) if manual_unknown else ()))
     claimed_heads = set()
     for record in repairs.reservations:
         created = ledger._iso(record["createdAtJst"])
@@ -342,6 +438,31 @@ def _audit(root: Path, now: datetime) -> HistoryAudit:
                 or any(e["event"] in ("response_unknown", "candidate_timeout") for e in events)
                 or events[-1]["event"] not in ("ci_success", "ci_failed", "failed", "candidate_rejected")):
             unresolved += 1
+        if detailed:
+            key = f'pr-repair-ledger/reservation-{record["id"]}.json'
+            final = events[-1]["event"] if events else None
+            outcome = ("conflict" if event_conflict else
+                       "recorded_success" if final == "ci_success" else
+                       "failed" if final in ("ci_failed", "failed", "candidate_rejected") else
+                       "unknown")
+            event_views = []
+            for event in events:
+                event_id = f'pr-repair-ledger/event-{record["id"]}-{event["sequence"]:02d}.json'
+                event_views.append(HistoryEvent(
+                    event_id, sources[event_id].source_sha256, event["event"],
+                    event["atJst"], event["headBefore"], event["headAfter"]))
+            reasons = (("repair_event_conflict",) if event_conflict else
+                       ("repair_result_unknown",) if outcome == "unknown" else ())
+            observations.append(HistoryRecord(
+                key, {"minor": "r3_minor", "substantive": "r3_substantive",
+                      "ci_rerun": "ci_rerun"}[record["kind"]],
+                record["rootIssue"], record["rootPr"], record["id"],
+                record["createdAtJst"], record["dateJst"], (record["hourJst"],),
+                outcome, sources[key].source_sha256,
+                (sources[key], *(sources[e.source_id] for e in event_views)),
+                tuple(event_views), reasons, record["attempt"], record["headSha"],
+                next((e["headAfter"] for e in reversed(events) if e["event"] == "published"), None),
+                record["approvalReservationId"], record["approvalResultId"]))
     # Cross-store overlaps were not checked by R3's per-store reader.
     occupied = set()
     for date, hours in intervals:
@@ -374,9 +495,13 @@ def _audit(root: Path, now: datetime) -> HistoryAudit:
         digest.update(repr(metadata).encode("ascii"))
         if raw is not None:
             digest.update(hashlib.sha256(raw).digest())
-    return HistoryAudit(True, len(daily), int(manual_at is not None),
-                        len(repairs.reservations), effective_today, effective_hour,
-                        frozenset(consumed), unresolved, tuple(sorted(holds)), digest.hexdigest())
+    audit = HistoryAudit(True, len(daily), int(manual_at is not None),
+                         len(repairs.reservations), effective_today, effective_hour,
+                         frozenset(consumed), unresolved, tuple(sorted(holds)), digest.hexdigest())
+    if detailed:
+        return HistoryRecords(audit, tuple(sorted(observations, key=lambda x: x.source_id)),
+                              tuple(sources.values()), now.isoformat(), audit.snapshot_digest)
+    return audit
 
 
 def audit_history(state_root: Path, now: datetime) -> HistoryAudit:
@@ -386,15 +511,36 @@ def audit_history(state_root: Path, now: datetime) -> HistoryAudit:
     This non-atomic observation cannot authorize a later reservation; the live
     manager must eventually repeat validation under its authorized shared lock.
     """
+    return _read_history(state_root, now, detailed=False)
+
+
+def audit_history_records(state_root: Path, now: datetime) -> HistoryRecords:
+    """Export safe local evidence from the same validation/snapshot as counts.
+
+    Invalid stores yield no interpreted attempts or counts. Opaque references
+    to already observed JSON remain unverified so orphan/conflicting sources
+    are not erased. No raw records, logs, process arguments or paths escape.
+    """
+    return _read_history(state_root, now, detailed=True)
+
+
+def _read_history(state_root, now, *, detailed):
+    captured = [] if detailed else None
+    observed_at = None
     try:
         if (not isinstance(state_root, Path) or not state_root.is_absolute()
                 or not isinstance(now, datetime) or now.tzinfo is None
                 or now.utcoffset() is None):
             _halt()
-        return _audit(state_root, now.astimezone(hourly.daily.JST))
+        now = now.astimezone(hourly.daily.JST)
+        observed_at = now.isoformat()
+        return _audit(state_root, now, detailed=detailed, source_capture=captured)
     except HistoryHalt as error:
         reason = str(error)
     except (OSError, RuntimeError, ValueError, TypeError, KeyError, RecursionError):
         reason = "local_history_unverified"
-    return HistoryAudit(False, None, None, None, None, None, frozenset(), None,
-                        (reason, "legacy_minor_history_unverified"), None)
+    audit = HistoryAudit(False, None, None, None, None, None, frozenset(), None,
+                         (reason, "legacy_minor_history_unverified"), None)
+    if detailed:
+        return HistoryRecords(audit, (), tuple(captured), observed_at, None)
+    return audit

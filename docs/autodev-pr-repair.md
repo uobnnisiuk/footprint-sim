@@ -651,3 +651,89 @@ all three local stores and old minor records on rollback; never restore a
 controller that ignores R3 reservations. The owner has authorized this
 implementation PR and independent review, not merge, task/Automation changes,
 model calls, production reservations, write experiments or production rollout.
+
+## UOB-6: read-only evidence snapshot and history reconciliation
+
+`tools/pr_repair_snapshot.py` now composes the existing readers into a safe
+diagnostic. It does not connect R4 to production or supply `TrustedFacts`.
+No task, workflow, authentication setting, budget or research contract changes.
+
+| Existing component | Added integration |
+| --- | --- |
+| PR #73 `GitHubEvidenceReader` | Closed GET allowlist for repository identity, all-state issues/PRs, comments, commit lists and timelines; the same pinned transport and redirect refusal |
+| PR #73 provenance validators | Optional independently supplied anchors are checked by the existing functions; absent anchors and free-text claims remain unverified |
+| R1 + PR #73 `read_ci` | Exact-head run/attempt/job/step metadata, including reread; semantic acceptance stays unverified |
+| PR #73 `audit_history` + R3/hourly readers | `audit_history_records` exports safe source identities and reservation/result/event relationships from the same validated before/after snapshot |
+| New `pr_repair_sources` | Bounded pagination and two-pass coverage retaining partial and changed observations |
+| New `pr_repair_snapshot` | Source relationships, separate attempt kinds, fixed-code diagnostics and explicit safe JSON rendering |
+
+The coverage walker is deliberately small: the older R5a `_pages` requires
+positive numeric IDs and discards partial failures, whereas commits/timelines
+have SHA/node identities and this diagnostic must preserve partial coverage.
+It reuses the existing page bounds and transport, not a second HTTP client.
+
+The public library entry points are:
+
+```python
+# supplied_reader uses the existing authorized GET connection; no credential
+# discovery or new authority provisioning is performed by this library.
+observation = collect_evidence(supplied_reader, state_root=optional_state_root,
+                               root_issue=optional_issue, pr_number=optional_pr)
+safe_json = render_diagnostic(observation)
+```
+
+The caller may save `safe_json` in its development artifact directory outside
+production state. Collection and rendering themselves do not write files,
+acquire locks, start subprocesses/models, dispatch CI or modify Git refs.
+The main-sourced guard is reused by the separate PR #73 component; its scratch
+Git writes mean it is intentionally not invoked by this read-only collector.
+
+`SourceRecord` contains source kind, fixed identity, parent, numeric actor,
+source/observation timestamps, content digest and verification state. Raw
+payload is internal untrusted input, excluded from repr, dataclass export and
+the safe JSON output. Bodies, titles, arbitrary URLs and exception text are
+not diagnostics. A derived fingerprint for an unidentified timeline event is
+explicitly unverified, not a fabricated platform identity.
+
+`CoverageManifest` records required start (unknown if not supplied), actual
+source timestamp range, observation cutoff, endpoint, pages, terminal page,
+counts, digests, reread result and missing reasons. Records from both versions
+of a changed source survive. Only exact repeated observations are deduplicated.
+The visible GitHub inventory and the legacy worker's execution history have
+separate completeness fields. Missing/deleted/unposted provider runs cannot
+be proved absent by an empty GitHub listing.
+
+`SourceAttempt` keeps Queue-Approval receipts in the approval budget, local
+daily/manual and R3 operations as consumed observations, and ambiguous Git
+interventions/legacy mentions as unknown. Existing Queue headers are related
+by their source IDs, root Issue and result fields, but do not authenticate an
+approval. The unavailable old minor prompt is not replaced by an invented
+reservation grammar. A marker mention or a commit is not a model invocation.
+The legacy observed-reservation count is unknown when the inventory is partial
+or legacy claims cannot be classified; zero observed reservations still leaves
+consumption unknown. No migration-ready reservation record is generated.
+
+Local output retains every supported reservation/result/event and opaque
+unverified source identities on invalid input. Failure, missing result,
+interruption, response unknown, orphan and conflict do not refund credit.
+Runner/CI `recorded_success` is not acceptance. Counts carry an observation
+time and are never available-credit claims. `validate_evidence_bundle` hides
+day/hour counts after a JST day change, clock rollback or changed local
+snapshot while retaining the historical source evidence. It cannot reserve.
+
+`collect_evidence` does not generate an approved manifest from prose, certify
+same-account COMMENT independence, or turn green CI into per-condition test
+evidence. It always reports HOLD and false reserve/publish/activation flags.
+Unknown, unavailable and conflicting evidence have distinct fixed reasons.
+Source snapshots are not an atomic barrier; any future authorized publisher
+still needs R3 lock-time reconciliation and all R4 freshness/expiry checks.
+
+The remaining original-source gaps are the legacy task's complete provider
+run archive and prompt revisions, independently provisioned approval/review
+anchors, and per-condition acceptance receipts. The present connection does
+not expose the full hosted-run archive. Recovery requires an available normal
+provider export; recovery is not promised. If unavailable, the affected roots
+stay HOLD and an owner policy decision remains necessary. Repeated GitHub
+scans, new collectors, counter resets or synthetic success cannot fill those
+gaps. A future receipt workflow or different reviewer identity scheme would
+be separate reviewed changes; neither is adopted here.
