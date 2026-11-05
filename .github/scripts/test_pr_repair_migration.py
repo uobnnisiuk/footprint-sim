@@ -1,10 +1,14 @@
 """Synthetic M2 contract declarations: never production approval/quiescence."""
 from copy import deepcopy
+from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
+import io
+import json
 import sys
 import unittest
+from unittest.mock import patch
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
@@ -358,6 +362,47 @@ class MigrationTests(unittest.TestCase):
         self.assertEqual(result["reasons"], ["history_counts_mismatch"])
         for permission in ("may_reserve", "may_publish", "may_activate", "may_repair", "may_merge", "production_enabled"):
             self.assertIs(result[permission], False)
+
+    def test_invalid_legacy_reservation_name_returns_safe_hold(self):
+        request, obs, now = fixture("minor")
+        local = obs["history"]
+        malformed = "daily/day-2026-11-07-hour-99.json"
+        old = local.records[0]
+        converted = tuple(replace(s, source_id=malformed) if s.source_id == old.source_id else s
+                          for s in local.sources)
+        record = replace(old, source_id=malformed, reservation_id=malformed, evidence=converted)
+        rebind_history(obs, replace(local, records=(record,), sources=converted))
+        before = deepcopy((request, obs))
+        output = io.StringIO()
+        with redirect_stdout(output), redirect_stderr(output):
+            result = migration.evaluate(request, obs, now=now)
+        self.assertEqual(result["reasons"], ["local_history_invalid"])
+        self.assertEqual((request, obs), before)
+        self.assertEqual(output.getvalue(), "")
+        self.assertNotIn(malformed, json.dumps(result))
+        for permission in ("may_reserve", "may_publish", "may_activate", "may_repair", "may_merge", "production_enabled"):
+            self.assertIs(result[permission], False)
+
+    def test_legacy_parser_runtime_error_text_never_leaks(self):
+        request, obs, now = fixture("minor")
+        before = deepcopy((request, obs))
+        sentinel = "secret-sentinel-from-existing-parser"
+        output = io.StringIO()
+        with patch.object(history.hourly, "_reservation_identity", side_effect=RuntimeError(sentinel)), \
+                redirect_stdout(output), redirect_stderr(output):
+            result = migration.evaluate(request, obs, now=now)
+        self.assertEqual(result["reasons"], ["local_history_invalid"])
+        self.assertNotIn(sentinel, json.dumps(result) + output.getvalue())
+        self.assertEqual(output.getvalue(), "")
+        self.assertEqual((request, obs), before)
+        for permission in ("may_reserve", "may_publish", "may_activate", "may_repair", "may_merge", "production_enabled"):
+            self.assertIs(result[permission], False)
+
+    def test_unexpected_side_effect_assertions_are_not_swallowed(self):
+        request, obs, now = fixture("minor")
+        with patch.object(history.hourly, "_reservation_identity", side_effect=AssertionError("forbidden IO")):
+            with self.assertRaises(AssertionError):
+                migration.evaluate(request, obs, now=now)
 
 
 if __name__ == "__main__":

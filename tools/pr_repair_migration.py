@@ -354,7 +354,10 @@ def _history(request, obs, ta, now):
             all_initials.add(r.root_issue)
             if r.kind == "initial_daily":
                 _need(r.source_id.startswith("daily/day-") and r.source_id.endswith(".json"), "local_history_invalid")
-                day, style, index = history.hourly._reservation_identity(r.source_id[len("daily/day-"):-5])
+                try:
+                    day, style, index = history.hourly._reservation_identity(r.source_id[len("daily/day-"):-5])
+                except RuntimeError:
+                    raise MigrationHold("local_history_invalid") from None
                 expected_hours = (tuple(range(24)) if style is None else (index,) if style == "hour"
                                   else tuple(range((index * 3 if style == "3h-slot" else history.hourly.daily.LEGACY_SLOT_HOURS_JST[index]) // 3 * 3,
                                                    (index * 3 if style == "3h-slot" else history.hourly.daily.LEGACY_SLOT_HOURS_JST[index]) // 3 * 3 + 3)))
