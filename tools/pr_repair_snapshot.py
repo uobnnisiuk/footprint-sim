@@ -144,7 +144,7 @@ def _local_links(record, collection):
                     _number(a.get("Issue-Number")) != record.root_issue or
                     _number(b.get("Issue-Number")) != record.root_issue or
                     any(a.get(k) != b.get(k) for k in
-                        ("Review-Main-SHA", "Issue-Title-SHA256", "Issue-Body-SHA256"))):
+                        ("Protocol-Commit", "Review-Main-SHA", "Issue-Title-SHA256", "Issue-Body-SHA256"))):
                 reasons.add("local_approval_link_conflict")
             elif b.get("Outcome") != "success":
                 reasons.add("local_approval_result_conflict")
@@ -197,7 +197,7 @@ def _queue_attempts(records):
             if (n != issue or result.parent_number != record.parent_number or
                     h.get("Queue-Approval-Result") != headers["Queue-Approval-Reservation"] or
                     any(h.get(k) != headers.get(k) for k in
-                        ("Review-Main-SHA", "Issue-Title-SHA256", "Issue-Body-SHA256"))):
+                        ("Protocol-Commit", "Review-Main-SHA", "Issue-Title-SHA256", "Issue-Body-SHA256"))):
                 reasons.add("approval_result_conflict")
             if (record.created_at and result.created_at and result.created_at < record.created_at):
                 reasons.add("approval_result_conflict")

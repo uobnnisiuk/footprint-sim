@@ -364,6 +364,25 @@ class SnapshotTests(unittest.TestCase):
         self.assertIn("local_approval_link_conflict", linked.reasons)
         self.assertEqual(linked.consumption, "consumed")
 
+    def test_protocol_commit_mismatch_or_one_sided_omission_conflicts(self):
+        for left, right in (("a" * 40, "b" * 40), ("a" * 40, None), (None, "a" * 40)):
+            with self.subTest(left_present=left is not None, right_present=right is not None):
+                reserved, finished = reservation(), result()
+                if left:
+                    reserved["body"] += "\nProtocol-Commit: " + left
+                if right:
+                    finished["body"] += "\nProtocol-Commit: " + right
+                observed = sources.collect_github_sources(Reader([reserved, finished]), now=NOW)
+                audit = history.HistoryAudit(True, 0, 0, 1, 1, 1, frozenset(), 1, (), "d" * 64)
+                local = history.HistoryRecords(audit, (self.local_record(),), (), NOW.isoformat(), "d" * 64)
+                attempts = snapshot.reconcile_sources(observed, local)
+                queue = next(a for a in attempts if a.source_kind == "queue_approval")
+                r3 = next(a for a in attempts if a.source_kind == "r3_minor")
+                self.assertIn("approval_result_conflict", queue.reasons)
+                self.assertIn("local_approval_link_conflict", r3.reasons)
+                self.assertEqual(queue.outcome, "conflict")
+                self.assertEqual(r3.consumption, "consumed")
+
     def test_connector_exceptions_are_sanitized_at_every_boundary(self):
         for fail_at in ("main", "ci", "final"):
             reader = Reader(ci=True)
