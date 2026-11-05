@@ -737,3 +737,94 @@ stay HOLD and an owner policy decision remains necessary. Repeated GitHub
 scans, new collectors, counter resets or synthetic success cannot fill those
 gaps. A future receipt workflow or different reviewer identity scheme would
 be separate reviewed changes; neither is adopted here.
+
+## UOB-6 M2: limited-history policy and offline authorization contract
+
+On November 5, the owner adopted the independently reviewed M2 policy in
+[UOB-6](https://linear.app/uobnnisiuk/issue/UOB-6). Its only history-policy
+change is to evaluate independently new work after a proven quiescence
+boundary while preserving the old provider's unknown history and HOLD.
+This does not waive malformed local ledgers, orphan records, missing
+counterparts, attempt limits, original acceptance, or research contracts.
+Pre-boundary Issues, PRs, research TODOs (including the existing F22 plan),
+unfinished work and failure repairs remain excluded. Renaming, splitting,
+combining or moving work to another day cannot make it new.
+
+`tools/pr_repair_migration.py` implements only a pure, in-memory contract.
+`evaluate(request, observations, now=...)` compares a proposed scope with
+separately supplied observation claims. It does not collect or authenticate
+those observations, issue a stopping certificate, provision an anchor, or
+produce a reservation. A hash checks equality, a type checks shape, and a
+different numeric actor checks a necessary role constraint; none proves
+the origin or independence of an input. The synthetic test observations
+are deliberately not live evidence.
+
+Even `CONTRACT_SATISFIED` means only that the declared offline inputs are
+consistent. Authentication remains `not_established`, live eligibility
+remains `unverified`, legacy history remains `unknown/HOLD`, and execution,
+reservation, publication, activation and merge permissions remain false.
+Missing or conflicting evidence returns HOLD with fixed reason codes.
+The R4 production adapter rejection remains unchanged. There is no CLI,
+network call, filesystem access, lock acquisition, implicit clock, model
+call or scheduler in this contract.
+
+The contract reuses the existing R2 strict value/field/digest checks, R3
+gate constraints and quota constants, and PR #73/#74 history representations
+and event-order validation. It does not replace their readers or change
+the meaning of their HOLDs. In particular, a valid old-provider quarantine
+does not turn a bad local ledger into an acceptable one. Original approval,
+exact scope, semantic review and complete tree/guard checks remain required
+by the existing downstream contracts; passing this additional gate cannot
+stand in for them.
+
+Acceptance declarations retain exact requirement/expectation/command and
+head/run/attempt/job/test/reviewer bindings. Initial-work fixtures describe
+baseline evidence; repair fixtures describe the current head, including
+executed failures. Neither means that a future implementation passed its
+acceptance tests. Missing, skipped, unknown or not-run required evidence
+holds; `acceptance_success` is always `not_asserted`.
+
+The M2 conditions include purpose/acceptance/lineage bindings, the adopted
+policy and writer/deployment versions, a non-reusable active generation,
+revocation/expiry and changed prerequisites, old-activity recurrence and
+observation gaps. Ts is intake closure and Tq is proven local and remote
+quiescence; Ta follows a full quiet JST calendar day after Tq. A quiet
+interval or an OFF setting alone is never quiescence proof. Unknown dates
+or hours are unavailable, not zero consumption. Generations do not reset
+calendar or root-lifetime budgets. Global Open PR completeness still
+applies: initial work needs zero Open PRs, repair needs exactly its own PR,
+including old PRs in the inventory.
+
+Initial, minor, substantive and explicitly authorized active CI reruns
+retain their existing shared eight/day, one/hour and lifetime limits.
+Approval-queue reservations remain separate; automatic CI and read-only
+polls are not another attempt. Failed, timed-out and unknown operations
+are not refunded. Production will need independently acquired facts and
+generation checks serialized with reservation, claim and CAS; this pure
+contract does not implement that synchronization.
+
+Offline fixtures cover consistent declarations and refusal of legacy or
+mixed lineage, missing evidence, duplicate writers, expired/revoked or
+rolled-back generations, old activity/gaps, self-review, missing acceptance,
+unknown capacity, invalid local history and incomplete Open PR inventories.
+They also exercise nonmutation, denied IO/locks/processes, and safe output.
+Run the two `test_pr_repair_migration*.py` modules through the existing test
+discovery; the CI workflow is unchanged.
+
+Still unimplemented are independent anchor/receipt provisioning and storage,
+authenticated reviewer execution records, per-acceptance execution receipts,
+the live scoped manager/publisher connection, server-side CAS and generation
+serialization, and deployment/rollback checks. A real distinct GitHub User
+and an implementer-inaccessible evidence store are not provisioned. The
+known normal management route reads the old task's current prompt and recent
+runs, but does not establish complete historical prompt versions or absence
+of delayed writes. A normal route proving remote termination or an effective
+write fence has not yet been established. Neither creating another account
+nor waiting a fixed time alone satisfies these conditions.
+
+This development work authorizes no changes to old operation: the old minor
+task remains enabled and new R production remains disabled. Cutover, a safe
+live target and activation still require separate owner authorization. UOB-6
+and parent Issue #63 remain incomplete until deployment and real operation
+are independently verified. Development technical COMMENT reviews must not
+be reused as M2 live identity evidence.
