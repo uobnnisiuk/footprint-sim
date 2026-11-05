@@ -359,6 +359,138 @@ class HistoryTests(unittest.TestCase):
         p.write_bytes(b"x" * (history.MAX_MANUAL_BYTES + 1))
         self.assertFalse(history.audit_history(self.root, at()).local_valid)
 
+    def test_detailed_observation_reuses_counts_and_preserves_source_relations(self):
+        self.initial(code=1)
+        self.manual()
+        self.repair(events=("candidate_started", "publish_started", "published", "ci_success"))
+        detail = history.audit_history_records(self.root, at())
+        self.assertEqual(detail.audit, history.audit_history(self.root, at()))
+        self.assertEqual(detail.observed_at, at().isoformat())
+        self.assertEqual(detail.snapshot_digest, detail.audit.snapshot_digest)
+        self.assertEqual({r.kind for r in detail.records},
+                         {"initial_daily", "initial_manual", "r3_minor"})
+        daily, manual, repair = ({r.kind: r for r in detail.records}[kind]
+                                 for kind in ("initial_daily", "initial_manual", "r3_minor"))
+        self.assertEqual(daily.result, "failed")
+        self.assertEqual(manual.result, "recorded_success")
+        self.assertEqual(repair.result, "recorded_success")
+        self.assertEqual((repair.attempt, repair.head_before, repair.head_after),
+                         (1, "d" * 40, "e" * 40))
+        self.assertEqual((repair.approval_reservation_id, repair.approval_result_id), (156, 256))
+        self.assertEqual(len(daily.evidence), 3)
+        self.assertEqual(len(manual.evidence), 2)
+        self.assertEqual(len(repair.events), 4)
+        self.assertEqual(len(repair.evidence), 5)
+        self.assertTrue(all(r.consumption == "consumed" and not r.acceptance_verified
+                            for r in detail.records))
+        self.assertTrue(all(s.verification == "schema_validated" for s in detail.sources))
+        text = json.dumps(detail.to_dict(), sort_keys=True)
+        for secret in (str(self.root), "/fixture/repo", "argv", "authorization", "worktrees"):
+            self.assertNotIn(secret, text)
+        with self.assertRaises(FrozenInstanceError):
+            repair.result = "success"
+
+    def test_detailed_timeout_and_contradictory_success_keep_every_event(self):
+        self.initial(result=False)
+        self.manual(result=False)
+        self.repair(events=("response_unknown", "ci_success"))
+        detail = history.audit_history_records(self.root, at())
+        self.assertEqual(detail.audit.effective_today, 3)
+        repair = next(r for r in detail.records if r.kind == "r3_minor")
+        self.assertEqual(repair.result, "conflict")
+        self.assertEqual(tuple(e.event for e in repair.events), ("response_unknown", "ci_success"))
+        self.assertIn("repair_event_conflict", repair.reasons)
+        self.assertTrue(all(r.result == "unknown" for r in detail.records if r.root_pr is None))
+
+    def test_detailed_orphan_retains_only_unverified_source_identity(self):
+        self.manual()
+        (self.root / "attempts" / "issue-10.json").unlink()
+        detail = history.audit_history_records(self.root, at())
+        self.assertFalse(detail.audit.local_valid)
+        self.assertEqual(detail.records, ())
+        self.assertIsNone(detail.audit.effective_today)
+        self.assertIsNone(detail.snapshot_digest)
+        self.assertEqual(tuple(s.source_id for s in detail.sources), ("attempts/issue-10-result.json",))
+        self.assertEqual(detail.sources[0].verification, "unverified")
+        self.assertIn("orphaned_manual_history", detail.audit.holds)
+
+    def test_detailed_invalid_bytes_and_exceptions_never_echo_raw_values(self):
+        self.manual()
+        p = self.root / "attempts" / "issue-10.json"
+        p.write_bytes(b'{"issue":10,"issue":"never-echo-this-secret"}')
+        detail = history.audit_history_records(self.root, at())
+        self.assertFalse(detail.audit.local_valid)
+        self.assertNotIn("never-echo-this-secret", json.dumps(detail.to_dict()))
+        self.assertEqual(len(detail.sources), 2)
+        with patch.object(hourly, "read_budget", side_effect=RuntimeError("never-echo-this-secret")):
+            detail = history.audit_history_records(self.root, at())
+        self.assertNotIn("never-echo-this-secret", repr(detail))
+
+    def test_detailed_day_counts_are_fresh_without_reclassifying_old_attempts(self):
+        self.initial(hour=23, day=3)
+        first = history.audit_history_records(self.root, at(23, 3))
+        later = history.audit_history_records(self.root, at(0, 4))
+        self.assertEqual(first.records, later.records)
+        self.assertEqual((first.audit.effective_today, later.audit.effective_today), (1, 0))
+        self.assertNotEqual(first.observed_at, later.observed_at)
+
+    def test_detailed_legacy_interval_does_not_invent_exact_time(self):
+        self.initial(hour=3, kind="3h-slot")
+        detail = history.audit_history_records(self.root, at())
+        record = detail.records[0]
+        self.assertIsNone(record.at)
+        self.assertEqual(record.hours_jst, (9, 10, 11))
+        self.assertEqual(record.date_jst, "2026-11-04")
+
+    def test_detailed_snapshot_race_keeps_no_verified_attempts(self):
+        self.initial()
+        original = ledger.read_ledger
+        calls = 0
+        def raced(state, now):
+            nonlocal calls
+            calls += 1
+            result = original(state, now)
+            if calls == 2:
+                self.initial(issue=13, hour=11)
+            return result
+        with patch.object(ledger, "read_ledger", side_effect=raced):
+            detail = history.audit_history_records(self.root, at())
+        self.assertEqual(detail.records, ())
+        self.assertIsNone(detail.audit.effective_today)
+        self.assertIn("local_history_changed", detail.audit.holds)
+        self.assertTrue(all(s.verification == "unverified" for s in detail.sources))
+
+    def test_detailed_reader_has_no_writes_locks_processes_or_sockets(self):
+        stem = self.initial()
+        log = self.daily / f"log-{stem}.txt"
+        log.write_text("never-read-private-log")
+        log.chmod(0o600)
+        self.manual()
+        self.repair(events=("failed",))
+        before = history._snapshot(self.root)
+        original_open = os.open
+        def readonly_open(path, flags, *args, **kwargs):
+            self.assertEqual(flags & os.O_ACCMODE, os.O_RDONLY)
+            self.assertFalse(flags & (os.O_CREAT | os.O_TRUNC | os.O_APPEND))
+            return original_open(path, flags, *args, **kwargs)
+        with patch.object(history.os, "open", side_effect=readonly_open), \
+                patch.object(hourly, "reserve_attempt", side_effect=AssertionError), \
+                patch.object(ledger, "_lock", side_effect=AssertionError), \
+                patch.object(ledger, "_write_file", side_effect=AssertionError), \
+                patch("subprocess.Popen", side_effect=AssertionError), \
+                patch("socket.socket", side_effect=AssertionError):
+            detail = history.audit_history_records(self.root, at())
+        self.assertTrue(detail.audit.local_valid)
+        self.assertEqual(before, history._snapshot(self.root))
+        self.assertNotIn("never-read-private-log", json.dumps(detail.to_dict()))
+
+    def test_detailed_invalid_time_is_unknown_with_no_source_read(self):
+        with patch.object(history, "_snapshot", side_effect=AssertionError):
+            detail = history.audit_history_records(self.root, datetime(2026, 11, 4))
+        self.assertIsNone(detail.observed_at)
+        self.assertIsNone(detail.audit.effective_today)
+        self.assertEqual(detail.sources, ())
+
 
 if __name__ == "__main__":
     unittest.main()
