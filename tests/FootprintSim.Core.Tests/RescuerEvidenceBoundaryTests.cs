@@ -1113,6 +1113,59 @@ public sealed class RescuerEvidenceBoundaryTests
     }
 
     [Fact]
+    public void ComplementaryWeftComparisonMarksAbsentMethodResultsUnavailable()
+    {
+        var report = ComplementaryRun();
+        var missingAll = report with
+        {
+            SameCutoffAblations = report.SameCutoffAblations
+                .Select(row => row with { Methods = [] }).ToArray()
+        };
+        var noMethods = RescuerEvidenceMethodComparison.AnalyzePairedContributions(missingAll);
+        Assert.Equal("unavailable", noMethods.Status);
+        Assert.Equal(4, noMethods.Methods.Count);
+        Assert.All(noMethods.Methods, method =>
+        {
+            Assert.Equal("unavailable", method.Status);
+            Assert.Empty(method.Conditions);
+            Assert.Null(method.CandidateReductionFromFirst);
+        });
+
+        var absentEverywhere = report with
+        {
+            SameCutoffAblations = report.SameCutoffAblations
+                .Select(row => row with
+                {
+                    Methods = row.Methods.Where(method =>
+                        method.Method != "known-relation-backward").ToArray()
+                }).ToArray()
+        };
+        var missingMethod = RescuerEvidenceMethodComparison.AnalyzePairedContributions(
+            absentEverywhere);
+        Assert.Equal("partial", missingMethod.Status);
+        Assert.Equal("unavailable", missingMethod.Methods.Single(method =>
+            method.Method == "known-relation-backward").Status);
+        Assert.Equal(3, missingMethod.Methods.Count(method =>
+            method.Status == "available"));
+
+        var missingOne = report with
+        {
+            SameCutoffAblations = report.SameCutoffAblations
+                .Select((row, index) => index == 2 ? row with
+                {
+                    Methods = row.Methods.Where(method =>
+                        method.Method != "distributed-reconstruction-local").ToArray()
+                } : row).ToArray()
+        };
+        var partial = RescuerEvidenceMethodComparison.AnalyzePairedContributions(missingOne);
+        Assert.Equal("partial", partial.Status);
+        Assert.Equal("unavailable", partial.Methods.Single(method =>
+            method.Method == "distributed-reconstruction-local").Status);
+        Assert.Null(partial.Methods.Single(method =>
+            method.Method == "distributed-reconstruction-local").BothStrictlyNarrowerThanEachSingle);
+    }
+
+    [Fact]
     public void ComplementaryWeftComparisonRetainsSharedAncestryAndUncertainty()
     {
         var unavailable = RescuerEvidenceMethodComparison.AnalyzePairedContributions(

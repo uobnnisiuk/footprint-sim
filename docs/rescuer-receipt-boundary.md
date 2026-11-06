@@ -423,7 +423,7 @@ available evidence. The new pure `AnalyzePairedContributions` API compares
 `Run`'s four public ablation rows without a private observation, original
 record, synthetic truth or new inference algorithm.
 
-**Pre-registered hypothesis; not yet verified by CI.** At target tick 2
+**Pre-registered hypothesis (fixed before implementation and CI).** At target tick 2
 the public candidates are {A,B,C}; at later tick 5 they are {D,E,F},
 with only public 3-tick transitions A→D, B→E, C→F (published tick 0).
 Other-holder original 1 observes {A,B} at tick 2, is available/stored at
@@ -448,11 +448,38 @@ Unavailable comparisons return explicit status, not an invented zero.
 Shared upstream ancestry of two otherwise distinct original IDs still
 counts as one evidence group. Changing receipt order or repeating a
 receipt must not change the normalized result. Truth is only available
-through the separate post-inference evaluator. The document is a
-pre-CI hypothesis, not an assertion that the preferred {B} result is
-already measured: any mismatch requires examining the declared
-public-transition semantics and revisiting the Issue scope rather than
-silently tuning the fixture. Model candidate-place counts and work
-units do not imply real search time, rescue cost or survival rate.
-Unknown-causal-relation discovery and the 24-edge search lens remain
-untested, not rejected.
+through the separate post-inference evaluator. Any mismatch with the fixed
+hypothesis requires examining declared public-transition semantics rather
+than silently tuning the fixture.
+
+**CI-observed results, separate from the hypothesis.** The original PR #87
+head (f780cd2) passed the ordinary and F19 research CI on 2026-11-06:
+https://github.com/uobnnisiuk/footprint-sim/actions/runs/42311237213
+and https://github.com/uobnnisiuk/footprint-sim/actions/runs/42311237178 .
+The test verified the existing C-local output at cutoff 7 as
+neither {A,B,C} (3 candidate places), first-only {A,B} (2),
+second-only {B,C} (2), and both {B} (1). Available ancestry group
+counts are respectively 0/1/1/2; at both, C-local actually used two
+groups, generation direct source `first-original` and traversal direct
+source `second-original` (the first ID is the fixture's `RecordId`).
+Adding the second removes A; adding the first removes C; the
+beyond-singletons exclusions and reappeared sets are empty. The
+public-prior method's candidates and actually used source-group count
+remain unchanged across the four cuts (zero used groups). C-local's
+both-source case performed *positive* forward and backward public
+transition steps, as asserted by the existing tests; these are model
+work counters, not rescue-time measurements. Generation/verification,
+evidence-inspection and public-relation counters are kept distinct in
+the analysis output rather than rolled into a search-duration estimate.
+The three other method results must be read as separate output rows,
+not inferred from C-local's success; no general superiority is claimed.
+
+The subsequent implementation head also needs its own ordinary/F19 CI
+and an independent review. One further regression now checks that a
+completely missing method set returns unavailable, that a method absent
+from every row does not silently disappear, and that one missing
+condition yields partial status. A numerical zero-candidate result is
+not interchangeable with missing method data. The measured model-place
+and work counts do not imply real search time, rescue cost or survival
+rate. Unknown causal-relation discovery and the 24-edge search lens
+remain untested, not rejected.

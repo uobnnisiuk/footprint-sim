@@ -500,8 +500,20 @@ public static class RescuerEvidenceMethodComparison
         };
         static string[] Sort(IEnumerable<string> ids) =>
             ids.Distinct(StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal).ToArray();
-        var methodNames = rows.SelectMany(row => row.Methods.Select(item => item.Method))
-            .Distinct(StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal).ToArray();
+        // Run/Compare exposes these four named methods. An absent method is
+        // not an empty candidate set, even when all four ablation rows exist.
+        // Include observed names as well so an unexpected method remains visible.
+        var expectedMethods = new[]
+        {
+            "public-prior",
+            "known-relation-backward",
+            "distributed-reconstruction",
+            "distributed-reconstruction-local"
+        };
+        var methodNames = expectedMethods
+            .Concat(rows.SelectMany(row => row.Methods.Select(item => item.Method)))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(id => id, StringComparer.Ordinal).ToArray();
         var methods = methodNames.Select(name =>
         {
             var matches = rows.Select(row => row.Methods.Where(method => method.Method == name)
@@ -581,7 +593,8 @@ public static class RescuerEvidenceMethodComparison
 
         return new RescuerEvidencePairedContributionReport
         {
-            Status = methods.All(item => item.Status == "available") ? "available" : "partial",
+            Status = methods.All(item => item.Status == "available") ? "available" :
+                methods.All(item => item.Status == "unavailable") ? "unavailable" : "partial",
             QueryTick = ablations[0].QueryTick,
             OriginalIds = originalIds,
             Methods = methods
