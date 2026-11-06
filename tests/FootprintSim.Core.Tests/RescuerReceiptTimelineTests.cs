@@ -75,7 +75,7 @@ public sealed class RescuerReceiptTimelineTests
     {
         var fixture = JsonNode.Parse(File.ReadAllText(FixturePath()))!.AsObject();
         var before = RescuerReceiptTimeline.Run(Encoding.UTF8.GetBytes(fixture.ToJsonString()));
-        var expected = Assert.Single(before.Queries.Where(row => row.QueryTick == 7));
+        var expected = Assert.Single(before.Queries, row => row.QueryTick == 7);
 
         var receipts = fixture["receipts"]!.AsArray();
         receipts.Add(receipts[0]!.DeepClone());
@@ -83,7 +83,7 @@ public sealed class RescuerReceiptTimelineTests
             receipts.Select(item => item!.DeepClone()).Reverse().ToArray());
         fixture["queryTicks"] = new JsonArray(7, 4, 5);
         var after = RescuerReceiptTimeline.Run(Encoding.UTF8.GetBytes(fixture.ToJsonString()));
-        var actual = Assert.Single(after.Queries.Where(row => row.QueryTick == 7));
+        var actual = Assert.Single(after.Queries, row => row.QueryTick == 7);
 
         Assert.NotEqual(before.FixtureSha256, after.FixtureSha256);
         Assert.Equal(JsonDefaults.Serialize(expected), JsonDefaults.Serialize(actual));
@@ -101,16 +101,20 @@ public sealed class RescuerReceiptTimelineTests
         {
             new JsonObject
             {
-                ["scenarioId"] = "rescuer-receipt-fixture", ["seed"] = 7,
+                ["scenarioId"] = "rescuer-receipt-fixture",
+                ["seed"] = 7,
                 ["originalRecordId"] = "original-encounter-record",
-                ["holderDeviceId"] = "held-device", ["rescuerId"] = "rescuer-b",
+                ["holderDeviceId"] = "held-device",
+                ["rescuerId"] = "rescuer-b",
                 ["receivedAtTick"] = 5
             },
             new JsonObject
             {
-                ["scenarioId"] = "rescuer-receipt-fixture", ["seed"] = 7,
+                ["scenarioId"] = "rescuer-receipt-fixture",
+                ["seed"] = 7,
                 ["originalRecordId"] = "original-encounter-record",
-                ["holderDeviceId"] = "held-device", ["rescuerId"] = "rescuer-a",
+                ["holderDeviceId"] = "held-device",
+                ["rescuerId"] = "rescuer-a",
                 ["receivedAtTick"] = 10
             }
         };
@@ -167,9 +171,11 @@ public sealed class RescuerReceiptTimelineTests
         receipts.Clear();
         receipts.Add(new JsonObject
         {
-            ["scenarioId"] = "rescuer-receipt-fixture", ["seed"] = 7,
+            ["scenarioId"] = "rescuer-receipt-fixture",
+                ["seed"] = 7,
             ["originalRecordId"] = "original-encounter-record",
-            ["holderDeviceId"] = "held-device", ["rescuerId"] = "rescuer-a",
+            ["holderDeviceId"] = "held-device",
+                ["rescuerId"] = "rescuer-a",
             ["receivedAtTick"] = 10
         });
         Assert.All(RescuerReceiptTimeline.Run(
@@ -178,6 +184,99 @@ public sealed class RescuerReceiptTimelineTests
         fixture["queryTicks"] = new JsonArray(10);
         Assert.Throws<ArgumentException>(() => RescuerReceiptTimeline.Run(
             Encoding.UTF8.GetBytes(fixture.ToJsonString())));
+    }
+
+    [Theory]
+    [InlineData("Confirmed", 2, 2)]
+    [InlineData("SupportedButUncertain", 1, 2)]
+    [InlineData("Conflicting", 2, 2)]
+    public void JsonEvidencePreservesExactIntervalAndUncertainOrConflictAlternatives(
+        string state, long startTick, long endTick)
+    {
+        var fixture = JsonNode.Parse(File.ReadAllText(FixturePath()))!.AsObject();
+        fixture["observation"]!["evidenceState"] = state;
+        fixture["observation"]!["timeWindow"]!["startTick"] = startTick;
+        fixture["observation"]!["timeWindow"]!["endTick"] = endTick;
+        var row = Assert.Single(RescuerReceiptTimeline.Run(
+            Encoding.UTF8.GetBytes(fixture.ToJsonString())).Queries,
+            item => item.QueryTick == 5);
+        Assert.Equal(1, row.ReceivedOriginalCount);
+        Assert.Equal(1, row.CrossThreadConstraintCount);
+        Assert.Equal(1, row.CausalTracingConstraintCount);
+        Assert.Single(row.ReceivedOriginals);
+        Assert.Equal(5L, row.ReceivedOriginals[0].FirstReceivedAtTick);
+        if (state != "Confirmed")
+        {
+            Assert.Equal(["C", "D"], row.SearchResult.OuterPlausibleCandidateRegionIds);
+        }
+    }
+
+    [Fact]
+    public void JsonDeviceOnlyEvidenceCannotCreatePersonConstraintOrSourceGroup()
+    {
+        var fixture = JsonNode.Parse(File.ReadAllText(FixturePath()))!.AsObject();
+        var observation = fixture["observation"]!;
+        observation["isPersonEvidence"] = false;
+        observation["isDeviceOnlyEvidence"] = true;
+        observation["participants"]![0]!["entityId"] = "held-device";
+        observation["participants"]![0]!["entityKind"] = "Device";
+        var row = Assert.Single(RescuerReceiptTimeline.Run(
+            Encoding.UTF8.GetBytes(fixture.ToJsonString())).Queries,
+            item => item.QueryTick == 5);
+        Assert.Equal(1, row.ReceivedOriginalCount);
+        Assert.Equal(0, row.CrossThreadConstraintCount);
+        Assert.Equal(0, row.CausalTracingConstraintCount);
+        Assert.Equal(0, row.SourceGroupCount);
+        Assert.Equal(["C", "D"], row.SearchResult.CandidateRegionIds);
+    }
+
+    [Theory]
+    [InlineData("scenarioId", "other-run")]
+    [InlineData("seed", "8")]
+    [InlineData("originalRecordId", "other-record")]
+    [InlineData("holderDeviceId", "other-holder")]
+    public void UnrelatedJsonDeliveryCannotExposeRecordAtQueryTickFive(
+        string field, string replacement)
+    {
+        var fixture = JsonNode.Parse(File.ReadAllText(FixturePath()))!.AsObject();
+        var receipt = fixture["receipts"]![0]!;
+        if (field == "seed")
+        {
+            receipt[field] = 8;
+        }
+        else
+        {
+            receipt[field] = replacement;
+        }
+
+        var row = Assert.Single(RescuerReceiptTimeline.Run(
+            Encoding.UTF8.GetBytes(fixture.ToJsonString())).Queries,
+            item => item.QueryTick == 5);
+        Assert.Equal(0, row.ReceivedOriginalCount);
+        Assert.Equal(0, row.SourceGroupCount);
+        Assert.Equal(["C", "D"], row.SearchResult.CandidateRegionIds);
+    }
+
+    [Fact]
+    public void JsonStrictParserRejectsNumericEnumsUnknownNestedKeysAndDuplicateKeys()
+    {
+        var fixture = JsonNode.Parse(File.ReadAllText(FixturePath()))!.AsObject();
+        fixture["observation"]!["evidenceState"] = 0;
+        Assert.Throws<JsonException>(() => RescuerReceiptTimeline.Run(
+            Encoding.UTF8.GetBytes(fixture.ToJsonString())));
+        fixture = JsonNode.Parse(File.ReadAllText(FixturePath()))!.AsObject();
+        fixture["observation"]!["untrustedValue"] = 4;
+        Assert.Throws<JsonException>(() => RescuerReceiptTimeline.Run(
+            Encoding.UTF8.GetBytes(fixture.ToJsonString())));
+
+        var original = File.ReadAllText(FixturePath());
+        var duplicated = original.Replace(
+            "\"schemaVersion\": 1,",
+            "\"schemaVersion\": 1, \"schemaVersion\": 1,",
+            StringComparison.Ordinal);
+        Assert.NotEqual(original, duplicated);
+        Assert.Throws<JsonException>(() => RescuerReceiptTimeline.Run(
+            Encoding.UTF8.GetBytes(duplicated)));
     }
 
     private static string[] Candidates(JsonElement row) =>
