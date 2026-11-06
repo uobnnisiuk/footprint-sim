@@ -367,7 +367,17 @@ public sealed class RescuerEvidenceBoundaryTests
         var b = new DeviceHeldInteractionRecord("holder-b", 3, a.Observation);
         var single = Build(a, [Receipt(5)], 5);
         var multi = BuildMulti([a, b], [HolderReceipt("holder-b", 5)], 5);
-        Assert.Equal(JsonDefaults.Serialize(single.Input), JsonDefaults.Serialize(multi.Input));
+        // PublicDeviceIds legitimately differs because the multi-holder query
+        // declares an additional device; compare evidence and actual inference.
+        Assert.Equal(
+            JsonDefaults.Serialize(single.Input.AvailableCrossThreadConstraints),
+            JsonDefaults.Serialize(multi.Input.AvailableCrossThreadConstraints));
+        Assert.Equal(
+            JsonDefaults.Serialize(single.Input.AvailableCausalTracingConstraints),
+            JsonDefaults.Serialize(multi.Input.AvailableCausalTracingConstraints));
+        Assert.Equal(
+            JsonDefaults.Serialize(new MultiWeftTracingStrategy().Evaluate(single.Input)),
+            JsonDefaults.Serialize(new MultiWeftTracingStrategy().Evaluate(multi.Input)));
         var actual = new MultiWeftTracingStrategy().Evaluate(multi.Input);
         Assert.Equal(["C", "D"], actual.OuterPlausibleCandidateRegionIds);
         Assert.Equal(state,
