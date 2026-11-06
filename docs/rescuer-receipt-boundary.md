@@ -218,3 +218,62 @@ ledger entries, uncertainty and device-only evidence. These are deterministic
 contract tests with synthetic values, not evidence of network integrity,
 real-world rescue accuracy or several independent original encounters. The
 existing one-holder API and the opt-in timeline CLI remain unchanged.
+
+## Two distinct originals in one query (Issue #82)
+
+Work-Key: `FP-DISTINCT-ROOT-RECEIPT-COMPOSITION-V1`
+
+`BuildDistinctOriginals` accepts exactly two explicitly identified original
+observations, each with one declared holder, and one rescuer's receipt ledger.
+Both `SourceEvidenceIdentifier` and `ObservationId` must be distinct. Empty,
+null, repeated-root and conflicting same-root inputs are rejected; copies of
+one original still use the existing multi-holder `Build` overload. An empty
+receipt ledger is valid and grants access to neither original.
+
+The entry point materializes the ledger once, rejects null entries, and reuses
+the existing single-holder `Build` for each original. Thus every original must
+match the query run and declare a public holder. All currently matching receipts
+are checked, including invalid assertions alongside a valid other original.
+Unrelated and future deliveries cannot grant access or narrow current candidates.
+Future temporal inconsistencies are not consumed until their receipt cutoff.
+
+Eligible received wrappers are ordered by original source ID, observation ID,
+and first legal receipt tick. Each original's constraint views are combined into
+one `SearchStrategyInput` before the actual `MultiWeftTracingStrategy.Evaluate`
+call. The builder does not evaluate two separate candidate sets and combine those
+outputs afterwards. No point-position `ObservationRecord` is fabricated.
+Original bytes, visibility, observed windows, evidence states and ancestry remain
+unchanged. Delivery counts and holder identities do not enter source ancestry.
+Two different root IDs do not prove independent observations: the existing tracer
+still joins constraints with overlapping source ancestry into one source group.
+
+In the existing public `{A,B}` at tick 2 to `{C,D}` at tick 5 example, one
+original reports `{A,B}` at tick 2 and arrives at tick 3. A second reports `{A}`
+at tick 2 and arrives at tick 5. Both were available and stored at tick 3.
+The following comparisons all query tick 5 and keep the public model fixed:
+
+| Available originals | Constraints per set | Tick-5 outer candidates |
+| --- | ---: | --- |
+| Neither | 0 | `{C,D}` |
+| Broad record only | 1 | `{C,D}` |
+| Both confirmed records | 2 | `{C}` |
+| Broad confirmed plus uncertain narrow record | 2 | `{C,D}` (preferred `{C}`) |
+| Broad confirmed plus conflicting narrow record | 2 | `{C,D}`, conflict retained |
+| Broad confirmed plus device-only record | 1 | `{C,D}` |
+| Contradictory confirmed `{A}` and `{B}` records | 2 | `{C,D}`, conflict retained |
+
+Reordered inputs and repeated delivery leave the same snapshot and inference at
+the same cutoff. Swapping actual arrival times changes access times, not the
+identity or ancestry of either original. Tests exercise real tracing, not a
+substitute inference implementation; expected results and execution evidence are
+kept distinct until the PR's CI has run.
+
+This is a common input bridge for comparing use of multiple distributed traces.
+It is not a new causal discovery method, a completed method comparison, a proof
+of real rescue benefit, or authentication of original/receipt assertions. The
+existing CLI fixture and report schema remain single-original and unchanged.
+Following the owner's research realignment, the next priority is a bounded
+same-information comparison of a simple last-seen baseline, known-relation
+traversal and distributed-trace reconstruction, reusing existing M1-D/E methods.
+This slice does not select a winning method or equate unimplemented hypotheses
+with rejected ones.

@@ -217,6 +217,85 @@ public sealed class RescuerEvidenceInputBuilder
             publicSearchDomainRegionIds);
     }
 
+    /// <summary>
+    /// Composes exactly two distinct originals for one rescuer query. Each original
+    /// has one explicit holder; shared ancestry is preserved for the existing tracer.
+    /// </summary>
+    public RescuerEvidenceInput BuildDistinctOriginals(
+        RescueContext publicContext,
+        int seed,
+        long currentTick,
+        string rescuerId,
+        IEnumerable<DeviceHeldInteractionRecord> heldRecords,
+        IEnumerable<InteractionRecordReceipt> receipts,
+        IReadOnlyList<string>? publicSearchDomainRegionIds = null)
+    {
+        ArgumentNullException.ThrowIfNull(publicContext);
+        ArgumentNullException.ThrowIfNull(heldRecords);
+        ArgumentNullException.ThrowIfNull(receipts);
+        var normalizedRescuer = InteractionNormalization.RequireIdentifier(rescuerId, nameof(rescuerId));
+        if (currentTick < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(currentTick));
+        }
+
+        var originals = heldRecords.ToArray();
+        if (originals.Length != 2 || originals.Any(record => record is null))
+        {
+            throw new ArgumentException("Exactly two non-null originals are required.", nameof(heldRecords));
+        }
+
+        if (originals.Select(record => record.OriginalRecordId).Distinct(StringComparer.Ordinal).Count() != 2 ||
+            originals.Select(record => record.Observation.ObservationId).Distinct(StringComparer.Ordinal).Count() != 2)
+        {
+            throw new ArgumentException(
+                "Distinct originals must have distinct source and observation identifiers; use Build for copies.",
+                nameof(heldRecords));
+        }
+
+        // Materialize once so both projections see the same ledger. No receipt
+        // assertion, including an invalid matching one, is silently discarded here.
+        var ledger = receipts.ToArray();
+        if (ledger.Any(receipt => receipt is null))
+        {
+            throw new ArgumentException("Receipt entries must not be null.", nameof(receipts));
+        }
+
+        var views = originals
+            .OrderBy(record => record.OriginalRecordId, StringComparer.Ordinal)
+            .ThenBy(record => record.Observation.ObservationId, StringComparer.Ordinal)
+            .Select(record => Build(
+                publicContext, seed, currentTick, normalizedRescuer, record, ledger,
+                publicSearchDomainRegionIds))
+            .ToArray();
+
+        // Compose eligible inputs, never independently evaluated candidate sets.
+        // Single-holder Build validates every matching receipt and retains the
+        // original identity, uncertainty, temporal windows and source ancestry.
+        return new RescuerEvidenceInput(
+            normalizedRescuer,
+            views.SelectMany(view => view.ReceivedRecords)
+                .OrderBy(record => record.OriginalRecordId, StringComparer.Ordinal)
+                .ThenBy(record => record.OriginalObservationId, StringComparer.Ordinal)
+                .ThenBy(record => record.FirstReceivedAtTick)
+                .ToArray(),
+            new SearchStrategyInput
+            {
+                ScenarioId = publicContext.ScenarioId,
+                Seed = seed,
+                CurrentTick = currentTick,
+                PublicContext = publicContext,
+                PublicSearchDomainRegionIds = views[0].Input.PublicSearchDomainRegionIds,
+                AvailableEvidence = views[0].Input.AvailableEvidence,
+                AvailableCrossThreadConstraints = new CrossThreadConstraintSet(
+                    publicContext.ScenarioId, seed,
+                    views.SelectMany(view => view.Input.AvailableCrossThreadConstraints!.Constraints).ToArray()),
+                AvailableCausalTracingConstraints = new CausalTracingConstraintSet(
+                    publicContext.ScenarioId, seed,
+                    views.SelectMany(view => view.Input.AvailableCausalTracingConstraints!.Constraints).ToArray())
+            });
+    }
+
     private static bool SameOriginal(InteractionObservation left, InteractionObservation right) =>
         string.Equals(left.ObservationId, right.ObservationId, StringComparison.Ordinal) &&
         string.Equals(left.ScenarioId, right.ScenarioId, StringComparison.Ordinal) &&
