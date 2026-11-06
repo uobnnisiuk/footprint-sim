@@ -332,10 +332,13 @@ ablation, not a statement that it was inaccessible. Thus differences
 between arrival rows are changes in available information, while
 differences between method rows at a fixed cutoff are changes in method.
 
-The following table fixes the **actual method-output expectations** of the
-implementation's direct assertions (not inferred from a desired winner).
-This revision is awaiting verification of the updated PR head by GitHub CI;
-the table must not be described as CI-validated until those checks pass.
+The following table records **verified outputs** from the real method
+adapter, fixed by direct assertions against all rows in
+`RescuerEvidenceBoundaryTests`. On implementation head
+`3d07152411dedc879ee483b9084740cefaad07ff`, [GitHub ordinary CI
+run 42278720202](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42278720202)
+completed successfully, including build, test, formatting, S0/S1 and the
+evaluation harness. This is a model-level check, not a measured rescue outcome.
 All rows use the same public world and target window. The last four are
 same-tick ablations at tick 7, not claims of real access.
 
@@ -407,6 +410,7 @@ review rather than silently excluding the original concept. Repeating
 old S5 seeds or expanding receipt API arity would not answer this
 question.
 
-The fixture and comparisons remain synthetic. GitHub CI must validate the
-updated-head direct assertions before these fixed outputs can be called
-verified. Even successful assertions do not establish real rescue effectiveness.
+The fixture and comparisons remain synthetic. The output expectations above
+were checked on the cited implementation head; the subsequent documentation
+commit needs its own ordinary and F19 research CI before the PR can pass
+final review. Even successful tests do not establish rescue effectiveness.
