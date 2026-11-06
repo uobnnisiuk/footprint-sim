@@ -397,6 +397,246 @@ public sealed class RescuerEvidenceBoundaryTests
             new MultiWeftTracingStrategy().Evaluate(received.Input).CandidateRegionIds);
     }
 
+    [Fact]
+    public void DistinctOriginalsEnterOneInferenceOnlyWhenReceived()
+    {
+        var narrow = Record();
+        var broad = DistinctRecord(["A", "B"]);
+        var originals = new[] { narrow, broad };
+        var first = DistinctReceipt(3);
+        var second = Receipt(5);
+        var before = BuildDistinct(originals, [first, second], 2);
+        AssertNoReceivedEvidence(before);
+        Assert.DoesNotContain(RecordId, JsonDefaults.Serialize(before));
+        Assert.DoesNotContain(broad.OriginalRecordId, JsonDefaults.Serialize(before));
+
+        var atFirstCutoff = BuildDistinct(originals, [first, second], 4);
+        Assert.Equal(broad.OriginalRecordId, Assert.Single(atFirstCutoff.ReceivedRecords).OriginalRecordId);
+        Assert.Single(atFirstCutoff.Input.AvailableCausalTracingConstraints!.Constraints);
+        Assert.DoesNotContain(narrow.Observation.ObservationId, JsonDefaults.Serialize(atFirstCutoff));
+
+        // Hold query time and public model fixed when testing information gain.
+        var none = BuildDistinct(originals, [], 5);
+        var onlyBroad = BuildDistinct(originals, [first], 5);
+        var both = BuildDistinct(originals, [first, second], 5);
+        Assert.Equal(2, both.ReceivedRecords.Count);
+        Assert.Equal(2, both.Input.AvailableCrossThreadConstraints!.Constraints.Count);
+        Assert.Equal(2, both.Input.AvailableCausalTracingConstraints!.Constraints.Count);
+        Assert.Empty(both.Input.AvailableEvidence.Observations);
+        Assert.Equal(["C", "D"], new MultiWeftTracingStrategy().Evaluate(none.Input).CandidateRegionIds);
+        Assert.Equal(["C", "D"], new MultiWeftTracingStrategy().Evaluate(onlyBroad.Input).CandidateRegionIds);
+        var result = new MultiWeftTracingStrategy().Evaluate(both.Input);
+        Assert.Equal(["C"], result.CandidateRegionIds);
+        Assert.Equal(["C"], result.PreferredCandidateRegionIds);
+        Assert.Equal(2, result.CausalTracingResult!.SourceGroups.Count);
+        Assert.Contains(result.CausalTracingResult.Steps, step =>
+            step.Direction == CausalTracingDirection.Forward);
+        Assert.All(both.Input.AvailableCausalTracingConstraints.Constraints, constraint =>
+            Assert.Contains(result.CausalTracingResult.Steps, step =>
+                step.ConstraintId == constraint.ConstraintId &&
+                step.Direction == CausalTracingDirection.CrossThread &&
+                step.Disposition == TracingStepDisposition.Applied));
+    }
+
+    [Fact]
+    public void DistinctOriginalOrderingAndRedeliveryAreDeterministic()
+    {
+        var narrow = Record();
+        var broad = DistinctRecord(["A", "B"]);
+        var originals = new[] { narrow, broad };
+        var receipts = new[] { DistinctReceipt(3), Receipt(5) };
+        var expected = BuildDistinct(originals, receipts, 7);
+        var actual = BuildDistinct(originals.Reverse(),
+            new[] { Receipt(7), Receipt(5), DistinctReceipt(6), DistinctReceipt(3), Receipt(5) }, 7);
+        Assert.Equal(JsonDefaults.Serialize(expected), JsonDefaults.Serialize(actual));
+        Assert.Equal(
+            JsonDefaults.Serialize(new MultiWeftTracingStrategy().Evaluate(expected.Input)),
+            JsonDefaults.Serialize(new MultiWeftTracingStrategy().Evaluate(actual.Input)));
+        Assert.Equal(new[] { 5L, 3L }, actual.ReceivedRecords.Select(record => record.FirstReceivedAtTick));
+
+        var invertedArrival = BuildDistinct(originals, [Receipt(3), DistinctReceipt(5)], 5);
+        var atSecond = new MultiWeftTracingStrategy().Evaluate(invertedArrival.Input);
+        Assert.Equal(["C"], atSecond.CandidateRegionIds);
+        Assert.Equal(2, atSecond.CausalTracingResult!.SourceGroups.Count);
+    }
+
+    [Theory]
+    [InlineData(false, 2)]
+    [InlineData(true, 1)]
+    public void DistinctRootsPreserveOriginalsAndSharedAncestry(bool sharedAncestry, int expectedGroups)
+    {
+        var first = Record();
+        var second = DistinctRecord(["A"], ancestry: sharedAncestry ? "upstream-evidence" : "other-upstream");
+        var firstBytes = JsonDefaults.Serialize(first.Observation);
+        var secondBytes = JsonDefaults.Serialize(second.Observation);
+        var snapshot = BuildDistinct([first, second], [Receipt(5), DistinctReceipt(5)], 5);
+        var trace = new MultiWeftTracingStrategy().Evaluate(snapshot.Input).CausalTracingResult!;
+        Assert.Equal(expectedGroups, trace.SourceGroups.Count);
+        Assert.Equal(2, trace.SourceGroups.Sum(group => group.SourceObservationIds.Count));
+        Assert.Equal(2, trace.SourceGroups.Sum(group => group.ConstraintIds.Count));
+        Assert.Same(first.Observation, snapshot.ReceivedRecords[0].OriginalObservation);
+        Assert.Same(second.Observation, snapshot.ReceivedRecords[1].OriginalObservation);
+        Assert.Equal(firstBytes, JsonDefaults.Serialize(first.Observation));
+        Assert.Equal(secondBytes, JsonDefaults.Serialize(second.Observation));
+        Assert.All(snapshot.ReceivedRecords, record =>
+            Assert.Equal(InteractionVisibility.PrivateEvidence, record.OriginalObservation.Visibility));
+        Assert.All(snapshot.Input.AvailableCausalTracingConstraints!.Constraints, constraint =>
+        {
+            Assert.DoesNotContain(HolderId, constraint.SourceAncestryIds);
+            Assert.DoesNotContain("holder-b", constraint.SourceAncestryIds);
+            Assert.DoesNotContain(RescuerId, constraint.SourceAncestryIds);
+            Assert.Equal(InteractionTimeWindow.At(2), constraint.ConstrainedTimeWindow);
+        });
+    }
+
+    [Theory]
+    [InlineData(EvidenceState.SupportedButUncertain)]
+    [InlineData(EvidenceState.Conflicting)]
+    public void DistinctUncertainOrConflictingOriginalDoesNotHardExclude(EvidenceState state)
+    {
+        var broad = DistinctRecord(["A", "B"]);
+        var narrow = Record(state: state, window: new InteractionTimeWindow(1, 2));
+        var snapshot = BuildDistinct([narrow, broad], [Receipt(5), DistinctReceipt(3)], 5);
+        var constraint = snapshot.Input.AvailableCausalTracingConstraints!.Constraints
+            .Single(item => item.DirectSourceId == RecordId);
+        Assert.Equal(state, constraint.EvidenceBoundaryState);
+        Assert.Equal(new InteractionTimeWindow(1, 2), constraint.SourceObservedTimeWindow);
+        Assert.Equal(new InteractionTimeWindow(1, 2), constraint.ConstrainedTimeWindow);
+        var result = new MultiWeftTracingStrategy().Evaluate(snapshot.Input);
+        Assert.Equal(["C", "D"], result.OuterPlausibleCandidateRegionIds);
+        if (state == EvidenceState.SupportedButUncertain)
+        {
+            Assert.Equal(["C"], result.PreferredCandidateRegionIds);
+        }
+        else
+        {
+            Assert.Contains(result.CausalTracingResult!.Steps, step =>
+                step.Disposition == TracingStepDisposition.MarkConflict && step.ConflictDetected);
+        }
+    }
+
+    [Fact]
+    public void ContradictoryConfirmedOriginalsRetainOuterAlternativesAndConflict()
+    {
+        var snapshot = BuildDistinct([Record(), DistinctRecord(["B"])],
+            [Receipt(5), DistinctReceipt(5)], 5);
+        var result = new MultiWeftTracingStrategy().Evaluate(snapshot.Input);
+        Assert.Equal(["C", "D"], result.OuterPlausibleCandidateRegionIds);
+        Assert.Equal(2, result.CausalTracingResult!.SourceGroups.Count);
+        Assert.Contains(result.CausalTracingResult.Steps, step =>
+            step.Disposition == TracingStepDisposition.MarkConflict && step.ConflictDetected);
+    }
+
+    [Fact]
+    public void DistinctDeviceOnlyOriginalAddsNoPersonConstraint()
+    {
+        var snapshot = BuildDistinct([Record(deviceOnly: true), DistinctRecord(["A", "B"])],
+            [Receipt(5), DistinctReceipt(3)], 5);
+        Assert.Equal(2, snapshot.ReceivedRecords.Count);
+        Assert.True(snapshot.ReceivedRecords[0].OriginalObservation.IsDeviceOnlyEvidence);
+        Assert.Single(snapshot.Input.AvailableCrossThreadConstraints!.Constraints);
+        Assert.Single(snapshot.Input.AvailableCausalTracingConstraints!.Constraints);
+        var result = new MultiWeftTracingStrategy().Evaluate(snapshot.Input);
+        Assert.Equal(["C", "D"], result.CandidateRegionIds);
+        Assert.Single(result.CausalTracingResult!.SourceGroups);
+    }
+
+    [Theory]
+    [InlineData("scenario")]
+    [InlineData("seed")]
+    [InlineData("record")]
+    [InlineData("holder")]
+    [InlineData("rescuer")]
+    public void UnrelatedReceiptCannotAddSecondOriginal(string mismatch)
+    {
+        var records = new[] { Record(), DistinctRecord(["A", "B"]) };
+        var unrelated = new InteractionRecordReceipt(
+            mismatch == "scenario" ? "other-run" : ScenarioId,
+            mismatch == "seed" ? Seed + 1 : Seed,
+            mismatch == "record" ? "unknown-record" : RecordId,
+            mismatch == "holder" ? "holder-b" : HolderId,
+            mismatch == "rescuer" ? "other-rescuer" : RescuerId, 5);
+        var expected = BuildDistinct(records, [DistinctReceipt(3)], 5);
+        var actual = BuildDistinct(records, [DistinctReceipt(3), unrelated, Receipt(10)], 5);
+        Assert.Equal(JsonDefaults.Serialize(expected), JsonDefaults.Serialize(actual));
+        Assert.Equal(["C", "D"], new MultiWeftTracingStrategy().Evaluate(actual.Input).CandidateRegionIds);
+    }
+
+    [Theory]
+    [InlineData(3, 6, 5)]
+    [InlineData(6, 6, 5)]
+    [InlineData(2, 2, 1)]
+    public void InvalidMatchingReceiptCannotHideBehindAnotherValidOriginal(long available, long stored, long received)
+    {
+        var late = Record(availableAtTick: available, storedAtTick: stored);
+        var other = DistinctRecord(["A", "B"]);
+        Assert.Throws<ArgumentException>(() => BuildDistinct([late, other],
+            [DistinctReceipt(3), Receipt(received)], 10));
+        // A future invalid assertion is not consumed by the earlier query.
+        var future = Record(availableAtTick: 20, storedAtTick: 20);
+        var expected = BuildDistinct([future, other], [DistinctReceipt(3)], 5);
+        var actual = BuildDistinct([future, other], [DistinctReceipt(3), Receipt(10)], 5);
+        Assert.Equal(JsonDefaults.Serialize(expected), JsonDefaults.Serialize(actual));
+    }
+
+    [Fact]
+    public void DistinctCompositionRejectsInvalidOriginalCollectionsAndNullReceipts()
+    {
+        var first = Record();
+        var second = DistinctRecord(["A"]);
+        Assert.Throws<ArgumentNullException>(() => BuildDistinct(null!, [], 5));
+        Assert.Throws<ArgumentNullException>(() => BuildDistinct([first, second], null!, 5));
+        Assert.Throws<ArgumentException>(() => BuildDistinct([], [], 5));
+        Assert.Throws<ArgumentException>(() => BuildDistinct([first], [], 5));
+        Assert.Throws<ArgumentException>(() => BuildDistinct([first, second, first], [], 5));
+        Assert.Throws<ArgumentException>(() => BuildDistinct([first, null!], [], 5));
+        Assert.Throws<ArgumentException>(() => BuildDistinct([first, first], [], 5));
+        Assert.Throws<ArgumentException>(() => BuildDistinct(
+            [first, new DeviceHeldInteractionRecord("holder-b", 3, first.Observation)], [], 5));
+        Assert.Throws<ArgumentException>(() => BuildDistinct(
+            [first, Record(state: EvidenceState.Conflicting)], [], 5));
+        Assert.Throws<ArgumentException>(() => BuildDistinct([first, second], [null!], 5));
+    }
+
+    [Fact]
+    public void DistinctCompositionValidatesEveryOriginalRunAndHolder()
+    {
+        var first = Record();
+        var otherRun = DistinctRecord(["A"], seed: Seed + 1);
+        Assert.Throws<ArgumentException>(() => BuildDistinct([first, otherRun], [Receipt(5)], 5));
+        var undeclared = new DeviceHeldInteractionRecord("unlisted-holder", 3,
+            DistinctRecord(["A"]).Observation);
+        Assert.Throws<ArgumentException>(() => BuildDistinct([first, undeclared], [Receipt(5)], 5));
+        Assert.Throws<ArgumentOutOfRangeException>(() => BuildDistinct(
+            [first, DistinctRecord(["A"])], [], -1));
+    }
+
+    private static RescuerEvidenceInput BuildDistinct(
+        IEnumerable<DeviceHeldInteractionRecord> records,
+        IEnumerable<InteractionRecordReceipt> receipts,
+        long currentTick) => new RescuerEvidenceInputBuilder().BuildDistinctOriginals(
+            MultiHolderContext(), Seed, currentTick, RescuerId, records, receipts);
+
+    private static InteractionRecordReceipt DistinctReceipt(long tick) =>
+        new(ScenarioId, Seed, "second-original", "holder-b", RescuerId, tick);
+
+    private static DeviceHeldInteractionRecord DistinctRecord(
+        IReadOnlyList<string> regions,
+        string ancestry = "other-upstream",
+        int seed = Seed) => new("holder-b", 3, InteractionObservation.Create(
+            ScenarioId, seed, "second-original", null,
+            InteractionRelationKind.PersonPersonEncounter,
+            [
+                new InteractionParticipant(TargetId, InteractionEntityKind.Person,
+                    InteractionParticipantRole.EncounterParticipant),
+                new InteractionParticipant("person-c", InteractionEntityKind.Person,
+                    InteractionParticipantRole.EncounterParticipant)
+            ],
+            InteractionTimeWindow.At(2), regions, 3, EvidenceState.Confirmed,
+            isPersonEvidence: true, isDeviceOnlyEvidence: false,
+            InteractionVisibility.PrivateEvidence,
+            [new InteractionProvenance(InteractionProvenanceKind.EvidenceRecord, ancestry)]));
+
     private static void AssertNoReceivedEvidence(RescuerEvidenceInput snapshot)
     {
         Assert.Empty(snapshot.ReceivedRecords);
