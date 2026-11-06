@@ -242,17 +242,17 @@ public static class RescuerEvidenceMethodComparison
         PastStatePublicContext Context(
             IReadOnlyList<string> generation,
             IReadOnlyList<string> traversal) => new()
-        {
-            Query = query,
-            PublicCandidateStates = states,
-            GenerationDirectSourceIds = generation,
-            VerificationDirectSourceIds = [],
-            TraversalDirectSourceIds = traversal,
-            AvailableObservationIds = input.AvailableEvidence.Observations
+            {
+                Query = query,
+                PublicCandidateStates = states,
+                GenerationDirectSourceIds = generation,
+                VerificationDirectSourceIds = [],
+                TraversalDirectSourceIds = traversal,
+                AvailableObservationIds = input.AvailableEvidence.Observations
                 .Select(item => item.ObservationId).ToArray(),
-            LocalTraversalWindowPaddingTicks = 0,
-            PublicHazardEnvelope = envelope
-        };
+                LocalTraversalWindowPaddingTicks = 0,
+                PublicHazardEnvelope = envelope
+            };
         var reconstructor = new PastStateReconstructor();
         var available = input.AvailableCausalTracingConstraints
             ?? new CausalTracingConstraintSet(input.ScenarioId, input.Seed, []);
