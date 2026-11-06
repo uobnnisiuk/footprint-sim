@@ -120,6 +120,120 @@ public sealed class RescuerEvidenceInputBuilder
         });
     }
 
+
+    /// <summary>
+    /// Normalizes explicit copies of one original held by several devices. Receipt
+    /// grants access once, never another evidence root or independent source.
+    /// </summary>
+    public RescuerEvidenceInput Build(
+        RescueContext publicContext,
+        int seed,
+        long currentTick,
+        string rescuerId,
+        IEnumerable<DeviceHeldInteractionRecord> heldRecords,
+        IEnumerable<InteractionRecordReceipt> receipts,
+        IReadOnlyList<string>? publicSearchDomainRegionIds = null)
+    {
+        ArgumentNullException.ThrowIfNull(publicContext);
+        ArgumentNullException.ThrowIfNull(heldRecords);
+        ArgumentNullException.ThrowIfNull(receipts);
+        var normalizedRescuer = InteractionNormalization.RequireIdentifier(rescuerId, nameof(rescuerId));
+        if (currentTick < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(currentTick));
+        }
+
+        var copies = heldRecords.ToArray();
+        if (copies.Length == 0 || copies.Any(copy => copy is null))
+        {
+            throw new ArgumentException("At least one non-null held copy is required.", nameof(heldRecords));
+        }
+
+        var original = copies[0].Observation;
+        if (!string.Equals(publicContext.ScenarioId, original.ScenarioId, StringComparison.Ordinal) ||
+            seed != original.Seed ||
+            copies.Any(copy =>
+                !SameOriginal(original, copy.Observation) ||
+                !publicContext.PublicDeviceIds.Contains(copy.HolderDeviceId, StringComparer.Ordinal)))
+        {
+            throw new ArgumentException(
+                "All copies must share one identical original and declare public holder devices.",
+                nameof(heldRecords));
+        }
+
+        // Identical repeat entries for one holder are harmless; conflicting storage
+        // times for that holder are not evidence that can be silently resolved.
+        var normalizedCopies = copies
+            .GroupBy(copy => copy.HolderDeviceId, StringComparer.Ordinal)
+            .Select(group =>
+            {
+                var first = group.First();
+                if (group.Any(copy => copy.StoredAtTick != first.StoredAtTick))
+                {
+                    throw new ArgumentException(
+                        "One holder has conflicting storage times.", nameof(heldRecords));
+                }
+
+                return first;
+            })
+            .OrderBy(copy => copy.HolderDeviceId, StringComparer.Ordinal)
+            .ToArray();
+        var byHolder = normalizedCopies.ToDictionary(copy => copy.HolderDeviceId, StringComparer.Ordinal);
+
+        // Filter other queries and future deliveries before temporal validation.
+        // Check every currently matching assertion, not only the first valid one.
+        var matching = receipts
+            .Where(receipt =>
+                receipt is not null &&
+                receipt.ReceivedAtTick <= currentTick &&
+                receipt.Seed == seed &&
+                string.Equals(receipt.ScenarioId, original.ScenarioId, StringComparison.Ordinal) &&
+                string.Equals(receipt.OriginalRecordId, original.SourceEvidenceIdentifier, StringComparison.Ordinal) &&
+                string.Equals(receipt.RescuerId, normalizedRescuer, StringComparison.Ordinal) &&
+                byHolder.ContainsKey(receipt.HolderDeviceId))
+            .OrderBy(receipt => receipt.ReceivedAtTick)
+            .ThenBy(receipt => receipt.HolderDeviceId, StringComparer.Ordinal)
+            .ToArray();
+        if (matching.Any(receipt =>
+            receipt.ReceivedAtTick < byHolder[receipt.HolderDeviceId].StoredAtTick ||
+            receipt.ReceivedAtTick < original.AvailableAtTick ||
+            receipt.ReceivedAtTick < original.ObservedTimeWindow.EndTick))
+        {
+            throw new ArgumentException(
+                "A matching receipt cannot precede storage, original availability or observation.",
+                nameof(receipts));
+        }
+
+        var firstReceipt = matching.FirstOrDefault();
+        var selected = firstReceipt is null
+            ? normalizedCopies[0]
+            : byHolder[firstReceipt.HolderDeviceId];
+
+        // Reuse the established one-holder projection, including original
+        // ancestry, person/device and uncertain/conflict semantics.
+        return Build(
+            publicContext, seed, currentTick, normalizedRescuer, selected,
+            firstReceipt is null ? [] : [firstReceipt],
+            publicSearchDomainRegionIds);
+    }
+
+    private static bool SameOriginal(InteractionObservation left, InteractionObservation right) =>
+        string.Equals(left.ObservationId, right.ObservationId, StringComparison.Ordinal) &&
+        string.Equals(left.ScenarioId, right.ScenarioId, StringComparison.Ordinal) &&
+        left.Seed == right.Seed &&
+        string.Equals(left.SourceEvidenceIdentifier, right.SourceEvidenceIdentifier, StringComparison.Ordinal) &&
+        string.Equals(left.ReferencedInteractionId, right.ReferencedInteractionId, StringComparison.Ordinal) &&
+        left.ObservedRelationKind == right.ObservedRelationKind &&
+        left.ObservedParticipants.SequenceEqual(right.ObservedParticipants) &&
+        left.ObservedTimeWindow == right.ObservedTimeWindow &&
+        left.ObservedRegionIds.SequenceEqual(right.ObservedRegionIds, StringComparer.Ordinal) &&
+        left.AvailableAtTick == right.AvailableAtTick &&
+        left.EvidenceBoundaryState == right.EvidenceBoundaryState &&
+        left.IsPersonEvidence == right.IsPersonEvidence &&
+        left.IsDeviceOnlyEvidence == right.IsDeviceOnlyEvidence &&
+        left.Visibility == right.Visibility &&
+        left.Provenance.SequenceEqual(right.Provenance);
+
     private static CrossThreadConstraint ForReceiver(
         CrossThreadConstraint original,
         string rescuerId,
