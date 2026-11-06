@@ -136,9 +136,39 @@ The repository-wide AGENTS build/test/format, scenario and evaluation checks
 remain the handoff gates. This document specifies the contract and expected
 example; execution results are recorded in the PR and CI rather than assumed here.
 
-Existing scenario loading, simulation, CLI, batch-evaluation paths and output
-schemas are unchanged. This is an opt-in programmatic bridge. A later bounded
-task can connect explicit receipt events to a scenario/evaluation timeline; it
-must retain receiver scoping and immutable original identities. Multiple held
-records, forwarding chains, actual communication and operational rescue decisions
-are outside this slice.
+Existing scenario loading, simulation, batch evaluation and output schemas remain
+unchanged. The programmatic bridge is also used by an opt-in receipt timeline
+CLI; no new encounter rule, communication simulator, or rescue priority is added.
+
+## Opt-in receipt timeline CLI
+
+The next bounded slice is [Issue #78](https://github.com/uobnnisiuk/footprint-sim/issues/78).
+It reads one immutable private interaction observation, one holder, one recipient,
+an explicit receipt ledger and ordered query ticks from a dedicated JSON fixture.
+
+Run the following from the repository root:
+
+    dotnet run --project src/FootprintSim.Cli -- evaluate-rescuer-receipt-timeline --fixture experiments/rescuer_receipt_timeline/fixture.json --output results/rescuer-receipt-timeline.json
+
+The fixture's schemaVersion 1 is deliberately separate from existing scenario
+and evaluation schemas. Unknown keys, duplicate keys and unsupported enum names
+are rejected. The CLI uses the existing builder and MultiWeftTracingStrategy;
+it never reconstructs receipt logic, takes simulated truth, creates positional
+observations from an interaction, or modifies shared evidence.
+
+The dedicated report contains the fixture's raw byte SHA-256, ordered query
+ticks, received-original counts, both constraint counts, and actual source groups
+and inference results. Original record IDs, observation IDs and ancestry enter a
+row only after an eligible receipt. A repeat delivery cannot add another source
+group. The sample's pre-receipt tick 4 returns public {A,B}, first receipt at
+tick 5 returns {C}, and tick 7 remains {C}; comparison at the same tick rather
+than across ticks establishes the duplicate-delivery no-op. Public alternatives
+at tick 5 without receipt remain {C,D}. Tick-7 projection is a bounded public
+model convention, not a real-world position claim.
+
+The report excludes current time, absolute paths and random identifiers. Results
+for unchanged fixture bytes are deterministic. Receipt order may change raw input
+SHA-256, while normalized query results remain identical. The report is published
+only after all query evaluations succeed, using a temporary file in the output
+directory; errors do not replace an existing complete report. This remains a
+single-record synthetic CLI, not multi-record forwarding or field operation.
