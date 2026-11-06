@@ -244,6 +244,149 @@ public sealed class RescuerEvidenceBoundaryTests
             Context() with { PublicDeviceIds = [] }, Seed, 5, RescuerId, record, [Receipt(5)]));
     }
 
+
+    [Fact]
+    public void MultipleHoldersGrantOneOriginalOnlyAfterFirstReceipt()
+    {
+        var heldA = Record();
+        var heldB = new DeviceHeldInteractionRecord("holder-b", 4, heldA.Observation);
+        var holders = new[] { heldA, heldB };
+        var receiptB = HolderReceipt("holder-b", 5);
+        var receiptA = HolderReceipt(HolderId, 7);
+        var before = BuildMulti(holders, [receiptB, receiptA], 4);
+        AssertNoReceivedEvidence(before);
+
+        var publicOnly = BuildMulti(holders, [], 5);
+        AssertNoReceivedEvidence(publicOnly);
+        Assert.Equal(["C", "D"], new MultiWeftTracingStrategy().Evaluate(publicOnly.Input).CandidateRegionIds);
+
+        var first = BuildMulti(holders, [receiptB, receiptA], 5);
+        Assert.Equal("holder-b", Assert.Single(first.ReceivedRecords).HolderDeviceId);
+        Assert.Equal(5, first.ReceivedRecords[0].FirstReceivedAtTick);
+        var cross = Assert.Single(first.Input.AvailableCrossThreadConstraints!.Constraints);
+        var tracing = Assert.Single(first.Input.AvailableCausalTracingConstraints!.Constraints);
+        Assert.Equal(heldA.Observation.ObservationId, cross.SourceObservationId);
+        Assert.Equal(RecordId, tracing.DirectSourceId);
+        Assert.DoesNotContain("holder-b", tracing.SourceAncestryIds);
+        Assert.DoesNotContain(HolderId, tracing.SourceAncestryIds);
+        Assert.DoesNotContain(RescuerId, tracing.SourceAncestryIds);
+        Assert.Empty(first.Input.AvailableEvidence.Observations);
+        var constrained = new MultiWeftTracingStrategy().Evaluate(first.Input);
+        Assert.Equal(["C"], constrained.CandidateRegionIds);
+        Assert.Single(constrained.CausalTracingResult!.SourceGroups);
+        Assert.Single(constrained.CausalTracingResult.SourceGroups[0].SourceObservationIds);
+
+        // Compare at the same query tick: B alone versus B and later A.
+        var oneReceipt = BuildMulti(holders, [receiptB], 7);
+        var repeated = BuildMulti(holders, [receiptB, receiptA, receiptA], 7);
+        Assert.Equal(JsonDefaults.Serialize(oneReceipt), JsonDefaults.Serialize(repeated));
+        Assert.Equal(
+            JsonDefaults.Serialize(new MultiWeftTracingStrategy().Evaluate(oneReceipt.Input)),
+            JsonDefaults.Serialize(new MultiWeftTracingStrategy().Evaluate(repeated.Input)));
+    }
+
+    [Fact]
+    public void MultipleHoldersAreDeterministicForEqualReceiptTimesAndReorderedInputs()
+    {
+        var a = Record();
+        var b = new DeviceHeldInteractionRecord("holder-b", 3, a.Observation);
+        var receiptA = HolderReceipt(HolderId, 5);
+        var receiptB = HolderReceipt("holder-b", 5);
+        var direct = BuildMulti([a, b], [receiptB, receiptA], 5);
+        var reversed = BuildMulti([b, a, a], [receiptA, receiptB, receiptB], 5);
+        Assert.Equal(HolderId, Assert.Single(direct.ReceivedRecords).HolderDeviceId);
+        Assert.Equal(JsonDefaults.Serialize(direct), JsonDefaults.Serialize(reversed));
+        Assert.Equal(
+            JsonDefaults.Serialize(new MultiWeftTracingStrategy().Evaluate(direct.Input)),
+            JsonDefaults.Serialize(new MultiWeftTracingStrategy().Evaluate(reversed.Input)));
+    }
+
+    [Fact]
+    public void MultipleHoldersRejectInconsistentOriginalsStorageAndRuns()
+    {
+        var original = Record();
+        var anotherCopy = new DeviceHeldInteractionRecord(
+            "holder-b", 3, Observation(state: EvidenceState.Conflicting));
+        Assert.Throws<ArgumentException>(() => BuildMulti([original, anotherCopy], [], 5));
+        Assert.Throws<ArgumentException>(() => BuildMulti(
+            [original, new DeviceHeldInteractionRecord(HolderId, 4, original.Observation)], [], 5));
+        Assert.Throws<ArgumentException>(() => BuildMulti([], [], 5));
+
+        var otherHolder = new DeviceHeldInteractionRecord("holder-b", 3, original.Observation);
+        var context = MultiHolderContext();
+        var builder = new RescuerEvidenceInputBuilder();
+        Assert.Throws<ArgumentException>(() => builder.Build(
+            context with { ScenarioId = "another-run" }, Seed, 5, RescuerId,
+            new[] { original, otherHolder }, Array.Empty<InteractionRecordReceipt>()));
+        Assert.Throws<ArgumentException>(() => builder.Build(
+            context, Seed + 1, 5, RescuerId,
+            new[] { original, otherHolder }, Array.Empty<InteractionRecordReceipt>()));
+        Assert.Throws<ArgumentException>(() => builder.Build(
+            context with { PublicDeviceIds = [HolderId] }, Seed, 5, RescuerId,
+            new[] { original, otherHolder }, Array.Empty<InteractionRecordReceipt>()));
+    }
+
+    [Fact]
+    public void InvalidMatchingReceiptCannotHideBehindValidReceiptFromAnotherHolder()
+    {
+        var lateHolder = Record(storedAtTick: 6);
+        var otherHolder = new DeviceHeldInteractionRecord("holder-b", 3, lateHolder.Observation);
+        Assert.Throws<ArgumentException>(() => BuildMulti(
+            [lateHolder, otherHolder],
+            [HolderReceipt("holder-b", 5), HolderReceipt(HolderId, 5)], 5));
+        AssertNoReceivedEvidence(BuildMulti(
+            [lateHolder, otherHolder], [HolderReceipt(HolderId, 5)], 4));
+    }
+
+    [Fact]
+    public void UnrelatedAndFutureMultiHolderReceiptsDoNotGrantOrChangeCurrentAccess()
+    {
+        var a = Record();
+        var b = new DeviceHeldInteractionRecord("holder-b", 3, a.Observation);
+        var valid = HolderReceipt("holder-b", 5);
+        var foreign = new InteractionRecordReceipt(ScenarioId, Seed, RecordId,
+            "unlisted-holder", RescuerId, 4);
+        var otherRescuer = new InteractionRecordReceipt(ScenarioId, Seed, RecordId,
+            HolderId, "someone-else", 4);
+        var otherRun = new InteractionRecordReceipt(ScenarioId, Seed + 1, RecordId,
+            HolderId, RescuerId, 4);
+        var future = HolderReceipt(HolderId, 10);
+        var baseline = BuildMulti([a, b], [valid], 5);
+        var mixed = BuildMulti([a, b], [foreign, otherRescuer, otherRun, future, valid], 5);
+        Assert.Equal(JsonDefaults.Serialize(baseline), JsonDefaults.Serialize(mixed));
+        AssertNoReceivedEvidence(BuildMulti(
+            [a, b], [foreign, otherRescuer, otherRun, future], 5));
+    }
+
+    [Theory]
+    [InlineData(EvidenceState.SupportedButUncertain)]
+    [InlineData(EvidenceState.Conflicting)]
+    public void MultipleHoldersPreserveUncertainAndConflictingAlternatives(EvidenceState state)
+    {
+        var a = Record(state: state, window: new InteractionTimeWindow(1, 2));
+        var b = new DeviceHeldInteractionRecord("holder-b", 3, a.Observation);
+        var single = Build(a, [Receipt(5)], 5);
+        var multi = BuildMulti([a, b], [HolderReceipt("holder-b", 5)], 5);
+        Assert.Equal(JsonDefaults.Serialize(single.Input), JsonDefaults.Serialize(multi.Input));
+        var actual = new MultiWeftTracingStrategy().Evaluate(multi.Input);
+        Assert.Equal(["C", "D"], actual.OuterPlausibleCandidateRegionIds);
+        Assert.Equal(state,
+            Assert.Single(multi.Input.AvailableCrossThreadConstraints!.Constraints).EvidenceBoundaryState);
+    }
+
+    [Fact]
+    public void MultipleHoldersDoNotPromoteDeviceOnlyEvidenceToPersonEvidence()
+    {
+        var a = Record(deviceOnly: true);
+        var b = new DeviceHeldInteractionRecord("holder-b", 3, a.Observation);
+        var received = BuildMulti([a, b], [HolderReceipt("holder-b", 5)], 5);
+        Assert.Single(received.ReceivedRecords);
+        Assert.Empty(received.Input.AvailableCrossThreadConstraints!.Constraints);
+        Assert.Empty(received.Input.AvailableCausalTracingConstraints!.Constraints);
+        Assert.Equal(["C", "D"],
+            new MultiWeftTracingStrategy().Evaluate(received.Input).CandidateRegionIds);
+    }
+
     private static void AssertNoReceivedEvidence(RescuerEvidenceInput snapshot)
     {
         Assert.Empty(snapshot.ReceivedRecords);
@@ -257,6 +400,19 @@ public sealed class RescuerEvidenceBoundaryTests
         IEnumerable<InteractionRecordReceipt> receipts,
         long currentTick = 5) => new RescuerEvidenceInputBuilder().Build(
             Context(), Seed, currentTick, RescuerId, record, receipts);
+
+
+    private static RescuerEvidenceInput BuildMulti(
+        IEnumerable<DeviceHeldInteractionRecord> heldRecords,
+        IEnumerable<InteractionRecordReceipt> receipts,
+        long currentTick) => new RescuerEvidenceInputBuilder().Build(
+            MultiHolderContext(), Seed, currentTick, RescuerId, heldRecords, receipts);
+
+    private static RescueContext MultiHolderContext() =>
+        Context() with { PublicDeviceIds = [HolderId, "holder-b"] };
+
+    private static InteractionRecordReceipt HolderReceipt(string holderId, long tick) =>
+        new(ScenarioId, Seed, RecordId, holderId, RescuerId, tick);
 
     private static InteractionRecordReceipt Receipt(long tick) =>
         new(ScenarioId, Seed, RecordId, HolderId, RescuerId, tick);

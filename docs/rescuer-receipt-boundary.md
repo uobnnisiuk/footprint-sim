@@ -172,3 +172,49 @@ SHA-256, while normalized query results remain identical. The report is publishe
 only after all query evaluations succeed, using a temporary file in the output
 directory; errors do not replace an existing complete report. This remains a
 single-record synthetic CLI, not multi-record forwarding or field operation.
+
+## One original copied to multiple holders (Issue #80)
+
+The overload accepting `IEnumerable<DeviceHeldInteractionRecord>` models a single
+immutable observation explicitly held by more than one publicly declared device.
+The caller must supply each holder and storage tick; no communication, discovery,
+ownership authorization, identity authentication or physical transfer is inferred.
+The original source ID, observation ID, content and provenance must match across
+all copies. Contradictory originals, runs and same-holder storage assertions are
+rejected rather than resolved by whichever item happens to appear first.
+
+Eligible receipt assertions must name that original, a supplied holder, the queried
+rescuer and run, and be available by the query cutoff. A receipt cannot predate its
+holder's storage, the original evidence availability or the observation's end.
+All matching receipts at the cutoff are validated, even if another holder has a
+valid earlier delivery. Other recipients, runs, unknown holders and future
+deliveries do not grant this rescuer access. This is not verification that a
+receipt truly happened.
+
+The earliest valid receipt chooses the access time and the stored copy supplied
+to the existing one-holder builder. When two holders have the same first receipt
+tick, the representative holder ID is ordered with `StringComparer.Ordinal`.
+This selection affects only the received-wrapper holder display; it does **not**
+modify the original, add a new evidence source, add a holder or delivery to
+ancestry, or create a new inference rule. Later arrivals and repeated receipts
+cannot change the snapshot at the same query tick. Person/device evidence,
+exact versus interval observations and uncertain/conflicting alternatives retain
+the single-holder semantics.
+
+For a concrete synthetic example, holder A stores an original at tick 3 and
+holder B stores the *same* original at tick 4. Their receipts to one rescuer
+arrive from B at tick 5 and A at tick 7:
+
+| Query | Rescuer-held original | Cross-thread / causal constraints | Inference |
+| --- | --- | --- | --- |
+| tick 4, neither received | 0 | 0 / 0 | Only public alternatives |
+| tick 5, B received | 1 | 1 / 1 (person evidence) | Existing model + original |
+| tick 7, B received | 1 | 1 / 1 | Same tick-7 result as both |
+| tick 7, B and A received | 1 | 1 / 1 | Same result, one source group |
+
+The integration tests exercise the actual `MultiWeftTracingStrategy`, including
+same-tick first-receipt ties, ordering, temporal conflicts, unrelated/future
+ledger entries, uncertainty and device-only evidence. These are deterministic
+contract tests with synthetic values, not evidence of network integrity,
+real-world rescue accuracy or several independent original encounters. The
+existing one-holder API and the opt-in timeline CLI remain unchanged.
