@@ -750,4 +750,153 @@ public sealed class RescuerEvidenceBoundaryTests
         ProvenanceId = $"declared-{source}-{destination}",
         PublishedAtTick = 0
     };
+
+    [Fact]
+    public void ReceiptGatedComparisonUsesTheSamePublicWorldAndSeparatesTimelineFromAblations()
+    {
+        var target = Record();
+        var later = LaterComparisonRecord();
+        var receipts = new[] { Receipt(6), LaterComparisonReceipt(7) };
+        var report = RescuerEvidenceMethodComparison.Run(
+            MultiHolderContext(), Seed, RescuerId, [target, later], receipts,
+            InteractionTimeWindow.At(2), [5, 6, 7], 7);
+        Assert.Equal(3, report.ActualTimeline.Count);
+        Assert.Equal(4, report.SameCutoffAblations.Count);
+        Assert.Equal([0, 1, 2], report.ActualTimeline.Select(row => row.ReceivedOriginalCount));
+        Assert.Equal([0, 1, 1, 2],
+            report.SameCutoffAblations.Select(row => row.ReceivedOriginalCount));
+        Assert.All(report.ActualTimeline, row =>
+        {
+            Assert.Equal(4, row.Methods.Count);
+            Assert.Equal(["A", "B"], row.Methods[0].OuterCandidateRegionIds);
+            Assert.Equal(2, row.Methods[0].BaselineCandidateCount);
+            Assert.Equal(row.ReceivedOriginalCount, row.AvailableConstraintCount);
+        });
+        Assert.Empty(report.ActualTimeline[0].ReceivedOriginalIds);
+        Assert.DoesNotContain(target.Observation.ObservationId,
+            JsonDefaults.Serialize(report.ActualTimeline[0]));
+        Assert.DoesNotContain(later.Observation.ObservationId,
+            JsonDefaults.Serialize(report.ActualTimeline[1]));
+        var first = report.ActualTimeline[1];
+        Assert.Equal(["A", "B"], first.Methods[1].OuterCandidateRegionIds);
+        Assert.Equal(["A"], first.Methods[2].OuterCandidateRegionIds);
+        Assert.Equal(1, first.Methods[2].CandidateReduction);
+        Assert.Equal([RecordId], first.Methods[2].GenerationDirectSourceIds);
+        Assert.Empty(first.Methods[2].TraversalDirectSourceIds);
+        Assert.Empty(first.Methods[1].TraversalDirectSourceIds);
+        Assert.Equal(6, report.FirstDifferences.Single(
+            item => item.Method == "distributed-reconstruction").FirstDifferentTick);
+
+        var second = report.ActualTimeline[2];
+        Assert.Equal(2, second.SourceGroupCount);
+        Assert.Equal(["second-original"], second.Methods[1].TraversalDirectSourceIds);
+        Assert.Equal([RecordId], second.Methods[3].GenerationDirectSourceIds);
+        Assert.Equal(["second-original"], second.Methods[3].TraversalDirectSourceIds);
+        Assert.True(second.Methods[3].ForwardTransitionSteps +
+            second.Methods[3].BackwardTransitionSteps > 0);
+        Assert.Contains(second.Methods[3].PublicTransitionIds,
+            id => !string.IsNullOrWhiteSpace(id));
+        Assert.Equal(JsonDefaults.Serialize(second.Methods),
+            JsonDefaults.Serialize(report.SameCutoffAblations[3].Methods));
+        Assert.Equal(JsonDefaults.Serialize(report),
+            JsonDefaults.Serialize(RescuerEvidenceMethodComparison.Run(
+                MultiHolderContext(), Seed, RescuerId, [later, target],
+                [LaterComparisonReceipt(7), Receipt(6), Receipt(6)],
+                InteractionTimeWindow.At(2), [7, 5, 6], 7)));
+    }
+
+    [Fact]
+    public void ReceiptGatedMethodComparisonKeepsUncertaintyConflictAndDeviceBoundary()
+    {
+        foreach (var state in new[] {
+            EvidenceState.SupportedButUncertain, EvidenceState.Conflicting })
+        {
+            var record = Record(state: state);
+            var snapshot = BuildDistinct(
+                [record, LaterComparisonRecord()],
+                [Receipt(6), LaterComparisonReceipt(7)], 7);
+            var result = RescuerEvidenceMethodComparison.Compare(
+                snapshot, InteractionTimeWindow.At(2));
+            Assert.Equal(["A", "B"],
+                result.Methods.Single(item => item.Method == "distributed-reconstruction")
+                    .OuterCandidateRegionIds);
+            Assert.Equal(2, result.ReceivedOriginalCount);
+            Assert.All(result.Methods, method =>
+                Assert.True(method.CandidateCount >= 0));
+        }
+
+        var device = BuildDistinct(
+            [Record(deviceOnly: true), LaterComparisonRecord()],
+            [Receipt(6), LaterComparisonReceipt(7)], 7);
+        var deviceResult = RescuerEvidenceMethodComparison.Compare(
+            device, InteractionTimeWindow.At(2));
+        Assert.Empty(deviceResult.Methods[2].GenerationDirectSourceIds);
+        Assert.Equal(["A", "B"], deviceResult.Methods[2].OuterCandidateRegionIds);
+    }
+
+    [Fact]
+    public void MethodComparisonNeverUsesFutureUnreceivedPrivateOrOtherRescuerEvidence()
+    {
+        var originals = new[] { Record(), LaterComparisonRecord() };
+        var before = BuildDistinct(originals,
+            [Receipt(6), LaterComparisonReceipt(7)], 5);
+        var withUnrelated = BuildDistinct(originals,
+            [Receipt(6), LaterComparisonReceipt(7),
+                new InteractionRecordReceipt(ScenarioId, Seed, RecordId, HolderId,
+                    "another-rescuer", 4)], 5);
+        var prior = RescuerEvidenceMethodComparison.Compare(
+            before, InteractionTimeWindow.At(2));
+        Assert.Equal(JsonDefaults.Serialize(prior),
+            JsonDefaults.Serialize(RescuerEvidenceMethodComparison.Compare(
+                withUnrelated, InteractionTimeWindow.At(2))));
+        Assert.Empty(prior.ReceivedSourceObservationIds);
+        Assert.Equal(0, prior.SourceGroupCount);
+        Assert.All(prior.Methods, method => Assert.Equal(["A", "B"],
+            method.OuterCandidateRegionIds));
+        Assert.Throws<ArgumentException>(() => RescuerEvidenceMethodComparison.Run(
+            MultiHolderContext(), Seed, RescuerId, originals,
+            [Receipt(6), LaterComparisonReceipt(9)],
+            InteractionTimeWindow.At(2), [5, 6, 7], 7));
+    }
+
+    [Fact]
+    public void SyntheticTruthIsEvaluatedOnlyAfterThePublicComparison()
+    {
+        var report = RescuerEvidenceMethodComparison.Run(
+            MultiHolderContext(), Seed, RescuerId,
+            [Record(), LaterComparisonRecord()],
+            [Receipt(6), LaterComparisonReceipt(7)],
+            InteractionTimeWindow.At(2), [5, 6, 7], 7);
+        var originalJson = JsonDefaults.Serialize(report);
+        var truthA = RescuerEvidenceMethodComparison.EvaluateSyntheticTruth(report, "A");
+        var truthB = RescuerEvidenceMethodComparison.EvaluateSyntheticTruth(report, "B");
+        Assert.Contains(truthA.Evaluations, item =>
+            item.QueryTick == 6 && item.Method == "distributed-reconstruction" &&
+            item.ContainsSyntheticTruth && !item.FalseExclusion);
+        Assert.Contains(truthB.Evaluations, item =>
+            item.QueryTick == 6 && item.Method == "distributed-reconstruction" &&
+            !item.ContainsSyntheticTruth && item.FalseExclusion);
+        Assert.Equal(originalJson, JsonDefaults.Serialize(report));
+        Assert.DoesNotContain("SyntheticTruth", originalJson);
+    }
+
+    private static DeviceHeldInteractionRecord LaterComparisonRecord() =>
+        new("holder-b", 6, InteractionObservation.Create(
+            ScenarioId, Seed, "second-original", null,
+            InteractionRelationKind.PersonPersonEncounter,
+            [
+                new InteractionParticipant(TargetId, InteractionEntityKind.Person,
+                    InteractionParticipantRole.EncounterParticipant),
+                new InteractionParticipant("person-c", InteractionEntityKind.Person,
+                    InteractionParticipantRole.EncounterParticipant)
+            ],
+            InteractionTimeWindow.At(5), ["C"], 6, EvidenceState.Confirmed,
+            isPersonEvidence: true, isDeviceOnlyEvidence: false,
+            InteractionVisibility.PrivateEvidence,
+            [new InteractionProvenance(InteractionProvenanceKind.EvidenceRecord,
+                "other-upstream")]));
+
+    private static InteractionRecordReceipt LaterComparisonReceipt(long tick) =>
+        new(ScenarioId, Seed, "second-original", "holder-b", RescuerId, tick);
+
 }

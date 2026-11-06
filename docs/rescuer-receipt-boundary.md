@@ -277,3 +277,104 @@ same-information comparison of a simple last-seen baseline, known-relation
 traversal and distributed-trace reconstruction, reusing existing M1-D/E methods.
 This slice does not select a winning method or equate unimplemented hypotheses
 with rejected ones.
+
+
+## Receipt-gated comparison of three historical methods (Issue #84)
+
+Work-Key: FP-RECEIPT-GATED-METHOD-COMPARISON-V1. This uses the same
+two-original receipt builder as Issue #82 and the existing M1-D/E public
+reconstructor and known-relation tracer. No new causal law, physical
+transition, device communication, position observation or source
+authentication is added.
+
+**Question and initial concept.** When the target person's own history is
+missing, can later-received records from other holders (the "weft") constrain
+the target's earlier candidate locations, without allowing information
+from unreceived originals or evaluation truth into the inference? The
+comparison deliberately does not assume that reconstruction must win.
+
+The synthetic world is fixed before inspecting the comparative output:
+public target state at tick 2 is {A,B}; public later state at tick 5 is
+{C,D}; only published A->C and B->D transitions take three ticks.
+There is no directly confirmed person position. A target-window encounter
+says {A} at tick 2, original available/stored at tick 3, first received
+at tick 6. A distinct other-holder record says {C} at tick 5, original
+available/stored at tick 6, first received at tick 7. Holders are
+explicitly declared. The second original is a later trace, not a
+second independent target-window observation. These observed regions are
+synthetic assertions, not truth. Neither observation is a location
+measurement fabricated from the event.
+
+The comparison adapter is
+src/FootprintSim.Core/Evaluation/RescuerEvidenceMethodComparison.cs.
+All methods use the same BuildDistinctOriginals public projection at the
+same cutoff, public candidate states, target window, published transition
+model, run and rescuer. Method-specific evidence roles are explicit:
+
+| Family | Method row | Evidence role | Intended interpretation |
+| --- | --- | --- | --- |
+| A | public-prior | No encounter constraints; last-confirmed unavailable | Public {A,B} target-window comparison set, **not** zero candidates |
+| B | known-relation-backward | Later-window received original as traversal only | Existing backward public-relation traversal |
+| C | distributed-reconstruction | Target-window received original as generation only | Existing M1-E historical candidate construction |
+| C | distributed-reconstruction-local | Target-window generation; *separate* later original as traversal | Existing M1-E local state selection and real transition traversal |
+
+The two C rows are diagnostics of one method family, not four
+independent research hypotheses. A single M1-E Compare invocation
+produces several methods; B and C are therefore invoked in distinct
+contexts and only their selected results are compared. The target-window
+generation source is not fed back to traversal pruning. There is no
+independent verification source, so verification is not manufactured.
+
+The fixed arrival series queries ticks 5, 6, 7. A separate ablation
+runs at tick 7 with zero originals, only the first, only the second,
+and both; withholding an already-received original is an experimental
+ablation, not a statement that it was inaccessible. Thus differences
+between arrival rows are changes in available information, while
+differences between method rows at a fixed cutoff are changes in method.
+
+The hand-checkable reference prediction **before actual CI validation** is:
+
+| Cutoff and information | Public prior | Expected C generation | Meaning |
+| --- | --- | --- | --- |
+| Tick 5, none received | {A,B} | {A,B} | Later records must not leak backwards through access |
+| Tick 6, target-window record received | {A,B} | {A} | Received target-window evidence can reduce historical candidates |
+| Tick 7, both records received | {A,B} | {A} | Distinct generation and later traversal roles; B/local method outputs must be measured, not assumed |
+| Tick 7, zero-record ablation | {A,B} | {A,B} | Isolate the effect of obtaining information |
+
+The actual B, C-local results, source-group counts, conflict/unknown
+dispositions, transition IDs, forward/backward steps and first differing
+tick are taken from the **real reconstructor**, not inferred from this
+table. The direct tests verify candidate sets, arrival gating,
+at-least-one actual local public transition when supported, fixed-cutoff
+ablations, reversal/re-receipt determinism, private-origin isolation,
+uncertainty, conflict, device-only constraints and independent
+post-comparison truth evaluation. The public report is deterministically
+serializable via JsonDefaults.Serialize; no new CLI or report file
+generation is included in this slice.
+
+A candidate count reduction is only reduction in an *internal synthetic
+model* comparison set. Preferred is explicitly unavailable for methods
+that expose only outer candidates; uncertain/conflicted dispositions
+from reconstruction are separate, and empty output is not conflated
+with absent direct person history. Generation work, verification work,
+public forward/backward transitions, relations and inspected records
+are distinct counters, not interchangeable costs. A separate
+EvaluateSyntheticTruth call can find a synthetic false exclusion after
+all public method outputs exist; truth never changes the inference.
+
+**Limitations / hypotheses held open:** public transition relations and
+source identities are supplied, not discovered. The 24-edge lens,
+unknown-relation discovery, real-world observation validity,
+geographic calibration, confirmation-place labor, rescue time, cost
+and survival probability are **not evaluated**. A method with the same
+candidate set or higher work remains a valid negative/equal result.
+If the result indicates the two "weft" observations cannot capture the
+missing own history, or methods collapse to the same operation, revisit
+the minimal fixture and question through another independent scope
+review rather than silently excluding the original concept. Repeating
+old S5 seeds or expanding receipt API arity would not answer this
+question.
+
+This is an implementation hypothesis and a preregistered fixture
+description until the current PR/head CI confirms actual values;
+passing implementation tests does not establish rescue effectiveness.
