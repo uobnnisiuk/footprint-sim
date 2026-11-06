@@ -81,6 +81,57 @@ public sealed record RescuerEvidenceMethodTruthReport(
     string SyntheticTruthRegionId,
     IReadOnlyList<RescuerEvidenceMethodTruthRow> Evaluations);
 
+
+public sealed record RescuerEvidencePairedCondition
+{
+    public required string Label { get; init; }
+    public required long QueryTick { get; init; }
+    public IReadOnlyList<string> ReceivedOriginalIds { get; init; } = [];
+    public required int ReceivedOriginalCount { get; init; }
+    public required int AvailableSourceGroupCount { get; init; }
+    public required string EvidenceStatus { get; init; }
+    public IReadOnlyList<string> OuterCandidateRegionIds { get; init; } = [];
+    public required int CandidateCount { get; init; }
+    public IReadOnlyList<string>? PreferredCandidateRegionIds { get; init; }
+    public IReadOnlyList<string>? UncertainCandidateRegionIds { get; init; }
+    public IReadOnlyList<string>? ConflictedCandidateRegionIds { get; init; }
+    public IReadOnlyList<string> GenerationDirectSourceIds { get; init; } = [];
+    public IReadOnlyList<string> TraversalDirectSourceIds { get; init; } = [];
+    public required int UsedSourceGroupCount { get; init; }
+    public required int GenerationSteps { get; init; }
+    public required int VerificationSteps { get; init; }
+    public required int ForwardTransitionSteps { get; init; }
+    public required int BackwardTransitionSteps { get; init; }
+    public required int EvidenceRecordsInspected { get; init; }
+    public required int PublicRelationsInspected { get; init; }
+    public IReadOnlyList<string> PublicTransitionIds { get; init; } = [];
+}
+
+public sealed record RescuerEvidencePairedMethodContribution
+{
+    public required string Method { get; init; }
+    public required string Status { get; init; }
+    public string? UnavailableReason { get; init; }
+    public IReadOnlyList<RescuerEvidencePairedCondition> Conditions { get; init; } = [];
+    public bool? BothStrictlyNarrowerThanEachSingle { get; init; }
+    // Negative values mean that adding a trace increased candidates.
+    public int? CandidateReductionFromFirst { get; init; }
+    public int? CandidateReductionFromSecond { get; init; }
+    public IReadOnlyList<string>? ExcludedWhenAddingSecond { get; init; }
+    public IReadOnlyList<string>? ExcludedWhenAddingFirst { get; init; }
+    public IReadOnlyList<string>? AdditionalExclusionsBeyondSingles { get; init; }
+    public IReadOnlyList<string>? ReappearedComparedWithEitherSingle { get; init; }
+}
+
+public sealed record RescuerEvidencePairedContributionReport
+{
+    public required string Status { get; init; }
+    public string? UnavailableReason { get; init; }
+    public long? QueryTick { get; init; }
+    public IReadOnlyList<string> OriginalIds { get; init; } = [];
+    public IReadOnlyList<RescuerEvidencePairedMethodContribution> Methods { get; init; } = [];
+}
+
 public static class RescuerEvidenceMethodComparison
 {
     /// <summary>
@@ -393,6 +444,147 @@ public static class RescuerEvidenceMethodComparison
                 Make("distributed-reconstruction", reconstruction, true),
                 Make("distributed-reconstruction-local", local, true)
             ]
+        };
+    }
+
+
+    /// <summary>
+    /// Compare four published same-cutoff ablations without reading originals,
+    /// private observations, synthetic truth or the inference engine.
+    /// Missing rows are unavailable, not zero-sized candidate sets.
+    /// </summary>
+    public static RescuerEvidencePairedContributionReport AnalyzePairedContributions(
+        RescuerEvidenceMethodReport completedPublicReport)
+    {
+        ArgumentNullException.ThrowIfNull(completedPublicReport);
+        var ablations = completedPublicReport.SameCutoffAblations;
+        static RescuerEvidencePairedContributionReport Unavailable(string reason) => new()
+        {
+            Status = "unavailable",
+            UnavailableReason = reason
+        };
+        if (ablations.Count != 4 ||
+            ablations.Any(row => row.Condition != "same-cutoff-ablation" ||
+                row.QueryTick != ablations[0].QueryTick ||
+                row.ReceivedOriginalCount != row.ReceivedOriginalIds.Count ||
+                row.ReceivedOriginalIds.Distinct(StringComparer.Ordinal).Count() !=
+                    row.ReceivedOriginalIds.Count))
+        {
+            return Unavailable("Four compatible, distinct-receipt ablations are required.");
+        }
+
+        var none = ablations.Where(row => row.ReceivedOriginalCount == 0).ToArray();
+        var both = ablations.Where(row => row.ReceivedOriginalCount == 2).ToArray();
+        var singles = ablations.Where(row => row.ReceivedOriginalCount == 1).ToArray();
+        if (none.Length != 1 || both.Length != 1 || singles.Length != 2)
+        {
+            return Unavailable("A zero, two singleton and paired ablations are required.");
+        }
+
+        var originalIds = both[0].ReceivedOriginalIds
+            .OrderBy(id => id, StringComparer.Ordinal).ToArray();
+        if (originalIds.Length != 2 ||
+            !singles.Select(row => row.ReceivedOriginalIds[0])
+                .OrderBy(id => id, StringComparer.Ordinal)
+                .SequenceEqual(originalIds, StringComparer.Ordinal))
+        {
+            return Unavailable("Each singleton must correspond to a paired original.");
+        }
+
+        var rows = new[]
+        {
+            none[0],
+            singles.Single(row => row.ReceivedOriginalIds[0] == originalIds[0]),
+            singles.Single(row => row.ReceivedOriginalIds[0] == originalIds[1]),
+            both[0]
+        };
+        static string[] Sort(IEnumerable<string> ids) =>
+            ids.Distinct(StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal).ToArray();
+        var methodNames = rows.SelectMany(row => row.Methods.Select(item => item.Method))
+            .Distinct(StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal).ToArray();
+        var methods = methodNames.Select(name =>
+        {
+            var matches = rows.Select(row => row.Methods.Where(method => method.Method == name)
+                .ToArray()).ToArray();
+            if (matches.Any(group => group.Length != 1 ||
+                group[0].OuterCandidateRegionIds is null ||
+                group[0].CandidateCount != group[0].OuterCandidateRegionIds.Count ||
+                group[0].UsedSourceGroupCount > group[0].AvailableSourceGroupCount))
+            {
+                return new RescuerEvidencePairedMethodContribution
+                {
+                    Method = name,
+                    Status = "unavailable",
+                    UnavailableReason = "Missing, ambiguous or inconsistent method result."
+                };
+            }
+
+            var values = matches.Select(group => group[0]).ToArray();
+            var prior = values[0].OuterCandidateRegionIds;
+            var first = values[1].OuterCandidateRegionIds;
+            var second = values[2].OuterCandidateRegionIds;
+            var pair = values[3].OuterCandidateRegionIds;
+            var conditionLabels = new[] { "neither", "first-only", "second-only", "both" };
+            var conditions = rows.Select((row, index) =>
+            {
+                var value = values[index];
+                return new RescuerEvidencePairedCondition
+                {
+                    Label = conditionLabels[index],
+                    QueryTick = row.QueryTick,
+                    ReceivedOriginalIds = Sort(row.ReceivedOriginalIds),
+                    ReceivedOriginalCount = row.ReceivedOriginalCount,
+                    AvailableSourceGroupCount = row.AvailableSourceGroupCount,
+                    EvidenceStatus = value.EvidenceStatus,
+                    OuterCandidateRegionIds = Sort(value.OuterCandidateRegionIds),
+                    CandidateCount = value.CandidateCount,
+                    PreferredCandidateRegionIds = value.PreferredCandidateRegionIds is null
+                        ? null : Sort(value.PreferredCandidateRegionIds),
+                    UncertainCandidateRegionIds = value.UncertainCandidateRegionIds is null
+                        ? null : Sort(value.UncertainCandidateRegionIds),
+                    ConflictedCandidateRegionIds = value.ConflictedCandidateRegionIds is null
+                        ? null : Sort(value.ConflictedCandidateRegionIds),
+                    GenerationDirectSourceIds = Sort(value.GenerationDirectSourceIds),
+                    TraversalDirectSourceIds = Sort(value.TraversalDirectSourceIds),
+                    UsedSourceGroupCount = value.UsedSourceGroupCount,
+                    GenerationSteps = value.GenerationSteps,
+                    VerificationSteps = value.VerificationSteps,
+                    ForwardTransitionSteps = value.ForwardTransitionSteps,
+                    BackwardTransitionSteps = value.BackwardTransitionSteps,
+                    EvidenceRecordsInspected = value.EvidenceRecordsInspected,
+                    PublicRelationsInspected = value.PublicRelationsInspected,
+                    PublicTransitionIds = Sort(value.PublicTransitionIds)
+                };
+            }).ToArray();
+            return new RescuerEvidencePairedMethodContribution
+            {
+                Method = name,
+                Status = "available",
+                Conditions = conditions,
+                BothStrictlyNarrowerThanEachSingle =
+                    !pair.Except(first, StringComparer.Ordinal).Any() &&
+                    !pair.Except(second, StringComparer.Ordinal).Any() &&
+                    first.Except(pair, StringComparer.Ordinal).Any() &&
+                    second.Except(pair, StringComparer.Ordinal).Any(),
+                CandidateReductionFromFirst = first.Count - pair.Count,
+                CandidateReductionFromSecond = second.Count - pair.Count,
+                ExcludedWhenAddingSecond = Sort(first.Except(pair, StringComparer.Ordinal)),
+                ExcludedWhenAddingFirst = Sort(second.Except(pair, StringComparer.Ordinal)),
+                AdditionalExclusionsBeyondSingles = Sort(prior
+                    .Intersect(first, StringComparer.Ordinal)
+                    .Intersect(second, StringComparer.Ordinal)
+                    .Except(pair, StringComparer.Ordinal)),
+                ReappearedComparedWithEitherSingle = Sort(pair.Except(
+                    first.Intersect(second, StringComparer.Ordinal), StringComparer.Ordinal))
+            };
+        }).ToArray();
+
+        return new RescuerEvidencePairedContributionReport
+        {
+            Status = methods.All(item => item.Status == "available") ? "available" : "partial",
+            QueryTick = ablations[0].QueryTick,
+            OriginalIds = originalIds,
+            Methods = methods
         };
     }
 

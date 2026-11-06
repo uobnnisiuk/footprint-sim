@@ -995,4 +995,156 @@ public sealed class RescuerEvidenceBoundaryTests
     private static InteractionRecordReceipt LaterComparisonReceipt(long tick) =>
         new(ScenarioId, Seed, "second-original", "holder-b", RescuerId, tick);
 
+
+    private static RescueContext ComplementaryPublicContext()
+    {
+        var context = MultiHolderContext();
+        return context with
+        {
+            PublicRegions = new[] { "A", "B", "C", "D", "E", "F" }
+                .Select((id, index) => new RegionDefinition
+                {
+                    Id = id,
+                    Type = RegionType.Outdoor,
+                    Center = new Position(index, 0, 0, id)
+                }).ToArray(),
+            PublicCausalTracingModel = new PublicCausalTracingModel
+            {
+                CandidateStates = [State(2, ["A", "B", "C"]), State(5, ["D", "E", "F"])]
+            },
+            PublicHazardEnvelope = new PublicHazardEnvelope
+            {
+                HazardId = "declared-public-model",
+                SourceRegionId = "A",
+                PublishedAtTick = 0,
+                Branches = [Branch("A", "D"), Branch("B", "E"), Branch("C", "F")]
+            }
+        };
+    }
+
+    private static DeviceHeldInteractionRecord ComplementaryOriginal(
+        string originalId, string holder, long atTick, IReadOnlyList<string> regions,
+        long available, string upstream, EvidenceState state = EvidenceState.Confirmed,
+        bool deviceOnly = false) => new(holder, available, InteractionObservation.Create(
+            ScenarioId, Seed, originalId, null,
+            InteractionRelationKind.PersonPersonEncounter,
+            [
+                new InteractionParticipant(deviceOnly ? holder : TargetId,
+                    deviceOnly ? InteractionEntityKind.Device : InteractionEntityKind.Person,
+                    InteractionParticipantRole.EncounterParticipant),
+                new InteractionParticipant("person-b", InteractionEntityKind.Person,
+                    InteractionParticipantRole.EncounterParticipant)
+            ],
+            InteractionTimeWindow.At(atTick), regions, available, state,
+            isPersonEvidence: !deviceOnly, isDeviceOnlyEvidence: deviceOnly,
+            InteractionVisibility.PrivateEvidence,
+            [new InteractionProvenance(InteractionProvenanceKind.EvidenceRecord, upstream)]));
+
+    private static RescuerEvidenceMethodReport ComplementaryRun(
+        EvidenceState firstState = EvidenceState.Confirmed,
+        bool deviceOnly = false,
+        string secondAncestry = "weft-b",
+        bool reversed = false)
+    {
+        var first = ComplementaryOriginal(
+            RecordId, HolderId, 2, ["A", "B"], 3, "weft-a", firstState, deviceOnly);
+        var second = ComplementaryOriginal(
+            "second-original", "holder-b", 5, ["E", "F"], 6, secondAncestry);
+        var records = reversed ? new[] { second, first } : new[] { first, second };
+        var receipts = reversed
+            ? new[] { LaterComparisonReceipt(7), Receipt(6), Receipt(6) }
+            : new[] { Receipt(6), LaterComparisonReceipt(7) };
+        return RescuerEvidenceMethodComparison.Run(
+            ComplementaryPublicContext(), Seed, RescuerId, records, receipts,
+            InteractionTimeWindow.At(2), reversed ? [7, 5, 6] : [5, 6, 7], 7);
+    }
+
+    [Fact]
+    public void ComplementaryWeftComparisonMeasuresFourSameCutoffEvidenceConditions()
+    {
+        var report = ComplementaryRun();
+        var result = RescuerEvidenceMethodComparison.AnalyzePairedContributions(report);
+        Assert.Equal("available", result.Status);
+        Assert.Equal(7, result.QueryTick);
+        Assert.Equal([RecordId, "second-original"], result.OriginalIds);
+        Assert.Equal(4, result.Methods.Count);
+        Assert.All(result.Methods, method =>
+        {
+            Assert.Equal("available", method.Status);
+            Assert.Equal(["neither", "first-only", "second-only", "both"],
+                method.Conditions.Select(row => row.Label));
+            Assert.Equal([0, 1, 1, 2],
+                method.Conditions.Select(row => row.ReceivedOriginalCount));
+            Assert.Equal([0, 1, 1, 2],
+                method.Conditions.Select(row => row.AvailableSourceGroupCount));
+            Assert.All(method.Conditions, row => Assert.Equal(7, row.QueryTick));
+        });
+        var local = result.Methods.Single(method =>
+            method.Method == "distributed-reconstruction-local");
+        Assert.Equal(["A", "B", "C"], local.Conditions[0].OuterCandidateRegionIds);
+        // Fixed hand-calculation hypotheses, not outcomes adjusted after a test.
+        Assert.Equal(["A", "B"], local.Conditions[1].OuterCandidateRegionIds);
+        Assert.Equal(["B", "C"], local.Conditions[2].OuterCandidateRegionIds);
+        Assert.Equal(["B"], local.Conditions[3].OuterCandidateRegionIds);
+        Assert.True(local.BothStrictlyNarrowerThanEachSingle);
+        Assert.Equal(["A"], local.ExcludedWhenAddingSecond);
+        Assert.Equal(["C"], local.ExcludedWhenAddingFirst);
+        Assert.Empty(local.AdditionalExclusionsBeyondSingles!);
+        Assert.Empty(local.ReappearedComparedWithEitherSingle!);
+        Assert.Equal(1, local.CandidateReductionFromFirst);
+        Assert.Equal(1, local.CandidateReductionFromSecond);
+        Assert.Equal([RecordId], local.Conditions[3].GenerationDirectSourceIds);
+        Assert.Equal(["second-original"], local.Conditions[3].TraversalDirectSourceIds);
+        Assert.Equal(2, local.Conditions[3].UsedSourceGroupCount);
+        Assert.True(local.Conditions[3].ForwardTransitionSteps > 0);
+        Assert.True(local.Conditions[3].BackwardTransitionSteps > 0);
+        var prior = result.Methods.Single(method => method.Method == "public-prior");
+        Assert.False(prior.BothStrictlyNarrowerThanEachSingle);
+        Assert.All(prior.Conditions, row =>
+        {
+            Assert.Empty(row.GenerationDirectSourceIds);
+            Assert.Empty(row.TraversalDirectSourceIds);
+            Assert.Equal(0, row.UsedSourceGroupCount);
+        });
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(RescuerEvidenceMethodComparison.AnalyzePairedContributions(
+                ComplementaryRun(reversed: true))));
+        Assert.Equal(JsonDefaults.Serialize(report), JsonDefaults.Serialize(ComplementaryRun(reversed: true)));
+    }
+
+    [Fact]
+    public void ComplementaryWeftComparisonRetainsSharedAncestryAndUncertainty()
+    {
+        var unavailable = RescuerEvidenceMethodComparison.AnalyzePairedContributions(
+            ComplementaryRun() with { SameCutoffAblations = [] });
+        Assert.Equal("unavailable", unavailable.Status);
+        Assert.Null(unavailable.QueryTick);
+        Assert.Empty(unavailable.Methods);
+
+        var shared = RescuerEvidenceMethodComparison.AnalyzePairedContributions(
+            ComplementaryRun(secondAncestry: "weft-a"));
+        Assert.Equal("available", shared.Status);
+        Assert.All(shared.Methods, item =>
+            Assert.Equal(1, item.Conditions[3].AvailableSourceGroupCount));
+        Assert.Equal(1, shared.Methods.Single(item =>
+            item.Method == "distributed-reconstruction-local")
+            .Conditions[3].UsedSourceGroupCount);
+        foreach (var state in new[]
+            { EvidenceState.SupportedButUncertain, EvidenceState.Conflicting })
+        {
+            var analysis = RescuerEvidenceMethodComparison.AnalyzePairedContributions(
+                ComplementaryRun(firstState: state));
+            Assert.Equal("available", analysis.Status);
+            var method = analysis.Methods.Single(item =>
+                item.Method == "distributed-reconstruction");
+            Assert.NotNull(method.Conditions[3].UncertainCandidateRegionIds);
+            Assert.NotNull(method.Conditions[3].ConflictedCandidateRegionIds);
+        }
+        var device = RescuerEvidenceMethodComparison.AnalyzePairedContributions(
+            ComplementaryRun(deviceOnly: true));
+        Assert.Equal("available", device.Status);
+        Assert.Empty(device.Methods.Single(item =>
+            item.Method == "distributed-reconstruction").Conditions[3]
+            .GenerationDirectSourceIds);
+    }
 }

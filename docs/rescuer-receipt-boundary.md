@@ -414,3 +414,45 @@ The fixture and comparisons remain synthetic. The output expectations above
 were checked on the cited implementation head; the subsequent documentation
 commit needs its own ordinary and F19 research CI before the PR can pass
 final review. Even successful tests do not establish rescue effectiveness.
+
+## Two complementary received traces (Issue #86)
+
+Work-Key: `FP-WEFT-COMPLEMENTARITY-V1`. The existing three method families,
+not a new fourth method, receive the same public world and same-cutoff
+available evidence. The new pure `AnalyzePairedContributions` API compares
+`Run`'s four public ablation rows without a private observation, original
+record, synthetic truth or new inference algorithm.
+
+**Pre-registered hypothesis; not yet verified by CI.** At target tick 2
+the public candidates are {A,B,C}; at later tick 5 they are {D,E,F},
+with only public 3-tick transitions A→D, B→E, C→F (published tick 0).
+Other-holder original 1 observes {A,B} at tick 2, is available/stored at
+tick 3 and received tick 6. Distinct-root original 2 observes {E,F}
+at tick 5, available/stored tick 6 and received tick 7. No directly
+confirmed target person location. The hand prediction for the existing
+C-local method at cutoff tick 7 is: zero {A,B,C}, original 1 only
+{A,B}, original 2 only {B,C}, both {B}. Actual arrival ticks 5/6/7
+are separately reported, not conflated with cutoff-7 ablations.
+
+The analysis distinguishes candidate IDs and signed count changes,
+the first/second source IDs and available-vs-used ancestry groups,
+actual generation and traversal direct-source IDs, preferred/uncertain/
+conflict availability, forward/backward public transitions, verification,
+generation and inspection work. Additional exclusions are baseline
+regions present in **both singletons** but absent with both records.
+Reappearance means a region with both sources which is absent from at
+least one singleton. Empty additional exclusions are valid, as are
+candidate expansions, unchanged sets, unknown standings and conflict.
+Unavailable comparisons return explicit status, not an invented zero.
+
+Shared upstream ancestry of two otherwise distinct original IDs still
+counts as one evidence group. Changing receipt order or repeating a
+receipt must not change the normalized result. Truth is only available
+through the separate post-inference evaluator. The document is a
+pre-CI hypothesis, not an assertion that the preferred {B} result is
+already measured: any mismatch requires examining the declared
+public-transition semantics and revisiting the Issue scope rather than
+silently tuning the fixture. Model candidate-place counts and work
+units do not imply real search time, rescue cost or survival rate.
+Unknown-causal-relation discovery and the 24-edge search lens remain
+untested, not rejected.
