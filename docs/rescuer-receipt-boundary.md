@@ -1,6 +1,7 @@
 # Rescuer receipt boundary
 
-Work-Key: `FP-RECEIPT-BRIDGE-V1`  
+Work-Key: `FP-RECEIPT-BRIDGE-V1`
+
 Scope: [Issue #76](https://github.com/uobnnisiuk/footprint-sim/issues/76)
 
 ## Purpose
