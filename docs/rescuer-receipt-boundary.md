@@ -332,25 +332,57 @@ ablation, not a statement that it was inaccessible. Thus differences
 between arrival rows are changes in available information, while
 differences between method rows at a fixed cutoff are changes in method.
 
-The hand-checkable reference prediction **before actual CI validation** is:
+The following table fixes the **actual method-output expectations** of the
+implementation's direct assertions (not inferred from a desired winner).
+This revision is awaiting verification of the updated PR head by GitHub CI;
+the table must not be described as CI-validated until those checks pass.
+All rows use the same public world and target window. The last four are
+same-tick ablations at tick 7, not claims of real access.
 
-| Cutoff and information | Public prior | Expected C generation | Meaning |
+| Cutoff / eligible originals | A public | B backward | C generation | C local | Available ancestry groups | Used groups A/B/C/C-local |
+| --- | --- | --- | --- | --- | ---: | --- |
+| tick 5 / none | {A,B} | {A,B} | {A,B} | {A,B} | 0 | 0/0/0/0 |
+| tick 6 / target-window | {A,B} | {A,B} | {A} | {A} | 1 | 0/0/1/1 |
+| tick 7 / both | {A,B} | {A} | {A} | {A} | 2 | 0/1/1/2 |
+| tick 7 / ablate both | {A,B} | {A,B} | {A,B} | {A,B} | 0 | 0/0/0/0 |
+| tick 7 / target only | {A,B} | {A,B} | {A} | {A} | 1 | 0/0/1/1 |
+| tick 7 / later only | {A,B} | {A} | {A,B} | {A} | 1 | 0/1/0/1 |
+| tick 7 / both present | {A,B} | {A} | {A} | {A} | 2 | 0/1/1/2 |
+
+A source group is an ancestry-connected group, not a delivery count.
+The query-level available count is distinct from each method's actually
+used count. Public prior consumes zero encounter groups, even at tick 7
+with two available originals. With a shared upstream ancestry token
+on both originals, the two received originals and two constraints form
+**one** available source group and C-local uses just that one group.
+The same original received twice never creates another group.
+
+The fixed work assertions below use independent counters:
+`generation / forward public transitions / backward public transitions /
+inspected observation records / inspected public relations`. These are
+method work units in the declared synthetic model, not rescue minutes.
+
+| Cutoff / eligible originals | B work | C generation work | C-local work |
 | --- | --- | --- | --- |
-| Tick 5, none received | {A,B} | {A,B} | Later records must not leak backwards through access |
-| Tick 6, target-window record received | {A,B} | {A} | Received target-window evidence can reduce historical candidates |
-| Tick 7, both records received | {A,B} | {A} | Distinct generation and later traversal roles; B/local method outputs must be measured, not assumed |
-| Tick 7, zero-record ablation | {A,B} | {A,B} | Isolate the effect of obtaining information |
+| tick 5 / none | 0/1/1/0/2 | 3/0/0/0/0 | 3/1/1/0/2 |
+| tick 6 / target only | 0/1/1/0/2 | 3/0/0/1/1 | 3/2/2/0/4 |
+| tick 7 / both | 0/2/2/1/5 | 3/0/0/1/1 | 3/1/1/1/3 |
+| tick 7 / later only | 0/2/2/1/5 | 3/0/0/0/0 | 3/2/2/1/5 |
 
-The actual B, C-local results, source-group counts, conflict/unknown
-dispositions, transition IDs, forward/backward steps and first differing
-tick are taken from the **real reconstructor**, not inferred from this
-table. The direct tests verify candidate sets, arrival gating,
-at-least-one actual local public transition when supported, fixed-cutoff
-ablations, reversal/re-receipt determinism, private-origin isolation,
-uncertainty, conflict, device-only constraints and independent
-post-comparison truth evaluation. The public report is deterministically
-serializable via JsonDefaults.Serialize; no new CLI or report file
-generation is included in this slice.
+The first model tick where the public-prior candidate set differs is
+tick 6 for C/C-local and tick 7 for B. B and C-local are not assumed
+superior: both use the already declared A-to-C/B-to-D public relation,
+which is **not discovered**. For example, B and C-local both return
+{A} at tick 7, but C-local consumes more ancestry groups.
+Unknown candidate status is separate from an empty candidate set:
+B and A do not publish reconstructed standing, while C with no target
+generation marks both {A,B} unsupported/unknown. The fixture has no
+independent verification source, so verification steps remain zero;
+the confirmed target record does not prove actual historical truth.
+The direct tests check candidate sets, source ID roles, used-vs-eligible
+ancestry groups, stable serialization, method work, first useful tick,
+uncertain/conflict/device-only boundaries and separate synthetic truth
+scoring. No generic CLI/report-file generation is included.
 
 A candidate count reduction is only reduction in an *internal synthetic
 model* comparison set. Preferred is explicitly unavailable for methods
@@ -375,6 +407,6 @@ review rather than silently excluding the original concept. Repeating
 old S5 seeds or expanding receipt API arity would not answer this
 question.
 
-This is an implementation hypothesis and a preregistered fixture
-description until the current PR/head CI confirms actual values;
-passing implementation tests does not establish rescue effectiveness.
+The fixture and comparisons remain synthetic. GitHub CI must validate the
+updated-head direct assertions before these fixed outputs can be called
+verified. Even successful assertions do not establish real rescue effectiveness.

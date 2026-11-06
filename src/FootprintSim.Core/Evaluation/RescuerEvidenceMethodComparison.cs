@@ -26,7 +26,10 @@ public sealed record RescuerEvidenceMethodRow
     public IReadOnlyList<string> GenerationDirectSourceIds { get; init; } = [];
     public IReadOnlyList<string> TraversalDirectSourceIds { get; init; } = [];
     public IReadOnlyList<string> UnusedDirectSourceIds { get; init; } = [];
-    public required int SourceGroupCount { get; init; }
+    // Eligible ancestry groups and actual method-use groups are separate.
+    // One group can cover multiple originals with shared ancestry.
+    public required int AvailableSourceGroupCount { get; init; }
+    public required int UsedSourceGroupCount { get; init; }
     public required int Steps { get; init; }
     public required int GenerationSteps { get; init; }
     public required int VerificationSteps { get; init; }
@@ -42,7 +45,7 @@ public sealed record RescuerEvidenceMethodQueryRow
     public required string Condition { get; init; } // actual or same-cutoff-ablation
     public required long QueryTick { get; init; }
     public required int ReceivedOriginalCount { get; init; }
-    public required int SourceGroupCount { get; init; }
+    public required int AvailableSourceGroupCount { get; init; }
     public IReadOnlyList<string> ReceivedOriginalIds { get; init; } = [];
     public IReadOnlyList<string> ReceivedSourceObservationIds { get; init; } = [];
     public required int AvailableConstraintCount { get; init; }
@@ -269,17 +272,40 @@ public static class RescuerEvidenceMethodComparison
             item => item.Method == PastStateMethod.ConstraintBasedReconstruction);
         var local = weftComparison.Methods.Single(
             item => item.Method == PastStateMethod.ReconstructionWithLocalTraversal);
-        var groups = weftComparison.Reconstruction.EvidenceSet.SourceGroups.Count;
+        var availableGroups = weftComparison.Reconstruction.EvidenceSet.SourceGroups;
         var confirmed = new LastConfirmedOnlyStrategy().Evaluate(input);
         var hasLastConfirmed = confirmed.ConfirmedPersonRegionIds.Count > 0;
 
         RescuerEvidenceMethodRow Make(
             string methodName,
             PastStateMethodResult method,
-            IReadOnlyList<string> generation,
-            IReadOnlyList<string> traversal,
             bool exposeReconstructionStanding)
         {
+            // Count only actual usage records emitted by M1-E. Local traversal
+            // keeps its own traversal diagnostics; its generation work belongs
+            // to the separately selected reconstruction result.
+            var methodUsages = method.Diagnostics!.ConstraintUsages;
+            var generationUsages = method.Method == PastStateMethod.ReconstructionWithLocalTraversal
+                ? reconstruction.Diagnostics!.ConstraintUsages
+                : methodUsages;
+            var usedGeneration = generationUsages
+                .Where(item => item.UsageRoles.Contains(PastStateEvidenceUsageRole.CandidateGeneration))
+                .Select(item => item.DirectSourceId)
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(id => id, StringComparer.Ordinal).ToArray();
+            var usedTraversal = methodUsages
+                .Where(item => item.UsageRoles.Contains(PastStateEvidenceUsageRole.Traversal))
+                .Select(item => item.DirectSourceId)
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(id => id, StringComparer.Ordinal).ToArray();
+            var usedConstraintIds = generationUsages
+                .Where(item => item.UsageRoles.Contains(PastStateEvidenceUsageRole.CandidateGeneration))
+                .Concat(methodUsages.Where(item =>
+                    item.UsageRoles.Contains(PastStateEvidenceUsageRole.Traversal)))
+                .Select(item => item.ConstraintId)
+                .ToHashSet(StringComparer.Ordinal);
+            var usedGroupCount = availableGroups.Count(group =>
+                group.ConstraintIds.Any(usedConstraintIds.Contains));
             var regions = method.CandidateRegionIds
                 .Distinct(StringComparer.Ordinal)
                 .OrderBy(id => id, StringComparer.Ordinal)
@@ -290,7 +316,7 @@ public static class RescuerEvidenceMethodComparison
             return new RescuerEvidenceMethodRow
             {
                 Method = methodName,
-                EvidenceStatus = generation.Count == 0 && traversal.Count == 0
+                EvidenceStatus = usedGeneration.Length == 0 && usedTraversal.Length == 0
                     ? "public-model-only" : "method-executed",
                 OuterCandidateRegionIds = regions,
                 CandidateCount = regions.Length,
@@ -308,12 +334,13 @@ public static class RescuerEvidenceMethodComparison
                             PastStateCandidateDisposition.Unsupported)
                         .Select(item => item.RegionId).OrderBy(id => id, StringComparer.Ordinal).ToArray()
                     : null,
-                GenerationDirectSourceIds = generation,
-                TraversalDirectSourceIds = traversal,
+                GenerationDirectSourceIds = usedGeneration,
+                TraversalDirectSourceIds = usedTraversal,
                 UnusedDirectSourceIds = allSources
-                    .Except(generation.Concat(traversal), StringComparer.Ordinal)
+                    .Except(usedGeneration.Concat(usedTraversal), StringComparer.Ordinal)
                     .OrderBy(id => id, StringComparer.Ordinal).ToArray(),
-                SourceGroupCount = groups,
+                AvailableSourceGroupCount = availableGroups.Count,
+                UsedSourceGroupCount = usedGroupCount,
                 Steps = method.Steps,
                 GenerationSteps = method.CandidateGenerationSteps,
                 VerificationSteps = method.CandidateVerificationSteps,
@@ -336,7 +363,8 @@ public static class RescuerEvidenceMethodComparison
             BaselineCandidateCount = baseRegions.Length,
             CandidateReduction = 0,
             UnusedDirectSourceIds = allSources,
-            SourceGroupCount = groups,
+            AvailableSourceGroupCount = availableGroups.Count,
+            UsedSourceGroupCount = 0,
             Steps = 0,
             GenerationSteps = 0,
             VerificationSteps = 0,
@@ -350,7 +378,7 @@ public static class RescuerEvidenceMethodComparison
             Condition = condition,
             QueryTick = input.CurrentTick,
             ReceivedOriginalCount = received.ReceivedRecords.Count,
-            SourceGroupCount = groups,
+            AvailableSourceGroupCount = availableGroups.Count,
             ReceivedOriginalIds = received.ReceivedRecords
                 .Select(item => item.OriginalRecordId)
                 .OrderBy(id => id, StringComparer.Ordinal).ToArray(),
@@ -361,9 +389,9 @@ public static class RescuerEvidenceMethodComparison
             Methods =
             [
                 baseline,
-                Make("known-relation-backward", backward, [], laterSources, false),
-                Make("distributed-reconstruction", reconstruction, targetSources, [], true),
-                Make("distributed-reconstruction-local", local, targetSources, laterSources, true)
+                Make("known-relation-backward", backward, false),
+                Make("distributed-reconstruction", reconstruction, true),
+                Make("distributed-reconstruction-local", local, true)
             ]
         };
     }
