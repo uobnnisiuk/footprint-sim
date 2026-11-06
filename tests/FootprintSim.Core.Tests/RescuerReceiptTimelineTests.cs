@@ -73,24 +73,53 @@ public sealed class RescuerReceiptTimelineTests
     [Fact]
     public void RedeliveryAndOrderCannotCreateNewIndependentEvidence()
     {
+        // The fixed fixture already includes tick-5 and tick-7 receipts.
+        // Compare first delivery alone with first delivery plus redelivery at the same query tick.
+        var firstOnlyFixture = JsonNode.Parse(File.ReadAllText(FixturePath()))!.AsObject();
+        firstOnlyFixture["receipts"]!.AsArray().RemoveAt(1);
+        firstOnlyFixture["queryTicks"] = new JsonArray(7);
+        var firstOnly = RescuerReceiptTimeline.Run(
+            Encoding.UTF8.GetBytes(firstOnlyFixture.ToJsonString()));
+        var expected = Assert.Single(firstOnly.Queries);
+
+        var redeliveredFixture = JsonNode.Parse(File.ReadAllText(FixturePath()))!.AsObject();
+        redeliveredFixture["queryTicks"] = new JsonArray(7);
+        var redelivered = RescuerReceiptTimeline.Run(
+            Encoding.UTF8.GetBytes(redeliveredFixture.ToJsonString()));
+        var actual = Assert.Single(redelivered.Queries);
+
+        Assert.Equal(7L, expected.QueryTick);
+        Assert.Equal(7L, actual.QueryTick);
+        Assert.NotEqual(firstOnly.FixtureSha256, redelivered.FixtureSha256);
+        Assert.Equal(1, expected.ReceivedOriginalCount);
+        Assert.Equal(1, expected.CrossThreadConstraintCount);
+        Assert.Equal(1, expected.CausalTracingConstraintCount);
+        Assert.Equal(1, expected.SourceGroupCount);
+        Assert.Equal(5L, Assert.Single(expected.ReceivedOriginals).FirstReceivedAtTick);
+        Assert.Equal(["C"], expected.SearchResult.CandidateRegionIds);
+        // Full serialized rows cover original observation IDs, first receipt, real
+        // source-group identities/ancestry, and the complete strategy/tracing result.
+        Assert.Equal(JsonDefaults.Serialize(expected.ReceivedOriginals),
+            JsonDefaults.Serialize(actual.ReceivedOriginals));
+        Assert.Equal(JsonDefaults.Serialize(expected.SourceGroups),
+            JsonDefaults.Serialize(actual.SourceGroups));
+        Assert.Equal(JsonDefaults.Serialize(expected.SearchResult),
+            JsonDefaults.Serialize(actual.SearchResult));
+        Assert.Equal(JsonDefaults.Serialize(expected), JsonDefaults.Serialize(actual));
+
+        // Keep the separate receipt-duplication and ledger/query-order regression.
         var fixture = JsonNode.Parse(File.ReadAllText(FixturePath()))!.AsObject();
         var before = RescuerReceiptTimeline.Run(Encoding.UTF8.GetBytes(fixture.ToJsonString()));
-        var expected = Assert.Single(before.Queries, row => row.QueryTick == 7);
-
         var receipts = fixture["receipts"]!.AsArray();
         receipts.Add(receipts[0]!.DeepClone());
         fixture["receipts"] = new JsonArray(
             receipts.Select(item => item!.DeepClone()).Reverse().ToArray());
         fixture["queryTicks"] = new JsonArray(7, 4, 5);
         var after = RescuerReceiptTimeline.Run(Encoding.UTF8.GetBytes(fixture.ToJsonString()));
-        var actual = Assert.Single(after.Queries, row => row.QueryTick == 7);
 
         Assert.NotEqual(before.FixtureSha256, after.FixtureSha256);
-        Assert.Equal(JsonDefaults.Serialize(expected), JsonDefaults.Serialize(actual));
-        Assert.Equal(
-            JsonDefaults.Serialize(before.Queries),
+        Assert.Equal(JsonDefaults.Serialize(before.Queries),
             JsonDefaults.Serialize(after.Queries));
-        Assert.Single(actual.SourceGroups);
     }
 
     [Fact]
