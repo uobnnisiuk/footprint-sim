@@ -172,10 +172,10 @@ public sealed class RescuerReceiptTimelineTests
         receipts.Add(new JsonObject
         {
             ["scenarioId"] = "rescuer-receipt-fixture",
-                ["seed"] = 7,
+            ["seed"] = 7,
             ["originalRecordId"] = "original-encounter-record",
             ["holderDeviceId"] = "held-device",
-                ["rescuerId"] = "rescuer-a",
+            ["rescuerId"] = "rescuer-a",
             ["receivedAtTick"] = 10
         });
         Assert.All(RescuerReceiptTimeline.Run(
