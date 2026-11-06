@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "rescuer-receipt-fixture",
+  "seed": 7,
+  "targetPersonId": "person-a",
+  "holderDeviceId": "held-device",
+  "rescuerId": "rescuer-a",
+  "publicModelId": "declared-public-model",
+  "publicSourceRegionId": "A",
+  "publicRegions": [
+    "A",
+    "B",
+    "C",
+    "D"
+  ],
+  "publicStates": [
+    {
+      "timeWindow": {
+        "startTick": 2,
+        "endTick": 2
+      },
+      "temporalKind": "EventPoint",
+      "regionIds": [
+        "A",
+        "B"
+      ],
+      "evidenceState": "SupportedButUncertain"
+    },
+    {
+      "timeWindow": {
+        "startTick": 5,
+        "endTick": 5
+      },
+      "temporalKind": "EventPoint",
+      "regionIds": [
+        "C",
+        "D"
+      ],
+      "evidenceState": "SupportedButUncertain"
+    }
+  ],
+  "publicTransitions": [
+    {
+      "sourceRegionId": "A",
+      "destinationRegionId": "C",
+      "minimumTravelTicks": 3,
+      "maximumTravelTicks": 3,
+      "transportType": "HazardDriven",
+      "provenanceId": "declared-A-C",
+      "publishedAtTick": 0
+    },
+    {
+      "sourceRegionId": "B",
+      "destinationRegionId": "D",
+      "minimumTravelTicks": 3,
+      "maximumTravelTicks": 3,
+      "transportType": "HazardDriven",
+      "provenanceId": "declared-B-D",
+      "publishedAtTick": 0
+    }
+  ],
+  "observation": {
+    "sourceEvidenceIdentifier": "original-encounter-record",
+    "referencedInteractionId": null,
+    "relationKind": "PersonPersonEncounter",
+    "participants": [
+      {
+        "entityId": "person-a",
+        "entityKind": "Person",
+        "role": "EncounterParticipant"
+      },
+      {
+        "entityId": "person-b",
+        "entityKind": "Person",
+        "role": "EncounterParticipant"
+      }
+    ],
+    "timeWindow": {
+      "startTick": 2,
+      "endTick": 2
+    },
+    "regionIds": [
+      "A"
+    ],
+    "availableAtTick": 3,
+    "evidenceState": "Confirmed",
+    "isPersonEvidence": true,
+    "isDeviceOnlyEvidence": false,
+    "provenance": [
+      {
+        "kind": "ExternalSource",
+        "sourceIdentifier": "upstream-evidence"
+      }
+    ]
+  },
+  "storedAtTick": 3,
+  "receipts": [
+    {
+      "scenarioId": "rescuer-receipt-fixture",
+      "seed": 7,
+      "originalRecordId": "original-encounter-record",
+      "holderDeviceId": "held-device",
+      "rescuerId": "rescuer-a",
+      "receivedAtTick": 5
+    },
+    {
+      "scenarioId": "rescuer-receipt-fixture",
+      "seed": 7,
+      "originalRecordId": "original-encounter-record",
+      "holderDeviceId": "held-device",
+      "rescuerId": "rescuer-a",
+      "receivedAtTick": 7
+    }
+  ],
+  "queryTicks": [
+    4,
+    5,
+    7
+  ]
+}

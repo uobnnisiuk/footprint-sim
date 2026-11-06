@@ -19,6 +19,12 @@ public static class CliApplication
         try
         {
             if (args.Length > 0 && string.Equals(
+                args[0], "evaluate-rescuer-receipt-timeline", StringComparison.Ordinal))
+            {
+                return await RunRescuerReceiptTimelineAsync(args[1..]);
+            }
+
+            if (args.Length > 0 && string.Equals(
                 args[0], "evaluate-public-search-projection", StringComparison.Ordinal))
             {
                 return await RunPublicSearchProjectionAsync(args[1..]);
@@ -154,6 +160,50 @@ public static class CliApplication
             Console.Error.WriteLine($"error: {exception.Message}");
             return 2;
         }
+    }
+
+    private static async Task<int> RunRescuerReceiptTimelineAsync(string[] args)
+    {
+        if (args.Length == 1 && string.Equals(args[0], "--help", StringComparison.Ordinal))
+        {
+            Console.WriteLine(
+                "Receipt timeline: evaluate-rescuer-receipt-timeline " +
+                "--fixture <fixture-json> --output <report-json>");
+            return 0;
+        }
+
+        var options = ParseOptions(args, new HashSet<string>(
+            ["--fixture", "--output"], StringComparer.Ordinal));
+        var fixturePath = Path.GetFullPath(Require(options, "--fixture"));
+        var outputPath = Path.GetFullPath(Require(options, "--output"));
+        if (string.Equals(
+            fixturePath, outputPath,
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Fixture and report paths must be different.");
+        }
+
+        // Validate and evaluate the complete fixture before touching the report.
+        var report = RescuerReceiptTimeline.Run(await File.ReadAllBytesAsync(fixturePath));
+        var serialized = JsonDefaults.Serialize(report) + "\n";
+        var directory = Path.GetDirectoryName(outputPath)
+            ?? throw new ArgumentException("Report output requires a directory.");
+        Directory.CreateDirectory(directory);
+        var temporaryPath = Path.Combine(
+            directory, "." + Path.GetFileName(outputPath) + "." +
+            Guid.NewGuid().ToString("N") + ".tmp");
+        try
+        {
+            await File.WriteAllTextAsync(temporaryPath, serialized);
+            File.Move(temporaryPath, outputPath, overwrite: true);
+        }
+        finally
+        {
+            File.Delete(temporaryPath);
+        }
+
+        Console.WriteLine("Rescuer receipt timeline report completed.");
+        return 0;
     }
 
     private static async Task<int> RunPublicSearchProjectionAsync(string[] args)
