@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using FootprintSim.Evidence;
 using FootprintSim.Evaluation;
 using FootprintSim.Hazards;
@@ -100,7 +101,11 @@ public sealed class M1C3Tests
         var uncertainOwn = new OwnEvidenceConstrainedStrategy().Evaluate(
             Input(scenario, uncertainRun, 30));
 
-        Assert.Equal(confirmed.PreferredCandidateRegionIds, confirmed.OuterPlausibleCandidateRegionIds);
+        // A public route does not prove compulsory departure from a nonterminal node.
+        Assert.Subset(
+            confirmed.PreferredCandidateRegionIds.ToHashSet(StringComparer.Ordinal),
+            confirmed.OuterPlausibleCandidateRegionIds.ToHashSet(StringComparer.Ordinal));
+        Assert.Contains("debris-fork", confirmed.OuterPlausibleCandidateRegionIds);
         Assert.Contains(confirmed.CrossThreadConstraintAudits, audit =>
             audit.Disposition == ConstraintApplicationDisposition.Narrow);
         Assert.True(uncertain.PreferredCandidateRegionIds.Count <
@@ -227,6 +232,58 @@ public sealed class M1C3Tests
             item.SourceKind == CandidateSourceKind.CrossThreadObservation);
         Assert.All(cross.CrossThreadConstraintAudits, audit =>
             Assert.Equal(InteractionRelationKind.PersonPersonEncounter, audit.RelationKind));
+    }
+
+
+    // AR-6: fix the synthetic seed and the stop-capable fork before running truth.
+    // Private deposition is evaluator-only; strategy input remains public.
+    [Fact]
+    public void S3NonterminalForkStopMustRemainAnOuterCandidate()
+    {
+        var source = Path.Combine(
+            RepositoryRoot, "scenarios", "s3_cross_thread_encounter", "scenario.json");
+        var definition = JsonNode.Parse(File.ReadAllText(source))!;
+        var nodes = definition["stochasticHazard"]!["nodes"]!.AsArray();
+        var fork = Assert.Single(nodes, node =>
+            node?["regionId"]?.GetValue<string>() == "debris-fork")!.AsObject();
+        Assert.Equal(0.0, fork["depositionProbability"]!.GetValue<double>());
+        fork["depositionProbability"] = 1.0;
+        var directory = TemporaryDirectory();
+        try
+        {
+            var path = Path.Combine(directory, "scenario.json");
+            File.WriteAllText(path, definition.ToJsonString());
+            var scenario = ScenarioLoader.Load(path);
+            var request = new BatchEvaluationRequest
+            {
+                Scenarios = [new EvaluationScenarioInput
+                {
+                    Scenario = scenario,
+                    ContentSha256 = "s3-fixed-fork-stop-fixture"
+                }],
+                Seeds = [0],
+                Strategies = SearchStrategyRegistry.All,
+                SourceCommitSha = "fixture-commit",
+                DirtyWorkingTree = true
+            };
+            var paired = new BatchEvaluationRunner().Run(request);
+            var own = Assert.Single(paired.Runs, run =>
+                run.StrategyId == SearchStrategyIds.OwnEvidenceConstrained);
+            var cross = Assert.Single(paired.Runs, run =>
+                run.StrategyId == SearchStrategyIds.CrossThreadConstrained);
+
+            // Absolute exclusion is checked for each method against the same
+            // truth, not hidden by a zero paired difference.
+            Assert.Equal("debris-fork", cross.RealizedPersonFinalRegionId);
+            Assert.Equal(own.RealizedPersonFinalRegionId, cross.RealizedPersonFinalRegionId);
+            Assert.Contains("debris-fork", cross.CandidateRegionIds);
+            Assert.Equal(JsonDefaults.Serialize(paired.Runs),
+                JsonDefaults.Serialize(new BatchEvaluationRunner().Run(request).Runs));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
     }
 
     [Fact]

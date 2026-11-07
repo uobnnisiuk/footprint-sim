@@ -128,3 +128,59 @@ This preservation follows the research hypothesis `Event Density != Relation Res
 M1-C3 does not implement a full Causal Weave graph, graph query language, 24-lens taxonomy or experiment, Index Access, probabilistic belief engine, ATMS, observation calibration, distributed holder flow, BLE/GIS/CRA, rescue policy, active probing, Causal Shadow, Good/Bad scoring, GUI, or parallel execution.
 
 S3 weights, topology, observations, and outcome frequencies are synthetic. They do not estimate real disaster probability, BLE performance, person location, survival, or rescue effectiveness.
+
+## AR-6: possible published travel is not compulsory departure (2026-11-08)
+
+The original `PublicCandidateWarpPropagator.Traverse` discarded the source
+region after a published HazardDriven branch's maximum arrival time. That is
+an unwarranted closed-world interpretation: the stochastic truth engine may
+stop in a nonterminal region, and its deposition probability and realized
+random choice are **not public inference inputs**.
+
+The adopted correction retains the unobserved stop as an **outer-only**
+alternative; positive published travel destinations remain preferred and
+keep their public branch provenance. A received Confirmed observation still
+narrows its historical tick, including when the later stop is not known.
+The optional secondary-transport alternative remains valid. We defer a
+hard exclusion conditional on independently proven complete departure
+information; we reject leaking private deposition probabilities or
+realized transition traces into inference. Revisit if a legal Confirmed
+constraint is lost or an independently supported public completeness
+guarantee is introduced.
+
+Hand-checkable toy prediction (not an executed performance measurement):
+
+| Fixed case | Preferred at tick 10 | Outer at tick 10 | False exclusion if truth stayed at X |
+| --- | --- | --- | --- |
+| Prior code: Confirmed X at tick 2, published X→Y in 3 ticks | {Y} | {Y} | yes |
+| Revised proposal, same public inputs | {Y} | {X, Y} | no |
+
+This increases the safe outer candidate count from 1 to 2, rather than
+claiming a rescue-time or life-saving improvement. Unobserved staying at X
+must not be presented as positively supported movement or as certain.
+The regression covers null public envelope, deterministic output, positive
+branch provenance, inclusive arrival, multiple published branches, and the
+fixed historical observation.
+
+The existing S3 fixture sets `debris-fork.depositionProbability=0.0`,
+so its original runs cannot validate a stop at that nonterminal node. The
+test-local counterexample chooses **seed 0 before results** and changes
+only this synthetic parameter to 1.0, retaining the same truth, public
+envelope, evidence and cutoff across OwnEvidence and CrossThread. It
+checks the absolute true-location containment of the CrossThread outer,
+while the paired methods' truth is identical. This is an existing synthetic
+physics parameter, not a calibrated probability or new physical law.
+
+The adversarial report of **65 errors in 200 trials** is a reported result,
+not an independently reproduced count. At the time of this draft,
+the revised code, new regressions and fixed S3 counterexample have
+**not been run in this execution environment**: the post-change S3
+outer/preferred/conflict counts, absolute false exclusions for each strategy,
+paired deltas and processing work remain **unmeasured**, not zero.
+Only a corresponding completed CI/evaluation on the exact commit can
+replace this status with measured figures. No current-method advantage,
+rescue time reduction, or general safety guarantee follows from this change.
+
+This repair is limited to a public propagation boundary. It does not
+evaluate discovery of unknown causal relations, the 24 lenses, or actual
+rescue outcomes.

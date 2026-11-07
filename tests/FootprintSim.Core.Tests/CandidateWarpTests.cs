@@ -29,16 +29,21 @@ public sealed class CandidateWarpTests
 
         var result = Apply(candidates, [constraint], currentTick: 25, PublicEnvelope());
 
-        var warp = Assert.Single(result.CandidateWarps.Warps);
-        Assert.Equal(CandidateWarpStanding.Preferred, warp.Standing);
+        var warp = Assert.Single(result.CandidateWarps.Warps,
+            item => item.Standing == CandidateWarpStanding.Preferred);
         Assert.Equal(["R3"], warp.CandidateRegionIdsAt(20));
         Assert.Equal(["R5", "R6"], warp.CandidateRegionIdsAt(25));
+        Assert.Equal(["R3", "R5", "R6"], result.CandidateWarps.CandidateRegionIdsAt(25));
+        Assert.DoesNotContain("R3", result.CandidateWarps.PreferredRegionIdsAt(25));
+        var outer = Assert.Single(result.CandidateWarps.Warps,
+            item => item.Standing == CandidateWarpStanding.OuterPlausible);
+        Assert.Equal(["R3"], outer.CandidateRegionIdsAt(20));
         var audit = Assert.Single(result.Audits);
         Assert.Equal(ConstraintApplicationDisposition.Narrow, audit.Disposition);
         Assert.Equal(ConstraintTemporalKind.ExactTick, audit.ConstraintTemporalKind);
         Assert.Equal(3, audit.CandidateCountBefore);
         Assert.Equal(1, audit.CandidateCountAfter);
-        Assert.False(audit.AlternativesRetained);
+        Assert.True(audit.AlternativesRetained);
         Assert.False(audit.ConflictDetected);
         Assert.Equal(InteractionRelationKind.PersonPersonEncounter, audit.RelationKind);
         Assert.Equal(constraint.SourceObservationId, audit.SourceObservationId);
@@ -194,7 +199,7 @@ public sealed class CandidateWarpTests
         Assert.Equal(2, result.CandidateWarps.Warps.Count);
         Assert.Equal(["R5", "R6"], result.CandidateWarps.PreferredRegionIdsAt(25));
         Assert.Equal(
-            ["R2", "R4", "R5", "R6"],
+            ["R2", "R3", "R4", "R5", "R6"],
             result.CandidateWarps.OuterPlausibleRegionIdsAt(25));
         var audit = Assert.Single(result.Audits);
         Assert.Equal(ConstraintApplicationDisposition.Branch, audit.Disposition);
@@ -427,7 +432,7 @@ public sealed class CandidateWarpTests
     }
 
     [Fact]
-    public void PublicTravelArrivalIsInclusiveWithoutRetainingTheSourceAtMaximumArrivalTick()
+    public void PublicTravelArrivalKeepsOnlyDestinationsPreferredWhileUnknownStopStaysOuter()
     {
         var candidates = Warp(
             InteractionTimeWindow.At(20),
@@ -441,8 +446,96 @@ public sealed class CandidateWarpTests
 
         var result = Apply(candidates, [constraint], currentTick: 22, PublicEnvelope());
 
-        Assert.Equal(["R5", "R6"], result.CandidateWarps.CandidateRegionIdsAt(22));
-        Assert.DoesNotContain("R3", result.CandidateWarps.CandidateRegionIdsAt(22));
+        Assert.Equal(["R5", "R6"], result.CandidateWarps.PreferredRegionIdsAt(22));
+        Assert.Equal(["R3", "R5", "R6"], result.CandidateWarps.CandidateRegionIdsAt(22));
+        Assert.DoesNotContain("R3", result.CandidateWarps.PreferredRegionIdsAt(22));
+    }
+
+
+    // #98 / AR-6: a published X->Y is a possible movement, not an observed departure.
+    [Fact]
+    public void PublishedHazardRouteRetainsUndeclaredStopOnlyInOuter()
+    {
+        var candidates = Warp(InteractionTimeWindow.At(2),
+            CandidateWarpTemporalKind.EventPoint, ["X"]);
+        var confirmed = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(2), ["X"], availableAtTick: 2);
+        var envelope = new PublicHazardEnvelope
+        {
+            HazardId = "published-possible-departure",
+            SourceRegionId = "X",
+            PublishedAtTick = 0,
+            Branches =
+            [
+                new PublicHazardBranch
+                {
+                    SourceRegionId = "X", DestinationRegionId = "Y",
+                    MinimumTravelTicks = 3, MaximumTravelTicks = 3,
+                    TransportType = HazardTransportType.HazardDriven,
+                    ProvenanceId = "public-x-y", PublishedAtTick = 0
+                }
+            ]
+        };
+
+        var atObservation = Apply(candidates, [confirmed], 2, envelope);
+        var atQuery = Apply(candidates, [confirmed], 10, envelope);
+        var missingPublicModel = Apply(candidates, [confirmed], 10, null);
+        Assert.Equal(["X"], atObservation.CandidateWarps.CandidateRegionIdsAt(2));
+        Assert.Equal(["Y"], atQuery.CandidateWarps.PreferredRegionIdsAt(10));
+        Assert.Equal(["X", "Y"], atQuery.CandidateWarps.CandidateRegionIdsAt(10));
+        Assert.Equal(["X", "Y"], atQuery.CandidateWarps.OuterPlausibleRegionIdsAt(10));
+        Assert.Equal(["X"], missingPublicModel.CandidateWarps.CandidateRegionIdsAt(10));
+        var preferred = Assert.Single(atQuery.CandidateWarps.Warps,
+            item => item.Standing == CandidateWarpStanding.Preferred);
+        Assert.Contains(preferred.States.Single(state => state.TimeWindow.StartTick == 10).Provenance,
+            item => item.SourceKind == CandidateWarpSourceKind.PublicHazardEnvelope &&
+                    item.SourceIdentifier == "public-x-y");
+        var outer = Assert.Single(atQuery.CandidateWarps.Warps,
+            item => item.Standing == CandidateWarpStanding.OuterPlausible);
+        Assert.Equal(["X"], outer.CandidateRegionIdsAt(2));
+        Assert.Equal(ConstraintApplicationDisposition.Narrow,
+            Assert.Single(atQuery.Audits).Disposition);
+        Assert.Equal(JsonDefaults.Serialize(atQuery),
+            JsonDefaults.Serialize(Apply(candidates, [confirmed], 10, envelope)));
+    }
+
+    [Fact]
+    public void MultiplePublishedBranchesRetainStopAndEveryReachableDestination()
+    {
+        var candidates = Warp(InteractionTimeWindow.At(2),
+            CandidateWarpTemporalKind.EventPoint, ["X"]);
+        var confirmed = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(2), ["X"], availableAtTick: 2);
+        var branches = new[]
+        {
+            new PublicHazardBranch
+            {
+                SourceRegionId = "X", DestinationRegionId = "Z",
+                MinimumTravelTicks = 2, MaximumTravelTicks = 4,
+                TransportType = HazardTransportType.HazardDriven,
+                ProvenanceId = "public-x-z", PublishedAtTick = 0
+            },
+            new PublicHazardBranch
+            {
+                SourceRegionId = "X", DestinationRegionId = "Y",
+                MinimumTravelTicks = 3, MaximumTravelTicks = 3,
+                TransportType = HazardTransportType.HazardDriven,
+                ProvenanceId = "public-x-y", PublishedAtTick = 0
+            }
+        };
+        var publicModel = new PublicHazardEnvelope
+        {
+            HazardId = "published-fork",
+            SourceRegionId = "X",
+            PublishedAtTick = 0,
+            Branches = branches
+        };
+        var reversed = publicModel with { Branches = branches.Reverse().ToArray() };
+        var result = Apply(candidates, [confirmed], 10, publicModel);
+        Assert.Equal(["Y", "Z"], result.CandidateWarps.PreferredRegionIdsAt(10));
+        Assert.Equal(["X", "Y", "Z"], result.CandidateWarps.CandidateRegionIdsAt(10));
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(Apply(candidates, [confirmed], 10, reversed)));
     }
 
     [Fact]
