@@ -414,3 +414,105 @@ The fixture and comparisons remain synthetic. The output expectations above
 were checked on the cited implementation head; the subsequent documentation
 commit needs its own ordinary and F19 research CI before the PR can pass
 final review. Even successful tests do not establish rescue effectiveness.
+
+## Two complementary received traces (Issue #86)
+
+Work-Key: `FP-WEFT-COMPLEMENTARITY-V1`. The existing three method families,
+not a new fourth method, receive the same public world and same-cutoff
+available evidence. The new pure `AnalyzePairedContributions` API compares
+`Run`'s four public ablation rows without a private observation, original
+record, synthetic truth or new inference algorithm.
+
+**Pre-registered hypothesis (fixed before implementation and CI).** At target tick 2
+the public candidates are {A,B,C}; at later tick 5 they are {D,E,F},
+with only public 3-tick transitions A→D, B→E, C→F (published tick 0).
+Other-holder original 1 observes {A,B} at tick 2, is available/stored at
+tick 3 and received tick 6. Distinct-root original 2 observes {E,F}
+at tick 5, available/stored tick 6 and received tick 7. No directly
+confirmed target person location. The hand prediction for the existing
+C-local method at cutoff tick 7 is: zero {A,B,C}, original 1 only
+{A,B}, original 2 only {B,C}, both {B}. Actual arrival ticks 5/6/7
+are separately reported, not conflated with cutoff-7 ablations.
+
+The analysis distinguishes candidate IDs and signed count changes,
+the first/second source IDs and available-vs-used ancestry groups,
+actual generation and traversal direct-source IDs, preferred/uncertain/
+conflict availability, forward/backward public transitions, verification,
+generation and inspection work. Additional exclusions are baseline
+regions present in **both singletons** but absent with both records.
+Reappearance means a region with both sources which is absent from at
+least one singleton. Empty additional exclusions are valid, as are
+candidate expansions, unchanged sets, unknown standings and conflict.
+Unavailable comparisons return explicit status, not an invented zero.
+
+Shared upstream ancestry of two otherwise distinct original IDs still
+counts as one evidence group. Changing receipt order or repeating a
+receipt must not change the normalized result. Truth is only available
+through the separate post-inference evaluator. Any mismatch with the fixed
+hypothesis requires examining declared public-transition semantics rather
+than silently tuning the fixture.
+
+**Observed model outputs, separate from the preregistered hypothesis.**
+The original PR #87 implementation head (f780cd2) passed ordinary and F19 research
+CI on 2026-11-06 ([ordinary](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42311237213),
+[F19](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42311237178)).
+The next implementation head (aa5647a) also passed
+[ordinary](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42315501307)
+and [F19](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42315501261)
+CI on 2026-11-07. The fixed synthetic test checked C-local outer candidates
+as none {A,B,C} (3 model places), first only {A,B} (2), second only
+{B,C} (2), both {B} (1). Same-cutoff available ancestry group
+counts are 0/1/1/2. C-local used two groups with both:
+generation direct source `original-encounter-record` and traversal
+direct source `second-original`. Adding the second source excludes A
+relative to first-only; adding the first source excludes C relative to
+second-only. Exclusions beyond the intersection of singleton candidates
+and reappeared regions are both empty.
+
+The method-specific candidate results at the same cutoff tick 7 are:
+
+| Existing method | Neither | First only | Second only | Both |
+| --- | --- | --- | --- | --- |
+| public-prior | {A,B,C} | {A,B,C} | {A,B,C} | {A,B,C} |
+| known-relation-backward | {A,B,C} | {A,B,C} | {B,C} | {B,C} |
+| distributed-reconstruction | {A,B,C} | {A,B} | {A,B,C} | {A,B} |
+| distributed-reconstruction-local | {A,B,C} | {A,B} | {B,C} | {B} |
+
+**Actual model-work counters.** The table below is from the fixed test
+`ComplementaryWeftComparisonMeasuresFourSameCutoffEvidenceConditions`,
+read from the public-only
+[diagnostic CI log on head 2e46e7f](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42319963514).
+That diagnostic run deliberately failed its placeholder snapshot assertion
+to expose the counters (618 other tests passed); the subsequent code replaces
+the placeholder with an **exact 16-row regression snapshot**. The final
+PR head must pass its own ordinary/F19 CI before independent acceptance.
+Each slash-delimited tuple is
+`usedSourceGroups / generationSteps / verificationSteps / forwardTransitionSteps / backwardTransitionSteps / evidenceRecordsInspected / publicRelationsInspected`.
+Counts are work operations in the simulator, not wall-clock duration.
+
+| Method | No traces | First only | Second only | Both |
+| --- | --- | --- | --- | --- |
+| `public-prior` | `0/0/0/0/0/0/0` | `0/0/0/0/0/0/0` | `0/0/0/0/0/0/0` | `0/0/0/0/0/0/0` |
+| `known-relation-backward` | `0/0/0/1/1/0/2` | `0/0/0/1/1/0/2` | `1/0/0/2/2/1/5` | `1/0/0/2/2/1/5` |
+| `distributed-reconstruction` | `0/4/0/0/0/0/0` | `1/4/0/0/0/1/1` | `0/4/0/0/0/0/0` | `1/4/0/0/0/1/1` |
+| `distributed-reconstruction-local` | `0/4/0/1/1/0/2` | `1/4/0/2/2/0/4` | `1/4/0/2/2/1/5` | `2/4/0/2/2/1/5` |
+
+For example, the C-local **both** condition uses two source groups, 4
+generation steps, 0 verification steps, 2 forward and 2 backward public
+transition steps, 1 inspected evidence record and 5 inspected public
+relations. By contrast, public-prior uses no source groups and has
+zero work counters for all four ablations. C-local's 4 generation steps
+are not the same as a four-step traversal, and two received original
+records are not automatically two independently used evidence groups.
+These counters and candidate sets must not be converted to uncalibrated
+rescue time, cost, success or survival rates.
+
+The final-head regression also requires missing method results to be
+`unavailable` or `partial`, never a numerical zero-candidate result.
+Repeated delivery, reversed receipt order, shared source ancestry,
+uncertain/conflicting evidence, and device-only observations remain
+separate boundary checks. The declared public transitions are supplied
+by this scenario: unknown-relation discovery, a complete 24-edge
+engine and field rescue effectiveness have **not** been evaluated or
+rejected. This one synthetic world does not establish general superiority
+of any method.
