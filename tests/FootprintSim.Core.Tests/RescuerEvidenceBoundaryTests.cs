@@ -861,8 +861,10 @@ public sealed class RescuerEvidenceBoundaryTests
         AssertRows(report.SameCutoffAblations[1], 1,
             ["A,B", "A,B", "A", "A"], [0, 0, 1, 1],
             ["0/0/0/0/0", "0/1/1/0/2", "3/0/0/1/1", "3/2/2/0/4"]);
+        // With no published completeness guarantee, traversal evidence alone
+        // cannot turn A,B into A; all four outers remain A,B here.
         AssertRows(report.SameCutoffAblations[2], 1,
-            ["A,B", "A,B", "A,B", "A"], [0, 1, 0, 1],
+            ["A,B", "A,B", "A,B", "A,B"], [0, 1, 0, 1],
             ["0/0/0/0/0", "0/2/2/1/5", "3/0/0/0/0", "3/2/2/1/5"]);
         AssertRows(report.SameCutoffAblations[3], 2,
             ["A,B", "A,B", "A", "A"], [0, 1, 1, 2],
