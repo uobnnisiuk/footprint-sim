@@ -880,7 +880,8 @@ public static class RescuerEvidenceMethodComparison
                 Sort(a).SequenceEqual(Sort(b), StringComparer.Ordinal);
         RescuerEvidenceDecisionRevisionReport Unavailable(string reason) => new()
         {
-            Status = "unavailable", UnavailableReason = reason,
+            Status = "unavailable",
+            UnavailableReason = reason,
             TargetWindow = publicReport.TargetWindow
         };
         var actual = publicReport.ActualTimeline.OrderBy(row => row.QueryTick).ToArray();

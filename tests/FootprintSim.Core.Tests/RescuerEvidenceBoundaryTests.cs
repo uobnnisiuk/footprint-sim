@@ -1521,8 +1521,8 @@ public sealed class RescuerEvidenceBoundaryTests
             JsonDefaults.Serialize(late.ActualTimeline[4]));
         Assert.Equal(2, sameTick.Methods.Single(x =>
             x.Method == "distributed-reconstruction").Timeline[3].EarlyReceivedOriginalIds.Count);
-        Assert.Equal(1, sameTick.Methods.Single(x =>
-            x.Method == "distributed-reconstruction").Timeline[3].LateReceivedOriginalIds.Count);
+        Assert.Single(sameTick.Methods.Single(x =>
+            x.Method == "distributed-reconstruction").Timeline[3].LateReceivedOriginalIds);
         Assert.DoesNotContain("SyntheticTruth", JsonDefaults.Serialize(revised));
         Assert.NotEmpty(RescuerEvidenceMethodComparison.EvaluateSyntheticTruth(early, "B").Evaluations);
     }
@@ -1582,8 +1582,11 @@ public sealed class RescuerEvidenceBoundaryTests
         var absent = early with
         {
             ActualTimeline = early.ActualTimeline.Select((row, index) => index == 3
-                ? row with { Methods = row.Methods.Where(x =>
-                    x.Method != "distributed-reconstruction-local").ToArray() }
+                ? row with
+                {
+                    Methods = row.Methods.Where(x =>
+                        x.Method != "distributed-reconstruction-local").ToArray()
+                }
                 : row).ToArray()
         };
         var partial = RescuerEvidenceMethodComparison.AnalyzeDecisionRevision(absent);
