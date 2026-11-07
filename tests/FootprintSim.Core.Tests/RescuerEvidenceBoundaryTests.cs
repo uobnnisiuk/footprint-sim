@@ -1982,53 +1982,6 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Equal(backwardAtSix.CandidateCount, backwardAtSeven.CandidateCount);
     }
 
-    // Temporary diagnostic: a fixed-input synthetic Run export to pin
-    // post-#96 observations. Remove after transferring the actual measurements.
-    [Fact]
-    public void TemporaryPostRepairRunMeasurement()
-    {
-        var context = ComplementaryPublicContext();
-        var originals = new[]
-        {
-            ComplementaryOriginal(RecordId, HolderId, 2, ["A", "B"], 3, "weft-a"),
-            ComplementaryOriginal("second-original", "holder-b", 5, ["E", "F"], 6, "weft-b")
-        };
-        var receipts = new[] { Receipt(6), LaterComparisonReceipt(7) };
-        var publicEnvelope = context.PublicHazardEnvelope!;
-        var conditions = new (string Label, RescueContext Context)[]
-        {
-            ("A", context with { PublicHazardEnvelope = publicEnvelope with { Branches = [Branch("A", "D")] } }),
-            ("AB", context with { PublicHazardEnvelope = publicEnvelope with { Branches = [Branch("A", "D"), Branch("B", "E")] } }),
-            ("AC", context with { PublicHazardEnvelope = publicEnvelope with { Branches = [Branch("A", "D"), Branch("C", "F")] } }),
-            ("ALL", context),
-            ("NONE", context with { PublicHazardEnvelope = null })
-        };
-        static string FormatIds(IReadOnlyList<string>? ids) =>
-            ids is null ? "null" : ids.Count == 0 ? "-" : string.Join(",", ids);
-        var lines = new List<string>();
-        foreach (var condition in conditions)
-        {
-            var report = RescuerEvidenceMethodComparison.Run(
-                condition.Context, Seed, RescuerId, originals, receipts,
-                InteractionTimeWindow.At(2), [5, 6, 7], 7);
-            foreach (var query in report.ActualTimeline)
-            {
-                foreach (var row in query.Methods)
-                {
-                    lines.Add(
-                        $"{condition.Label}|{query.QueryTick}|{query.ReceivedOriginalCount}|{query.AvailableSourceGroupCount}|" +
-                        $"{row.Method}|{row.EvidenceStatus}|{FormatIds(row.OuterCandidateRegionIds)}|" +
-                        $"{FormatIds(row.PreferredCandidateRegionIds)}|{FormatIds(row.UncertainCandidateRegionIds)}|" +
-                        $"{FormatIds(row.ConflictedCandidateRegionIds)}|{row.UsedSourceGroupCount}|" +
-                        $"{FormatIds(row.GenerationDirectSourceIds)}|{FormatIds(row.TraversalDirectSourceIds)}|" +
-                        $"{row.GenerationSteps}/{row.VerificationSteps}/{row.ForwardTransitionSteps}/" +
-                        $"{row.BackwardTransitionSteps}/{row.EvidenceRecordsInspected}/{row.PublicRelationsInspected}");
-                }
-            }
-        }
-        throw new InvalidOperationException("POST_AR1_RUN\\n" + string.Join("\\n", lines));
-    }
-
     [Fact]
     public void MissingPublicTransitionsRemainSeparateFromReceiptAndAncestryBoundaries()
     {
