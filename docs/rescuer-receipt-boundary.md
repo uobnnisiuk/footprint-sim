@@ -571,3 +571,41 @@ a preregistered prediction and an implementation pending the PR's
 ordinary and F19 CI plus a separate independent review. Neither
 the expected candidate outcome nor the expected simulator work counts
 are a confirmed #90 result until the final PR head's CI checks pass.
+
+**Observed model output, separate from the preregistered prediction.**
+After the initial syntax-assembly error was fixed, the
+[ordinary CI on corrected head 0196789](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42337998295)
+passed build, 622 tests (zero failed/skipped), format, sample scenarios
+and evaluation harness on 2026-11-07 JST. At query ticks 5/6/7/8,
+the early schedule receives 0/1/2/2 originals and the late schedule
+0/1/1/2. The fixed-public-world outputs at tick 7 are:
+
+| Method | Early (second receipt tick 7) | Late (second receipt tick 8) |
+| --- | --- | --- |
+| `public-prior` | {A,B,C} | {A,B,C} |
+| `known-relation-backward` | {B,C} | {A,B,C} |
+| `distributed-reconstruction` | {A,B} | {A,B} |
+| `distributed-reconstruction-local` | {B} | {A,B} |
+
+Both schedules coincide at tick 8 for public candidate IDs, used
+source IDs and model work. C-local excludes model-place A one sampled
+query tick earlier when the second record arrives at 7; this does not
+measure continuous rescue time. At tick 7, early/late C-local uses 2/1
+ancestry groups, with generation direct source
+`original-encounter-record` in both and traversal direct source
+`second-original` only in the early condition. Its operation counts
+early/late are generation 4/4, verification 0/0, forward transition
+2/2, backward transition 2/2, inspected evidence records 1/0, and
+inspected public relations 5/4. Backward-only uses 1/0 groups,
+forward/backward steps 2/1 each, evidence inspections 1/0,
+and relation inspections 5/2. Generation-only uses 1/1 groups and
+4/4 generation steps without transition steps; public-prior uses
+no groups or work steps. The counters use the identical #86 fixed
+ablation fixture and #90 actual-timeline comparison, not a separate
+real-world measurement or four independent research studies.
+
+The public movement relation is declared, not discovered. Unknown
+relationships, unmodeled travel, physical rescue time, costs, and
+rescue effectiveness remain untested. The final PR head requires its
+own ordinary/F19 CI and independent technical review before any
+acceptance or normal merge.
