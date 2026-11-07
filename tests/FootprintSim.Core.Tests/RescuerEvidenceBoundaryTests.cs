@@ -1111,22 +1111,17 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Equal(["A", "B", "C"], reconstructed.Conditions[2].OuterCandidateRegionIds);
         Assert.Equal(["A", "B"], reconstructed.Conditions[3].OuterCandidateRegionIds);
 
-        // xUnit captures Console.Out on passing tests. Write only deterministic,
-        // public aggregate work counters directly to the runner for CI verification.
-        var ciMetrics = new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true };
-        foreach (var method in result.Methods)
-        {
-            foreach (var row in method.Conditions)
-            {
-                ciMetrics.WriteLine(
-                    $"FP-WEFT86 {method.Method} {row.Label}: " +
-                    $"usedGroups={row.UsedSourceGroupCount}, " +
-                    $"generation={row.GenerationSteps}, verification={row.VerificationSteps}, " +
-                    $"forward={row.ForwardTransitionSteps}, backward={row.BackwardTransitionSteps}, " +
-                    $"evidenceInspected={row.EvidenceRecordsInspected}, " +
-                    $"relationsInspected={row.PublicRelationsInspected}");
-            }
-        }
+        // Pin these public, deterministic aggregate work counters as a baseline.
+        // This first CI diagnostic identifies values before the final snapshot.
+        var metricsSnapshot = string.Join("\n", result.Methods.SelectMany(method =>
+            method.Conditions.Select(row =>
+                $"FP-WEFT86 {method.Method} {row.Label}: " +
+                $"usedGroups={row.UsedSourceGroupCount}, " +
+                $"generation={row.GenerationSteps}, verification={row.VerificationSteps}, " +
+                $"forward={row.ForwardTransitionSteps}, backward={row.BackwardTransitionSteps}, " +
+                $"evidenceInspected={row.EvidenceRecordsInspected}, " +
+                $"relationsInspected={row.PublicRelationsInspected}")));
+        Assert.True(metricsSnapshot == "PENDING-PUBLIC-COUNTER-SNAPSHOT", metricsSnapshot);
 
         var prior = result.Methods.Single(method => method.Method == "public-prior");
         Assert.False(prior.BothStrictlyNarrowerThanEachSingle);
