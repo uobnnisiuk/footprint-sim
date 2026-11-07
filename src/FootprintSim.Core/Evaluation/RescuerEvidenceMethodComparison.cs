@@ -132,7 +132,55 @@ public sealed record RescuerEvidencePairedContributionReport
     public IReadOnlyList<RescuerEvidencePairedMethodContribution> Methods { get; init; } = [];
 }
 
-public static class RescuerEvidenceMethodComparison
+
+//// #90: Published timeline comparison. Source-group IDs are not exposed by
+//// Run; counts are not a claim of independently verified real-world sources.
+public sealed record RescuerEvidenceReceiptTimingTick
+{
+    public required long QueryTick { get; init; }
+    public required string Status { get; init; }
+    public string? UnavailableReason { get; init; }
+    public IReadOnlyList<string> EarlyReceivedOriginalIds { get; init; } = [];
+    public IReadOnlyList<string> LateReceivedOriginalIds { get; init; } = [];
+    public IReadOnlyList<string> EarlyReceivedSourceObservationIds { get; init; } = [];
+    public IReadOnlyList<string> LateReceivedSourceObservationIds { get; init; } = [];
+    public required int EarlyAvailableSourceGroupCount { get; init; }
+    public required int LateAvailableSourceGroupCount { get; init; }
+    public required int EarlyAvailableConstraintCount { get; init; }
+    public required int LateAvailableConstraintCount { get; init; }
+    public RescuerEvidenceMethodRow? EarlyMethod { get; init; }
+    public RescuerEvidenceMethodRow? LateMethod { get; init; }
+    // Signed: negative means fewer candidates in the early-arrival schedule.
+    public int? EarlyMinusLateCandidateCount { get; init; }
+    public IReadOnlyList<string>? EarlyOnlyCandidateRegionIds { get; init; }
+    public IReadOnlyList<string>? LateOnlyCandidateRegionIds { get; init; }
+    public bool? EarlyCandidatesSubsetOfLate { get; init; }
+    public bool? LateCandidatesSubsetOfEarly { get; init; }
+    public bool? SameOuterCandidates { get; init; }
+    public bool? SameMethodResult { get; init; }
+}
+
+public sealed record RescuerEvidenceReceiptTimingMethod
+{
+    public required string Method { get; init; }
+    public required string Status { get; init; }
+    public long? FirstCandidateDifferentTick { get; init; }
+    public long? FirstMethodResultDifferentTick { get; init; }
+    // First later matching row *among the supplied query ticks*.
+    public long? FirstCandidateConvergenceTick { get; init; }
+    public long? FirstMethodResultConvergenceTick { get; init; }
+    public IReadOnlyList<RescuerEvidenceReceiptTimingTick> Timeline { get; init; } = [];
+}
+
+public sealed record RescuerEvidenceReceiptTimingReport
+{
+    public required string Status { get; init; }
+    public string? UnavailableReason { get; init; }
+    public IReadOnlyList<long> QueryTicks { get; init; } = [];
+    public IReadOnlyList<RescuerEvidenceReceiptTimingMethod> Methods { get; init; } = [];
+}
+
+public static class RescuerEvidenceMethodComparisonpublic static class RescuerEvidenceMethodComparison
 {
     /// <summary>
     /// Builds both the actual receipt timeline and a same-cutoff 0/1/2-original
@@ -601,7 +649,173 @@ public static class RescuerEvidenceMethodComparison
         };
     }
 
+
     /// <summary>
+    /// Compare two already-published actual receipt timelines without reading
+    /// originals, truth, private observations or re-running inference. Callers
+    /// must establish identical public worlds/originals separately: report
+    /// metadata equality alone cannot prove that experimental control.
+    /// </summary>
+    public static RescuerEvidenceReceiptTimingReport AnalyzeReceiptDecisionTiming(
+        RescuerEvidenceMethodReport early,
+        RescuerEvidenceMethodReport late)
+    {
+        ArgumentNullException.ThrowIfNull(early);
+        ArgumentNullException.ThrowIfNull(late);
+        static RescuerEvidenceReceiptTimingReport Unavailable(string reason) => new()
+        {
+            Status = "unavailable",
+            UnavailableReason = reason
+        };
+        if (early.SchemaVersion != late.SchemaVersion ||
+            early.ScenarioId != late.ScenarioId || early.Seed != late.Seed ||
+            early.RescuerId != late.RescuerId ||
+            early.TargetWindow.StartTick != late.TargetWindow.StartTick ||
+            early.TargetWindow.EndTick != late.TargetWindow.EndTick ||
+            early.ActualTimeline.Count == 0 ||
+            early.ActualTimeline.Count != late.ActualTimeline.Count)
+        {
+            return Unavailable("Incompatible public report metadata or timeline lengths.");
+        }
+
+        var a = early.ActualTimeline.OrderBy(row => row.QueryTick).ToArray();
+        var b = late.ActualTimeline.OrderBy(row => row.QueryTick).ToArray();
+        if (a.Select(row => row.QueryTick).Distinct().Count() != a.Length ||
+            !a.Select(row => row.QueryTick).SequenceEqual(b.Select(row => row.QueryTick)) ||
+            a.Any(row => row.Condition != "actual") ||
+            b.Any(row => row.Condition != "actual"))
+        {
+            return Unavailable("Matching, distinct actual query ticks are required.");
+        }
+
+        static string[] Sort(IEnumerable<string> ids) =>
+            ids.Distinct(StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal).ToArray();
+        static bool Same(IReadOnlyList<string>? x, IReadOnlyList<string>? y) =>
+            x is null ? y is null :
+                y is not null && Sort(x).SequenceEqual(Sort(y), StringComparer.Ordinal);
+        static bool SameMethod(RescuerEvidenceMethodRow x, RescuerEvidenceMethodRow y) =>
+            x.Method == y.Method && x.EvidenceStatus == y.EvidenceStatus &&
+            Same(x.OuterCandidateRegionIds, y.OuterCandidateRegionIds) &&
+            x.CandidateCount == y.CandidateCount &&
+            x.BaselineCandidateCount == y.BaselineCandidateCount &&
+            x.CandidateReduction == y.CandidateReduction &&
+            Same(x.PreferredCandidateRegionIds, y.PreferredCandidateRegionIds) &&
+            Same(x.UncertainCandidateRegionIds, y.UncertainCandidateRegionIds) &&
+            Same(x.ConflictedCandidateRegionIds, y.ConflictedCandidateRegionIds) &&
+            Same(x.GenerationDirectSourceIds, y.GenerationDirectSourceIds) &&
+            Same(x.TraversalDirectSourceIds, y.TraversalDirectSourceIds) &&
+            Same(x.UnusedDirectSourceIds, y.UnusedDirectSourceIds) &&
+            x.AvailableSourceGroupCount == y.AvailableSourceGroupCount &&
+            x.UsedSourceGroupCount == y.UsedSourceGroupCount &&
+            x.Steps == y.Steps && x.GenerationSteps == y.GenerationSteps &&
+            x.VerificationSteps == y.VerificationSteps &&
+            x.ForwardTransitionSteps == y.ForwardTransitionSteps &&
+            x.BackwardTransitionSteps == y.BackwardTransitionSteps &&
+            x.EvidenceRecordsInspected == y.EvidenceRecordsInspected &&
+            x.PublicRelationsInspected == y.PublicRelationsInspected &&
+            Same(x.PublicTransitionIds, y.PublicTransitionIds);
+
+        // At the final common cutoff both schedules must have the same publicly
+        // received original and observation identities. This is necessary but
+        // insufficient to prove identical raw observations or world definitions.
+        if (!Same(a[^1].ReceivedOriginalIds, b[^1].ReceivedOriginalIds) ||
+            !Same(a[^1].ReceivedSourceObservationIds, b[^1].ReceivedSourceObservationIds))
+        {
+            return Unavailable("Final received public identities differ.");
+        }
+
+        var names = new[]
+        {
+            "public-prior", "known-relation-backward",
+            "distributed-reconstruction", "distributed-reconstruction-local"
+        }.Concat(a.Concat(b).SelectMany(row => row.Methods.Select(item => item.Method)))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(name => name, StringComparer.Ordinal).ToArray();
+        var methods = names.Select(name =>
+        {
+            var rows = a.Zip(b, (earlyRow, lateRow) =>
+            {
+                var es = earlyRow.Methods.Where(item => item.Method == name).ToArray();
+                var ls = lateRow.Methods.Where(item => item.Method == name).ToArray();
+                var valid = es.Length == 1 && ls.Length == 1 &&
+                    es[0].OuterCandidateRegionIds is not null &&
+                    ls[0].OuterCandidateRegionIds is not null &&
+                    es[0].CandidateCount == es[0].OuterCandidateRegionIds.Count &&
+                    ls[0].CandidateCount == ls[0].OuterCandidateRegionIds.Count &&
+                    es[0].UsedSourceGroupCount <= es[0].AvailableSourceGroupCount &&
+                    ls[0].UsedSourceGroupCount <= ls[0].AvailableSourceGroupCount &&
+                    es[0].UsedSourceGroupCount >= 0 && ls[0].UsedSourceGroupCount >= 0;
+                var e = valid ? es[0] : null;
+                var l = valid ? ls[0] : null;
+                var eOnly = valid ? Sort(e!.OuterCandidateRegionIds.Except(
+                    l!.OuterCandidateRegionIds, StringComparer.Ordinal)) : null;
+                var lOnly = valid ? Sort(l!.OuterCandidateRegionIds.Except(
+                    e!.OuterCandidateRegionIds, StringComparer.Ordinal)) : null;
+                return new RescuerEvidenceReceiptTimingTick
+                {
+                    QueryTick = earlyRow.QueryTick,
+                    Status = valid ? "available" : "unavailable",
+                    UnavailableReason = valid ? null :
+                        "Missing, duplicated or inconsistent method result.",
+                    EarlyReceivedOriginalIds = Sort(earlyRow.ReceivedOriginalIds),
+                    LateReceivedOriginalIds = Sort(lateRow.ReceivedOriginalIds),
+                    EarlyReceivedSourceObservationIds = Sort(earlyRow.ReceivedSourceObservationIds),
+                    LateReceivedSourceObservationIds = Sort(lateRow.ReceivedSourceObservationIds),
+                    EarlyAvailableSourceGroupCount = earlyRow.AvailableSourceGroupCount,
+                    LateAvailableSourceGroupCount = lateRow.AvailableSourceGroupCount,
+                    EarlyAvailableConstraintCount = earlyRow.AvailableConstraintCount,
+                    LateAvailableConstraintCount = lateRow.AvailableConstraintCount,
+                    EarlyMethod = e,
+                    LateMethod = l,
+                    EarlyMinusLateCandidateCount = valid ? e!.CandidateCount - l!.CandidateCount : null,
+                    EarlyOnlyCandidateRegionIds = eOnly,
+                    LateOnlyCandidateRegionIds = lOnly,
+                    EarlyCandidatesSubsetOfLate = valid ? eOnly!.Length == 0 : null,
+                    LateCandidatesSubsetOfEarly = valid ? lOnly!.Length == 0 : null,
+                    SameOuterCandidates = valid ? eOnly!.Length == 0 && lOnly!.Length == 0 : null,
+                    SameMethodResult = valid ? SameMethod(e!, l!) : null
+                };
+            }).ToArray();
+            static long? FirstDifference(
+                IEnumerable<RescuerEvidenceReceiptTimingTick> timeline,
+                Func<RescuerEvidenceReceiptTimingTick, bool?> predicate) =>
+                timeline.Where(row => predicate(row) == false)
+                    .Select(row => (long?)row.QueryTick).FirstOrDefault();
+            static long? Rejoin(
+                IEnumerable<RescuerEvidenceReceiptTimingTick> timeline,
+                long? after,
+                Func<RescuerEvidenceReceiptTimingTick, bool?> predicate) =>
+                after is null ? null :
+                    timeline.Where(row => row.QueryTick > after && predicate(row) == true)
+                        .Select(row => (long?)row.QueryTick).FirstOrDefault();
+            var firstCandidates = FirstDifference(rows, row => row.SameOuterCandidates);
+            var firstMethod = FirstDifference(rows, row => row.SameMethodResult);
+            return new RescuerEvidenceReceiptTimingMethod
+            {
+                Method = name,
+                Status = rows.All(row => row.Status == "available") ? "available" :
+                    rows.All(row => row.Status == "unavailable") ? "unavailable" : "partial",
+                Timeline = rows,
+                FirstCandidateDifferentTick = firstCandidates,
+                FirstMethodResultDifferentTick = firstMethod,
+                FirstCandidateConvergenceTick = Rejoin(rows, firstCandidates,
+                    row => row.SameOuterCandidates),
+                FirstMethodResultConvergenceTick = Rejoin(rows, firstMethod,
+                    row => row.SameMethodResult)
+            };
+        }).ToArray();
+
+        return new RescuerEvidenceReceiptTimingReport
+        {
+            Status = methods.All(item => item.Status == "available") ? "available" :
+                methods.All(item => item.Status == "unavailable") ? "unavailable" : "partial",
+            QueryTicks = a.Select(row => row.QueryTick).ToArray(),
+            Methods = methods
+        };
+    }
+
+    /// <summary>
+    /// Synthetic truth scoring is deliberately unavailable    /// <summary>
     /// Synthetic truth scoring is deliberately unavailable to Run and Compare.
     /// Call this only after the entire public report has been constructed.
     /// </summary>
