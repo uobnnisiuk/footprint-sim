@@ -1111,8 +1111,8 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Equal(["A", "B", "C"], reconstructed.Conditions[2].OuterCandidateRegionIds);
         Assert.Equal(["A", "B"], reconstructed.Conditions[3].OuterCandidateRegionIds);
 
-        // Pin these public, deterministic aggregate work counters as a baseline.
-        // This first CI diagnostic identifies values before the final snapshot.
+        // Snapshot of public simulator work counters from the fixed two-weft world.
+        // Keep separate from wall-clock runtime and from actual rescue outcomes.
         var metricsSnapshot = string.Join("\n", result.Methods.SelectMany(method =>
             method.Conditions.Select(row =>
                 $"FP-WEFT86 {method.Method} {row.Label}: " +
@@ -1121,7 +1121,25 @@ public sealed class RescuerEvidenceBoundaryTests
                 $"forward={row.ForwardTransitionSteps}, backward={row.BackwardTransitionSteps}, " +
                 $"evidenceInspected={row.EvidenceRecordsInspected}, " +
                 $"relationsInspected={row.PublicRelationsInspected}")));
-        Assert.True(metricsSnapshot == "PENDING-PUBLIC-COUNTER-SNAPSHOT", metricsSnapshot);
+        const string expectedMetricsSnapshot = """
+            FP-WEFT86 distributed-reconstruction neither: usedGroups=0, generation=4, verification=0, forward=0, backward=0, evidenceInspected=0, relationsInspected=0
+            FP-WEFT86 distributed-reconstruction first-only: usedGroups=1, generation=4, verification=0, forward=0, backward=0, evidenceInspected=1, relationsInspected=1
+            FP-WEFT86 distributed-reconstruction second-only: usedGroups=0, generation=4, verification=0, forward=0, backward=0, evidenceInspected=0, relationsInspected=0
+            FP-WEFT86 distributed-reconstruction both: usedGroups=1, generation=4, verification=0, forward=0, backward=0, evidenceInspected=1, relationsInspected=1
+            FP-WEFT86 distributed-reconstruction-local neither: usedGroups=0, generation=4, verification=0, forward=1, backward=1, evidenceInspected=0, relationsInspected=2
+            FP-WEFT86 distributed-reconstruction-local first-only: usedGroups=1, generation=4, verification=0, forward=2, backward=2, evidenceInspected=0, relationsInspected=4
+            FP-WEFT86 distributed-reconstruction-local second-only: usedGroups=1, generation=4, verification=0, forward=2, backward=2, evidenceInspected=1, relationsInspected=5
+            FP-WEFT86 distributed-reconstruction-local both: usedGroups=2, generation=4, verification=0, forward=2, backward=2, evidenceInspected=1, relationsInspected=5
+            FP-WEFT86 known-relation-backward neither: usedGroups=0, generation=0, verification=0, forward=1, backward=1, evidenceInspected=0, relationsInspected=2
+            FP-WEFT86 known-relation-backward first-only: usedGroups=0, generation=0, verification=0, forward=1, backward=1, evidenceInspected=0, relationsInspected=2
+            FP-WEFT86 known-relation-backward second-only: usedGroups=1, generation=0, verification=0, forward=2, backward=2, evidenceInspected=1, relationsInspected=5
+            FP-WEFT86 known-relation-backward both: usedGroups=1, generation=0, verification=0, forward=2, backward=2, evidenceInspected=1, relationsInspected=5
+            FP-WEFT86 public-prior neither: usedGroups=0, generation=0, verification=0, forward=0, backward=0, evidenceInspected=0, relationsInspected=0
+            FP-WEFT86 public-prior first-only: usedGroups=0, generation=0, verification=0, forward=0, backward=0, evidenceInspected=0, relationsInspected=0
+            FP-WEFT86 public-prior second-only: usedGroups=0, generation=0, verification=0, forward=0, backward=0, evidenceInspected=0, relationsInspected=0
+            FP-WEFT86 public-prior both: usedGroups=0, generation=0, verification=0, forward=0, backward=0, evidenceInspected=0, relationsInspected=0
+            """;
+        Assert.Equal(expectedMetricsSnapshot, metricsSnapshot);
 
         var prior = result.Methods.Single(method => method.Method == "public-prior");
         Assert.False(prior.BothStrictlyNarrowerThanEachSingle);

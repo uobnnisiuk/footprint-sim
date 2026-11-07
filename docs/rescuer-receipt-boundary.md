@@ -452,29 +452,24 @@ through the separate post-inference evaluator. Any mismatch with the fixed
 hypothesis requires examining declared public-transition semantics rather
 than silently tuning the fixture.
 
-**CI-observed results, separate from the hypothesis.** The original PR #87
-head (f780cd2) passed the ordinary and F19 research CI on 2026-11-06:
-https://github.com/uobnnisiuk/footprint-sim/actions/runs/42311237213
-and https://github.com/uobnnisiuk/footprint-sim/actions/runs/42311237178 .
-The test verified the existing C-local output at cutoff 7 as
-neither {A,B,C} (3 candidate places), first-only {A,B} (2),
-second-only {B,C} (2), and both {B} (1). Available ancestry group
-counts are respectively 0/1/1/2; at both, C-local actually used two
-groups, generation direct source `original-encounter-record` and traversal direct
-source `second-original` (distinct original-record IDs, not delivery IDs).
-Adding the second removes A; adding the first removes C; the
-beyond-singletons exclusions and reappeared sets are empty. The
-public-prior method's candidates and actually used source-group count
-remain unchanged across the four cuts (zero used groups). C-local's
-both-source case performed *positive* forward and backward public
-transition steps, as asserted by the existing tests; these are model
-work counters, not rescue-time measurements. Generation/verification,
-evidence-inspection and public-relation counters are kept distinct in
-the analysis output rather than rolled into a search-duration estimate.
-The three other method results are separate methods, not derivatives of
-C-local; their expected candidate patterns are independently asserted in the
-revised test below. These are publicly declared method-role hypotheses to be
-checked by the revised head's CI, not retroactively altered fixture data:
+**Observed model outputs, separate from the preregistered hypothesis.**
+The original PR #87 implementation head (f780cd2) passed ordinary and F19 research
+CI on 2026-11-06 ([ordinary](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42311237213),
+[F19](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42311237178)).
+The next implementation head (aa5647a) also passed
+[ordinary](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42315501307)
+and [F19](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42315501261)
+CI on 2026-11-07. The fixed synthetic test checked C-local outer candidates
+as none {A,B,C} (3 model places), first only {A,B} (2), second only
+{B,C} (2), both {B} (1). Same-cutoff available ancestry group
+counts are 0/1/1/2. C-local used two groups with both:
+generation direct source `original-encounter-record` and traversal
+direct source `second-original`. Adding the second source excludes A
+relative to first-only; adding the first source excludes C relative to
+second-only. Exclusions beyond the intersection of singleton candidates
+and reappeared regions are both empty.
+
+The method-specific candidate results at the same cutoff tick 7 are:
 
 | Existing method | Neither | First only | Second only | Both |
 | --- | --- | --- | --- | --- |
@@ -483,23 +478,41 @@ checked by the revised head's CI, not retroactively altered fixture data:
 | distributed-reconstruction | {A,B,C} | {A,B} | {A,B,C} | {A,B} |
 | distributed-reconstruction-local | {A,B,C} | {A,B} | {B,C} | {B} |
 
-The public-prior's generation, verification, forward/backward, evidence
-inspection and relation inspection work counters are zero. All paired method
-rows keep forward/backward transition steps distinct from generation,
-verification and inspected-record/relation work. In the C-local paired
-condition both forward and backward counters were nonzero on the cited
-original successful CI. The revised test emits the available non-private
-per-method numerical work counters for verification against the revised CI
-logs; until that run completes those exact numbers are not claimed here.
-The operation counts measure simulator work only, not calibrated rescue
-times. No method is presumed generally superior.
+**Actual model-work counters.** The table below is from the fixed test
+`ComplementaryWeftComparisonMeasuresFourSameCutoffEvidenceConditions`,
+read from the public-only
+[diagnostic CI log on head 2e46e7f](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42319963514).
+That diagnostic run deliberately failed its placeholder snapshot assertion
+to expose the counters (618 other tests passed); the subsequent code replaces
+the placeholder with an **exact 16-row regression snapshot**. The final
+PR head must pass its own ordinary/F19 CI before independent acceptance.
+Each slash-delimited tuple is
+`usedSourceGroups / generationSteps / verificationSteps / forwardTransitionSteps / backwardTransitionSteps / evidenceRecordsInspected / publicRelationsInspected`.
+Counts are work operations in the simulator, not wall-clock duration.
 
-The subsequent implementation head also needs its own ordinary/F19 CI
-and an independent review. One further regression now checks that a
-completely missing method set returns unavailable, that a method absent
-from every row does not silently disappear, and that one missing
-condition yields partial status. A numerical zero-candidate result is
-not interchangeable with missing method data. The measured model-place
-and work counts do not imply real search time, rescue cost or survival
-rate. Unknown causal-relation discovery and the 24-edge search lens
-remain untested, not rejected.
+| Method | No traces | First only | Second only | Both |
+| --- | --- | --- | --- | --- |
+| `public-prior` | `0/0/0/0/0/0/0` | `0/0/0/0/0/0/0` | `0/0/0/0/0/0/0` | `0/0/0/0/0/0/0` |
+| `known-relation-backward` | `0/0/0/1/1/0/2` | `0/0/0/1/1/0/2` | `1/0/0/2/2/1/5` | `1/0/0/2/2/1/5` |
+| `distributed-reconstruction` | `0/4/0/0/0/0/0` | `1/4/0/0/0/1/1` | `0/4/0/0/0/0/0` | `1/4/0/0/0/1/1` |
+| `distributed-reconstruction-local` | `0/4/0/1/1/0/2` | `1/4/0/2/2/0/4` | `1/4/0/2/2/1/5` | `2/4/0/2/2/1/5` |
+
+For example, the C-local **both** condition uses two source groups, 4
+generation steps, 0 verification steps, 2 forward and 2 backward public
+transition steps, 1 inspected evidence record and 5 inspected public
+relations. By contrast, public-prior uses no source groups and has
+zero work counters for all four ablations. C-local's 4 generation steps
+are not the same as a four-step traversal, and two received original
+records are not automatically two independently used evidence groups.
+These counters and candidate sets must not be converted to uncalibrated
+rescue time, cost, success or survival rates.
+
+The final-head regression also requires missing method results to be
+`unavailable` or `partial`, never a numerical zero-candidate result.
+Repeated delivery, reversed receipt order, shared source ancestry,
+uncertain/conflicting evidence, and device-only observations remain
+separate boundary checks. The declared public transitions are supplied
+by this scenario: unknown-relation discovery, a complete 24-edge
+engine and field rescue effectiveness have **not** been evaluated or
+rejected. This one synthetic world does not establish general superiority
+of any method.
