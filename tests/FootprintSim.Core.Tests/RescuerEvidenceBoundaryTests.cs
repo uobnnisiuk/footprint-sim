@@ -1111,12 +1111,14 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Equal(["A", "B", "C"], reconstructed.Conditions[2].OuterCandidateRegionIds);
         Assert.Equal(["A", "B"], reconstructed.Conditions[3].OuterCandidateRegionIds);
 
-        // Log only deterministic, aggregate public-report metrics, never truth.
+        // xUnit captures Console.Out on passing tests. Write only deterministic,
+        // public aggregate work counters directly to the runner for CI verification.
+        var ciMetrics = new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true };
         foreach (var method in result.Methods)
         {
             foreach (var row in method.Conditions)
             {
-                Console.WriteLine(
+                ciMetrics.WriteLine(
                     $"FP-WEFT86 {method.Method} {row.Label}: " +
                     $"usedGroups={row.UsedSourceGroupCount}, " +
                     $"generation={row.GenerationSteps}, verification={row.VerificationSteps}, " +
