@@ -114,6 +114,10 @@ public sealed class OperationalCausalTracer
             sessionId,
             accessContext,
             steps);
+        // State-level tracing audit is intentionally separate from verified
+        // per-region positive-path support; outer includes unknown alternatives.
+        PopulateRegionLineage(states, canonical, groupByConstraint,
+            publicHazardEnvelope, accessContext.CurrentTick);
 
         var output = BuildCandidateWarps(
             candidateWarps,
@@ -413,25 +417,25 @@ public sealed class OperationalCausalTracer
             context.CurrentTick,
             direction,
             transitionIds);
-        var conflict = allowedOuter.Count == 0;
+        // No published branch list is guaranteed exhaustive. A positive path
+        // can support preferred candidates; a missing path is not proof that
+        // an outer candidate is impossible. Only actual received Confirmed
+        // constraints may independently hard-narrow the outer.
+        var hasPublicSupport = allowedOuter.Count > 0;
         var changed = false;
-        if (!conflict)
+        if (allowedPreferred.Count > 0)
         {
-            changed = !destination.Outer.SetEquals(allowedOuter);
-            destination.Outer.IntersectWith(allowedOuter);
-            if (allowedPreferred.Count > 0)
-            {
-                changed |= !destination.Preferred.SetEquals(allowedPreferred);
-                destination.Preferred.IntersectWith(allowedPreferred);
-            }
+            changed = !destination.Preferred.SetEquals(allowedPreferred);
+            destination.Preferred.IntersectWith(allowedPreferred);
+        }
 
+        if (hasPublicSupport)
+        {
             destination.SupportingSourceGroups.UnionWith(source.SupportingSourceGroups);
+            // Conflicting source ancestry must survive positive public traversal.
+            // It is not a reason to hard-exclude any outer candidate.
             destination.ConflictingSourceGroups.UnionWith(source.ConflictingSourceGroups);
             destination.AppliedConstraints.UnionWith(source.AppliedConstraints);
-        }
-        else
-        {
-            destination.Conflicted.UnionWith(destination.Outer);
         }
 
         var relation = "public-causal-transition";
@@ -460,18 +464,18 @@ public sealed class OperationalCausalTracer
             DestinationStateId = destination.Source.StateId,
             RelationKind = relation,
             EvidenceState = EvidenceState.SupportedButUncertain,
-            Disposition = conflict
-                    ? TracingStepDisposition.MarkConflict
-                    : TracingStepDisposition.Applied,
-            Reason = conflict
-                    ? TracingStepReason.NoRegionOverlap
-                    : TracingStepReason.PublicTransitionConsistency,
+            Disposition = hasPublicSupport
+                    ? TracingStepDisposition.Applied
+                    : TracingStepDisposition.NoOp,
+            Reason = hasPublicSupport
+                    ? TracingStepReason.PublicTransitionConsistency
+                    : TracingStepReason.NoRegionOverlap,
             CandidateInputRegionIds = before,
             CandidateOutputRegionIds = destination.Outer.ToArray(),
             TransitionIds = transitionIds.ToArray(),
             RealTransitionTraversalOccurred = transitionIds.Count > 0,
-            AlternativesRetained = conflict,
-            ConflictDetected = conflict,
+            AlternativesRetained = true,
+            ConflictDetected = false,
             Provenance = [new InteractionProvenance(
                     InteractionProvenanceKind.ExternalSource,
                     envelope.HazardId)]
@@ -586,6 +590,129 @@ public sealed class OperationalCausalTracer
 
         transitionIds = [];
         return false;
+    }
+
+
+    // A constraint supports an individual region only when that region is
+    // allowed at the matching historical state, or a published positive path
+    // connects a previously supported region. Unknown paths never confer support.
+    private static void PopulateRegionLineage(
+        IReadOnlyList<WorkingState> states,
+        IReadOnlyList<CausalTracingConstraint> constraints,
+        IReadOnlyDictionary<string, TracingSourceGroup> groupByConstraint,
+        PublicHazardEnvelope? envelope,
+        long currentTick)
+    {
+        foreach (var state in states)
+        {
+            foreach (var constraint in constraints.Where(item =>
+                Overlaps(state.Source.TimeWindow, item.ConstrainedTimeWindow) &&
+                state.AppliedConstraints.Contains(item.ConstraintId)))
+            {
+                var sourceGroupId = groupByConstraint[constraint.ConstraintId].SourceGroupId;
+                foreach (var region in state.Outer.Where(region =>
+                    constraint.AllowedRegionIds.Contains(region, StringComparer.Ordinal)))
+                {
+                    state.RegionSupportingSourceGroups[region].Add(sourceGroupId);
+                    state.RegionAppliedConstraints[region].Add(constraint.ConstraintId);
+                }
+            }
+        }
+
+        if (envelope is null || states.Count < 2)
+        {
+            return;
+        }
+
+        // Fixed point over known positive paths only. A constraint may move
+        // forward from its evidence window to descendants, or backward to
+        // ancestors, but never reverse direction after leaving that window.
+        // Otherwise two branches converging on a state would spread A-only
+        // evidence back into an unrelated B ancestor.
+        var constraintById = constraints.ToDictionary(item => item.ConstraintId, StringComparer.Ordinal);
+        for (var iteration = 0; iteration < states.Count; iteration++)
+        {
+            var changed = false;
+            for (var index = 0; index < states.Count - 1; index++)
+            {
+                changed |= PropagateRegionLineage(
+                    states[index], states[index + 1], envelope,
+                    constraintById, groupByConstraint,
+                    currentTick, CausalTracingDirection.Forward);
+            }
+
+            for (var index = states.Count - 1; index > 0; index--)
+            {
+                changed |= PropagateRegionLineage(
+                    states[index], states[index - 1], envelope,
+                    constraintById, groupByConstraint,
+                    currentTick, CausalTracingDirection.Backward);
+            }
+
+            if (!changed)
+            {
+                break;
+            }
+        }
+    }
+
+    private static bool PropagateRegionLineage(
+        WorkingState source,
+        WorkingState destination,
+        PublicHazardEnvelope envelope,
+        IReadOnlyDictionary<string, CausalTracingConstraint> constraintById,
+        IReadOnlyDictionary<string, TracingSourceGroup> groupByConstraint,
+        long currentTick,
+        CausalTracingDirection direction)
+    {
+        var changed = false;
+        foreach (var destinationRegion in destination.Outer)
+        {
+            foreach (var sourceRegion in source.Outer)
+            {
+                var hasPositivePath = direction == CausalTracingDirection.Forward
+                    ? TryFindPath(sourceRegion, source.Source.TimeWindow,
+                        destinationRegion, destination.Source.TimeWindow,
+                        envelope, currentTick, out _)
+                    : TryFindPath(destinationRegion, destination.Source.TimeWindow,
+                        sourceRegion, source.Source.TimeWindow,
+                        envelope, currentTick, out _);
+                if (!hasPositivePath)
+                {
+                    continue;
+                }
+
+                // Carry individual constraints rather than a merged group label:
+                // source ancestry alone cannot tell whether this destination
+                // is permitted by the original observation.
+                foreach (var constraintId in source.RegionAppliedConstraints[sourceRegion])
+                {
+                    var constraint = constraintById[constraintId];
+                    // Prevent a lineage that has left the evidence time in one
+                    // direction from returning through a converging public path.
+                    if (direction == CausalTracingDirection.Forward
+                        ? constraint.ConstrainedTimeWindow.StartTick > source.Source.TimeWindow.EndTick
+                        : constraint.ConstrainedTimeWindow.EndTick < source.Source.TimeWindow.StartTick)
+                    {
+                        continue;
+                    }
+
+                    // At any state overlapping the original evidence window,
+                    // its allowed regions remain binding even for positive paths.
+                    if (Overlaps(destination.Source.TimeWindow, constraint.ConstrainedTimeWindow) &&
+                        !constraint.AllowedRegionIds.Contains(destinationRegion, StringComparer.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    changed |= destination.RegionAppliedConstraints[destinationRegion].Add(constraintId);
+                    changed |= destination.RegionSupportingSourceGroups[destinationRegion].Add(
+                        groupByConstraint[constraintId].SourceGroupId);
+                }
+            }
+        }
+
+        return changed;
     }
 
     private static CausalTracingStepAudit CreateConstraintStep(
@@ -736,7 +863,8 @@ public sealed class OperationalCausalTracer
 
         var provenance = new List<CandidateWarpProvenance>(state.Source.Provenance);
         foreach (var constraint in constraints
-            .Where(item => state.AppliedConstraints.Contains(item.ConstraintId))
+            .Where(item => normalized.All(region =>
+                state.RegionAppliedConstraints[region].Contains(item.ConstraintId)))
             .OrderBy(item => item.ConstraintId, StringComparer.Ordinal))
         {
             provenance.Add(CandidateWarpProvenance.Create(
@@ -834,33 +962,35 @@ public sealed class OperationalCausalTracer
         IReadOnlyList<WorkingState> states,
         IReadOnlyList<CausalTracingConstraint> constraints,
         IReadOnlyDictionary<string, TracingSourceGroup> groupByConstraint) => states
-        .SelectMany(state => state.Outer.Select(region => new CandidateSupportLineage
+        .SelectMany(state => state.Outer.Select(region =>
         {
-            CandidateStateId = state.Source.StateId,
-            RegionId = region,
-            SupportingSourceGroupIds = state.SupportingSourceGroups.OrderBy(item => item, StringComparer.Ordinal).ToArray(),
-            CompetingSourceGroupIds = state.ConflictingSourceGroups.OrderBy(item => item, StringComparer.Ordinal).ToArray(),
-            ConstraintIds = state.AppliedConstraints.OrderBy(item => item, StringComparer.Ordinal).ToArray(),
-            RelationKinds = constraints.Where(item => state.AppliedConstraints.Contains(item.ConstraintId))
-                .Select(item => item.RelationKind)
-                .Distinct(StringComparer.Ordinal)
-                .OrderBy(item => item, StringComparer.Ordinal)
-                .ToArray(),
-            ConstrainedTimeWindows = constraints.Where(item => state.AppliedConstraints.Contains(item.ConstraintId))
-                .Select(item => item.ConstrainedTimeWindow)
-                .Distinct()
-                .OrderBy(item => item.StartTick)
-                .ThenBy(item => item.EndTick)
-                .ToArray(),
-            EvidenceStates = constraints.Where(item => state.AppliedConstraints.Contains(item.ConstraintId))
-                .Select(item => item.EvidenceBoundaryState)
-                .Distinct()
-                .OrderBy(item => item)
-                .ToArray()
+            var applied = state.RegionAppliedConstraints[region];
+            return new CandidateSupportLineage
+            {
+                CandidateStateId = state.Source.StateId,
+                RegionId = region,
+                SupportingSourceGroupIds = state.RegionSupportingSourceGroups[region]
+                    .OrderBy(item => item, StringComparer.Ordinal).ToArray(),
+                CompetingSourceGroupIds = state.ConflictingSourceGroups
+                    .OrderBy(item => item, StringComparer.Ordinal).ToArray(),
+                ConstraintIds = applied.OrderBy(item => item, StringComparer.Ordinal).ToArray(),
+                RelationKinds = constraints.Where(item => applied.Contains(item.ConstraintId))
+                    .Select(item => item.RelationKind)
+                    .Distinct(StringComparer.Ordinal)
+                    .OrderBy(item => item, StringComparer.Ordinal).ToArray(),
+                ConstrainedTimeWindows = constraints.Where(item => applied.Contains(item.ConstraintId))
+                    .Select(item => item.ConstrainedTimeWindow)
+                    .Distinct()
+                    .OrderBy(item => item.StartTick)
+                    .ThenBy(item => item.EndTick).ToArray(),
+                EvidenceStates = constraints.Where(item => applied.Contains(item.ConstraintId))
+                    .Select(item => item.EvidenceBoundaryState)
+                    .Distinct()
+                    .OrderBy(item => item).ToArray()
+            };
         }))
         .OrderBy(item => item.CandidateStateId, StringComparer.Ordinal)
-        .ThenBy(item => item.RegionId, StringComparer.Ordinal)
-        .ToArray();
+        .ThenBy(item => item.RegionId, StringComparer.Ordinal).ToArray();
 
     private static bool Overlaps(InteractionTimeWindow left, InteractionTimeWindow right) =>
         left.StartTick <= right.EndTick && right.StartTick <= left.EndTick;
@@ -889,6 +1019,11 @@ public sealed class OperationalCausalTracer
             Preferred = new SortedSet<string>(source.RegionIds, StringComparer.Ordinal);
             Outer = new SortedSet<string>(source.RegionIds, StringComparer.Ordinal);
             Conflicted = new SortedSet<string>(StringComparer.Ordinal);
+            foreach (var region in source.RegionIds)
+            {
+                RegionSupportingSourceGroups[region] = new HashSet<string>(StringComparer.Ordinal);
+                RegionAppliedConstraints[region] = new HashSet<string>(StringComparer.Ordinal);
+            }
         }
 
         public CandidateWarpState Source { get; }
@@ -906,5 +1041,11 @@ public sealed class OperationalCausalTracer
         public HashSet<string> SupportingSourceGroups { get; } = new(StringComparer.Ordinal);
 
         public HashSet<string> ConflictingSourceGroups { get; } = new(StringComparer.Ordinal);
+
+        public Dictionary<string, HashSet<string>> RegionSupportingSourceGroups { get; } =
+            new(StringComparer.Ordinal);
+
+        public Dictionary<string, HashSet<string>> RegionAppliedConstraints { get; } =
+            new(StringComparer.Ordinal);
     }
 }

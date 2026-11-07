@@ -732,6 +732,13 @@ make it pass.
 
 ## Same wefts with/without published movement relations (Issue #94)
 
+> **Historical synthetic measurements before #96.** All candidate-set
+> and work-count tables below record the #94/#95 tracer, including the
+> unsafe AR-1/AR-4 cases. They are preserved rather than silently
+> overwritten. A passing #95 test did not certify safety. See the
+> post-repair section at the end for the corrected-rule comparison.
+
+
 Work-Key: FP-PUBLIC-RELATION-AVAILABILITY-V1. This comparison measures the
 *availability of declared public movement knowledge*, not whether any
 physical route exists. The original idea is to reconstruct a missing
@@ -951,3 +958,173 @@ are both zero. Those role labels mean an input was *accounted for*,
 not proof that it changed candidates or improved the decision.
 Future work must distinguish eligibility/assignment from measured
 marginal effect; it must not score these labels as rescue utility.
+
+## Open-world published-path correction (#96; after #95)
+
+Work-Key: `FP-PARTIAL-PUBLIC-OUTER-SAFETY-V1`. The repair distinguishes
+*positive known reachability* from *proof of absence*: a published
+route supports preferred candidates and is recorded in tracing audits,
+but an unlisted route cannot be assumed impossible or justify a hard
+outer exclusion/conflict. Actual received Confirmed evidence still
+legitimately constrains a historical outer at its applicable window.
+This does not add invented routes or infer a physically complete map.
+
+**Fixed pre/post comparison inputs:** same public state at tick 2
+{A,B,C} and tick 5 {D,E,F}; first original {A,B} observed at tick 2
+and received at tick 6; second original {E,F} observed at tick 5 and
+received at tick 7. Query at ticks 5/6/7 for the past tick 2.
+Run the four existing methods with (i) A→D only, (ii) A→D+B→E,
+(iii) A→D+C→F, (iv) all three declared branches, and (v) no
+envelope. Record received sources, outer/preferred/conflict and six
+model-work counters. The historical values above came from actual
+#95 Run and must remain visible as pre-repair measurements.
+
+The new direct tests assert that before receipt (tick 5) a partial
+public envelope alone cannot shrink the initial {A,B,C} outer.
+After the first received Confirmed original (tick 6), the local
+historical outer retains both {A,B}. The backward outer must not
+artificially regain regions at tick 7 merely because a prior incomplete
+public path had removed them. Real positive published traversals remain
+auditable in both directions and across exact/interval windows.
+A source-ancestry group is not multiplied by re-receipt.
+
+**2026-11-08 — fixed Run measurement after the #96 tracer correction.**
+The [earlier passing head](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42401422788)
+ran all 636 tests without failure/skip; its [F19 evidence
+check](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42401422955)
+also passed. To obtain **actual numeric outputs** rather than inferring
+them from expected-value assertions, a temporary diagnostic executed
+the existing `RescuerEvidenceMethodComparison.Run` against the unchanged
+synthetic world and receipt inputs. It printed the following 60
+observations to [ordinary CI run 42402035306](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42402035306)
+at head `70335ddf57fc0d8a4d5912c6b0379a2086d4a1e2`.
+That **measurement-only run failed intentionally** after printing the
+data; it is *not* a passing validation head. The temporary failure
+and diagnostic must be removed, and the final non-diagnostic head
+must pass CI and independent review. The measurements are synthetic,
+not real-person rescue outcomes.
+
+All five conditions hold constant the public states at tick 2
+`{A,B,C}` and tick 5 `{D,E,F}`, first original record
+(`R1`, {A,B}, observed tick 2, received tick 6), second original
+(`R2`, {E,F}, observed tick 5, received tick 7), target's past
+tick 2, seeds/world, and queries tick 5/6/7. Only supplied public
+branch coverage changes: `A` = A→D, `AB` = A→D+B→E,
+`AC` = A→D+C→F, `ALL` = all three, `NONE` = no envelope.
+No completeness guarantee exists in any published envelope. Four
+existing methods are `P` public prior, `B` known-relation backward,
+`R` distributed reconstruction, `RL` reconstruction plus local
+traversal. Status codes: `LP` last-confirmed-unavailable-public-prior,
+`PM` public-model-only, `EX` method-executed.
+
+**Measured per-query/method matrix** — `Tick/Rcv/Eligible` gives
+query tick, received original count, eligible ancestry-group count.
+`P/U/C` is preferred/uncertain/conflicted candidate set; `null`
+means not exposed by that method, `-` means exposed but empty.
+`Used` is the number of used groups, not proof of marginal benefit.
+`G/T` are direct generation/traversal original source IDs (R1/R2
+as above); `-` means no direct source. Six `Work` counters are
+generation / verification / forward transitions / backward transitions /
+evidence records inspected / public relations inspected. Counts
+describe model operations, not elapsed search time.
+
+| Paths | Tick/Rcv/Eligible | Method | Status | Outer | P/U/C | Used | G/T | Work |
+| --- | --- | --- | --- | --- | --- | ---: | --- | --- |
+| A | 5/0/0 | P | LP | {A,B,C} | null / null / null | 0 | -/- | 0/0/0/0/0/0 |
+| A | 5/0/0 | B | PM | {A,B,C} | null / null / null | 0 | -/- | 0/0/2/2/0/4 |
+| A | 5/0/0 | R | PM | {A,B,C} | null / {A,B,C} / - | 0 | -/- | 4/0/0/0/0/0 |
+| A | 5/0/0 | RL | PM | {A,B,C} | null / {A,B,C} / - | 0 | -/- | 4/0/2/2/0/4 |
+| A | 6/1/1 | P | LP | {A,B,C} | null / null / null | 0 | -/- | 0/0/0/0/0/0 |
+| A | 6/1/1 | B | PM | {A,B,C} | null / null / null | 0 | -/- | 0/0/2/2/0/4 |
+| A | 6/1/1 | R | EX | {A,B} | null / - / - | 1 | R1/- | 4/0/0/0/1/1 |
+| A | 6/1/1 | RL | EX | {A,B} | null / - / - | 1 | R1/- | 4/0/2/2/0/4 |
+| A | 7/2/2 | P | LP | {A,B,C} | null / null / null | 0 | -/- | 0/0/0/0/0/0 |
+| A | 7/2/2 | B | EX | {A,B,C} | null / null / null | 1 | -/R2 | 0/0/0/0/1/3 |
+| A | 7/2/2 | R | EX | {A,B} | null / - / - | 1 | R1/- | 4/0/0/0/1/1 |
+| A | 7/2/2 | RL | EX | {A,B} | null / - / - | 2 | R1/R2 | 4/0/0/0/1/3 |
+| AB | 5/0/0 | P | LP | {A,B,C} | null / null / null | 0 | -/- | 0/0/0/0/0/0 |
+| AB | 5/0/0 | B | PM | {A,B,C} | null / null / null | 0 | -/- | 0/0/2/2/0/4 |
+| AB | 5/0/0 | R | PM | {A,B,C} | null / {A,B,C} / - | 0 | -/- | 4/0/0/0/0/0 |
+| AB | 5/0/0 | RL | PM | {A,B,C} | null / {A,B,C} / - | 0 | -/- | 4/0/2/2/0/4 |
+| AB | 6/1/1 | P | LP | {A,B,C} | null / null / null | 0 | -/- | 0/0/0/0/0/0 |
+| AB | 6/1/1 | B | PM | {A,B,C} | null / null / null | 0 | -/- | 0/0/2/2/0/4 |
+| AB | 6/1/1 | R | EX | {A,B} | null / - / - | 1 | R1/- | 4/0/0/0/1/1 |
+| AB | 6/1/1 | RL | EX | {A,B} | null / - / - | 1 | R1/- | 4/0/2/2/0/4 |
+| AB | 7/2/2 | P | LP | {A,B,C} | null / null / null | 0 | -/- | 0/0/0/0/0/0 |
+| AB | 7/2/2 | B | EX | {A,B,C} | null / null / null | 1 | -/R2 | 0/0/2/2/1/5 |
+| AB | 7/2/2 | R | EX | {A,B} | null / - / - | 1 | R1/- | 4/0/0/0/1/1 |
+| AB | 7/2/2 | RL | EX | {A,B} | null / - / - | 2 | R1/R2 | 4/0/2/2/1/5 |
+| AC | 5/0/0 | P | LP | {A,B,C} | null / null / null | 0 | -/- | 0/0/0/0/0/0 |
+| AC | 5/0/0 | B | PM | {A,B,C} | null / null / null | 0 | -/- | 0/0/2/2/0/4 |
+| AC | 5/0/0 | R | PM | {A,B,C} | null / {A,B,C} / - | 0 | -/- | 4/0/0/0/0/0 |
+| AC | 5/0/0 | RL | PM | {A,B,C} | null / {A,B,C} / - | 0 | -/- | 4/0/2/2/0/4 |
+| AC | 6/1/1 | P | LP | {A,B,C} | null / null / null | 0 | -/- | 0/0/0/0/0/0 |
+| AC | 6/1/1 | B | PM | {A,B,C} | null / null / null | 0 | -/- | 0/0/2/2/0/4 |
+| AC | 6/1/1 | R | EX | {A,B} | null / - / - | 1 | R1/- | 4/0/0/0/1/1 |
+| AC | 6/1/1 | RL | EX | {A,B} | null / - / - | 1 | R1/- | 4/0/2/2/0/4 |
+| AC | 7/2/2 | P | LP | {A,B,C} | null / null / null | 0 | -/- | 0/0/0/0/0/0 |
+| AC | 7/2/2 | B | EX | {A,B,C} | null / null / null | 1 | -/R2 | 0/0/2/2/1/5 |
+| AC | 7/2/2 | R | EX | {A,B} | null / - / - | 1 | R1/- | 4/0/0/0/1/1 |
+| AC | 7/2/2 | RL | EX | {A,B} | null / - / - | 2 | R1/R2 | 4/0/0/0/1/3 |
+| ALL | 5/0/0 | P | LP | {A,B,C} | null / null / null | 0 | -/- | 0/0/0/0/0/0 |
+| ALL | 5/0/0 | B | PM | {A,B,C} | null / null / null | 0 | -/- | 0/0/1/1/0/2 |
+| ALL | 5/0/0 | R | PM | {A,B,C} | null / {A,B,C} / - | 0 | -/- | 4/0/0/0/0/0 |
+| ALL | 5/0/0 | RL | PM | {A,B,C} | null / {A,B,C} / - | 0 | -/- | 4/0/1/1/0/2 |
+| ALL | 6/1/1 | P | LP | {A,B,C} | null / null / null | 0 | -/- | 0/0/0/0/0/0 |
+| ALL | 6/1/1 | B | PM | {A,B,C} | null / null / null | 0 | -/- | 0/0/1/1/0/2 |
+| ALL | 6/1/1 | R | EX | {A,B} | null / - / - | 1 | R1/- | 4/0/0/0/1/1 |
+| ALL | 6/1/1 | RL | EX | {A,B} | null / - / - | 1 | R1/- | 4/0/2/2/0/4 |
+| ALL | 7/2/2 | P | LP | {A,B,C} | null / null / null | 0 | -/- | 0/0/0/0/0/0 |
+| ALL | 7/2/2 | B | EX | {A,B,C} | null / null / null | 1 | -/R2 | 0/0/2/2/1/5 |
+| ALL | 7/2/2 | R | EX | {A,B} | null / - / - | 1 | R1/- | 4/0/0/0/1/1 |
+| ALL | 7/2/2 | RL | EX | {A,B} | null / - / - | 2 | R1/R2 | 4/0/2/2/1/5 |
+| NONE | 5/0/0 | P | LP | {A,B,C} | null / null / null | 0 | -/- | 0/0/0/0/0/0 |
+| NONE | 5/0/0 | B | PM | {A,B,C} | null / null / null | 0 | -/- | 0/0/0/0/0/0 |
+| NONE | 5/0/0 | R | PM | {A,B,C} | null / {A,B,C} / - | 0 | -/- | 4/0/0/0/0/0 |
+| NONE | 5/0/0 | RL | PM | {A,B,C} | null / {A,B,C} / - | 0 | -/- | 4/0/0/0/0/0 |
+| NONE | 6/1/1 | P | LP | {A,B,C} | null / null / null | 0 | -/- | 0/0/0/0/0/0 |
+| NONE | 6/1/1 | B | PM | {A,B,C} | null / null / null | 0 | -/- | 0/0/0/0/0/0 |
+| NONE | 6/1/1 | R | EX | {A,B} | null / - / - | 1 | R1/- | 4/0/0/0/1/1 |
+| NONE | 6/1/1 | RL | EX | {A,B} | null / - / - | 1 | R1/- | 4/0/0/0/0/0 |
+| NONE | 7/2/2 | P | LP | {A,B,C} | null / null / null | 0 | -/- | 0/0/0/0/0/0 |
+| NONE | 7/2/2 | B | EX | {A,B,C} | null / null / null | 1 | -/R2 | 0/0/0/0/1/1 |
+| NONE | 7/2/2 | R | EX | {A,B} | null / - / - | 1 | R1/- | 4/0/0/0/1/1 |
+| NONE | 7/2/2 | RL | EX | {A,B} | null / - / - | 2 | R1/R2 | 4/0/0/0/1/1 |
+
+**Old/new interpretation on the identical fixtures:** the unsafe
+#95 `AB` tick-5 backward/local `{A,B}`, candidate reduction 1,
+has become `{A,B,C}`, reduction 0. The old `A` tick-5
+`{A}`, reduction 2, has become `{A,B,C}`, reduction 0.
+At tick 6, the legitimate received-Confirmed constraint for
+`R1` preserves both `{A,B}` in the reconstructed/local outer
+even when B's route is unpublished. At tick 7, an additional
+`R2` can alter source usage and traversal *work* without a
+further defensible hard reduction. This is a valid unchanged
+candidate result, not a failed experiment or a success claim.
+Under the fixed model and evidence, public prior remains
+`{A,B,C}`, reconstruction/local becomes `{A,B}` after R1
+arrives, and backward-only remains `{A,B,C}`. All five
+coverage conditions have the same per-method outer sets at each
+tick; the measured work and source usage can differ.
+
+**Measurement limits:** This method-Run report exposes preferred
+standing as `null` for all four methods (not falsely zero). It
+reports uncertainty `{A,B,C}` for unreceived reconstruction
+at tick 5, otherwise `-` when available, and conflict `-`
+when available in this fixed fixture. No per-cell independent
+`SyntheticTruthRegionId`/false-exclusion evaluation, calibrated
+verification-site reduction, wall-clock rescue benefit, cost, or
+survival was run or inferred; those values are **not measured**.
+Model-side no-hard-exclusion behavior is directly checked by
+the fixed AR-1/AR-4 regression tests. The older #95 counterexample
+remains preserved above as a historical pre-repair observation.
+The independent code review and final-head CI decide acceptance;
+this table alone does not imply an across-system safety guarantee.
+AR-6's separate propagator remains an unresolved risk.
+
+Alternative B (closed-world exclusion with independently proved
+completeness) remains unproven; alternative C (inventing hidden
+physical movement) remains excluded. **AR-6**, a separate propagator
+path, is not addressed by this tracer repair and still requires
+independent scope review. Neither candidate counts nor tick/work
+counts calibrate rescue sites, elapsed time, cost, or survival.

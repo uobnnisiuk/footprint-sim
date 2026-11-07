@@ -40,7 +40,9 @@ public sealed class RescuerEvidenceBoundaryTests
         var baseline = new MultiWeftTracingStrategy().Evaluate(notReceived.Input);
         var result = new MultiWeftTracingStrategy().Evaluate(received.Input);
         Assert.Equal(["C", "D"], baseline.CandidateRegionIds);
-        Assert.Equal(["C"], result.CandidateRegionIds);
+        // Received evidence may support preferred C, but unpublished
+        // alternatives cannot be hard-excluded from the outer set.
+        Assert.Equal(["C", "D"], result.CandidateRegionIds);
         Assert.Equal(["C"], result.PreferredCandidateRegionIds);
         Assert.Single(result.CausalTracingResult!.SourceGroups);
         Assert.Contains(result.CausalTracingResult.Steps, step =>
@@ -272,7 +274,7 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.DoesNotContain(RescuerId, tracing.SourceAncestryIds);
         Assert.Empty(first.Input.AvailableEvidence.Observations);
         var constrained = new MultiWeftTracingStrategy().Evaluate(first.Input);
-        Assert.Equal(["C"], constrained.CandidateRegionIds);
+        Assert.Equal(["C", "D"], constrained.CandidateRegionIds);
         Assert.Single(constrained.CausalTracingResult!.SourceGroups);
         Assert.Single(constrained.CausalTracingResult.SourceGroups[0].SourceObservationIds);
 
@@ -426,7 +428,9 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Equal(["C", "D"], new MultiWeftTracingStrategy().Evaluate(none.Input).CandidateRegionIds);
         Assert.Equal(["C", "D"], new MultiWeftTracingStrategy().Evaluate(onlyBroad.Input).CandidateRegionIds);
         var result = new MultiWeftTracingStrategy().Evaluate(both.Input);
-        Assert.Equal(["C"], result.CandidateRegionIds);
+        // Received evidence may support preferred C, but unpublished
+        // alternatives cannot be hard-excluded from the outer set.
+        Assert.Equal(["C", "D"], result.CandidateRegionIds);
         Assert.Equal(["C"], result.PreferredCandidateRegionIds);
         Assert.Equal(2, result.CausalTracingResult!.SourceGroups.Count);
         Assert.Contains(result.CausalTracingResult.Steps, step =>
@@ -456,7 +460,7 @@ public sealed class RescuerEvidenceBoundaryTests
 
         var invertedArrival = BuildDistinct(originals, [Receipt(3), DistinctReceipt(5)], 5);
         var atSecond = new MultiWeftTracingStrategy().Evaluate(invertedArrival.Input);
-        Assert.Equal(["C"], atSecond.CandidateRegionIds);
+        Assert.Equal(["C", "D"], atSecond.CandidateRegionIds);
         Assert.Equal(2, atSecond.CausalTracingResult!.SourceGroups.Count);
     }
 
@@ -847,7 +851,7 @@ public sealed class RescuerEvidenceBoundaryTests
             ["A,B", "A,B", "A", "A"], [0, 0, 1, 1],
             ["0/0/0/0/0", "0/1/1/0/2", "3/0/0/1/1", "3/2/2/0/4"]);
         AssertRows(report.ActualTimeline[2], 2,
-            ["A,B", "A", "A", "A"], [0, 1, 1, 2],
+            ["A,B", "A,B", "A", "A"], [0, 1, 1, 2],
             ["0/0/0/0/0", "0/2/2/1/5", "3/0/0/1/1", "3/1/1/1/3"]);
 
         // Same query tick: varying evidence, not later availability.
@@ -857,11 +861,13 @@ public sealed class RescuerEvidenceBoundaryTests
         AssertRows(report.SameCutoffAblations[1], 1,
             ["A,B", "A,B", "A", "A"], [0, 0, 1, 1],
             ["0/0/0/0/0", "0/1/1/0/2", "3/0/0/1/1", "3/2/2/0/4"]);
+        // With no published completeness guarantee, traversal evidence alone
+        // cannot turn A,B into A; all four outers remain A,B here.
         AssertRows(report.SameCutoffAblations[2], 1,
-            ["A,B", "A", "A,B", "A"], [0, 1, 0, 1],
+            ["A,B", "A,B", "A,B", "A,B"], [0, 1, 0, 1],
             ["0/0/0/0/0", "0/2/2/1/5", "3/0/0/0/0", "3/2/2/1/5"]);
         AssertRows(report.SameCutoffAblations[3], 2,
-            ["A,B", "A", "A", "A"], [0, 1, 1, 2],
+            ["A,B", "A,B", "A", "A"], [0, 1, 1, 2],
             ["0/0/0/0/0", "0/2/2/1/5", "3/0/0/1/1", "3/1/1/1/3"]);
 
         var both = report.ActualTimeline[2].Methods;
@@ -875,7 +881,9 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Equal(["A", "B"], report.ActualTimeline[0].Methods[2].UncertainCandidateRegionIds);
         Assert.Empty(both[2].UncertainCandidateRegionIds!);
         Assert.All(both, item => Assert.Empty(item.ConflictedCandidateRegionIds ?? []));
-        Assert.Equal(7, report.FirstDifferences.Single(
+        // Receipt of the later weft changes traversal work, but cannot
+        // hard-exclude candidates via a non-exhaustive public path list.
+        Assert.Null(report.FirstDifferences.Single(
             item => item.Method == "known-relation-backward").FirstDifferentTick);
         Assert.Equal(6, report.FirstDifferences.Single(
             item => item.Method == "distributed-reconstruction-local").FirstDifferentTick);
@@ -1082,16 +1090,18 @@ public sealed class RescuerEvidenceBoundaryTests
         var local = result.Methods.Single(method =>
             method.Method == "distributed-reconstruction-local");
         Assert.Equal(["A", "B", "C"], local.Conditions[0].OuterCandidateRegionIds);
-        // Fixed hand-calculation hypotheses, not outcomes adjusted after a test.
+        // #96: public transition absence cannot hard-exclude a missing
+        // route. This preserves the same four ablation inputs and records
+        // the lack of further hard exclusion from the second original.
         Assert.Equal(["A", "B"], local.Conditions[1].OuterCandidateRegionIds);
-        Assert.Equal(["B", "C"], local.Conditions[2].OuterCandidateRegionIds);
-        Assert.Equal(["B"], local.Conditions[3].OuterCandidateRegionIds);
-        Assert.True(local.BothStrictlyNarrowerThanEachSingle);
-        Assert.Equal(["A"], local.ExcludedWhenAddingSecond);
+        Assert.Equal(["A", "B", "C"], local.Conditions[2].OuterCandidateRegionIds);
+        Assert.Equal(["A", "B"], local.Conditions[3].OuterCandidateRegionIds);
+        Assert.False(local.BothStrictlyNarrowerThanEachSingle);
+        Assert.Empty(local.ExcludedWhenAddingSecond);
         Assert.Equal(["C"], local.ExcludedWhenAddingFirst);
         Assert.Empty(local.AdditionalExclusionsBeyondSingles!);
         Assert.Empty(local.ReappearedComparedWithEitherSingle!);
-        Assert.Equal(1, local.CandidateReductionFromFirst);
+        Assert.Equal(0, local.CandidateReductionFromFirst);
         Assert.Equal(1, local.CandidateReductionFromSecond);
         Assert.Equal([RecordId], local.Conditions[3].GenerationDirectSourceIds);
         Assert.Equal(["second-original"], local.Conditions[3].TraversalDirectSourceIds);
@@ -1102,8 +1112,8 @@ public sealed class RescuerEvidenceBoundaryTests
             method.Method == "known-relation-backward");
         Assert.Equal(["A", "B", "C"], backward.Conditions[0].OuterCandidateRegionIds);
         Assert.Equal(["A", "B", "C"], backward.Conditions[1].OuterCandidateRegionIds);
-        Assert.Equal(["B", "C"], backward.Conditions[2].OuterCandidateRegionIds);
-        Assert.Equal(["B", "C"], backward.Conditions[3].OuterCandidateRegionIds);
+        Assert.Equal(["A", "B", "C"], backward.Conditions[2].OuterCandidateRegionIds);
+        Assert.Equal(["A", "B", "C"], backward.Conditions[3].OuterCandidateRegionIds);
         var reconstructed = result.Methods.Single(method =>
             method.Method == "distributed-reconstruction");
         Assert.Equal(["A", "B", "C"], reconstructed.Conditions[0].OuterCandidateRegionIds);
@@ -1307,18 +1317,20 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Null(generation.FirstCandidateDifferentTick);
         var local = comparison.Methods.Single(row =>
             row.Method == "distributed-reconstruction-local");
-        Assert.Equal(7, local.FirstCandidateDifferentTick);
-        Assert.Equal(8, local.FirstCandidateConvergenceTick);
+        // Old tick-7 candidate loss relied on an incomplete path list.
+        // Different receipt times still change the sources and work.
+        Assert.Null(local.FirstCandidateDifferentTick);
+        Assert.Null(local.FirstCandidateConvergenceTick);
         Assert.Equal(7, local.FirstMethodResultDifferentTick);
         Assert.Equal(8, local.FirstMethodResultConvergenceTick);
         var tick7 = local.Timeline.Single(row => row.QueryTick == 7);
-        Assert.Equal(["B"], tick7.EarlyMethod!.OuterCandidateRegionIds);
+        Assert.Equal(["A", "B"], tick7.EarlyMethod!.OuterCandidateRegionIds);
         Assert.Equal(["A", "B"], tick7.LateMethod!.OuterCandidateRegionIds);
-        Assert.Equal(["A"], tick7.LateOnlyCandidateRegionIds);
+        Assert.Empty(tick7.LateOnlyCandidateRegionIds!);
         Assert.Empty(tick7.EarlyOnlyCandidateRegionIds!);
-        Assert.Equal(-1, tick7.EarlyMinusLateCandidateCount);
+        Assert.Equal(0, tick7.EarlyMinusLateCandidateCount);
         Assert.True(tick7.EarlyCandidatesSubsetOfLate);
-        Assert.False(tick7.LateCandidatesSubsetOfEarly);
+        Assert.True(tick7.LateCandidatesSubsetOfEarly);
         Assert.Equal([RecordId, "second-original"], tick7.EarlyReceivedOriginalIds);
         Assert.Equal([RecordId], tick7.LateReceivedOriginalIds);
         Assert.Equal(2, tick7.EarlyAvailableSourceGroupCount);
@@ -1337,10 +1349,10 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Equal(4, tick7.LateMethod.PublicRelationsInspected);
         var backward = comparison.Methods.Single(row =>
             row.Method == "known-relation-backward");
-        Assert.Equal(["B", "C"], backward.Timeline[2].EarlyMethod!.OuterCandidateRegionIds);
+        Assert.Equal(["A", "B", "C"], backward.Timeline[2].EarlyMethod!.OuterCandidateRegionIds);
         Assert.Equal(["A", "B", "C"], backward.Timeline[2].LateMethod!.OuterCandidateRegionIds);
-        Assert.Equal(7, backward.FirstCandidateDifferentTick);
-        Assert.Equal(8, backward.FirstCandidateConvergenceTick);
+        Assert.Null(backward.FirstCandidateDifferentTick);
+        Assert.Null(backward.FirstCandidateConvergenceTick);
         Assert.All(comparison.Methods, item =>
             Assert.True(item.Timeline[3].SameMethodResult));
         Assert.DoesNotContain("SyntheticTruth", JsonDefaults.Serialize(comparison));
@@ -1575,7 +1587,7 @@ public sealed class RescuerEvidenceBoundaryTests
             context, Seed, 8, RescuerId, originals, [Receipt(6), DistinctReceipt(8)]);
         var narrow = new MultiWeftTracingStrategy().Evaluate(before.Input);
         var conflicting = new MultiWeftTracingStrategy().Evaluate(after.Input);
-        Assert.Equal(["C"], narrow.OuterPlausibleCandidateRegionIds);
+        Assert.Equal(["C", "D"], narrow.OuterPlausibleCandidateRegionIds);
         Assert.Equal(["C", "D"], conflicting.OuterPlausibleCandidateRegionIds);
         Assert.Equal(2, conflicting.CausalTracingResult!.SourceGroups.Count);
         Assert.Contains(conflicting.CausalTracingResult.Steps, step =>
@@ -1748,7 +1760,7 @@ public sealed class RescuerEvidenceBoundaryTests
             m.Method == "distributed-reconstruction-local").Timeline[2];
         Assert.Equal([RecordId, "second-original"], final.ReceivedOriginalIds);
         Assert.Equal(2, final.AvailableSourceGroupCount);
-        Assert.Equal(["B"], final.KnownRelationMethod!.OuterCandidateRegionIds);
+        Assert.Equal(["A", "B"], final.KnownRelationMethod!.OuterCandidateRegionIds);
         Assert.NotNull(final.UnprovidedRelationMethod!.UncertainCandidateRegionIds);
         Assert.Equal(4, final.KnownRelationMethod.GenerationSteps);
         Assert.DoesNotContain("SyntheticTruth", JsonDefaults.Serialize(comparison));
@@ -1840,11 +1852,10 @@ public sealed class RescuerEvidenceBoundaryTests
             method.Timeline[0].KnownRelationMethod!.UsedSourceGroupCount));
     }
 
-    // AR-1 is a known, independently reported UNSAFE partial-public case.
-    // Characterize the existing behavior without treating it as a safety guarantee.
-    // A later correction must revise this snapshot, not silently preserve it.
+    // #96: preserve the original AR-1 fixture but assert the corrected
+    // open-world behavior instead of the former unsafe candidate reduction.
     [Fact]
-    public void PartiallyPublishedTransitionsCanIncorrectlyNarrowTheOuterSet()
+    public void PartiallyPublishedTransitionsDoNotHardExcludeUnknownOuterCandidates()
     {
         var context = ComplementaryPublicContext();
         var partial = context with
@@ -1871,25 +1882,24 @@ public sealed class RescuerEvidenceBoundaryTests
         var partialBackward = incomplete.Single(m => m.Method == "known-relation-backward");
         var partialLocal = incomplete.Single(m =>
             m.Method == "distributed-reconstruction-local");
-        Assert.Equal(["B", "C"], declaredBackward.OuterCandidateRegionIds);
-        Assert.Equal(["B"], partialBackward.OuterCandidateRegionIds);
-        Assert.Equal(["B"], partialLocal.OuterCandidateRegionIds);
+        Assert.Equal(["A", "B", "C"], declaredBackward.OuterCandidateRegionIds);
+        Assert.Equal(["A", "B", "C"], partialBackward.OuterCandidateRegionIds);
+        Assert.Equal(["A", "B"], partialLocal.OuterCandidateRegionIds);
         Assert.Equal("method-executed", partialBackward.EvidenceStatus);
         Assert.Equal("method-executed", partialLocal.EvidenceStatus);
         Assert.Empty(partialLocal.ConflictedCandidateRegionIds!);
         Assert.Empty(partialLocal.UncertainCandidateRegionIds!);
-        Assert.False(declaredBackward.OuterCandidateRegionIds.All(
+        Assert.True(declaredBackward.OuterCandidateRegionIds.All(
             id => partialBackward.OuterCandidateRegionIds.Contains(id)));
         // An unprovided physical A->E path would make A plausible.
         // Neither synthetic truth nor that unprovided path is passed to Run.
-        Assert.DoesNotContain("A", partialLocal.OuterCandidateRegionIds);
+        Assert.Contains("A", partialLocal.OuterCandidateRegionIds);
     }
 
-    // AR-4: characterize UNSAFE partial-public inference at zero/one/two receipts.
-    // These are observed regression snapshots, NOT desired safety semantics.
-    // Do not turn a missing branch into a physical impossibility or use truth.
+    // AR-4: use the former unsafe zero/one/two-receipt fixture
+    // as a direct safe-outer regression, without changing the inputs.
     [Fact]
-    public void PartialPublicBranchesCanNarrowWithoutEvidenceAndDiscardConfirmedRegions()
+    public void PartialPublicBranchesCannotNarrowWithoutEvidenceOrDiscardConfirmedRegions()
     {
         var context = ComplementaryPublicContext();
         var first = ComplementaryOriginal(
@@ -1928,8 +1938,8 @@ public sealed class RescuerEvidenceBoundaryTests
             }
         });
 
-        // No originals have arrived at tick 5. The false 'public-model-only'
-        // reduction is nevertheless positive, which contaminates the metric.
+        // No originals have arrived at tick 5: public paths cannot invent
+        // evidence or produce a false 'public-model-only' reduction.
         Assert.Empty(twoBranches.ActualTimeline[0].ReceivedOriginalIds);
         Assert.Equal(0, twoBranches.ActualTimeline[0].AvailableSourceGroupCount);
         foreach (var method in new[]
@@ -1939,14 +1949,14 @@ public sealed class RescuerEvidenceBoundaryTests
         })
         {
             var beforeReceipt = At(twoBranches, 0, method);
-            Assert.Equal(["A", "B"], beforeReceipt.OuterCandidateRegionIds);
+            Assert.Equal(["A", "B", "C"], beforeReceipt.OuterCandidateRegionIds);
             Assert.Equal(3, beforeReceipt.BaselineCandidateCount);
-            Assert.Equal(1, beforeReceipt.CandidateReduction);
+            Assert.Equal(0, beforeReceipt.CandidateReduction);
             Assert.Equal("public-model-only", beforeReceipt.EvidenceStatus);
             Assert.Equal(0, beforeReceipt.UsedSourceGroupCount);
             var oneBranchBeforeReceipt = At(aOnly, 0, method);
-            Assert.Equal(["A"], oneBranchBeforeReceipt.OuterCandidateRegionIds);
-            Assert.Equal(2, oneBranchBeforeReceipt.CandidateReduction);
+            Assert.Equal(["A", "B", "C"], oneBranchBeforeReceipt.OuterCandidateRegionIds);
+            Assert.Equal(0, oneBranchBeforeReceipt.CandidateReduction);
             Assert.Equal("public-model-only", oneBranchBeforeReceipt.EvidenceStatus);
         }
 
@@ -1954,22 +1964,22 @@ public sealed class RescuerEvidenceBoundaryTests
         // missing published B routes cannot safely rule B out.
         Assert.Equal(1, aOnly.ActualTimeline[1].ReceivedOriginalCount);
         var localAtSix = At(aOnly, 1, "distributed-reconstruction-local");
-        Assert.Equal(["A"], localAtSix.OuterCandidateRegionIds);
-        Assert.DoesNotContain("B", localAtSix.OuterCandidateRegionIds);
+        Assert.Equal(["A", "B"], localAtSix.OuterCandidateRegionIds);
+        Assert.Contains("B", localAtSix.OuterCandidateRegionIds);
         Assert.Empty(localAtSix.ConflictedCandidateRegionIds!);
         var alternateLocalAtSix = At(aAndC, 1, "distributed-reconstruction-local");
-        Assert.Equal(["A"], alternateLocalAtSix.OuterCandidateRegionIds);
-        Assert.DoesNotContain("B", alternateLocalAtSix.OuterCandidateRegionIds);
+        Assert.Equal(["A", "B"], alternateLocalAtSix.OuterCandidateRegionIds);
+        Assert.Contains("B", alternateLocalAtSix.OuterCandidateRegionIds);
         Assert.Empty(alternateLocalAtSix.ConflictedCandidateRegionIds!);
 
-        // The same partially declared model can subsequently widen after the
-        // second receipt, even though candidate safety was not restored.
+        // Do not mistake a reversal of the prior false exclusion for
+        // meaningful information arriving with the second original.
         Assert.Equal(2, aOnly.ActualTimeline[2].ReceivedOriginalCount);
         var backwardAtSix = At(aOnly, 1, "known-relation-backward");
         var backwardAtSeven = At(aOnly, 2, "known-relation-backward");
-        Assert.Equal(["A"], backwardAtSix.OuterCandidateRegionIds);
+        Assert.Equal(["A", "B", "C"], backwardAtSix.OuterCandidateRegionIds);
         Assert.Equal(["A", "B", "C"], backwardAtSeven.OuterCandidateRegionIds);
-        Assert.True(backwardAtSeven.CandidateCount > backwardAtSix.CandidateCount);
+        Assert.Equal(backwardAtSix.CandidateCount, backwardAtSeven.CandidateCount);
     }
 
     [Fact]
@@ -2073,8 +2083,8 @@ public sealed class RescuerEvidenceBoundaryTests
     }
 
 
-    // #94: pin observed real Run outputs from fixed public evidence inputs.
-    // Values are model counters and candidate sets, not rescue statistics.
+    // #96: same #94 Run inputs, corrected tracer; old measurements remain
+    // separately in the research document. Counters are not rescue metrics.
     [Fact]
     public void PublicRelationAvailabilityDiagnosticSnapshot()
     {
@@ -2101,9 +2111,9 @@ public sealed class RescuerEvidenceBoundaryTests
                 $"{method.EvidenceRecordsInspected}/{method.PublicRelationsInspected}"))));
         const string expected = """
             FP94 known public-prior: outer=A,B,C; status=last-confirmed-unavailable-public-prior; uncertain=null; conflict=null; genSources=; traversalSources=; groups=2/0; work=0/0/0/0/0/0
-            FP94 known known-relation-backward: outer=B,C; status=method-executed; uncertain=null; conflict=null; genSources=; traversalSources=second-original; groups=2/1; work=0/0/2/2/1/5
+            FP94 known known-relation-backward: outer=A,B,C; status=method-executed; uncertain=null; conflict=null; genSources=; traversalSources=second-original; groups=2/1; work=0/0/2/2/1/5
             FP94 known distributed-reconstruction: outer=A,B; status=method-executed; uncertain=; conflict=; genSources=original-encounter-record; traversalSources=; groups=2/1; work=4/0/0/0/1/1
-            FP94 known distributed-reconstruction-local: outer=B; status=method-executed; uncertain=; conflict=; genSources=original-encounter-record; traversalSources=second-original; groups=2/2; work=4/0/2/2/1/5
+            FP94 known distributed-reconstruction-local: outer=A,B; status=method-executed; uncertain=; conflict=; genSources=original-encounter-record; traversalSources=second-original; groups=2/2; work=4/0/2/2/1/5
             FP94 unprovided public-prior: outer=A,B,C; status=last-confirmed-unavailable-public-prior; uncertain=null; conflict=null; genSources=; traversalSources=; groups=2/0; work=0/0/0/0/0/0
             FP94 unprovided known-relation-backward: outer=A,B,C; status=method-executed; uncertain=null; conflict=null; genSources=; traversalSources=second-original; groups=2/1; work=0/0/0/0/1/1
             FP94 unprovided distributed-reconstruction: outer=A,B; status=method-executed; uncertain=; conflict=; genSources=original-encounter-record; traversalSources=; groups=2/1; work=4/0/0/0/1/1
