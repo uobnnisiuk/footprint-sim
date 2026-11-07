@@ -988,14 +988,48 @@ public path had removed them. Real positive published traversals remain
 auditable in both directions and across exact/interval windows.
 A source-ancestry group is not multiplied by re-receipt.
 
-**Initial draft measurement status:** no dotnet runtime is available in
-this executor. The new test expectations are *not yet verified empirical
-results*. Obtain the current PR head's ordinary/F19 CI and, where
-different, independently record new fixed-Run candidate/status/source/
-work figures next to these historical #95 figures with commit/head,
-including unchanged and unmeasured items. Never change the fixed
-world, evidence or query times after seeing the output. S4/S5 sample
-success is not a substitute for these partial-public direct tests.
+**2026-11-08: directly checked post-repair Run outcomes.** On PR #97
+head `a390227faa44f0260823280067515de48d503e11`, [ordinary
+CI](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42401422788)
+and [F19 research CI](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42401422955)
+succeeded. The ordinary suite ran 636 tests, with 0 failures and 0
+skips. The fixed `RescuerEvidenceBoundaryTests` call the real
+`RescuerEvidenceMethodComparison.Run` with the **same two originals,
+receipt ticks 6/7, query ticks 5/6/7, historical tick 2 and public
+states** as the unsafe #95 snapshot. The following are actual values
+checked by successful direct Run assertions, not independent field
+measurements or a complete exported report:
+
+| Published branches | Query / received originals | Method | Post-repair outer | Other checked result |
+| --- | --- | --- | --- | --- |
+| A→D + B→E | 5 / 0 | backward and local | {A,B,C} (3; reduction 0) | `public-model-only`; source groups used 0 |
+| A→D only | 5 / 0 | backward and local | {A,B,C} (3; reduction 0) | `public-model-only` |
+| A→D only | 6 / 1 | local | {A,B} (2) | confirmed-compatible B retained; conflict empty |
+| A→D + C→F | 6 / 1 | local | {A,B} (2) | confirmed-compatible B retained; conflict empty |
+| A→D only | 7 / 2 | backward | {A,B,C} (3) | equal to tick-6 backward count; no false-exclusion rebound |
+| A→D + B→E | 7 / 2 | backward / local | {A,B,C} / {A,B} | both `method-executed`; local conflict and uncertainty empty |
+| A→D + B→E + C→F | 7 / 2 | backward | {A,B,C} | not narrower than partial-public backward |
+
+For the earlier unsafe **A→D + B→E, tick 5** case, the
+backward/local outer was {A,B} with a spurious reduction of 1; the
+post-repair direct Run instead checks {A,B,C}, reduction 0.
+For **A→D only, tick 5**, the old {A}, reduction 2 becomes
+{A,B,C}, reduction 0. At tick 6, the B retained in local {A,B}
+is the crucial received-Confirmed-compatible alternative; mere
+absence of a published B route cannot exclude it. The
+existing deterministic source-ancestry, receipt order, cutoff,
+Person/Device and truth-isolation tests also passed in the same suite.
+
+**Remaining measurement boundary:** these assertions do **not** yet
+provide a full five-envelope × three-tick × four-method export of
+preferred/conflict/status/direct-source IDs and the six operation
+counters. Apart from the values explicitly checked above, those
+per-cell figures are **not measured for this post-repair head**.
+The full same-input Run export and old/new work-counter comparison
+remain required before treating #96's research-record acceptance
+criterion as complete. Passing S4/S5 or the F19 protocol does not
+establish this missing comparison or general rescue safety. No
+hypothesis or fixture was adjusted after seeing the new result.
 
 Alternative B (closed-world exclusion with independently proved
 completeness) remains unproven; alternative C (inventing hidden
