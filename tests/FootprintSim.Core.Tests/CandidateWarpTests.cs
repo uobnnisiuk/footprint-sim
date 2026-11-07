@@ -656,8 +656,8 @@ public sealed class CandidateWarpTests
             [new InteractionProvenance(InteractionProvenanceKind.ExternalSource, "competing-source")]);
         var withConflict = new OperationalCausalTracer().Trace(
             warps, [confirmed, competing], access, envelope);
-        var competingGroup = Assert.Single(withConflict.SourceGroups.Where(group =>
-            group.ConstraintIds.Contains(competing.ConstraintId))).SourceGroupId;
+        var competingGroup = Assert.Single(withConflict.SourceGroups, group =>
+            group.ConstraintIds.Contains(competing.ConstraintId)).SourceGroupId;
         Assert.Equal(["D", "E", "F"], withConflict.CandidateWarps.OuterPlausibleRegionIdsAt(5));
         Assert.Contains(withConflict.SupportLineage, item =>
             item.RegionId == "D" && item.CompetingSourceGroupIds.Contains(competingGroup));
