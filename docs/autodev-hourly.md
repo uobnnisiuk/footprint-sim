@@ -118,3 +118,87 @@ not a saved task update, a Windows deployment, or a successful unattended
 production repair. The live R4 GitHub adapter and its independent trust source
 are still unverified, so production remains disabled. See
 `docs/autodev-pr-repair.md` for the full handoff, safety and activation gates.
+
+## K8 runtime status returned through Issue #88
+
+Issue #88 adds a fixed operational observer to the existing hourly controller.
+It does not use the `local-autodev` code-edit queue or make a model call. An
+ordinary reviewed infrastructure PR installs the observer through the existing
+fast-forward update: the process which notices a runtime change stops without a
+model reservation, and the next scheduled process loads the reviewed modules.
+There is no new Windows task, action change or manual prompt-transfer step.
+
+On an opted-in production invocation, after `run_hourly` has released its daily
+lock, `tools/local_autodev_status.py` records the controller outcome and attempts
+to update the dedicated result comment
+https://github.com/uobnnisiuk/footprint-sim/issues/88#issuecomment-6700340146 .
+The issue must remain open and contain the exact line
+`K8-Status-Enabled: runtime-status-v1`. The destination comment must retain the
+managed-result marker. These remote values enable only this fixed observer;
+neither issue text nor comment text is executed or used as a command, path, or
+destination. Closing the issue or removing its marker stops remote reporting.
+
+The observer is limited to the existing dedicated K8 checkout and default
+Local AutoDev state location. Other checkouts, CI and mock tests cannot publish
+through this production path. The actual loaded hourly and observer files must
+belong to that checkout, and a source revision is recorded only when the source
+checkout is clean; otherwise the revision remains unknown. A dry run does not
+call the observer. The new
+module participates in the runtime fingerprint, and a process that has just
+refreshed its runtime does not report with a mixture of old and new code.
+
+### What the result proves
+
+The fixed-schema report separates:
+
+- The current Python hourly controller's terminal outcome and intended exit
+  code, observed times and the revision loaded before preflight.
+- The preceding locally saved controller outcome, when available and valid.
+- A read-only snapshot of the existing Windows Daily task's state,
+  LastRunTime, LastTaskResult and NextRunTime. A value observed while the same
+  task is running is not proof that the whole Windows task completed.
+- A bounded, redacted observation of the existing F22 last-poll file and its
+  own modification time. A recognized `already-published` marker is a
+  historical marker, not proof that the current poll re-ran the research.
+- Availability of existing locks, tested without creating, deleting or
+  retaining those locks.
+
+Missing or malformed observational inputs are unknown individually; the observer
+does not invent successful stages. Invalid or unsafe private reporter state is
+preserved and stops that report, rather than being reset automatically. Empty
+queues and ordinary PR waits are useful
+controller outcomes, not evidence that the hourly poll failed to run. The
+observer cannot prove the Task Scheduler trigger cause, the later return of
+the outer F22 wrapper, long-term reliability, or the old Monitor's repair.
+These limitations must not erase the controller execution that was observed.
+
+### Isolation and handoff
+
+Observer state is stored in a private `runtime-status` directory adjacent to
+`daily`, never inside the immutable model-attempt ledger. It contains only
+validated status records. The observer does not read raw model logs, trajectory
+data or arbitrary files, and never emits or stores credentials or environment
+values. Diagnostic failures
+are isolated: they cannot alter the original controller exit code, model
+reservation count, Issue retry policy or PR repair activation.
+
+The reporter uses the existing GitHub authentication to GET the fixed issue
+and comment and PATCH that same result comment. It creates no new heartbeat
+comments. Writes are read back; an ambiguous response remains unconfirmed
+unless the fetched content matches. A later poll may update that same slot,
+without duplicating a post or re-running any research.
+
+Code review, CI and merging are only the code-delivery stage. The cloud monitor
+must wait for a real K8 report, validate its schema, timestamps and loaded
+revision, then record the verified fields in UOB-10. The initial verification is
+complete when that real report has been accepted. Issue #88 stays open as the
+operational control for subsequent reports; closing it deliberately disables
+reporting, rather than merely acknowledging the first result. The monitor must
+not replace the result slot with cloud fixture output.
+
+If no report arrives, check the actual update prerequisites: the existing F22
+wrapper must reach hourly, the daily lock and budget ledger must permit refresh,
+the dedicated checkout must be clean and fast-forwardable, and existing GitHub
+authentication must work. Absence of a report alone proves none of those
+conditions false. Only an identified failure that cannot be handled through
+the established path warrants a specific local recovery action.
