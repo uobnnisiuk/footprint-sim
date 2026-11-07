@@ -1623,4 +1623,46 @@ public sealed class RescuerEvidenceBoundaryTests
             { ActualTimeline = early.SameCutoffAblations }).Status);
     }
 
+    // Transient evidence-gathering probe: remove after writing actual measurements.
+    [Fact]
+    public void TemporaryContradictoryDecisionMeasurementProbe()
+    {
+        var (early, late) = ContradictoryRevisionRuns();
+        static object Describe(RescuerEvidenceMethodReport run, long tick)
+        {
+            var row = run.ActualTimeline.Single(x => x.QueryTick == tick);
+            return new
+            {
+                Tick = tick,
+                Received = row.ReceivedOriginalIds,
+                Groups = row.AvailableSourceGroupCount,
+                Methods = row.Methods.Select(x => new
+                {
+                    x.Method,
+                    x.OuterCandidateRegionIds,
+                    x.EvidenceStatus,
+                    x.ConflictedCandidateRegionIds,
+                    x.UncertainCandidateRegionIds,
+                    x.PreferredCandidateRegionIds,
+                    x.GenerationDirectSourceIds,
+                    x.TraversalDirectSourceIds,
+                    x.UsedSourceGroupCount,
+                    x.GenerationSteps,
+                    x.VerificationSteps,
+                    x.ForwardTransitionSteps,
+                    x.BackwardTransitionSteps,
+                    x.EvidenceRecordsInspected,
+                    x.PublicRelationsInspected
+                }).ToArray()
+            };
+        }
+        throw new InvalidOperationException("OBSERVED-92 " + JsonDefaults.Serialize(new
+        {
+            EarlyAt6 = Describe(early, 6),
+            EarlyAt8 = Describe(early, 8),
+            LateAt8 = Describe(late, 8),
+            LateAt9 = Describe(late, 9)
+        }));
+    }
+
 }
