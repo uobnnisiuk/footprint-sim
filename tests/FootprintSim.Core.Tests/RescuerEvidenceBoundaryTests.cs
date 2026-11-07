@@ -1885,6 +1885,93 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.DoesNotContain("A", partialLocal.OuterCandidateRegionIds);
     }
 
+    // AR-4: characterize UNSAFE partial-public inference at zero/one/two receipts.
+    // These are observed regression snapshots, NOT desired safety semantics.
+    // Do not turn a missing branch into a physical impossibility or use truth.
+    [Fact]
+    public void PartialPublicBranchesCanNarrowWithoutEvidenceAndDiscardConfirmedRegions()
+    {
+        var context = ComplementaryPublicContext();
+        var first = ComplementaryOriginal(
+            RecordId, HolderId, 2, ["A", "B"], 3, "weft-a");
+        var second = ComplementaryOriginal(
+            "second-original", "holder-b", 5, ["E", "F"], 6, "weft-b");
+        var originals = new[] { first, second };
+        var receipts = new[] { Receipt(6), LaterComparisonReceipt(7) };
+        RescuerEvidenceMethodReport Run(RescueContext publicContext) =>
+            RescuerEvidenceMethodComparison.Run(
+                publicContext, Seed, RescuerId, originals, receipts,
+                InteractionTimeWindow.At(2), [5, 6, 7], 7);
+        RescuerEvidenceMethodRow At(
+            RescuerEvidenceMethodReport report, int index, string method) =>
+            report.ActualTimeline[index].Methods.Single(row => row.Method == method);
+
+        var twoBranches = Run(context with
+        {
+            PublicHazardEnvelope = context.PublicHazardEnvelope! with
+            {
+                Branches = [Branch("A", "D"), Branch("B", "E")]
+            }
+        });
+        var aOnly = Run(context with
+        {
+            PublicHazardEnvelope = context.PublicHazardEnvelope! with
+            {
+                Branches = [Branch("A", "D")]
+            }
+        });
+        var aAndC = Run(context with
+        {
+            PublicHazardEnvelope = context.PublicHazardEnvelope! with
+            {
+                Branches = [Branch("A", "D"), Branch("C", "F")]
+            }
+        });
+
+        // No originals have arrived at tick 5. The false 'public-model-only'
+        // reduction is nevertheless positive, which contaminates the metric.
+        Assert.Empty(twoBranches.ActualTimeline[0].ReceivedOriginalIds);
+        Assert.Equal(0, twoBranches.ActualTimeline[0].AvailableSourceGroupCount);
+        foreach (var method in new[]
+        {
+            "known-relation-backward",
+            "distributed-reconstruction-local"
+        })
+        {
+            var beforeReceipt = At(twoBranches, 0, method);
+            Assert.Equal(["A", "B"], beforeReceipt.OuterCandidateRegionIds);
+            Assert.Equal(3, beforeReceipt.BaselineCandidateCount);
+            Assert.Equal(1, beforeReceipt.CandidateReduction);
+            Assert.Equal("public-model-only", beforeReceipt.EvidenceStatus);
+            Assert.Equal(0, beforeReceipt.UsedSourceGroupCount);
+            var oneBranchBeforeReceipt = At(aOnly, 0, method);
+            Assert.Equal(["A"], oneBranchBeforeReceipt.OuterCandidateRegionIds);
+            Assert.Equal(2, oneBranchBeforeReceipt.CandidateReduction);
+            Assert.Equal("public-model-only", oneBranchBeforeReceipt.EvidenceStatus);
+        }
+
+        // Tick-2 {A,B} is a confirmed received observation at query tick 6;
+        // missing published B routes cannot safely rule B out.
+        Assert.Equal(1, aOnly.ActualTimeline[1].ReceivedOriginalCount);
+        var localAtSix = At(aOnly, 1, "distributed-reconstruction-local");
+        Assert.Equal(["A"], localAtSix.OuterCandidateRegionIds);
+        Assert.DoesNotContain("B", localAtSix.OuterCandidateRegionIds);
+        Assert.Empty(localAtSix.ConflictedCandidateRegionIds!);
+        var alternateLocalAtSix = At(aAndC, 1, "distributed-reconstruction-local");
+        Assert.Equal(["A"], alternateLocalAtSix.OuterCandidateRegionIds);
+        Assert.DoesNotContain("B", alternateLocalAtSix.OuterCandidateRegionIds);
+        Assert.Empty(alternateLocalAtSix.ConflictedCandidateRegionIds!);
+
+        // The same partially declared model can subsequently widen after the
+        // second receipt, even though candidate safety was not restored.
+        Assert.Equal(2, aOnly.ActualTimeline[2].ReceivedOriginalCount);
+        var backwardAtSix = At(aOnly, 1, "known-relation-backward");
+        var backwardAtSeven = At(aOnly, 2, "known-relation-backward");
+        Assert.Equal(["A"], backwardAtSix.OuterCandidateRegionIds);
+        Assert.Equal(["A", "B", "C"], backwardAtSeven.OuterCandidateRegionIds);
+        Assert.True(backwardAtSeven.CandidateCount > backwardAtSix.CandidateCount);
+    }
+
     [Fact]
     public void MissingPublicTransitionsRemainSeparateFromReceiptAndAncestryBoundaries()
     {

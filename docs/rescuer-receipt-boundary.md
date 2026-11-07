@@ -900,6 +900,50 @@ approved files. Do not infer general monotonicity or operational
 rescue safety from the null-envelope results, and do not close
 AR-1 merely because this diagnostic passes.
 
+**AR-4 unsafe partial-public characterization (2026-11-07).**
+The two-condition experiment above contrasts *all three declared branches*
+with *no supplied envelope*. Its first sampled candidate difference at
+tick 7 applies **only to that pair**. A partially published envelope
+is a distinct diagnostic input, not another method or evidence-arrival
+experiment. With identical public candidate states, two original records,
+receipts (tick 6/7), query ticks (5/6/7), target tick 2 and synthetic
+world, changing only which branches are supplied gives these observed
+counterexamples from the [adversarial Run probe](https://github.com/uobnnisiuk/footprint-sim/pull/95#issuecomment-6706582318).
+The direct test `PartialPublicBranchesCanNarrowWithoutEvidenceAndDiscardConfirmedRegions`
+pins a subset of these **unsafe current values**; do not interpret a
+passing characterization as safety certification.
+
+| Published branches | Query tick / received originals | Backward outer | Local outer | Defect exposed |
+| --- | --- | --- | --- | --- |
+| A→D, B→E (C→F unpublished) | 5 / 0 | {A,B} | {A,B} | `public-model-only` with `CandidateReduction=1` |
+| A→D only | 5 / 0 | {A} | {A} | `public-model-only` with `CandidateReduction=2` |
+| A→D only | 6 / 1 | {A} | {A} | local excludes B, despite received confirmed {A,B} at past tick 2 |
+| A→D, C→F (B→E unpublished) | 6 / 1 | {A,C} | {A} | local excludes confirmed-compatible B |
+| A→D only | 7 / 2 | {A,B,C} | {A,B} | backward candidates widened since tick 6, not a safe conclusion |
+
+At tick 5 the rescuer has **zero received originals**. Nonetheless,
+the partial-public tracer narrows the outer set without evidence, labels
+the result `public-model-only`, and records a positive
+`CandidateReduction` relative to the three-place prior. This can
+contaminate apparent method gains. At tick 6 the first received
+observation asserts {A,B}, but the local method can remove B with
+**no conflict warning**, solely because B's movement relation is
+unpublished. The backward method can then expand from {A} at tick 6
+to {A,B,C} at tick 7 as a new record arrives; this is not evidence
+that the previously excluded candidate was safely handled.
+
+The defect follows from `OperationalCausalTracer.ApplyDirection`:
+once any origin has a published branch, it intersects the outer set
+with destinations reached using *only those published branches*.
+Neither a null envelope nor all-declared comparison demonstrates
+soundness under **partial** knowledge. AR-1 is therefore unresolved,
+even if these diagnostics and ordinary/F19 CI pass. The pre-existing
+sample evaluation also lacks demonstrated sensitivity to this class
+of partial-public failure ([AR-5 independent experiment](https://github.com/uobnnisiuk/footprint-sim/pull/95#issuecomment-6707284005)).
+The tracer's correction and its acceptance semantics need a separately
+reviewed scope, not an unreviewed expansion of #94. No truth location
+is supplied to inference, and no field rescue benefit is claimed.
+
 **AR-2 source-accounting qualification:** in null-envelope results,
 `TraversalDirectSourceIds` and used ancestry-group counts can name
 a received source even when the forward/backward transition counters
