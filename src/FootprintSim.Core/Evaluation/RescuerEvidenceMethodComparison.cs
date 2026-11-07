@@ -180,6 +180,55 @@ public sealed record RescuerEvidenceReceiptTimingReport
     public IReadOnlyList<RescuerEvidenceReceiptTimingMethod> Methods { get; init; } = [];
 }
 
+// #92: Sequential revisions of one published historical question.
+// Null standings mean not exposed by a method. Group IDs are unavailable.
+public sealed record RescuerEvidenceDecisionRevisionTick
+{
+    public required long BeforeQueryTick { get; init; }
+    public required long AfterQueryTick { get; init; }
+    public required string Status { get; init; }
+    public string? UnavailableReason { get; init; }
+    public IReadOnlyList<string> BeforeReceivedOriginalIds { get; init; } = [];
+    public IReadOnlyList<string> AfterReceivedOriginalIds { get; init; } = [];
+    public IReadOnlyList<string> BeforeReceivedSourceObservationIds { get; init; } = [];
+    public IReadOnlyList<string> AfterReceivedSourceObservationIds { get; init; } = [];
+    public required int BeforeAvailableSourceGroupCount { get; init; }
+    public required int AfterAvailableSourceGroupCount { get; init; }
+    public required int BeforeAvailableConstraintCount { get; init; }
+    public required int AfterAvailableConstraintCount { get; init; }
+    public RescuerEvidenceMethodRow? BeforeMethod { get; init; }
+    public RescuerEvidenceMethodRow? AfterMethod { get; init; }
+    public IReadOnlyList<string>? ExcludedCandidateRegionIds { get; init; }
+    public IReadOnlyList<string>? ReappearedCandidateRegionIds { get; init; }
+    public int? AfterMinusBeforeCandidateCount { get; init; }
+    public bool? BeforeCandidatesSubsetOfAfter { get; init; }
+    public bool? AfterCandidatesSubsetOfBefore { get; init; }
+    public bool? SameOuterCandidates { get; init; }
+    public bool? SamePreferredCandidates { get; init; }
+    public bool? SameUncertainCandidates { get; init; }
+    public bool? SameConflictedCandidates { get; init; }
+    public bool? EvidenceStatusChanged { get; init; }
+}
+
+public sealed record RescuerEvidenceDecisionRevisionMethod
+{
+    public required string Method { get; init; }
+    public required string Status { get; init; }
+    public long? FirstReappearedTick { get; init; }
+    public long? FirstExcludedTick { get; init; }
+    public long? FirstOuterChangedTick { get; init; }
+    public IReadOnlyList<RescuerEvidenceDecisionRevisionTick> Timeline { get; init; } = [];
+}
+
+public sealed record RescuerEvidenceDecisionRevisionReport
+{
+    public required string Status { get; init; }
+    public string? UnavailableReason { get; init; }
+    public required InteractionTimeWindow TargetWindow { get; init; }
+    public IReadOnlyList<long> QueryTicks { get; init; } = [];
+    public IReadOnlyList<RescuerEvidenceDecisionRevisionMethod> Methods { get; init; } = [];
+}
+
 public static class RescuerEvidenceMethodComparison
 {
     /// <summary>
@@ -810,6 +859,124 @@ public static class RescuerEvidenceMethodComparison
             Status = methods.All(item => item.Status == "available") ? "available" :
                 methods.All(item => item.Status == "unavailable") ? "unavailable" : "partial",
             QueryTicks = a.Select(row => row.QueryTick).ToArray(),
+            Methods = methods
+        };
+    }
+
+    /// <summary>
+    /// Compare adjacent actual published queries of one fixed past target.
+    /// Do not read truth, private originals or hypothetical ablations.
+    /// First changes are among the sampled ticks, not continuous time.
+    /// Metadata is not proof of the declared world's physical accuracy.
+    /// </summary>
+    public static RescuerEvidenceDecisionRevisionReport AnalyzeDecisionRevision(
+        RescuerEvidenceMethodReport publicReport)
+    {
+        ArgumentNullException.ThrowIfNull(publicReport);
+        static string[] Sort(IEnumerable<string> ids) =>
+            ids.Distinct(StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal).ToArray();
+        static bool? SameStanding(IReadOnlyList<string>? a, IReadOnlyList<string>? b) =>
+            a is null || b is null ? null :
+                Sort(a).SequenceEqual(Sort(b), StringComparer.Ordinal);
+        RescuerEvidenceDecisionRevisionReport Unavailable(string reason) => new()
+        {
+            Status = "unavailable", UnavailableReason = reason,
+            TargetWindow = publicReport.TargetWindow
+        };
+        var actual = publicReport.ActualTimeline.OrderBy(row => row.QueryTick).ToArray();
+        if (actual.Length < 2 ||
+            actual.Select(row => row.QueryTick).Distinct().Count() != actual.Length ||
+            actual.Any(row => row.Condition != "actual" ||
+                row.QueryTick < publicReport.TargetWindow.EndTick ||
+                row.ReceivedOriginalCount != row.ReceivedOriginalIds.Count ||
+                row.ReceivedOriginalIds.Distinct(StringComparer.Ordinal).Count() != row.ReceivedOriginalIds.Count ||
+                row.ReceivedSourceObservationIds.Distinct(StringComparer.Ordinal).Count() !=
+                    row.ReceivedSourceObservationIds.Count ||
+                row.ReceivedSourceObservationIds.Count != row.ReceivedOriginalIds.Count ||
+                row.AvailableSourceGroupCount < 0 ||
+                row.AvailableSourceGroupCount > row.ReceivedOriginalCount ||
+                row.AvailableConstraintCount < 0))
+            return Unavailable("At least two consistent, distinct actual queries are required.");
+
+        var names = new[] { "public-prior", "known-relation-backward",
+            "distributed-reconstruction", "distributed-reconstruction-local" }
+            .Concat(actual.SelectMany(row => row.Methods.Select(method => method.Method)))
+            .Distinct(StringComparer.Ordinal).OrderBy(name => name, StringComparer.Ordinal).ToArray();
+        var methods = names.Select(name =>
+        {
+            var steps = actual.Zip(actual.Skip(1), (prev, next) =>
+            {
+                var beforeRows = prev.Methods.Where(method => method.Method == name).ToArray();
+                var afterRows = next.Methods.Where(method => method.Method == name).ToArray();
+                static bool IsValid(RescuerEvidenceMethodRow row) =>
+                    row.OuterCandidateRegionIds is not null &&
+                    row.CandidateCount == row.OuterCandidateRegionIds.Count &&
+                    row.OuterCandidateRegionIds.Distinct(StringComparer.Ordinal).Count() ==
+                        row.OuterCandidateRegionIds.Count &&
+                    row.AvailableSourceGroupCount >= 0 &&
+                    row.UsedSourceGroupCount >= 0 &&
+                    row.UsedSourceGroupCount <= row.AvailableSourceGroupCount;
+                var valid = beforeRows.Length == 1 && afterRows.Length == 1 &&
+                    IsValid(beforeRows[0]) && IsValid(afterRows[0]) &&
+                    beforeRows[0].AvailableSourceGroupCount == prev.AvailableSourceGroupCount &&
+                    afterRows[0].AvailableSourceGroupCount == next.AvailableSourceGroupCount;
+                var before = valid ? beforeRows[0] : null;
+                var after = valid ? afterRows[0] : null;
+                var excluded = valid ? Sort(before!.OuterCandidateRegionIds.Except(
+                    after!.OuterCandidateRegionIds, StringComparer.Ordinal)) : null;
+                var reappeared = valid ? Sort(after!.OuterCandidateRegionIds.Except(
+                    before!.OuterCandidateRegionIds, StringComparer.Ordinal)) : null;
+                return new RescuerEvidenceDecisionRevisionTick
+                {
+                    BeforeQueryTick = prev.QueryTick,
+                    AfterQueryTick = next.QueryTick,
+                    Status = valid ? "available" : "unavailable",
+                    UnavailableReason = valid ? null : "Missing, duplicated or inconsistent method result.",
+                    BeforeReceivedOriginalIds = Sort(prev.ReceivedOriginalIds),
+                    AfterReceivedOriginalIds = Sort(next.ReceivedOriginalIds),
+                    BeforeReceivedSourceObservationIds = Sort(prev.ReceivedSourceObservationIds),
+                    AfterReceivedSourceObservationIds = Sort(next.ReceivedSourceObservationIds),
+                    BeforeAvailableSourceGroupCount = prev.AvailableSourceGroupCount,
+                    AfterAvailableSourceGroupCount = next.AvailableSourceGroupCount,
+                    BeforeAvailableConstraintCount = prev.AvailableConstraintCount,
+                    AfterAvailableConstraintCount = next.AvailableConstraintCount,
+                    BeforeMethod = before,
+                    AfterMethod = after,
+                    ExcludedCandidateRegionIds = excluded,
+                    ReappearedCandidateRegionIds = reappeared,
+                    AfterMinusBeforeCandidateCount = valid ? after!.CandidateCount - before!.CandidateCount : null,
+                    BeforeCandidatesSubsetOfAfter = valid ? excluded!.Length == 0 : null,
+                    AfterCandidatesSubsetOfBefore = valid ? reappeared!.Length == 0 : null,
+                    SameOuterCandidates = valid ? excluded!.Length == 0 && reappeared!.Length == 0 : null,
+                    SamePreferredCandidates = valid ? SameStanding(
+                        before!.PreferredCandidateRegionIds, after!.PreferredCandidateRegionIds) : null,
+                    SameUncertainCandidates = valid ? SameStanding(
+                        before!.UncertainCandidateRegionIds, after!.UncertainCandidateRegionIds) : null,
+                    SameConflictedCandidates = valid ? SameStanding(
+                        before!.ConflictedCandidateRegionIds, after!.ConflictedCandidateRegionIds) : null,
+                    EvidenceStatusChanged = valid ? before!.EvidenceStatus != after!.EvidenceStatus : null
+                };
+            }).ToArray();
+            return new RescuerEvidenceDecisionRevisionMethod
+            {
+                Method = name,
+                Status = steps.All(x => x.Status == "available") ? "available" :
+                    steps.All(x => x.Status == "unavailable") ? "unavailable" : "partial",
+                Timeline = steps,
+                FirstReappearedTick = steps.Where(x => x.ReappearedCandidateRegionIds?.Count > 0)
+                    .Select(x => (long?)x.AfterQueryTick).FirstOrDefault(),
+                FirstExcludedTick = steps.Where(x => x.ExcludedCandidateRegionIds?.Count > 0)
+                    .Select(x => (long?)x.AfterQueryTick).FirstOrDefault(),
+                FirstOuterChangedTick = steps.Where(x => x.SameOuterCandidates == false)
+                    .Select(x => (long?)x.AfterQueryTick).FirstOrDefault()
+            };
+        }).ToArray();
+        return new RescuerEvidenceDecisionRevisionReport
+        {
+            Status = methods.All(x => x.Status == "available") ? "available" :
+                methods.All(x => x.Status == "unavailable") ? "unavailable" : "partial",
+            TargetWindow = publicReport.TargetWindow,
+            QueryTicks = actual.Select(x => x.QueryTick).ToArray(),
             Methods = methods
         };
     }

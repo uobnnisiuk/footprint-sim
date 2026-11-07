@@ -609,3 +609,63 @@ relationships, unmodeled travel, physical rescue time, costs, and
 rescue effectiveness remain untested. The final PR head requires its
 own ordinary/F19 CI and independent technical review before any
 acceptance or normal merge.
+
+## Sequential decision revision after contradictory weft (Issue #92)
+
+Work-Key: FP-CONFLICTING-WEFT-DECISION-REVISION-V1. This uses the
+original proposal's missing personal history and independent other-person
+records. The challenge is not to minimize every candidate set: a late
+contradictory source may require withdrawing a previous narrowing.
+The public model is still declared, not discovered; this is not a new
+inference method or a field rescue system.
+
+**Fixed input, preregistered hypothesis, not a measurement.** Use the
+same public object and original objects in two real Run timelines.
+Public candidate states at tick 2 {A,B}, at tick 5 {C,D}, publicly
+declared transitions A→C/B→D (three ticks, published tick 0).
+Two independent original confirmed observations at tick 2 identify
+{A} and {B}, both stored/available tick 3; neither is the target's
+personal record. The {A} source is received tick 6. The {B} source
+is received tick 8 in the early schedule and tick 9 in the late.
+Both query ticks [5,6,7,8,9] and always evaluate past target tick 2.
+Only the second receipt differs. A same-tick early/late comparison
+is *separate* from adjacent queries within either timeline.
+
+The beforehand prediction: existing MultiWeftTracingStrategy returns
+outer {C} from the first source, then {C,D} and a conflict from both,
+rather than treating the first hard exclusion as permanent. Actual
+M1-E generation and local-traversal outputs are not assumed to
+equal that tracing result; unchanged, widened or conflicting results
+must be retained without post-hoc changes to world or hypothesis.
+
+AnalyzeDecisionRevision reads only the published ActualTimeline.
+For each of the four existing methods it compares adjacent sampled
+decision ticks for the SAME past target window: outer IDs, excluded
+and reappeared IDs, signed count difference and inclusion, null-aware
+preferred/unknown/conflict standing, receipt and source-observation
+IDs, direct generation and traversal sources, available/used
+ancestry *group counts* and method work counters from each side.
+Missing or duplicate method rows return explicit unavailable/partial.
+A genuine empty outer set is not a missing result. First changed
+or reappeared tick refers only to sampled decisions. The published
+report cannot establish world identity or restore ancestry group IDs;
+test fixtures fix original/world objects separately.
+
+Other boundaries are direct real-code tests: receipt cutoff,
+late and duplicate delivery, swapped input order, shared ancestry
+not double-counted, uncertainty and device-only non-promotion,
+actual MultiWeftTracingStrategy conflict and deliberate separation
+from M1-E outputs. Synthetic truth B, if scored, is passed only to
+EvaluateSyntheticTruth AFTER published inference.
+
+**Initial Draft publication status:** tests and code are submitted,
+but concrete measured per-method candidate sets, conflict status,
+source and work counts, final-head ordinary/F19 CI, independent review
+and merge are still pending. They must be recorded as observations,
+including zero or adverse effects, rather than silently inferred from
+the hypothesis. Model candidate-count changes are not calibrated
+search-site reductions, time, cost, or rescue rates. Unknown relation
+discovery, whole 24-edge engine, real-world authenticity and BLE
+remain untested. If the published M1-E output differs, report the
+difference and reconsider the scope; do not alter fixed inputs to
+make it pass.

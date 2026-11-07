@@ -1436,4 +1436,188 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Equal(3, zero.EarlyMethod!.CandidateCount);
     }
 
+    // #92: preserve both original objects/world; vary only second receipt tick.
+    private static (RescuerEvidenceMethodReport Early, RescuerEvidenceMethodReport Late)
+        ContradictoryRevisionRuns(
+            bool reversed = false,
+            string secondAncestry = "other-upstream",
+            EvidenceState firstState = EvidenceState.Confirmed,
+            bool deviceOnly = false)
+    {
+        var context = MultiHolderContext();
+        var first = Record(state: firstState, deviceOnly: deviceOnly);
+        var second = DistinctRecord(["B"], ancestry: secondAncestry);
+        var originals = reversed ? new[] { second, first } : new[] { first, second };
+        var firstReceipt = Receipt(6);
+        var earlySecond = DistinctReceipt(8);
+        var lateSecond = DistinctReceipt(9);
+        Assert.Equal(earlySecond.OriginalRecordId, lateSecond.OriginalRecordId);
+        Assert.Equal(earlySecond.HolderDeviceId, lateSecond.HolderDeviceId);
+        Assert.Equal(earlySecond.RescuerId, lateSecond.RescuerId);
+        Assert.Equal(8, earlySecond.ReceivedAtTick);
+        Assert.Equal(9, lateSecond.ReceivedAtTick);
+        var early = reversed ? new[] { earlySecond, firstReceipt, firstReceipt } :
+            new[] { firstReceipt, earlySecond };
+        var late = reversed ? new[] { lateSecond, firstReceipt, firstReceipt } :
+            new[] { firstReceipt, lateSecond };
+        RescuerEvidenceMethodReport Run(InteractionRecordReceipt[] ledger) =>
+            RescuerEvidenceMethodComparison.Run(context, Seed, RescuerId, originals, ledger,
+                InteractionTimeWindow.At(2),
+                reversed ? [9, 8, 7, 6, 5] : [5, 6, 7, 8, 9], 9);
+        return (Run(early), Run(late));
+    }
+
+    [Fact]
+    public void ContradictoryWeftsCompareSequentialActualDecisionsSeparateFromSameTickControl()
+    {
+        var (early, late) = ContradictoryRevisionRuns();
+        var revised = RescuerEvidenceMethodComparison.AnalyzeDecisionRevision(early);
+        var delayed = RescuerEvidenceMethodComparison.AnalyzeDecisionRevision(late);
+        var sameTick = RescuerEvidenceMethodComparison.AnalyzeReceiptDecisionTiming(early, late);
+        Assert.Equal("available", revised.Status);
+        Assert.Equal("available", delayed.Status);
+        Assert.Equal("available", sameTick.Status);
+        Assert.Equal(InteractionTimeWindow.At(2), revised.TargetWindow);
+        Assert.Equal([5L, 6L, 7L, 8L, 9L], revised.QueryTicks);
+        Assert.Equal([0, 1, 1, 2, 2],
+            early.ActualTimeline.Select(x => x.ReceivedOriginalCount));
+        Assert.Equal([0, 1, 1, 1, 2],
+            late.ActualTimeline.Select(x => x.ReceivedOriginalCount));
+        Assert.Equal(4, revised.Methods.Count);
+        Assert.All(revised.Methods, method =>
+        {
+            Assert.Equal("available", method.Status);
+            Assert.Equal(4, method.Timeline.Count);
+            Assert.All(method.Timeline, change =>
+            {
+                Assert.True(change.BeforeQueryTick < change.AfterQueryTick);
+                Assert.Equal(change.BeforeMethod!.OuterCandidateRegionIds.Except(
+                    change.AfterMethod!.OuterCandidateRegionIds, StringComparer.Ordinal)
+                    .OrderBy(id => id, StringComparer.Ordinal), change.ExcludedCandidateRegionIds);
+                Assert.Equal(change.AfterMethod.OuterCandidateRegionIds.Except(
+                    change.BeforeMethod.OuterCandidateRegionIds, StringComparer.Ordinal)
+                    .OrderBy(id => id, StringComparer.Ordinal), change.ReappearedCandidateRegionIds);
+                Assert.Equal(change.AfterMethod.CandidateCount - change.BeforeMethod.CandidateCount,
+                    change.AfterMinusBeforeCandidateCount);
+            });
+        });
+        var change8 = revised.Methods.Single(x => x.Method == "distributed-reconstruction")
+            .Timeline.Single(x => x.AfterQueryTick == 8);
+        Assert.Equal([RecordId], change8.BeforeReceivedOriginalIds);
+        Assert.Equal([RecordId, "second-original"], change8.AfterReceivedOriginalIds);
+        Assert.Equal(1, change8.BeforeAvailableSourceGroupCount);
+        Assert.Equal(2, change8.AfterAvailableSourceGroupCount);
+        Assert.DoesNotContain("second-original", change8.BeforeMethod!.GenerationDirectSourceIds);
+        Assert.DoesNotContain("second-original", change8.BeforeMethod.TraversalDirectSourceIds);
+        Assert.Null(change8.SamePreferredCandidates);
+        Assert.NotNull(change8.SameUncertainCandidates);
+        Assert.NotNull(change8.SameConflictedCandidates);
+        var late8 = delayed.Methods.Single(x => x.Method == "distributed-reconstruction")
+            .Timeline.Single(x => x.AfterQueryTick == 8);
+        Assert.Equal([RecordId], late8.AfterReceivedOriginalIds);
+        Assert.NotEqual(JsonDefaults.Serialize(early.ActualTimeline[3]),
+            JsonDefaults.Serialize(late.ActualTimeline[3]));
+        Assert.Equal(JsonDefaults.Serialize(early.ActualTimeline[4]),
+            JsonDefaults.Serialize(late.ActualTimeline[4]));
+        Assert.Equal(2, sameTick.Methods.Single(x =>
+            x.Method == "distributed-reconstruction").Timeline[3].EarlyReceivedOriginalIds.Count);
+        Assert.Equal(1, sameTick.Methods.Single(x =>
+            x.Method == "distributed-reconstruction").Timeline[3].LateReceivedOriginalIds.Count);
+        Assert.DoesNotContain("SyntheticTruth", JsonDefaults.Serialize(revised));
+        Assert.NotEmpty(RescuerEvidenceMethodComparison.EvaluateSyntheticTruth(early, "B").Evaluations);
+    }
+
+    [Fact]
+    public void ContradictoryWeftsReopenOuterInExistingTracingWithoutAssumingM1EAgreement()
+    {
+        var context = MultiHolderContext();
+        var originals = new[] { Record(), DistinctRecord(["B"]) };
+        var before = new RescuerEvidenceInputBuilder().BuildDistinctOriginals(
+            context, Seed, 8, RescuerId, originals, [Receipt(6)]);
+        var after = new RescuerEvidenceInputBuilder().BuildDistinctOriginals(
+            context, Seed, 8, RescuerId, originals, [Receipt(6), DistinctReceipt(8)]);
+        var narrow = new MultiWeftTracingStrategy().Evaluate(before.Input);
+        var conflicting = new MultiWeftTracingStrategy().Evaluate(after.Input);
+        Assert.Equal(["C"], narrow.OuterPlausibleCandidateRegionIds);
+        Assert.Equal(["C", "D"], conflicting.OuterPlausibleCandidateRegionIds);
+        Assert.Equal(2, conflicting.CausalTracingResult!.SourceGroups.Count);
+        Assert.Contains(conflicting.CausalTracingResult.Steps, step =>
+            step.Disposition == TracingStepDisposition.MarkConflict && step.ConflictDetected);
+        Assert.DoesNotContain("second-original", JsonDefaults.Serialize(before));
+    }
+
+    [Fact]
+    public void DecisionRevisionPreservesAncestryOrderingUncertaintyAndDeviceBoundary()
+    {
+        var (early, late) = ContradictoryRevisionRuns();
+        var (ordered, delayed) = ContradictoryRevisionRuns(reversed: true);
+        Assert.Equal(JsonDefaults.Serialize(early), JsonDefaults.Serialize(ordered));
+        Assert.Equal(JsonDefaults.Serialize(late), JsonDefaults.Serialize(delayed));
+        Assert.Equal(JsonDefaults.Serialize(
+            RescuerEvidenceMethodComparison.AnalyzeDecisionRevision(early)),
+            JsonDefaults.Serialize(
+                RescuerEvidenceMethodComparison.AnalyzeDecisionRevision(ordered)));
+        var (shared, _) = ContradictoryRevisionRuns(secondAncestry: "upstream-evidence");
+        var sharedChange = RescuerEvidenceMethodComparison.AnalyzeDecisionRevision(shared)
+            .Methods.Single(x => x.Method == "distributed-reconstruction")
+            .Timeline.Single(x => x.AfterQueryTick == 8);
+        Assert.Equal(1, sharedChange.AfterAvailableSourceGroupCount);
+        foreach (var state in new[] { EvidenceState.SupportedButUncertain, EvidenceState.Conflicting })
+        {
+            var (soft, _) = ContradictoryRevisionRuns(firstState: state);
+            Assert.Equal("available",
+                RescuerEvidenceMethodComparison.AnalyzeDecisionRevision(soft).Status);
+        }
+        var (device, _) = ContradictoryRevisionRuns(deviceOnly: true);
+        var deviceChange = RescuerEvidenceMethodComparison.AnalyzeDecisionRevision(device)
+            .Methods.Single(x => x.Method == "distributed-reconstruction")
+            .Timeline.Single(x => x.AfterQueryTick == 6);
+        Assert.Empty(deviceChange.AfterMethod!.GenerationDirectSourceIds);
+    }
+
+    [Fact]
+    public void DecisionRevisionDistinguishesMissingAmbiguousAndRealEmptyCandidateSet()
+    {
+        var (early, _) = ContradictoryRevisionRuns();
+        var absent = early with
+        {
+            ActualTimeline = early.ActualTimeline.Select((row, index) => index == 3
+                ? row with { Methods = row.Methods.Where(x =>
+                    x.Method != "distributed-reconstruction-local").ToArray() }
+                : row).ToArray()
+        };
+        var partial = RescuerEvidenceMethodComparison.AnalyzeDecisionRevision(absent);
+        Assert.Equal("partial", partial.Status);
+        var missing = partial.Methods.Single(x =>
+            x.Method == "distributed-reconstruction-local").Timeline.Single(x =>
+                x.AfterQueryTick == 8);
+        Assert.Equal("unavailable", missing.Status);
+        Assert.Null(missing.AfterMinusBeforeCandidateCount);
+        Assert.Null(missing.AfterMethod);
+        Assert.Null(missing.ReappearedCandidateRegionIds);
+        var tick8 = early.ActualTimeline[3];
+        var explicitEmpty = early with
+        {
+            ActualTimeline = early.ActualTimeline.Select((row, index) => index == 3
+                ? row with
+                {
+                    Methods = row.Methods.Select(x => x.Method == "public-prior"
+                        ? x with { OuterCandidateRegionIds = [], CandidateCount = 0 }
+                        : x).ToArray()
+                } : row).ToArray()
+        };
+        var emptyStep = RescuerEvidenceMethodComparison.AnalyzeDecisionRevision(explicitEmpty)
+            .Methods.Single(x => x.Method == "public-prior").Timeline.Single(x =>
+                x.AfterQueryTick == 8);
+        Assert.Equal("available", emptyStep.Status);
+        Assert.Empty(emptyStep.AfterMethod!.OuterCandidateRegionIds);
+        Assert.NotNull(emptyStep.ExcludedCandidateRegionIds);
+        Assert.Equal("unavailable",
+            RescuerEvidenceMethodComparison.AnalyzeDecisionRevision(early with
+            { ActualTimeline = [.. early.ActualTimeline, tick8] }).Status);
+        Assert.Equal("unavailable",
+            RescuerEvidenceMethodComparison.AnalyzeDecisionRevision(early with
+            { ActualTimeline = early.SameCutoffAblations }).Status);
+    }
+
 }
