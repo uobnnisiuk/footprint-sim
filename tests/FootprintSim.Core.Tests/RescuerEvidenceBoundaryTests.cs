@@ -40,7 +40,9 @@ public sealed class RescuerEvidenceBoundaryTests
         var baseline = new MultiWeftTracingStrategy().Evaluate(notReceived.Input);
         var result = new MultiWeftTracingStrategy().Evaluate(received.Input);
         Assert.Equal(["C", "D"], baseline.CandidateRegionIds);
-        Assert.Equal(["C"], result.CandidateRegionIds);
+        // Received evidence may support preferred C, but unpublished
+        // alternatives cannot be hard-excluded from the outer set.
+        Assert.Equal(["C", "D"], result.CandidateRegionIds);
         Assert.Equal(["C"], result.PreferredCandidateRegionIds);
         Assert.Single(result.CausalTracingResult!.SourceGroups);
         Assert.Contains(result.CausalTracingResult.Steps, step =>
@@ -272,7 +274,7 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.DoesNotContain(RescuerId, tracing.SourceAncestryIds);
         Assert.Empty(first.Input.AvailableEvidence.Observations);
         var constrained = new MultiWeftTracingStrategy().Evaluate(first.Input);
-        Assert.Equal(["C"], constrained.CandidateRegionIds);
+        Assert.Equal(["C", "D"], constrained.CandidateRegionIds);
         Assert.Single(constrained.CausalTracingResult!.SourceGroups);
         Assert.Single(constrained.CausalTracingResult.SourceGroups[0].SourceObservationIds);
 
@@ -426,7 +428,9 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Equal(["C", "D"], new MultiWeftTracingStrategy().Evaluate(none.Input).CandidateRegionIds);
         Assert.Equal(["C", "D"], new MultiWeftTracingStrategy().Evaluate(onlyBroad.Input).CandidateRegionIds);
         var result = new MultiWeftTracingStrategy().Evaluate(both.Input);
-        Assert.Equal(["C"], result.CandidateRegionIds);
+        // Received evidence may support preferred C, but unpublished
+        // alternatives cannot be hard-excluded from the outer set.
+        Assert.Equal(["C", "D"], result.CandidateRegionIds);
         Assert.Equal(["C"], result.PreferredCandidateRegionIds);
         Assert.Equal(2, result.CausalTracingResult!.SourceGroups.Count);
         Assert.Contains(result.CausalTracingResult.Steps, step =>
@@ -456,7 +460,7 @@ public sealed class RescuerEvidenceBoundaryTests
 
         var invertedArrival = BuildDistinct(originals, [Receipt(3), DistinctReceipt(5)], 5);
         var atSecond = new MultiWeftTracingStrategy().Evaluate(invertedArrival.Input);
-        Assert.Equal(["C"], atSecond.CandidateRegionIds);
+        Assert.Equal(["C", "D"], atSecond.CandidateRegionIds);
         Assert.Equal(2, atSecond.CausalTracingResult!.SourceGroups.Count);
     }
 
@@ -847,7 +851,7 @@ public sealed class RescuerEvidenceBoundaryTests
             ["A,B", "A,B", "A", "A"], [0, 0, 1, 1],
             ["0/0/0/0/0", "0/1/1/0/2", "3/0/0/1/1", "3/2/2/0/4"]);
         AssertRows(report.ActualTimeline[2], 2,
-            ["A,B", "A", "A", "A"], [0, 1, 1, 2],
+            ["A,B", "A,B", "A", "A"], [0, 1, 1, 2],
             ["0/0/0/0/0", "0/2/2/1/5", "3/0/0/1/1", "3/1/1/1/3"]);
 
         // Same query tick: varying evidence, not later availability.
@@ -858,10 +862,10 @@ public sealed class RescuerEvidenceBoundaryTests
             ["A,B", "A,B", "A", "A"], [0, 0, 1, 1],
             ["0/0/0/0/0", "0/1/1/0/2", "3/0/0/1/1", "3/2/2/0/4"]);
         AssertRows(report.SameCutoffAblations[2], 1,
-            ["A,B", "A", "A,B", "A"], [0, 1, 0, 1],
+            ["A,B", "A,B", "A,B", "A"], [0, 1, 0, 1],
             ["0/0/0/0/0", "0/2/2/1/5", "3/0/0/0/0", "3/2/2/1/5"]);
         AssertRows(report.SameCutoffAblations[3], 2,
-            ["A,B", "A", "A", "A"], [0, 1, 1, 2],
+            ["A,B", "A,B", "A", "A"], [0, 1, 1, 2],
             ["0/0/0/0/0", "0/2/2/1/5", "3/0/0/1/1", "3/1/1/1/3"]);
 
         var both = report.ActualTimeline[2].Methods;
@@ -1082,16 +1086,18 @@ public sealed class RescuerEvidenceBoundaryTests
         var local = result.Methods.Single(method =>
             method.Method == "distributed-reconstruction-local");
         Assert.Equal(["A", "B", "C"], local.Conditions[0].OuterCandidateRegionIds);
-        // Fixed hand-calculation hypotheses, not outcomes adjusted after a test.
+        // #96: public transition absence cannot hard-exclude a missing
+        // route. This preserves the same four ablation inputs and records
+        // the lack of further hard exclusion from the second original.
         Assert.Equal(["A", "B"], local.Conditions[1].OuterCandidateRegionIds);
-        Assert.Equal(["B", "C"], local.Conditions[2].OuterCandidateRegionIds);
-        Assert.Equal(["B"], local.Conditions[3].OuterCandidateRegionIds);
-        Assert.True(local.BothStrictlyNarrowerThanEachSingle);
-        Assert.Equal(["A"], local.ExcludedWhenAddingSecond);
+        Assert.Equal(["A", "B", "C"], local.Conditions[2].OuterCandidateRegionIds);
+        Assert.Equal(["A", "B"], local.Conditions[3].OuterCandidateRegionIds);
+        Assert.False(local.BothStrictlyNarrowerThanEachSingle);
+        Assert.Empty(local.ExcludedWhenAddingSecond);
         Assert.Equal(["C"], local.ExcludedWhenAddingFirst);
         Assert.Empty(local.AdditionalExclusionsBeyondSingles!);
         Assert.Empty(local.ReappearedComparedWithEitherSingle!);
-        Assert.Equal(1, local.CandidateReductionFromFirst);
+        Assert.Equal(0, local.CandidateReductionFromFirst);
         Assert.Equal(1, local.CandidateReductionFromSecond);
         Assert.Equal([RecordId], local.Conditions[3].GenerationDirectSourceIds);
         Assert.Equal(["second-original"], local.Conditions[3].TraversalDirectSourceIds);
@@ -1102,8 +1108,8 @@ public sealed class RescuerEvidenceBoundaryTests
             method.Method == "known-relation-backward");
         Assert.Equal(["A", "B", "C"], backward.Conditions[0].OuterCandidateRegionIds);
         Assert.Equal(["A", "B", "C"], backward.Conditions[1].OuterCandidateRegionIds);
-        Assert.Equal(["B", "C"], backward.Conditions[2].OuterCandidateRegionIds);
-        Assert.Equal(["B", "C"], backward.Conditions[3].OuterCandidateRegionIds);
+        Assert.Equal(["A", "B", "C"], backward.Conditions[2].OuterCandidateRegionIds);
+        Assert.Equal(["A", "B", "C"], backward.Conditions[3].OuterCandidateRegionIds);
         var reconstructed = result.Methods.Single(method =>
             method.Method == "distributed-reconstruction");
         Assert.Equal(["A", "B", "C"], reconstructed.Conditions[0].OuterCandidateRegionIds);
@@ -1307,18 +1313,20 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Null(generation.FirstCandidateDifferentTick);
         var local = comparison.Methods.Single(row =>
             row.Method == "distributed-reconstruction-local");
-        Assert.Equal(7, local.FirstCandidateDifferentTick);
-        Assert.Equal(8, local.FirstCandidateConvergenceTick);
+        // Old tick-7 candidate loss relied on an incomplete path list.
+        // Different receipt times still change the sources and work.
+        Assert.Null(local.FirstCandidateDifferentTick);
+        Assert.Null(local.FirstCandidateConvergenceTick);
         Assert.Equal(7, local.FirstMethodResultDifferentTick);
         Assert.Equal(8, local.FirstMethodResultConvergenceTick);
         var tick7 = local.Timeline.Single(row => row.QueryTick == 7);
-        Assert.Equal(["B"], tick7.EarlyMethod!.OuterCandidateRegionIds);
+        Assert.Equal(["A", "B"], tick7.EarlyMethod!.OuterCandidateRegionIds);
         Assert.Equal(["A", "B"], tick7.LateMethod!.OuterCandidateRegionIds);
-        Assert.Equal(["A"], tick7.LateOnlyCandidateRegionIds);
+        Assert.Empty(tick7.LateOnlyCandidateRegionIds!);
         Assert.Empty(tick7.EarlyOnlyCandidateRegionIds!);
-        Assert.Equal(-1, tick7.EarlyMinusLateCandidateCount);
+        Assert.Equal(0, tick7.EarlyMinusLateCandidateCount);
         Assert.True(tick7.EarlyCandidatesSubsetOfLate);
-        Assert.False(tick7.LateCandidatesSubsetOfEarly);
+        Assert.True(tick7.LateCandidatesSubsetOfEarly);
         Assert.Equal([RecordId, "second-original"], tick7.EarlyReceivedOriginalIds);
         Assert.Equal([RecordId], tick7.LateReceivedOriginalIds);
         Assert.Equal(2, tick7.EarlyAvailableSourceGroupCount);
@@ -1337,10 +1345,10 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Equal(4, tick7.LateMethod.PublicRelationsInspected);
         var backward = comparison.Methods.Single(row =>
             row.Method == "known-relation-backward");
-        Assert.Equal(["B", "C"], backward.Timeline[2].EarlyMethod!.OuterCandidateRegionIds);
+        Assert.Equal(["A", "B", "C"], backward.Timeline[2].EarlyMethod!.OuterCandidateRegionIds);
         Assert.Equal(["A", "B", "C"], backward.Timeline[2].LateMethod!.OuterCandidateRegionIds);
-        Assert.Equal(7, backward.FirstCandidateDifferentTick);
-        Assert.Equal(8, backward.FirstCandidateConvergenceTick);
+        Assert.Null(backward.FirstCandidateDifferentTick);
+        Assert.Null(backward.FirstCandidateConvergenceTick);
         Assert.All(comparison.Methods, item =>
             Assert.True(item.Timeline[3].SameMethodResult));
         Assert.DoesNotContain("SyntheticTruth", JsonDefaults.Serialize(comparison));
@@ -1575,7 +1583,7 @@ public sealed class RescuerEvidenceBoundaryTests
             context, Seed, 8, RescuerId, originals, [Receipt(6), DistinctReceipt(8)]);
         var narrow = new MultiWeftTracingStrategy().Evaluate(before.Input);
         var conflicting = new MultiWeftTracingStrategy().Evaluate(after.Input);
-        Assert.Equal(["C"], narrow.OuterPlausibleCandidateRegionIds);
+        Assert.Equal(["C", "D"], narrow.OuterPlausibleCandidateRegionIds);
         Assert.Equal(["C", "D"], conflicting.OuterPlausibleCandidateRegionIds);
         Assert.Equal(2, conflicting.CausalTracingResult!.SourceGroups.Count);
         Assert.Contains(conflicting.CausalTracingResult.Steps, step =>
