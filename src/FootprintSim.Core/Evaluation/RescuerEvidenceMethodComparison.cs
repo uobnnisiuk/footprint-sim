@@ -180,7 +180,7 @@ public sealed record RescuerEvidenceReceiptTimingReport
     public IReadOnlyList<RescuerEvidenceReceiptTimingMethod> Methods { get; init; } = [];
 }
 
-public static class RescuerEvidenceMethodComparisonpublic static class RescuerEvidenceMethodComparison
+public static class RescuerEvidenceMethodComparison
 {
     /// <summary>
     /// Builds both the actual receipt timeline and a same-cutoff 0/1/2-original
@@ -815,7 +815,6 @@ public static class RescuerEvidenceMethodComparisonpublic static class RescuerEv
     }
 
     /// <summary>
-    /// Synthetic truth scoring is deliberately unavailable    /// <summary>
     /// Synthetic truth scoring is deliberately unavailable to Run and Compare.
     /// Call this only after the entire public report has been constructed.
     /// </summary>

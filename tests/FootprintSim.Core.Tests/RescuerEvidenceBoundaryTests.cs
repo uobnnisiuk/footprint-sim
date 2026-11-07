@@ -1437,5 +1437,3 @@ public sealed class RescuerEvidenceBoundaryTests
     }
 
 }
-
-}
