@@ -518,7 +518,9 @@ public sealed class CandidateWarpTests
         ]);
         var envelope = new PublicHazardEnvelope
         {
-            HazardId = "partial-public-tracing", SourceRegionId = "A", PublishedAtTick = 0,
+            HazardId = "partial-public-tracing",
+            SourceRegionId = "A",
+            PublishedAtTick = 0,
             Branches =
             [
                 new PublicHazardBranch
@@ -532,8 +534,11 @@ public sealed class CandidateWarpTests
         };
         var access = new CandidateWarpAccessContext
         {
-            ScenarioId = ScenarioId, Seed = Seed, TargetEntityId = TargetPersonId,
-            CurrentTick = 6, QueryContextId = "partial-public-direct-tracing"
+            ScenarioId = ScenarioId,
+            Seed = Seed,
+            TargetEntityId = TargetPersonId,
+            CurrentTick = 6,
+            QueryContextId = "partial-public-direct-tracing"
         };
         var tracer = new OperationalCausalTracer();
         var partial = tracer.Trace(warps, [], access, envelope);
@@ -594,12 +599,17 @@ public sealed class CandidateWarpTests
             [new InteractionProvenance(InteractionProvenanceKind.ExternalSource, "original-source")]);
         var access = new CandidateWarpAccessContext
         {
-            ScenarioId = ScenarioId, Seed = Seed, TargetEntityId = TargetPersonId,
-            CurrentTick = 5, QueryContextId = "confirmed-partial-path"
+            ScenarioId = ScenarioId,
+            Seed = Seed,
+            TargetEntityId = TargetPersonId,
+            CurrentTick = 5,
+            QueryContextId = "confirmed-partial-path"
         };
         var envelope = new PublicHazardEnvelope
         {
-            HazardId = "partial-confirmed-model", SourceRegionId = "A", PublishedAtTick = 0,
+            HazardId = "partial-confirmed-model",
+            SourceRegionId = "A",
+            PublishedAtTick = 0,
             Branches =
             [
                 new PublicHazardBranch
