@@ -460,8 +460,8 @@ The test verified the existing C-local output at cutoff 7 as
 neither {A,B,C} (3 candidate places), first-only {A,B} (2),
 second-only {B,C} (2), and both {B} (1). Available ancestry group
 counts are respectively 0/1/1/2; at both, C-local actually used two
-groups, generation direct source `first-original` and traversal direct
-source `second-original` (the first ID is the fixture's `RecordId`).
+groups, generation direct source `original-encounter-record` and traversal direct
+source `second-original` (distinct original-record IDs, not delivery IDs).
 Adding the second removes A; adding the first removes C; the
 beyond-singletons exclusions and reappeared sets are empty. The
 public-prior method's candidates and actually used source-group count
@@ -471,8 +471,28 @@ transition steps, as asserted by the existing tests; these are model
 work counters, not rescue-time measurements. Generation/verification,
 evidence-inspection and public-relation counters are kept distinct in
 the analysis output rather than rolled into a search-duration estimate.
-The three other method results must be read as separate output rows,
-not inferred from C-local's success; no general superiority is claimed.
+The three other method results are separate methods, not derivatives of
+C-local; their expected candidate patterns are independently asserted in the
+revised test below. These are publicly declared method-role hypotheses to be
+checked by the revised head's CI, not retroactively altered fixture data:
+
+| Existing method | Neither | First only | Second only | Both |
+| --- | --- | --- | --- | --- |
+| public-prior | {A,B,C} | {A,B,C} | {A,B,C} | {A,B,C} |
+| known-relation-backward | {A,B,C} | {A,B,C} | {B,C} | {B,C} |
+| distributed-reconstruction | {A,B,C} | {A,B} | {A,B,C} | {A,B} |
+| distributed-reconstruction-local | {A,B,C} | {A,B} | {B,C} | {B} |
+
+The public-prior's generation, verification, forward/backward, evidence
+inspection and relation inspection work counters are zero. All paired method
+rows keep forward/backward transition steps distinct from generation,
+verification and inspected-record/relation work. In the C-local paired
+condition both forward and backward counters were nonzero on the cited
+original successful CI. The revised test emits the available non-private
+per-method numerical work counters for verification against the revised CI
+logs; until that run completes those exact numbers are not claimed here.
+The operation counts measure simulator work only, not calibrated rescue
+times. No method is presumed generally superior.
 
 The subsequent implementation head also needs its own ordinary/F19 CI
 and an independent review. One further regression now checks that a

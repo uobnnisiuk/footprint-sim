@@ -1098,6 +1098,34 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Equal(2, local.Conditions[3].UsedSourceGroupCount);
         Assert.True(local.Conditions[3].ForwardTransitionSteps > 0);
         Assert.True(local.Conditions[3].BackwardTransitionSteps > 0);
+        var backward = result.Methods.Single(method =>
+            method.Method == "known-relation-backward");
+        Assert.Equal(["A", "B", "C"], backward.Conditions[0].OuterCandidateRegionIds);
+        Assert.Equal(["A", "B", "C"], backward.Conditions[1].OuterCandidateRegionIds);
+        Assert.Equal(["B", "C"], backward.Conditions[2].OuterCandidateRegionIds);
+        Assert.Equal(["B", "C"], backward.Conditions[3].OuterCandidateRegionIds);
+        var reconstructed = result.Methods.Single(method =>
+            method.Method == "distributed-reconstruction");
+        Assert.Equal(["A", "B", "C"], reconstructed.Conditions[0].OuterCandidateRegionIds);
+        Assert.Equal(["A", "B"], reconstructed.Conditions[1].OuterCandidateRegionIds);
+        Assert.Equal(["A", "B", "C"], reconstructed.Conditions[2].OuterCandidateRegionIds);
+        Assert.Equal(["A", "B"], reconstructed.Conditions[3].OuterCandidateRegionIds);
+
+        // Log only deterministic, aggregate public-report metrics, never truth.
+        foreach (var method in result.Methods)
+        {
+            foreach (var row in method.Conditions)
+            {
+                Console.WriteLine(
+                    $"FP-WEFT86 {method.Method} {row.Label}: " +
+                    $"usedGroups={row.UsedSourceGroupCount}, " +
+                    $"generation={row.GenerationSteps}, verification={row.VerificationSteps}, " +
+                    $"forward={row.ForwardTransitionSteps}, backward={row.BackwardTransitionSteps}, " +
+                    $"evidenceInspected={row.EvidenceRecordsInspected}, " +
+                    $"relationsInspected={row.PublicRelationsInspected}");
+            }
+        }
+
         var prior = result.Methods.Single(method => method.Method == "public-prior");
         Assert.False(prior.BothStrictlyNarrowerThanEachSingle);
         Assert.All(prior.Conditions, row =>
