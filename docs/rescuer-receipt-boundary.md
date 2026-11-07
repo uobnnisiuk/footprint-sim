@@ -831,3 +831,76 @@ establish a true historical location, or calibrate physical search
 sites, costs, time or survival effects. The snapshot originates from
 a temporary measurement head and is preserved as a pinned final test;
 it is subject to final-head normal/F19 CI and independent review.
+
+
+**Earlier sampled queries (tick 5 and tick 6): fixed direct-Run checks.**
+The tick-5 query precedes either receipt (0 original, 0 eligible groups).
+At tick 6 only the first original is received (1 original, 1 eligible
+group). All candidates refer to the *historical target at tick 2*.
+The following values are pinned against the same `Run` inputs; the
+declared-condition candidates independently match #86's no-record
+and first-only controls. Final-head CI is required before treating this
+new #94 test as a passed measurement.
+
+| Query / method | Declared outer | Unprovided outer | Candidate change |
+| --- | --- | --- | --- |
+| 5 / public-prior | {A,B,C} | {A,B,C} | none |
+| 5 / known-relation-backward | {A,B,C} | {A,B,C} | none |
+| 5 / distributed-reconstruction | {A,B,C} | {A,B,C} | none |
+| 5 / distributed-reconstruction-local | {A,B,C} | {A,B,C} | none |
+| 6 / public-prior | {A,B,C} | {A,B,C} | none |
+| 6 / known-relation-backward | {A,B,C} | {A,B,C} | none |
+| 6 / distributed-reconstruction | {A,B} | {A,B} | none |
+| 6 / distributed-reconstruction-local | {A,B} | {A,B} | none |
+
+Both sides expose the same method status at each query: public-prior
+`last-confirmed-unavailable-public-prior` and the other three
+`method-executed`. At tick 5, no method uses an evidence group;
+at tick 6, the reconstruction methods use the first original as a
+generation source. Backward-only uses no traversal source at either
+tick. For known-relation backward traversal, the declared condition
+performs 1 forward and 1 backward step, inspecting 2 public relations,
+at each of ticks 5/6; the unprovided condition performs 0 transition
+steps. C-local performs 1+1 declared transition steps at tick 5
+and 2+2 at tick 6, compared with zero unprovided transition steps;
+generation remains 4 steps in each condition. The direct tests pin
+these model counters and source-group distinctions. They do not
+represent a wall-time or rescue-benefit measurement. The first
+candidate *difference* between availability conditions is at the
+sampled tick 7, when the second original is received.
+
+**Adversarial boundary discovered on 2026-11-07 (AR-1, outside
+the two-condition comparison):** The finding at
+[PR #95 adversarial review](https://github.com/uobnnisiuk/footprint-sim/pull/95#issuecomment-6705752274)
+was checked against `OperationalCausalTracer.ApplyDirection`.
+When `PublicHazardEnvelope` is entirely null, transition propagation
+is skipped, as measured above. That does **not** establish safety when
+only *some* branches are published. In the existing tracer, one
+published branch enables hard intersection with the reachable-set
+calculated from the published branches. Omitting C→F from A→D,
+B→E, C→F can change known-relation-backward outer from {B,C}
+to {B}; the missing transition is effectively treated as impossible
+without a conflict or uncertainty warning. An unpublicized A→E
+may also leave a physically plausible A excluded by local={B}.
+This is a reported **unsafe limitation**, not evidence that the
+system safely reconstructs missing edges. It contradicts the
+missing-transition intent in `AGENTS.md` and
+`docs/m1d-causal-tracing.md`; #94 does not silently approve it.
+
+A separate diagnostic on the fixed original records/receipts pins
+the current partial-public result so a later tracer fix cannot be
+mistaken for a no-op. It is **a characterization of the defect**,
+not a desirable acceptance property or a new third research method.
+Correcting the tracer's outer-set semantics needs independently
+reviewed scope because the tracer file is outside #94's three
+approved files. Do not infer general monotonicity or operational
+rescue safety from the null-envelope results, and do not close
+AR-1 merely because this diagnostic passes.
+
+**AR-2 source-accounting qualification:** in null-envelope results,
+`TraversalDirectSourceIds` and used ancestry-group counts can name
+a received source even when the forward/backward transition counters
+are both zero. Those role labels mean an input was *accounted for*,
+not proof that it changed candidates or improved the decision.
+Future work must distinguish eligibility/assignment from measured
+marginal effect; it must not score these labels as rescue utility.

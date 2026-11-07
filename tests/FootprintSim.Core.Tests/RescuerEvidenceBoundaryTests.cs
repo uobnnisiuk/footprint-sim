@@ -1758,6 +1758,131 @@ public sealed class RescuerEvidenceBoundaryTests
                 PublicRelationAvailabilityRuns(reversed: true).Unprovided)));
     }
 
+    // #94: measured Run inputs, not the hypothetical same-cutoff ablations.
+    // Existing #86's fixed 'none'/'first-only' results provide an independent
+    // cross-check for the declared condition. Null is separately asserted.
+    [Fact]
+    public void PublicRelationAvailabilityTicksFiveAndSixPinTheActualOutcomes()
+    {
+        var (known, unprovided) = PublicRelationAvailabilityRuns();
+        var comparison = RescuerEvidenceMethodComparison.AnalyzePublicRelationAvailability(
+            known, unprovided);
+        Assert.Equal("available", comparison.Status);
+        var expectations = new[]
+        {
+            (Method: "public-prior", Tick5: new[] { "A", "B", "C" },
+                Tick6: new[] { "A", "B", "C" }),
+            (Method: "known-relation-backward", Tick5: new[] { "A", "B", "C" },
+                Tick6: new[] { "A", "B", "C" }),
+            (Method: "distributed-reconstruction", Tick5: new[] { "A", "B", "C" },
+                Tick6: new[] { "A", "B" }),
+            (Method: "distributed-reconstruction-local", Tick5: new[] { "A", "B", "C" },
+                Tick6: new[] { "A", "B" })
+        };
+        foreach (var (methodName, tick5, tick6) in expectations)
+        {
+            var method = comparison.Methods.Single(m => m.Method == methodName);
+            foreach (var (tick, expected, received) in new[]
+            {
+                (Tick: method.Timeline[0], Expected: tick5, Received: 0),
+                (Tick: method.Timeline[1], Expected: tick6, Received: 1)
+            })
+            {
+                Assert.Equal("available", tick.Status);
+                Assert.Equal(received, tick.ReceivedOriginalCount);
+                Assert.Equal(received, tick.AvailableSourceGroupCount);
+                Assert.Equal(expected, tick.KnownRelationMethod!.OuterCandidateRegionIds);
+                Assert.Equal(expected, tick.UnprovidedRelationMethod!.OuterCandidateRegionIds);
+                Assert.True(tick.SameOuterCandidates);
+                Assert.Equal(0, tick.KnownMinusUnprovidedCandidateCount);
+                Assert.Empty(tick.KnownOnlyCandidateRegionIds!);
+                Assert.Empty(tick.UnprovidedOnlyCandidateRegionIds!);
+                Assert.Equal(methodName == "public-prior"
+                    ? "last-confirmed-unavailable-public-prior" : "method-executed",
+                    tick.KnownRelationMethod.EvidenceStatus);
+                Assert.Equal(tick.KnownRelationMethod.EvidenceStatus,
+                    tick.UnprovidedRelationMethod.EvidenceStatus);
+            }
+        }
+
+        var backward = comparison.Methods.Single(m =>
+            m.Method == "known-relation-backward").Timeline;
+        var local = comparison.Methods.Single(m =>
+            m.Method == "distributed-reconstruction-local").Timeline;
+        var generation = comparison.Methods.Single(m =>
+            m.Method == "distributed-reconstruction").Timeline;
+        Assert.All(backward.Take(2), tick =>
+        {
+            Assert.Equal(1, tick.KnownRelationMethod!.ForwardTransitionSteps);
+            Assert.Equal(1, tick.KnownRelationMethod.BackwardTransitionSteps);
+            Assert.Equal(2, tick.KnownRelationMethod.PublicRelationsInspected);
+            Assert.Equal(0, tick.UnprovidedRelationMethod!.ForwardTransitionSteps);
+            Assert.Equal(0, tick.UnprovidedRelationMethod.BackwardTransitionSteps);
+        });
+        Assert.Equal(1, local[0].KnownRelationMethod!.ForwardTransitionSteps);
+        Assert.Equal(0, local[0].UnprovidedRelationMethod!.ForwardTransitionSteps);
+        Assert.Equal(2, local[1].KnownRelationMethod!.ForwardTransitionSteps);
+        Assert.Equal(0, local[1].UnprovidedRelationMethod!.ForwardTransitionSteps);
+        Assert.Equal(0, local[0].KnownRelationMethod.UsedSourceGroupCount);
+        Assert.Equal(1, local[1].KnownRelationMethod.UsedSourceGroupCount);
+        Assert.Equal(1, local[1].UnprovidedRelationMethod.UsedSourceGroupCount);
+        Assert.Equal(4, local[1].KnownRelationMethod.GenerationSteps);
+        Assert.Equal(4, local[1].UnprovidedRelationMethod.GenerationSteps);
+        Assert.Equal(4, generation[1].KnownRelationMethod!.GenerationSteps);
+        Assert.Equal(4, generation[1].UnprovidedRelationMethod!.GenerationSteps);
+        Assert.Equal([RecordId], generation[1].KnownRelationMethod.GenerationDirectSourceIds);
+        Assert.Equal([RecordId], generation[1].UnprovidedRelationMethod.GenerationDirectSourceIds);
+        Assert.Empty(backward[1].KnownRelationMethod!.TraversalDirectSourceIds);
+        Assert.Empty(backward[1].UnprovidedRelationMethod!.TraversalDirectSourceIds);
+        Assert.All(comparison.Methods, method => Assert.Equal(0,
+            method.Timeline[0].KnownRelationMethod!.UsedSourceGroupCount));
+    }
+
+    // AR-1 is a known, independently reported UNSAFE partial-public case.
+    // Characterize the existing behavior without treating it as a safety guarantee.
+    // A later correction must revise this snapshot, not silently preserve it.
+    [Fact]
+    public void PartiallyPublishedTransitionsCanIncorrectlyNarrowTheOuterSet()
+    {
+        var context = ComplementaryPublicContext();
+        var partial = context with
+        {
+            PublicHazardEnvelope = context.PublicHazardEnvelope! with
+            {
+                Branches = [Branch("A", "D"), Branch("B", "E")]
+            }
+        };
+        var first = ComplementaryOriginal(
+            RecordId, HolderId, 2, ["A", "B"], 3, "weft-a");
+        var second = ComplementaryOriginal(
+            "second-original", "holder-b", 5, ["E", "F"], 6, "weft-b");
+        var records = new[] { first, second };
+        var receipts = new[] { Receipt(6), LaterComparisonReceipt(7) };
+        RescuerEvidenceMethodReport Run(RescueContext publicContext) =>
+            RescuerEvidenceMethodComparison.Run(
+                publicContext, Seed, RescuerId, records, receipts,
+                InteractionTimeWindow.At(2), [5, 6, 7], 7);
+
+        var declared = Run(context).ActualTimeline[2].Methods;
+        var incomplete = Run(partial).ActualTimeline[2].Methods;
+        var declaredBackward = declared.Single(m => m.Method == "known-relation-backward");
+        var partialBackward = incomplete.Single(m => m.Method == "known-relation-backward");
+        var partialLocal = incomplete.Single(m =>
+            m.Method == "distributed-reconstruction-local");
+        Assert.Equal(["B", "C"], declaredBackward.OuterCandidateRegionIds);
+        Assert.Equal(["B"], partialBackward.OuterCandidateRegionIds);
+        Assert.Equal(["B"], partialLocal.OuterCandidateRegionIds);
+        Assert.Equal("method-executed", partialBackward.EvidenceStatus);
+        Assert.Equal("method-executed", partialLocal.EvidenceStatus);
+        Assert.Empty(partialLocal.ConflictedCandidateRegionIds!);
+        Assert.Empty(partialLocal.UncertainCandidateRegionIds!);
+        Assert.False(declaredBackward.OuterCandidateRegionIds.All(
+            id => partialBackward.OuterCandidateRegionIds.Contains(id)));
+        // An unprovided physical A->E path would make A plausible.
+        // Neither synthetic truth nor that unprovided path is passed to Run.
+        Assert.DoesNotContain("A", partialLocal.OuterCandidateRegionIds);
+    }
+
     [Fact]
     public void MissingPublicTransitionsRemainSeparateFromReceiptAndAncestryBoundaries()
     {
