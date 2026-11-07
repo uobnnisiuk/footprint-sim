@@ -729,3 +729,178 @@ discovery, whole 24-edge engine, real-world authenticity and BLE
 remain untested. If the published M1-E output differs, report the
 difference and reconsider the scope; do not alter fixed inputs to
 make it pass.
+
+## Same wefts with/without published movement relations (Issue #94)
+
+Work-Key: FP-PUBLIC-RELATION-AVAILABILITY-V1. This comparison measures the
+*availability of declared public movement knowledge*, not whether any
+physical route exists. The original idea is to reconstruct a missing
+personal history from other devices' traces without inventing missing
+relations. It builds on #84/#86's fixed four methods and two independent
+original traces, not on a new relation discovery engine.
+
+**Fixed before experiment:** identical scenario/seed/rescuer; one public
+candidate model with tick 2 {A,B,C} and tick 5 {D,E,F}; two original
+observations at ticks 2 {A,B} and 5 {E,F}; first/second receipts at ticks
+6/7, with queries [5,6,7] always targeting past tick 2. The known
+condition declares A→D, B→E and C→F with travel duration 3 ticks and
+publication tick 0. Its paired condition uses the very same original
+objects, receipt ledger, public candidate states and physical synthetic
+world, but *does not provide the PublicHazardEnvelope to inference*.
+Null means unavailable knowledge, **not** "no movement" or a closed
+transition graph. The fixture checks these controls directly; the
+published report alone cannot certify physical-world identity.
+
+**Pre-registered hypothesis:** public-prior candidate sets should stay
+the same; methods using public transitions may change in candidate
+sets, direct-source use, internal work or uncertainty, or may become
+unavailable. No difference, worsening and non-comparability are valid
+outcomes; we must not adjust the fixed world after seeing results.
+This contrasts with #90's evidence arrival times and #92's contrary
+new evidence, and with M1-F12's uncertain encounter relation *kind*
+and F21's public model coverage assumptions.
+
+`AnalyzePublicRelationAvailability(known, unprovided)` reads only the
+two actual published timelines. Per same-tick method it retains the
+full existing result on each side: outer IDs/count, nullable preferred,
+uncertain/conflict, direct generation/traversal/unused source IDs,
+available/used ancestry-group counts, transition IDs and six separate
+work counters (generation, verification, forward, backward, evidence
+and relation inspections). It reports signed candidate-count difference,
+set exclusions and both inclusion directions; missing/duplicate or
+inconsistent rows become unavailable/partial, while real empty outer
+sets and nullable standings remain distinct. Mismatched receipts,
+source-observation identities, cutoffs and ancestry invalidate a
+cross-condition comparison. The method neither sees truth nor runs
+inference. The shared source-group *counts* do not independently verify
+source authenticity or expose ancestry group identifiers.
+
+**Implementation status:** the fixed-condition direct Run tests and
+per-method recorded values require final PR CI plus independent review.
+Only observed model outputs may populate measured conclusions; the
+above is not a claim that missing public relations have been discovered
+or that any method is superior. Unknown relationship discovery, 24-edge
+hypotheses, field-device/BLE data, physical search sites, rescue time,
+cost and survival effects remain untested. Revisit this interpretation
+if null is treated as a closed world, source/fixture controls differ,
+or the results cannot be obtained without a new inference assumption.
+
+**Observed synthetic model results at query tick 7 (two originals received).**
+These values were obtained from the actual `Run` under both fixed
+public-input conditions and then pinned in a direct test, rather than
+filled from the preregistered hypothesis. Candidate sets refer to the
+**past target tick 2**, not current physical positions.
+
+| Existing method | Declared transition outer | Unprovided transition outer | Used groups (both) | Direct source roles |
+| --- | --- | --- | --- | --- |
+| public-prior | {A,B,C} | {A,B,C} | 0 | none |
+| known-relation-backward | {B,C} | {A,B,C} | 1 | traversal: second-original |
+| distributed-reconstruction | {A,B} | {A,B} | 1 | generation: original-encounter-record |
+| distributed-reconstruction-local | {B} | {A,B} | 2 | generation: original-encounter-record; traversal: second-original |
+
+Both conditions retain **two eligible ancestry groups**, and all
+observed methods have an output. The method's `EvidenceStatus` is
+`method-executed` for the three inference methods on both sides,
+even when the available public model cannot narrow the candidates.
+An empty direct-source list is not evidence that the source never
+existed. In both M1-E methods the exposed uncertain/conflict sets
+are empty in this fixture, not null; for the two baseline methods
+these standings are **unavailable (null)**. Preferred standing is
+unavailable for every method.
+
+Work counters below are measured *generation / verification / forward
+transitions / backward transitions / evidence records inspected /
+public relations inspected*. They are model operations, not elapsed
+time.
+
+| Existing method | Declared transition work | Unprovided transition work |
+| --- | --- | --- |
+| public-prior | 0/0/0/0/0/0 | 0/0/0/0/0/0 |
+| known-relation-backward | 0/0/2/2/1/5 | 0/0/0/0/1/1 |
+| distributed-reconstruction | 4/0/0/0/1/1 | 4/0/0/0/1/1 |
+| distributed-reconstruction-local | 4/0/2/2/1/5 | 4/0/0/0/1/1 |
+
+Thus the unprovided condition retains {A,B,C} rather than {B,C}
+for backward tracing and retains {A,B} rather than {B} for local
+reconstruction. Public-prior and generation-only reconstruction are
+unchanged. This identifies an **input-knowledge effect within two
+methods**, not an advantage from switching algorithms at the same
+information level. The unchanged methods are valid results, not
+discarded failures. The model does not identify unknown transit edges,
+establish a true historical location, or calibrate physical search
+sites, costs, time or survival effects. The snapshot originates from
+a temporary measurement head and is preserved as a pinned final test;
+it is subject to final-head normal/F19 CI and independent review.
+
+
+**Earlier sampled queries (tick 5 and tick 6): fixed direct-Run checks.**
+The tick-5 query precedes either receipt (0 original, 0 eligible groups).
+At tick 6 only the first original is received (1 original, 1 eligible
+group). All candidates refer to the *historical target at tick 2*.
+The following values are pinned against the same `Run` inputs; the
+declared-condition candidates independently match #86's no-record
+and first-only controls. Final-head CI is required before treating this
+new #94 test as a passed measurement.
+
+| Query / method | Declared outer | Unprovided outer | Candidate change |
+| --- | --- | --- | --- |
+| 5 / public-prior | {A,B,C} | {A,B,C} | none |
+| 5 / known-relation-backward | {A,B,C} | {A,B,C} | none |
+| 5 / distributed-reconstruction | {A,B,C} | {A,B,C} | none |
+| 5 / distributed-reconstruction-local | {A,B,C} | {A,B,C} | none |
+| 6 / public-prior | {A,B,C} | {A,B,C} | none |
+| 6 / known-relation-backward | {A,B,C} | {A,B,C} | none |
+| 6 / distributed-reconstruction | {A,B} | {A,B} | none |
+| 6 / distributed-reconstruction-local | {A,B} | {A,B} | none |
+
+Both sides expose the same method status at each query: public-prior
+`last-confirmed-unavailable-public-prior` and the other three
+`method-executed`. At tick 5, no method uses an evidence group;
+at tick 6, the reconstruction methods use the first original as a
+generation source. Backward-only uses no traversal source at either
+tick. For known-relation backward traversal, the declared condition
+performs 1 forward and 1 backward step, inspecting 2 public relations,
+at each of ticks 5/6; the unprovided condition performs 0 transition
+steps. C-local performs 1+1 declared transition steps at tick 5
+and 2+2 at tick 6, compared with zero unprovided transition steps;
+generation remains 4 steps in each condition. The direct tests pin
+these model counters and source-group distinctions. They do not
+represent a wall-time or rescue-benefit measurement. The first
+candidate *difference* between availability conditions is at the
+sampled tick 7, when the second original is received.
+
+**Adversarial boundary discovered on 2026-11-07 (AR-1, outside
+the two-condition comparison):** The finding at
+[PR #95 adversarial review](https://github.com/uobnnisiuk/footprint-sim/pull/95#issuecomment-6705752274)
+was checked against `OperationalCausalTracer.ApplyDirection`.
+When `PublicHazardEnvelope` is entirely null, transition propagation
+is skipped, as measured above. That does **not** establish safety when
+only *some* branches are published. In the existing tracer, one
+published branch enables hard intersection with the reachable-set
+calculated from the published branches. Omitting C→F from A→D,
+B→E, C→F can change known-relation-backward outer from {B,C}
+to {B}; the missing transition is effectively treated as impossible
+without a conflict or uncertainty warning. An unpublicized A→E
+may also leave a physically plausible A excluded by local={B}.
+This is a reported **unsafe limitation**, not evidence that the
+system safely reconstructs missing edges. It contradicts the
+missing-transition intent in `AGENTS.md` and
+`docs/m1d-causal-tracing.md`; #94 does not silently approve it.
+
+A separate diagnostic on the fixed original records/receipts pins
+the current partial-public result so a later tracer fix cannot be
+mistaken for a no-op. It is **a characterization of the defect**,
+not a desirable acceptance property or a new third research method.
+Correcting the tracer's outer-set semantics needs independently
+reviewed scope because the tracer file is outside #94's three
+approved files. Do not infer general monotonicity or operational
+rescue safety from the null-envelope results, and do not close
+AR-1 merely because this diagnostic passes.
+
+**AR-2 source-accounting qualification:** in null-envelope results,
+`TraversalDirectSourceIds` and used ancestry-group counts can name
+a received source even when the forward/backward transition counters
+are both zero. Those role labels mean an input was *accounted for*,
+not proof that it changed candidates or improved the decision.
+Future work must distinguish eligibility/assignment from measured
+marginal effect; it must not score these labels as rescue utility.
