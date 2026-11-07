@@ -853,9 +853,12 @@ new #94 test as a passed measurement.
 | 6 / distributed-reconstruction | {A,B} | {A,B} | none |
 | 6 / distributed-reconstruction-local | {A,B} | {A,B} | none |
 
-Both sides expose the same method status at each query: public-prior
-`last-confirmed-unavailable-public-prior` and the other three
-`method-executed`. At tick 5, no method uses an evidence group;
+Both sides expose the same method status at each query:
+public-prior is `last-confirmed-unavailable-public-prior` at both
+ticks; the other three are `public-model-only` before receipt at tick 5.
+At tick 6, backward-only is still `public-model-only` (no traversal
+direct source), while generation and local are `method-executed`.
+These statuses describe evidence use, not actual transition-work count. At tick 5, no method uses an evidence group;
 at tick 6, the reconstruction methods use the first original as a
 generation source. Backward-only uses no traversal source at either
 tick. For known-relation backward traversal, the declared condition

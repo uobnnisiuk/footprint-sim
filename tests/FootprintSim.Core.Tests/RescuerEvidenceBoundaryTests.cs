@@ -1797,9 +1797,11 @@ public sealed class RescuerEvidenceBoundaryTests
                 Assert.Equal(0, tick.KnownMinusUnprovidedCandidateCount);
                 Assert.Empty(tick.KnownOnlyCandidateRegionIds!);
                 Assert.Empty(tick.UnprovidedOnlyCandidateRegionIds!);
-                Assert.Equal(methodName == "public-prior"
-                    ? "last-confirmed-unavailable-public-prior" : "method-executed",
-                    tick.KnownRelationMethod.EvidenceStatus);
+                var expectedStatus = methodName == "public-prior"
+                    ? "last-confirmed-unavailable-public-prior"
+                    : received == 0 || methodName == "known-relation-backward"
+                        ? "public-model-only" : "method-executed";
+                Assert.Equal(expectedStatus, tick.KnownRelationMethod.EvidenceStatus);
                 Assert.Equal(tick.KnownRelationMethod.EvidenceStatus,
                     tick.UnprovidedRelationMethod.EvidenceStatus);
             }
