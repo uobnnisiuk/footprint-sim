@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 import fcntl
 import hashlib
 import json
@@ -23,6 +23,7 @@ from typing import Callable
 
 sys.dont_write_bytecode = True
 import local_autodev_daily as daily
+import local_autodev_status as runtime_status
 
 MAX_DAILY_ATTEMPTS = 8
 MAX_LEDGER_ENTRIES = 10000
@@ -299,7 +300,7 @@ def reserve_attempt(state: Path, now: datetime, issue: int) -> tuple[Path, Path]
 def runtime_fingerprint(repo: Path) -> tuple[tuple[str, str], ...]:
     paths = ["tools/local_autodev_hourly.py", "tools/local_autodev_daily.py",
              "tools/local_autodev_queue.py", "tools/local_autodev.py",
-              "tools/pr_repair_ledger.py"]
+             "tools/pr_repair_ledger.py", "tools/local_autodev_status.py"]
     result = []
     for relative in paths:
         path = repo / relative
@@ -379,6 +380,23 @@ def run_hourly(repo: Path, state: Path, *, execute: bool, acknowledge_credit_ris
         os.close(fd)
 
 
+def source_checkout_clean(repo: Path) -> bool:
+    """Match daily.verify_checkout's source rule without repeating its preflight."""
+    status = daily.command(["git", "status", "--porcelain=v1", "-z",
+                            "--untracked-files=all"], repo, timeout=10, strip=False)
+    for entry in status.split("\0"):
+        if not entry:
+            continue
+        path = Path(entry[3:])
+        # The existing controller tolerates only these generated regular files.
+        if (entry.startswith("?? ") and path.suffix == ".pyc"
+                and path.parent.as_posix() in ("tools/__pycache__", ".github/scripts/__pycache__")
+                and stat.S_ISREG((repo / path).lstat().st_mode)):
+            continue
+        return False
+    return True
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo-path", type=Path, default=daily.DEFAULT_PATH)
@@ -386,14 +404,53 @@ def main() -> int:
     parser.add_argument("--acknowledge-credit-risk", action="store_true")
     parser.add_argument("--max-issues", type=int, default=1)
     args = parser.parse_args()
+    started_at = datetime.now(timezone.utc)
+    repo = None
+    source_matches = False
+    loaded_revision = None
+    result = None
+    exit_code = 1
     try:
-        print(run_hourly(args.repo_path.expanduser().resolve(strict=True), daily.STATE,
-                         execute=args.execute, acknowledge_credit_risk=args.acknowledge_credit_risk,
-                         max_issues=args.max_issues), flush=True)
-        return 0
+        repo = args.repo_path.expanduser().resolve(strict=True)
+        # Capture the source loaded by THIS process, before unattended refresh.
+        # The optional observer must not alter controller preflight or exits.
+        if args.execute and args.acknowledge_credit_risk:
+            try:
+                source_matches = (
+                    Path(__file__).resolve(strict=True) == repo / "tools/local_autodev_hourly.py"
+                    and Path(runtime_status.__file__).resolve(strict=True)
+                    == repo / "tools/local_autodev_status.py")
+                if source_matches:
+                    if source_checkout_clean(repo):
+                        revision = daily.command(["git", "rev-parse", "--verify", "HEAD^{commit}"],
+                                                 repo, timeout=10)
+                        if re.fullmatch(r"[0-9a-f]{40}", revision):
+                            loaded_revision = revision
+            except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
+                pass
+        result = run_hourly(repo, daily.STATE, execute=args.execute,
+                            acknowledge_credit_risk=args.acknowledge_credit_risk,
+                            max_issues=args.max_issues)
+        print(result, flush=True)
+        exit_code = 0
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
         print(f"Stopped: {error}", file=sys.stderr)
-        return 1
+    finally:
+        # A dry-run remains entirely read-only. A runtime refresh must first
+        # return and let the next scheduled process load the reviewed modules.
+        # run_hourly has released daily.lock before any status observation.
+        updated = "Skipped: runtime updated; next scheduled poll must load the reviewed version"
+        if (args.execute and args.acknowledge_credit_risk and source_matches and repo is not None
+                and result != updated):
+            try:
+                runtime_status.report_poll(repo, daily.STATE, result=result,
+                                           exit_code=exit_code, started_at=started_at,
+                                           loaded_revision=loaded_revision)
+            except Exception:
+                # Keep the original result; never print exception messages or
+                # subprocess output that may contain private local information.
+                print("Runtime status unavailable; controller result retained", file=sys.stderr)
+    return exit_code
 
 
 if __name__ == "__main__":
