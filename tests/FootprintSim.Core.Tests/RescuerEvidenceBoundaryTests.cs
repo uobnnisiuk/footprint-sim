@@ -881,7 +881,9 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Equal(["A", "B"], report.ActualTimeline[0].Methods[2].UncertainCandidateRegionIds);
         Assert.Empty(both[2].UncertainCandidateRegionIds!);
         Assert.All(both, item => Assert.Empty(item.ConflictedCandidateRegionIds ?? []));
-        Assert.Equal(7, report.FirstDifferences.Single(
+        // Receipt of the later weft changes traversal work, but cannot
+        // hard-exclude candidates via a non-exhaustive public path list.
+        Assert.Null(report.FirstDifferences.Single(
             item => item.Method == "known-relation-backward").FirstDifferentTick);
         Assert.Equal(6, report.FirstDifferences.Single(
             item => item.Method == "distributed-reconstruction-local").FirstDifferentTick);
