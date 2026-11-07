@@ -516,3 +516,96 @@ by this scenario: unknown-relation discovery, a complete 24-edge
 engine and field rescue effectiveness have **not** been evaluated or
 rejected. This one synthetic world does not establish general superiority
 of any method.
+
+## Complementary receipt timing on identical public inputs (Issue #90)
+
+Work-Key: `FP-COMPLEMENTARY-RECEIPT-TIMELINESS-V1`. This follows #86's
+complementarity experiment without adding another inference algorithm. Two
+`Run` reports are built from **the very same public context and two held
+original observation objects**. Original 1 is observed at tick 2 in {A,B},
+stored/available at tick 3 and received at tick 6. Original 2 is observed
+at tick 5 in {E,F}, stored/available at tick 6. Only the second receipt
+changes: early tick 7, late tick 8. The declared public tick-0 transition
+model is A→D, B→E, C→F with 3-tick travel. There is no direct target
+history. Target window is point tick 2; both `Run` calls query [5,6,7,8]
+and do their separate same-cutoff ablations at tick 8.
+
+**Pre-fixed prediction, not a #90 measurement:** C-local at tick 7
+early is {B} and late is {A,B}; at tick 8 both are {B}. The simple
+public-prior and generation-only candidate sets should not change
+when the second receipt is delayed. Backward traversal is expected to
+be {B,C} versus {A,B,C} at tick 7. These are predictions derived
+from the #86 fixed ablations, not a new independent validation or
+evidence of general method superiority. Predictions that fail must be
+reported as failures and the scope independently reassessed, not
+fixed by altering the synthetic world.
+
+`AnalyzeReceiptDecisionTiming(early, late)` only reads each report's
+published `ActualTimeline`, never its hypothetical
+`SameCutoffAblations` or any original observation, truth or private
+input. It returns candidate sets/count differences and inclusion,
+received original and observation IDs, eligible group counts and
+actually-used direct sources/groups, generation/verification and
+forward/backward steps, inspected records/relations, and separate
+first differences and later re-convergences across *supplied query
+ticks*. Missing methods return explicit unavailable/partial with
+nullable comparisons, not an invented zero candidate set.
+An empty candidate set remains distinct from a missing row.
+The full method work counters must not be read as elapsed rescue
+time; a first differing tick is only the first of these sampled
+decision queries, **not** continuous-time earliest usefulness.
+
+**Experimental-control limit:** metadata and receipt IDs alone cannot
+prove that two arbitrary reports share the same world and original
+observations. The test passes the identical context and original
+objects to both calls, changing the second receipt tick only. Shared
+upstream ancestry still contributes one independent group. Repeated
+delivery, reversed inputs, uncertain/conflicting or device-only
+observations cannot strengthen an unsupported conclusion. The public
+transition relation is declared, not discovered. Unknown causal
+relationships, a complete 24-edge engine, real BLE delays, search
+area/time, rescue success and survival rate remain untested.
+
+**Verification status at first Draft PR publication:** the above is
+a preregistered prediction and an implementation pending the PR's
+ordinary and F19 CI plus a separate independent review. Neither
+the expected candidate outcome nor the expected simulator work counts
+are a confirmed #90 result until the final PR head's CI checks pass.
+
+**Observed model output, separate from the preregistered prediction.**
+After the initial syntax-assembly error was fixed, the
+[ordinary CI on corrected head 0196789](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42337998295)
+passed build, 622 tests (zero failed/skipped), format, sample scenarios
+and evaluation harness on 2026-11-07 JST. At query ticks 5/6/7/8,
+the early schedule receives 0/1/2/2 originals and the late schedule
+0/1/1/2. The fixed-public-world outputs at tick 7 are:
+
+| Method | Early (second receipt tick 7) | Late (second receipt tick 8) |
+| --- | --- | --- |
+| `public-prior` | {A,B,C} | {A,B,C} |
+| `known-relation-backward` | {B,C} | {A,B,C} |
+| `distributed-reconstruction` | {A,B} | {A,B} |
+| `distributed-reconstruction-local` | {B} | {A,B} |
+
+Both schedules coincide at tick 8 for public candidate IDs, used
+source IDs and model work. C-local excludes model-place A one sampled
+query tick earlier when the second record arrives at 7; this does not
+measure continuous rescue time. At tick 7, early/late C-local uses 2/1
+ancestry groups, with generation direct source
+`original-encounter-record` in both and traversal direct source
+`second-original` only in the early condition. Its operation counts
+early/late are generation 4/4, verification 0/0, forward transition
+2/2, backward transition 2/2, inspected evidence records 1/0, and
+inspected public relations 5/4. Backward-only uses 1/0 groups,
+forward/backward steps 2/1 each, evidence inspections 1/0,
+and relation inspections 5/2. Generation-only uses 1/1 groups and
+4/4 generation steps without transition steps; public-prior uses
+no groups or work steps. The counters use the identical #86 fixed
+ablation fixture and #90 actual-timeline comparison, not a separate
+real-world measurement or four independent research studies.
+
+The public movement relation is declared, not discovered. Unknown
+relationships, unmodeled travel, physical rescue time, costs, and
+rescue effectiveness remain untested. The final PR head requires its
+own ordinary/F19 CI and independent technical review before any
+acceptance or normal merge.
