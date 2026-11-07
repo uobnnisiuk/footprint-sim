@@ -629,6 +629,40 @@ public sealed class CandidateWarpTests
             step.Disposition == TracingStepDisposition.Applied);
         Assert.DoesNotContain(result.Steps, step =>
             step.Direction != CausalTracingDirection.CrossThread && step.ConflictDetected);
+
+        // AR-7: A->D is the sole published path. E/F stay outer-possible,
+        // but must never inherit g1's positive candidate-level support.
+        var confirmedGroup = Assert.Single(result.SourceGroups).SourceGroupId;
+        Assert.Contains(result.SupportLineage, item =>
+            item.RegionId == "D" && item.SupportingSourceGroupIds.Contains(confirmedGroup));
+        Assert.All(result.SupportLineage.Where(item => item.RegionId is "E" or "F"), item =>
+        {
+            Assert.DoesNotContain(confirmedGroup, item.SupportingSourceGroupIds);
+            Assert.DoesNotContain(confirmed.ConstraintId, item.ConstraintIds);
+        });
+
+        // A second independent conflicting record must remain visible in
+        // competing source lineage after a positive published transition.
+        var competing = CausalTracingConstraint.Create(
+            ScenarioId, Seed, "competing-observation", "competing-source", ["competing-source"],
+            TargetPersonId, TracingConstraintSourceKind.CrossThreadObservation, "person-person",
+            [
+                Participant(TargetPersonId, InteractionEntityKind.Person),
+                Participant("person-c", InteractionEntityKind.Person)
+            ],
+            TracingConstraintRole.Local, InteractionTimeWindow.At(2),
+            InteractionTimeWindow.At(2), ["C"], 3, EvidenceState.Conflicting,
+            true, false, InteractionVisibility.PublicEvidence, "competing-derivation",
+            [new InteractionProvenance(InteractionProvenanceKind.ExternalSource, "competing-source")]);
+        var withConflict = new OperationalCausalTracer().Trace(
+            warps, [confirmed, competing], access, envelope);
+        var competingGroup = Assert.Single(withConflict.SourceGroups.Where(group =>
+            group.ConstraintIds.Contains(competing.ConstraintId))).SourceGroupId;
+        Assert.Equal(["D", "E", "F"], withConflict.CandidateWarps.OuterPlausibleRegionIdsAt(5));
+        Assert.Contains(withConflict.SupportLineage, item =>
+            item.RegionId == "D" && item.CompetingSourceGroupIds.Contains(competingGroup));
+        Assert.All(withConflict.SupportLineage.Where(item => item.RegionId is "E" or "F"), item =>
+            Assert.DoesNotContain(confirmedGroup, item.SupportingSourceGroupIds));
     }
 
     private static CandidateWarpSet Warp(
