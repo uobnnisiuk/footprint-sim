@@ -103,8 +103,8 @@ public sealed class M1C3Tests
 
         // A public route does not prove compulsory departure from a nonterminal node.
         Assert.Subset(
-            confirmed.PreferredCandidateRegionIds.ToHashSet(StringComparer.Ordinal),
-            confirmed.OuterPlausibleCandidateRegionIds.ToHashSet(StringComparer.Ordinal));
+            confirmed.OuterPlausibleCandidateRegionIds.ToHashSet(StringComparer.Ordinal),
+            confirmed.PreferredCandidateRegionIds.ToHashSet(StringComparer.Ordinal));
         Assert.Contains("debris-fork", confirmed.OuterPlausibleCandidateRegionIds);
         Assert.Contains(confirmed.CrossThreadConstraintAudits, audit =>
             audit.Disposition == ConstraintApplicationDisposition.Narrow);
