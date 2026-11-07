@@ -229,6 +229,52 @@ public sealed record RescuerEvidenceDecisionRevisionReport
     public IReadOnlyList<RescuerEvidenceDecisionRevisionMethod> Methods { get; init; } = [];
 }
 
+
+/* #94: Compare public evidence reports with declared transition knowledge vs
+ * the same evidence without provided transitions. Null is unknown, not a
+ * claim that travel is physically impossible. Neither report carries truth. */
+public sealed record RescuerEvidenceRelationAvailabilityTick
+{
+    public required long QueryTick { get; init; }
+    public required string Status { get; init; }
+    public string? UnavailableReason { get; init; }
+    public IReadOnlyList<string> ReceivedOriginalIds { get; init; } = [];
+    public IReadOnlyList<string> ReceivedSourceObservationIds { get; init; } = [];
+    public required int ReceivedOriginalCount { get; init; }
+    public required int AvailableSourceGroupCount { get; init; }
+    public required int AvailableConstraintCount { get; init; }
+    public RescuerEvidenceMethodRow? KnownRelationMethod { get; init; }
+    public RescuerEvidenceMethodRow? UnprovidedRelationMethod { get; init; }
+    public int? KnownMinusUnprovidedCandidateCount { get; init; }
+    public IReadOnlyList<string>? KnownOnlyCandidateRegionIds { get; init; }
+    public IReadOnlyList<string>? UnprovidedOnlyCandidateRegionIds { get; init; }
+    public bool? KnownCandidatesSubsetOfUnprovided { get; init; }
+    public bool? UnprovidedCandidatesSubsetOfKnown { get; init; }
+    public bool? SameOuterCandidates { get; init; }
+    public bool? SamePreferredCandidates { get; init; }
+    public bool? SameUncertainCandidates { get; init; }
+    public bool? SameConflictedCandidates { get; init; }
+    public bool? SameEvidenceStatus { get; init; }
+    public bool? SameSourceUsage { get; init; }
+    public bool? SameWorkCounters { get; init; }
+}
+
+public sealed record RescuerEvidenceRelationAvailabilityMethod
+{
+    public required string Method { get; init; }
+    public required string Status { get; init; }
+    public IReadOnlyList<RescuerEvidenceRelationAvailabilityTick> Timeline { get; init; } = [];
+}
+
+public sealed record RescuerEvidenceRelationAvailabilityReport
+{
+    public required string Status { get; init; }
+    public string? UnavailableReason { get; init; }
+    public required InteractionTimeWindow TargetWindow { get; init; }
+    public IReadOnlyList<long> QueryTicks { get; init; } = [];
+    public IReadOnlyList<RescuerEvidenceRelationAvailabilityMethod> Methods { get; init; } = [];
+}
+
 public static class RescuerEvidenceMethodComparison
 {
     /// <summary>
@@ -978,6 +1024,174 @@ public static class RescuerEvidenceMethodComparison
                 methods.All(x => x.Status == "unavailable") ? "unavailable" : "partial",
             TargetWindow = publicReport.TargetWindow,
             QueryTicks = actual.Select(x => x.QueryTick).ToArray(),
+            Methods = methods
+        };
+    }
+
+
+    /// <summary>
+    /// Pure comparison of two already-published actual timelines. The caller
+    /// must fix identical synthetic world, original evidence and candidate
+    /// states independently; matching report metadata cannot prove this.
+    /// The "unprovided" side means unknown public transitions, never
+    /// an assertion that transitions do not physically exist.
+    /// </summary>
+    public static RescuerEvidenceRelationAvailabilityReport AnalyzePublicRelationAvailability(
+        RescuerEvidenceMethodReport withKnownRelations,
+        RescuerEvidenceMethodReport withUnprovidedRelations)
+    {
+        ArgumentNullException.ThrowIfNull(withKnownRelations);
+        ArgumentNullException.ThrowIfNull(withUnprovidedRelations);
+        RescuerEvidenceRelationAvailabilityReport Unavailable(string reason) => new()
+        {
+            Status = "unavailable",
+            UnavailableReason = reason,
+            TargetWindow = withKnownRelations.TargetWindow
+        };
+        if (withKnownRelations.SchemaVersion != 1 ||
+            withKnownRelations.SchemaVersion != withUnprovidedRelations.SchemaVersion ||
+            withKnownRelations.ScenarioId != withUnprovidedRelations.ScenarioId ||
+            withKnownRelations.Seed != withUnprovidedRelations.Seed ||
+            withKnownRelations.RescuerId != withUnprovidedRelations.RescuerId ||
+            withKnownRelations.TargetWindow.StartTick != withUnprovidedRelations.TargetWindow.StartTick ||
+            withKnownRelations.TargetWindow.EndTick != withUnprovidedRelations.TargetWindow.EndTick ||
+            withKnownRelations.ActualTimeline.Count == 0 ||
+            withKnownRelations.ActualTimeline.Count != withUnprovidedRelations.ActualTimeline.Count)
+        {
+            return Unavailable("Incompatible public report metadata or actual timeline lengths.");
+        }
+
+        var known = withKnownRelations.ActualTimeline.OrderBy(row => row.QueryTick).ToArray();
+        var unknown = withUnprovidedRelations.ActualTimeline.OrderBy(row => row.QueryTick).ToArray();
+        static bool SameIds(IReadOnlyList<string> left, IReadOnlyList<string> right) =>
+            left.OrderBy(id => id, StringComparer.Ordinal)
+                .SequenceEqual(right.OrderBy(id => id, StringComparer.Ordinal), StringComparer.Ordinal);
+        static string[] Sorted(IEnumerable<string> ids) =>
+            ids.Distinct(StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal).ToArray();
+        static bool? SameStanding(IReadOnlyList<string>? left, IReadOnlyList<string>? right) =>
+            left is null || right is null ? null : SameIds(left, right);
+        static bool ValidQuery(RescuerEvidenceMethodQueryRow row, long targetTick) =>
+            row.Condition == "actual" && row.QueryTick >= targetTick &&
+            row.ReceivedOriginalCount >= 0 &&
+            row.ReceivedOriginalCount == row.ReceivedOriginalIds.Count &&
+            row.ReceivedSourceObservationIds.Count == row.ReceivedOriginalCount &&
+            row.ReceivedOriginalIds.Distinct(StringComparer.Ordinal).Count() ==
+                row.ReceivedOriginalCount &&
+            row.ReceivedSourceObservationIds.Distinct(StringComparer.Ordinal).Count() ==
+                row.ReceivedOriginalCount &&
+            row.AvailableSourceGroupCount >= 0 &&
+            row.AvailableSourceGroupCount <= row.ReceivedOriginalCount &&
+            row.AvailableConstraintCount >= 0;
+        if (known.Select(row => row.QueryTick).Distinct().Count() != known.Length ||
+            !known.Select(row => row.QueryTick).SequenceEqual(
+                unknown.Select(row => row.QueryTick)) ||
+            known.Any(row => !ValidQuery(row, withKnownRelations.TargetWindow.EndTick)) ||
+            unknown.Any(row => !ValidQuery(row, withKnownRelations.TargetWindow.EndTick)) ||
+            known.Zip(unknown, (a, b) => !SameIds(a.ReceivedOriginalIds, b.ReceivedOriginalIds) ||
+                !SameIds(a.ReceivedSourceObservationIds, b.ReceivedSourceObservationIds) ||
+                a.AvailableSourceGroupCount != b.AvailableSourceGroupCount ||
+                a.AvailableConstraintCount != b.AvailableConstraintCount).Any(different => different))
+        {
+            return Unavailable("Actual cutoffs, received evidence or ancestry differ between conditions.");
+        }
+
+        static bool ValidMethod(RescuerEvidenceMethodRow row, int availableGroups) =>
+            row.OuterCandidateRegionIds is not null &&
+            row.CandidateCount >= 0 &&
+            row.CandidateCount == row.OuterCandidateRegionIds.Count &&
+            row.OuterCandidateRegionIds.Distinct(StringComparer.Ordinal).Count() ==
+                row.CandidateCount &&
+            row.BaselineCandidateCount >= 0 &&
+            row.CandidateReduction == row.BaselineCandidateCount - row.CandidateCount &&
+            row.AvailableSourceGroupCount == availableGroups &&
+            row.UsedSourceGroupCount >= 0 &&
+            row.UsedSourceGroupCount <= availableGroups &&
+            row.Steps >= 0 && row.GenerationSteps >= 0 &&
+            row.VerificationSteps >= 0 && row.ForwardTransitionSteps >= 0 &&
+            row.BackwardTransitionSteps >= 0 && row.EvidenceRecordsInspected >= 0 &&
+            row.PublicRelationsInspected >= 0;
+        static bool SameWork(RescuerEvidenceMethodRow left, RescuerEvidenceMethodRow right) =>
+            left.Steps == right.Steps &&
+            left.GenerationSteps == right.GenerationSteps &&
+            left.VerificationSteps == right.VerificationSteps &&
+            left.ForwardTransitionSteps == right.ForwardTransitionSteps &&
+            left.BackwardTransitionSteps == right.BackwardTransitionSteps &&
+            left.EvidenceRecordsInspected == right.EvidenceRecordsInspected &&
+            left.PublicRelationsInspected == right.PublicRelationsInspected;
+        static bool SameSources(RescuerEvidenceMethodRow left, RescuerEvidenceMethodRow right) =>
+            SameIds(left.GenerationDirectSourceIds, right.GenerationDirectSourceIds) &&
+            SameIds(left.TraversalDirectSourceIds, right.TraversalDirectSourceIds) &&
+            SameIds(left.UnusedDirectSourceIds, right.UnusedDirectSourceIds) &&
+            left.UsedSourceGroupCount == right.UsedSourceGroupCount &&
+            SameIds(left.PublicTransitionIds, right.PublicTransitionIds);
+
+        var names = new[]
+        {
+            "public-prior", "known-relation-backward",
+            "distributed-reconstruction", "distributed-reconstruction-local"
+        }.Concat(known.Concat(unknown).SelectMany(row => row.Methods.Select(m => m.Method)))
+            .Distinct(StringComparer.Ordinal).OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+        var methods = names.Select(name =>
+        {
+            var timeline = known.Zip(unknown, (kRow, uRow) =>
+            {
+                var kMatches = kRow.Methods.Where(m => m.Method == name).ToArray();
+                var uMatches = uRow.Methods.Where(m => m.Method == name).ToArray();
+                var valid = kMatches.Length == 1 && uMatches.Length == 1 &&
+                    ValidMethod(kMatches[0], kRow.AvailableSourceGroupCount) &&
+                    ValidMethod(uMatches[0], uRow.AvailableSourceGroupCount);
+                var k = valid ? kMatches[0] : null;
+                var u = valid ? uMatches[0] : null;
+                var knownOnly = valid ? Sorted(k!.OuterCandidateRegionIds.Except(
+                    u!.OuterCandidateRegionIds, StringComparer.Ordinal)) : null;
+                var unprovidedOnly = valid ? Sorted(u!.OuterCandidateRegionIds.Except(
+                    k!.OuterCandidateRegionIds, StringComparer.Ordinal)) : null;
+                return new RescuerEvidenceRelationAvailabilityTick
+                {
+                    QueryTick = kRow.QueryTick,
+                    Status = valid ? "available" : "unavailable",
+                    UnavailableReason = valid ? null :
+                        "Missing, duplicated or inconsistent method result.",
+                    ReceivedOriginalIds = Sorted(kRow.ReceivedOriginalIds),
+                    ReceivedSourceObservationIds = Sorted(kRow.ReceivedSourceObservationIds),
+                    ReceivedOriginalCount = kRow.ReceivedOriginalCount,
+                    AvailableSourceGroupCount = kRow.AvailableSourceGroupCount,
+                    AvailableConstraintCount = kRow.AvailableConstraintCount,
+                    KnownRelationMethod = k,
+                    UnprovidedRelationMethod = u,
+                    KnownMinusUnprovidedCandidateCount = valid ? k!.CandidateCount - u!.CandidateCount : null,
+                    KnownOnlyCandidateRegionIds = knownOnly,
+                    UnprovidedOnlyCandidateRegionIds = unprovidedOnly,
+                    KnownCandidatesSubsetOfUnprovided = valid ? knownOnly!.Length == 0 : null,
+                    UnprovidedCandidatesSubsetOfKnown = valid ? unprovidedOnly!.Length == 0 : null,
+                    SameOuterCandidates = valid ? knownOnly!.Length == 0 &&
+                        unprovidedOnly!.Length == 0 : null,
+                    SamePreferredCandidates = valid ? SameStanding(
+                        k!.PreferredCandidateRegionIds, u!.PreferredCandidateRegionIds) : null,
+                    SameUncertainCandidates = valid ? SameStanding(
+                        k!.UncertainCandidateRegionIds, u!.UncertainCandidateRegionIds) : null,
+                    SameConflictedCandidates = valid ? SameStanding(
+                        k!.ConflictedCandidateRegionIds, u!.ConflictedCandidateRegionIds) : null,
+                    SameEvidenceStatus = valid ? k!.EvidenceStatus == u!.EvidenceStatus : null,
+                    SameSourceUsage = valid ? SameSources(k!, u!) : null,
+                    SameWorkCounters = valid ? SameWork(k!, u!) : null
+                };
+            }).ToArray();
+            return new RescuerEvidenceRelationAvailabilityMethod
+            {
+                Method = name,
+                Status = timeline.All(t => t.Status == "available") ? "available" :
+                    timeline.All(t => t.Status == "unavailable") ? "unavailable" : "partial",
+                Timeline = timeline
+            };
+        }).ToArray();
+        return new RescuerEvidenceRelationAvailabilityReport
+        {
+            Status = methods.All(m => m.Status == "available") ? "available" :
+                methods.All(m => m.Status == "unavailable") ? "unavailable" : "partial",
+            TargetWindow = withKnownRelations.TargetWindow,
+            QueryTicks = known.Select(row => row.QueryTick).ToArray(),
             Methods = methods
         };
     }
