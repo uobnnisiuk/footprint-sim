@@ -665,6 +665,99 @@ public sealed class CandidateWarpTests
             Assert.DoesNotContain(confirmedGroup, item.SupportingSourceGroupIds));
     }
 
+    // A shared descendant must not reflect an A-only observation into B.
+    // This tests positive support and outer possibility separately.
+    [Fact]
+    public void ConvergingPublishedPathsCannotReverseHistoricalObservationSupport()
+    {
+        var provenance = CandidateWarpProvenance.Create(
+            CandidateWarpSourceKind.VoluntaryReachability, "converging-public-fixture",
+            0, false, false, EvidenceState.SupportedButUncertain, ["A", "B", "D"]);
+        var warps = PublicCandidateWarpFactory.Create(ScenarioId, Seed, TargetPersonId,
+        [
+            new PublicCandidateWarpStateDefinition
+            {
+                TimeWindow = InteractionTimeWindow.At(2),
+                TemporalKind = CandidateWarpTemporalKind.EventPoint,
+                RegionIds = ["A", "B"],
+                EvidenceBoundaryState = EvidenceState.SupportedButUncertain,
+                Provenance = [provenance]
+            },
+            new PublicCandidateWarpStateDefinition
+            {
+                TimeWindow = InteractionTimeWindow.At(5),
+                TemporalKind = CandidateWarpTemporalKind.EventPoint,
+                RegionIds = ["D"],
+                EvidenceBoundaryState = EvidenceState.SupportedButUncertain,
+                Provenance = [provenance]
+            }
+        ]);
+        var observation = CausalTracingConstraint.Create(
+            ScenarioId, Seed, "observed-a", "source-a", ["source-a"],
+            TargetPersonId, TracingConstraintSourceKind.CrossThreadObservation, "person-person",
+            [
+                Participant(TargetPersonId, InteractionEntityKind.Person),
+                Participant("person-b", InteractionEntityKind.Person)
+            ],
+            TracingConstraintRole.Local, InteractionTimeWindow.At(2),
+            InteractionTimeWindow.At(2), ["A"], 3, EvidenceState.SupportedButUncertain,
+            true, false, InteractionVisibility.PublicEvidence, "converging-derivation",
+            [new InteractionProvenance(InteractionProvenanceKind.ExternalSource, "source-a")]);
+        var access = new CandidateWarpAccessContext
+        {
+            ScenarioId = ScenarioId,
+            Seed = Seed,
+            TargetEntityId = TargetPersonId,
+            CurrentTick = 5,
+            QueryContextId = "converging-published-paths"
+        };
+        var envelope = new PublicHazardEnvelope
+        {
+            HazardId = "converging-model",
+            SourceRegionId = "A",
+            PublishedAtTick = 0,
+            Branches =
+            [
+                new PublicHazardBranch
+                {
+                    SourceRegionId = "A", DestinationRegionId = "D",
+                    MinimumTravelTicks = 3, MaximumTravelTicks = 3,
+                    TransportType = HazardTransportType.HazardDriven,
+                    ProvenanceId = "a-d", PublishedAtTick = 0
+                },
+                new PublicHazardBranch
+                {
+                    SourceRegionId = "B", DestinationRegionId = "D",
+                    MinimumTravelTicks = 3, MaximumTravelTicks = 3,
+                    TransportType = HazardTransportType.HazardDriven,
+                    ProvenanceId = "b-d", PublishedAtTick = 0
+                }
+            ]
+        };
+
+        var tracer = new OperationalCausalTracer();
+        var result = tracer.Trace(warps, [observation], access, envelope);
+        var groupId = Assert.Single(result.SourceGroups).SourceGroupId;
+        var atA = Assert.Single(result.SupportLineage, entry => entry.RegionId == "A");
+        var atB = Assert.Single(result.SupportLineage, entry => entry.RegionId == "B");
+        var atD = Assert.Single(result.SupportLineage, entry => entry.RegionId == "D");
+        Assert.Contains(groupId, atA.SupportingSourceGroupIds);
+        Assert.Contains(observation.ConstraintId, atA.ConstraintIds);
+        Assert.Empty(atB.SupportingSourceGroupIds);
+        Assert.Empty(atB.ConstraintIds);
+        Assert.Contains(groupId, atD.SupportingSourceGroupIds);
+        Assert.Contains(observation.ConstraintId, atD.ConstraintIds);
+        Assert.Equal(["A", "B"], result.CandidateWarps.OuterPlausibleRegionIdsAt(2));
+        Assert.Equal(["D"], result.CandidateWarps.OuterPlausibleRegionIdsAt(5));
+        var outer = Assert.Single(result.CandidateWarps.Warps, warp =>
+            warp.Standing == CandidateWarpStanding.OuterPlausible);
+        var historical = Assert.Single(outer.States, state => state.TimeWindow.StartTick == 2);
+        Assert.DoesNotContain(historical.Provenance, item =>
+            item.SourceKind == CandidateWarpSourceKind.CrossThreadObservation);
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(tracer.Trace(warps, [observation], access, envelope)));
+    }
+
     private static CandidateWarpSet Warp(
         InteractionTimeWindow timeWindow,
         CandidateWarpTemporalKind temporalKind,

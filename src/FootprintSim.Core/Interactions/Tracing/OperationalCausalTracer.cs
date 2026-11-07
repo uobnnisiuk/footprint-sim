@@ -624,8 +624,12 @@ public sealed class OperationalCausalTracer
             return;
         }
 
-        // Fixed point over known positive paths only. This updates lineage,
-        // not the outer set, preferred set, or existing step/work audit.
+        // Fixed point over known positive paths only. A constraint may move
+        // forward from its evidence window to descendants, or backward to
+        // ancestors, but never reverse direction after leaving that window.
+        // Otherwise two branches converging on a state would spread A-only
+        // evidence back into an unrelated B ancestor.
+        var constraintById = constraints.ToDictionary(item => item.ConstraintId, StringComparer.Ordinal);
         for (var iteration = 0; iteration < states.Count; iteration++)
         {
             var changed = false;
@@ -633,6 +637,7 @@ public sealed class OperationalCausalTracer
             {
                 changed |= PropagateRegionLineage(
                     states[index], states[index + 1], envelope,
+                    constraintById, groupByConstraint,
                     currentTick, CausalTracingDirection.Forward);
             }
 
@@ -640,6 +645,7 @@ public sealed class OperationalCausalTracer
             {
                 changed |= PropagateRegionLineage(
                     states[index], states[index - 1], envelope,
+                    constraintById, groupByConstraint,
                     currentTick, CausalTracingDirection.Backward);
             }
 
@@ -654,6 +660,8 @@ public sealed class OperationalCausalTracer
         WorkingState source,
         WorkingState destination,
         PublicHazardEnvelope envelope,
+        IReadOnlyDictionary<string, CausalTracingConstraint> constraintById,
+        IReadOnlyDictionary<string, TracingSourceGroup> groupByConstraint,
         long currentTick,
         CausalTracingDirection direction)
     {
@@ -674,15 +682,33 @@ public sealed class OperationalCausalTracer
                     continue;
                 }
 
-                var destinationGroups = destination.RegionSupportingSourceGroups[destinationRegion];
-                var beforeGroups = destinationGroups.Count;
-                destinationGroups.UnionWith(source.RegionSupportingSourceGroups[sourceRegion]);
-                changed |= beforeGroups != destinationGroups.Count;
+                // Carry individual constraints rather than a merged group label:
+                // source ancestry alone cannot tell whether this destination
+                // is permitted by the original observation.
+                foreach (var constraintId in source.RegionAppliedConstraints[sourceRegion])
+                {
+                    var constraint = constraintById[constraintId];
+                    // Prevent a lineage that has left the evidence time in one
+                    // direction from returning through a converging public path.
+                    if (direction == CausalTracingDirection.Forward
+                        ? constraint.ConstrainedTimeWindow.StartTick > source.Source.TimeWindow.EndTick
+                        : constraint.ConstrainedTimeWindow.EndTick < source.Source.TimeWindow.StartTick)
+                    {
+                        continue;
+                    }
 
-                var destinationConstraints = destination.RegionAppliedConstraints[destinationRegion];
-                var beforeConstraints = destinationConstraints.Count;
-                destinationConstraints.UnionWith(source.RegionAppliedConstraints[sourceRegion]);
-                changed |= beforeConstraints != destinationConstraints.Count;
+                    // At any state overlapping the original evidence window,
+                    // its allowed regions remain binding even for positive paths.
+                    if (Overlaps(destination.Source.TimeWindow, constraint.ConstrainedTimeWindow) &&
+                        !constraint.AllowedRegionIds.Contains(destinationRegion, StringComparer.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    changed |= destination.RegionAppliedConstraints[destinationRegion].Add(constraintId);
+                    changed |= destination.RegionSupportingSourceGroups[destinationRegion].Add(
+                        groupByConstraint[constraintId].SourceGroupId);
+                }
             }
         }
 
