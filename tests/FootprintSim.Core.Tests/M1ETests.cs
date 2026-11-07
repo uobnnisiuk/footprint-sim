@@ -412,7 +412,9 @@ public sealed class M1ETests
             item.Method == PastStateMethod.ReconstructionWithLocalTraversal);
 
         Assert.Equal(["A", "X"], local.CandidateRegionIdsBefore);
-        Assert.Equal(["A"], local.CandidateRegionIds);
+        // A published traversal is positive support, not proof that an
+        // unlisted route to X is impossible.
+        Assert.Equal(["A", "X"], local.CandidateRegionIds);
         Assert.True(local.ForwardTransitionSteps >= 1);
         Assert.True(local.BackwardTransitionSteps >= 1);
         Assert.NotEmpty(local.TransitionIds);
@@ -421,8 +423,11 @@ public sealed class M1ETests
             item.RealTransitionTraversalOccurred && item.TransitionIds.Count > 0);
         Assert.Contains(local.Diagnostics.TracingSteps, item =>
             item.Direction == CausalTracingDirection.Backward &&
+            item.RealTransitionTraversalOccurred &&
+            item.TransitionIds.Count > 0 &&
             item.CandidateInputRegionIds.SequenceEqual(["A", "X"]) &&
-            item.CandidateOutputRegionIds.SequenceEqual(["A"]));
+            item.CandidateOutputRegionIds.SequenceEqual(["A", "X"]) &&
+            item.AlternativesRetained && !item.ConflictDetected);
         Assert.DoesNotContain(typeof(CausalTracingStepAudit).GetProperties(), property =>
             property.Name.Contains("Truth", StringComparison.OrdinalIgnoreCase) ||
             property.Name.Contains("Parent", StringComparison.OrdinalIgnoreCase));

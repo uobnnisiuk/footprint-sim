@@ -32,8 +32,8 @@ public sealed class RescuerReceiptTimelineTests
             Assert.Equal([0, 1, 1],
                 rows.Select(row => row.GetProperty("sourceGroupCount").GetInt32()).ToArray());
             Assert.Equal(["A", "B"], Candidates(rows[0]));
-            Assert.Equal(["C"], Candidates(rows[1]));
-            Assert.Equal(["C"], Candidates(rows[2]));
+            Assert.Equal(["C", "D"], Candidates(rows[1]));
+            Assert.Equal(["C", "D"], Candidates(rows[2]));
             Assert.Empty(rows[0].GetProperty("receivedOriginals").EnumerateArray());
             Assert.DoesNotContain("original-encounter-record", rows[0].GetRawText());
             Assert.DoesNotContain("upstream-evidence", rows[0].GetRawText());
@@ -96,7 +96,10 @@ public sealed class RescuerReceiptTimelineTests
         Assert.Equal(1, expected.CausalTracingConstraintCount);
         Assert.Equal(1, expected.SourceGroupCount);
         Assert.Equal(5L, Assert.Single(expected.ReceivedOriginals).FirstReceivedAtTick);
-        Assert.Equal(["C"], expected.SearchResult.CandidateRegionIds);
+        // The known A->C route supports preferred C, but a public list
+        // without a completeness guarantee cannot exclude outer D.
+        Assert.Equal(["C", "D"], expected.SearchResult.CandidateRegionIds);
+        Assert.Equal(["C"], expected.SearchResult.PreferredCandidateRegionIds);
         // Full serialized rows cover original observation IDs, first receipt, real
         // source-group identities/ancestry, and the complete strategy/tracing result.
         Assert.Equal(JsonDefaults.Serialize(expected.ReceivedOriginals),
