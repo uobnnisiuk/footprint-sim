@@ -18,6 +18,14 @@ Combined tracing alternates public forward and backward consistency checks after
 
 A missing public transition is treated as missing knowledge, not proof of absence. It therefore causes no hard exclusion. This preserves `NotObserved(X) != Absent(X)`.
 
+### AR-1: open-world published-path repair (#96)
+
+Before #96, `OperationalCausalTracer.ApplyDirection` hard-intersected outer with the destinations reachable in the published *subset* whenever any branch was present. The same synthetic records and receipts showed false exclusion with zero received records, loss of regions compatible with Confirmed evidence, and later artificial widening. These pre-repair results are preserved as historical measurements in `docs/rescuer-receipt-boundary.md`, not as safe expected behavior.
+
+Adopted candidate A: successful published paths may support **preferred** alternatives and are recorded in the deterministic transition audit; a missing path is unavailable knowledge, **not** negative evidence. Public path failure alone does not hard-narrow `OuterPlausible` or create a conflict in forward/backward or point/window tracing. Actually received Confirmed cross-thread evidence may still legitimately intersect outer at its applicable historical tick/window. Unknown edges are never fabricated, and even a fully declared envelope is not presumed complete.
+
+Alternative B (hard intersect only with independently established completeness) remains on hold because `PublicHazardEnvelope` does not certify completeness. Alternative C (guessing unknown physical edges) is excluded as a new model assumption. Revisit A if it drops legitimate Confirmed exclusion, misrepresents preferred or audit lineage, or fails a fixed partial-public counterexample; a verified public-model completeness contract would also require review. This narrow repair does **not** resolve AR-6 in the separate candidate propagator, discover missing causal links, validate the 24-lens idea, or demonstrate rescue benefit.
+
 ## Multiple wefts and source independence
 
 `CausalTracingConstraint` preserves direct source, source observation, ordered source ancestry, target entity, relation kind, participants and roles, observed/constrained windows, allowed regions, available tick, evidence state, visibility, derivation provenance, and the query-relative `Upstream`, `Local`, or `Downstream` role. These roles describe a constraint's role in one tracing query; they are not a fixed relation taxonomy.

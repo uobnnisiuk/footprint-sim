@@ -413,25 +413,22 @@ public sealed class OperationalCausalTracer
             context.CurrentTick,
             direction,
             transitionIds);
-        var conflict = allowedOuter.Count == 0;
+        // No published branch list is guaranteed exhaustive. A positive path
+        // can support preferred candidates; a missing path is not proof that
+        // an outer candidate is impossible. Only actual received Confirmed
+        // constraints may independently hard-narrow the outer.
+        var hasPublicSupport = allowedOuter.Count > 0;
         var changed = false;
-        if (!conflict)
+        if (allowedPreferred.Count > 0)
         {
-            changed = !destination.Outer.SetEquals(allowedOuter);
-            destination.Outer.IntersectWith(allowedOuter);
-            if (allowedPreferred.Count > 0)
-            {
-                changed |= !destination.Preferred.SetEquals(allowedPreferred);
-                destination.Preferred.IntersectWith(allowedPreferred);
-            }
-
-            destination.SupportingSourceGroups.UnionWith(source.SupportingSourceGroups);
-            destination.ConflictingSourceGroups.UnionWith(source.ConflictingSourceGroups);
-            destination.AppliedConstraints.UnionWith(source.AppliedConstraints);
+            changed = !destination.Preferred.SetEquals(allowedPreferred);
+            destination.Preferred.IntersectWith(allowedPreferred);
         }
-        else
+
+        if (hasPublicSupport)
         {
-            destination.Conflicted.UnionWith(destination.Outer);
+            destination.SupportingSourceGroups.UnionWith(source.SupportingSourceGroups);
+            destination.AppliedConstraints.UnionWith(source.AppliedConstraints);
         }
 
         var relation = "public-causal-transition";
@@ -460,18 +457,18 @@ public sealed class OperationalCausalTracer
             DestinationStateId = destination.Source.StateId,
             RelationKind = relation,
             EvidenceState = EvidenceState.SupportedButUncertain,
-            Disposition = conflict
-                    ? TracingStepDisposition.MarkConflict
-                    : TracingStepDisposition.Applied,
-            Reason = conflict
-                    ? TracingStepReason.NoRegionOverlap
-                    : TracingStepReason.PublicTransitionConsistency,
+            Disposition = hasPublicSupport
+                    ? TracingStepDisposition.Applied
+                    : TracingStepDisposition.NoOp,
+            Reason = hasPublicSupport
+                    ? TracingStepReason.PublicTransitionConsistency
+                    : TracingStepReason.NoRegionOverlap,
             CandidateInputRegionIds = before,
             CandidateOutputRegionIds = destination.Outer.ToArray(),
             TransitionIds = transitionIds.ToArray(),
             RealTransitionTraversalOccurred = transitionIds.Count > 0,
-            AlternativesRetained = conflict,
-            ConflictDetected = conflict,
+            AlternativesRetained = true,
+            ConflictDetected = false,
             Provenance = [new InteractionProvenance(
                     InteractionProvenanceKind.ExternalSource,
                     envelope.HazardId)]

@@ -732,6 +732,13 @@ make it pass.
 
 ## Same wefts with/without published movement relations (Issue #94)
 
+> **Historical synthetic measurements before #96.** All candidate-set
+> and work-count tables below record the #94/#95 tracer, including the
+> unsafe AR-1/AR-4 cases. They are preserved rather than silently
+> overwritten. A passing #95 test did not certify safety. See the
+> post-repair section at the end for the corrected-rule comparison.
+
+
 Work-Key: FP-PUBLIC-RELATION-AVAILABILITY-V1. This comparison measures the
 *availability of declared public movement knowledge*, not whether any
 physical route exists. The original idea is to reconstruct a missing
@@ -951,3 +958,48 @@ are both zero. Those role labels mean an input was *accounted for*,
 not proof that it changed candidates or improved the decision.
 Future work must distinguish eligibility/assignment from measured
 marginal effect; it must not score these labels as rescue utility.
+
+## Open-world published-path correction (#96; after #95)
+
+Work-Key: `FP-PARTIAL-PUBLIC-OUTER-SAFETY-V1`. The repair distinguishes
+*positive known reachability* from *proof of absence*: a published
+route supports preferred candidates and is recorded in tracing audits,
+but an unlisted route cannot be assumed impossible or justify a hard
+outer exclusion/conflict. Actual received Confirmed evidence still
+legitimately constrains a historical outer at its applicable window.
+This does not add invented routes or infer a physically complete map.
+
+**Fixed pre/post comparison inputs:** same public state at tick 2
+{A,B,C} and tick 5 {D,E,F}; first original {A,B} observed at tick 2
+and received at tick 6; second original {E,F} observed at tick 5 and
+received at tick 7. Query at ticks 5/6/7 for the past tick 2.
+Run the four existing methods with (i) A→D only, (ii) A→D+B→E,
+(iii) A→D+C→F, (iv) all three declared branches, and (v) no
+envelope. Record received sources, outer/preferred/conflict and six
+model-work counters. The historical values above came from actual
+#95 Run and must remain visible as pre-repair measurements.
+
+The new direct tests assert that before receipt (tick 5) a partial
+public envelope alone cannot shrink the initial {A,B,C} outer.
+After the first received Confirmed original (tick 6), the local
+historical outer retains both {A,B}. The backward outer must not
+artificially regain regions at tick 7 merely because a prior incomplete
+public path had removed them. Real positive published traversals remain
+auditable in both directions and across exact/interval windows.
+A source-ancestry group is not multiplied by re-receipt.
+
+**Initial draft measurement status:** no dotnet runtime is available in
+this executor. The new test expectations are *not yet verified empirical
+results*. Obtain the current PR head's ordinary/F19 CI and, where
+different, independently record new fixed-Run candidate/status/source/
+work figures next to these historical #95 figures with commit/head,
+including unchanged and unmeasured items. Never change the fixed
+world, evidence or query times after seeing the output. S4/S5 sample
+success is not a substitute for these partial-public direct tests.
+
+Alternative B (closed-world exclusion with independently proved
+completeness) remains unproven; alternative C (inventing hidden
+physical movement) remains excluded. **AR-6**, a separate propagator
+path, is not addressed by this tracer repair and still requires
+independent scope review. Neither candidate counts nor tick/work
+counts calibrate rescue sites, elapsed time, cost, or survival.
