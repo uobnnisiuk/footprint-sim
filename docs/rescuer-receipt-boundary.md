@@ -729,3 +729,58 @@ discovery, whole 24-edge engine, real-world authenticity and BLE
 remain untested. If the published M1-E output differs, report the
 difference and reconsider the scope; do not alter fixed inputs to
 make it pass.
+
+## Same wefts with/without published movement relations (Issue #94)
+
+Work-Key: FP-PUBLIC-RELATION-AVAILABILITY-V1. This comparison measures the
+*availability of declared public movement knowledge*, not whether any
+physical route exists. The original idea is to reconstruct a missing
+personal history from other devices' traces without inventing missing
+relations. It builds on #84/#86's fixed four methods and two independent
+original traces, not on a new relation discovery engine.
+
+**Fixed before experiment:** identical scenario/seed/rescuer; one public
+candidate model with tick 2 {A,B,C} and tick 5 {D,E,F}; two original
+observations at ticks 2 {A,B} and 5 {E,F}; first/second receipts at ticks
+6/7, with queries [5,6,7] always targeting past tick 2. The known
+condition declares A→D, B→E and C→F with travel duration 3 ticks and
+publication tick 0. Its paired condition uses the very same original
+objects, receipt ledger, public candidate states and physical synthetic
+world, but *does not provide the PublicHazardEnvelope to inference*.
+Null means unavailable knowledge, **not** "no movement" or a closed
+transition graph. The fixture checks these controls directly; the
+published report alone cannot certify physical-world identity.
+
+**Pre-registered hypothesis:** public-prior candidate sets should stay
+the same; methods using public transitions may change in candidate
+sets, direct-source use, internal work or uncertainty, or may become
+unavailable. No difference, worsening and non-comparability are valid
+outcomes; we must not adjust the fixed world after seeing results.
+This contrasts with #90's evidence arrival times and #92's contrary
+new evidence, and with M1-F12's uncertain encounter relation *kind*
+and F21's public model coverage assumptions.
+
+`AnalyzePublicRelationAvailability(known, unprovided)` reads only the
+two actual published timelines. Per same-tick method it retains the
+full existing result on each side: outer IDs/count, nullable preferred,
+uncertain/conflict, direct generation/traversal/unused source IDs,
+available/used ancestry-group counts, transition IDs and six separate
+work counters (generation, verification, forward, backward, evidence
+and relation inspections). It reports signed candidate-count difference,
+set exclusions and both inclusion directions; missing/duplicate or
+inconsistent rows become unavailable/partial, while real empty outer
+sets and nullable standings remain distinct. Mismatched receipts,
+source-observation identities, cutoffs and ancestry invalidate a
+cross-condition comparison. The method neither sees truth nor runs
+inference. The shared source-group *counts* do not independently verify
+source authenticity or expose ancestry group identifiers.
+
+**Implementation status:** the fixed-condition direct Run tests and
+per-method recorded values require final PR CI plus independent review.
+Only observed model outputs may populate measured conclusions; the
+above is not a claim that missing public relations have been discovered
+or that any method is superior. Unknown relationship discovery, 24-edge
+hypotheses, field-device/BLE data, physical search sites, rescue time,
+cost and survival effects remain untested. Revisit this interpretation
+if null is treated as a closed world, source/fixture controls differ,
+or the results cannot be obtained without a new inference assumption.
