@@ -1507,6 +1507,43 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Equal([RecordId, "second-original"], change8.AfterReceivedOriginalIds);
         Assert.Equal(1, change8.BeforeAvailableSourceGroupCount);
         Assert.Equal(2, change8.AfterAvailableSourceGroupCount);
+        // Pinned observations from the real fixed-world Run at past target tick 2.
+        Assert.Equal(["A"], change8.BeforeMethod!.OuterCandidateRegionIds);
+        Assert.Equal(["A", "B"], change8.AfterMethod!.OuterCandidateRegionIds);
+        Assert.Equal(["B"], change8.ReappearedCandidateRegionIds);
+        Assert.Empty(change8.ExcludedCandidateRegionIds!);
+        Assert.Equal(1, change8.AfterMinusBeforeCandidateCount);
+        Assert.True(change8.BeforeCandidatesSubsetOfAfter);
+        Assert.False(change8.AfterCandidatesSubsetOfBefore);
+        Assert.Equal(["A", "B"], change8.AfterMethod.ConflictedCandidateRegionIds);
+        Assert.Empty(change8.BeforeMethod.ConflictedCandidateRegionIds!);
+        Assert.Equal(3, change8.BeforeMethod.GenerationSteps);
+        Assert.Equal(5, change8.AfterMethod.GenerationSteps);
+        Assert.Equal(1, change8.BeforeMethod.EvidenceRecordsInspected);
+        Assert.Equal(2, change8.AfterMethod.EvidenceRecordsInspected);
+        Assert.Equal([RecordId, "second-original"],
+            change8.AfterMethod.GenerationDirectSourceIds);
+        Assert.Equal(8, revised.Methods.Single(x =>
+            x.Method == "distributed-reconstruction").FirstReappearedTick);
+        Assert.Equal(9, delayed.Methods.Single(x =>
+            x.Method == "distributed-reconstruction").FirstReappearedTick);
+        var localChange = revised.Methods.Single(x =>
+            x.Method == "distributed-reconstruction-local").Timeline.Single(x =>
+                x.AfterQueryTick == 8);
+        Assert.Equal(["A"], localChange.BeforeMethod!.OuterCandidateRegionIds);
+        Assert.Equal(["A", "B"], localChange.AfterMethod!.OuterCandidateRegionIds);
+        Assert.Equal(["B"], localChange.ReappearedCandidateRegionIds);
+        Assert.Equal(["A", "B"], localChange.AfterMethod.ConflictedCandidateRegionIds);
+        Assert.Equal(3, localChange.BeforeMethod.GenerationSteps);
+        Assert.Equal(5, localChange.AfterMethod.GenerationSteps);
+        Assert.Equal(2, localChange.BeforeMethod.ForwardTransitionSteps);
+        Assert.Equal(1, localChange.AfterMethod.ForwardTransitionSteps);
+        Assert.Equal(2, localChange.BeforeMethod.BackwardTransitionSteps);
+        Assert.Equal(1, localChange.AfterMethod.BackwardTransitionSteps);
+        Assert.All(revised.Methods.Where(x => x.Method is
+            "public-prior" or "known-relation-backward"),
+            method => Assert.Null(method.FirstReappearedTick));
+
         Assert.DoesNotContain("second-original", change8.BeforeMethod!.GenerationDirectSourceIds);
         Assert.DoesNotContain("second-original", change8.BeforeMethod.TraversalDirectSourceIds);
         Assert.Null(change8.SamePreferredCandidates);
@@ -1621,48 +1658,6 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Equal("unavailable",
             RescuerEvidenceMethodComparison.AnalyzeDecisionRevision(early with
             { ActualTimeline = early.SameCutoffAblations }).Status);
-    }
-
-    // Transient evidence-gathering probe: remove after writing actual measurements.
-    [Fact]
-    public void TemporaryContradictoryDecisionMeasurementProbe()
-    {
-        var (early, late) = ContradictoryRevisionRuns();
-        static object Describe(RescuerEvidenceMethodReport run, long tick)
-        {
-            var row = run.ActualTimeline.Single(x => x.QueryTick == tick);
-            return new
-            {
-                Tick = tick,
-                Received = row.ReceivedOriginalIds,
-                Groups = row.AvailableSourceGroupCount,
-                Methods = row.Methods.Select(x => new
-                {
-                    x.Method,
-                    x.OuterCandidateRegionIds,
-                    x.EvidenceStatus,
-                    x.ConflictedCandidateRegionIds,
-                    x.UncertainCandidateRegionIds,
-                    x.PreferredCandidateRegionIds,
-                    x.GenerationDirectSourceIds,
-                    x.TraversalDirectSourceIds,
-                    x.UsedSourceGroupCount,
-                    x.GenerationSteps,
-                    x.VerificationSteps,
-                    x.ForwardTransitionSteps,
-                    x.BackwardTransitionSteps,
-                    x.EvidenceRecordsInspected,
-                    x.PublicRelationsInspected
-                }).ToArray()
-            };
-        }
-        throw new InvalidOperationException("OBSERVED-92 " + JsonDefaults.Serialize(new
-        {
-            EarlyAt6 = Describe(early, 6),
-            EarlyAt8 = Describe(early, 8),
-            LateAt8 = Describe(late, 8),
-            LateAt9 = Describe(late, 9)
-        }));
     }
 
 }
