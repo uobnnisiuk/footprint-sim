@@ -1799,9 +1799,12 @@ public sealed class RescuerEvidenceBoundaryTests
         var (known, unprovided) = PublicRelationAvailabilityRuns();
         var missing = unprovided with
         {
-            ActualTimeline = unprovided.ActualTimeline.Select((row, index) => index == 2
-                ? row with { Methods = row.Methods.Where(m =>
-                    m.Method != "known-relation-backward").ToArray() } : row).ToArray()
+            ActualTimeline = unprovided.ActualTimeline.Select((row, index) =>
+                index == 2 ? row with
+                {
+                    Methods = row.Methods.Where(m =>
+                        m.Method != "known-relation-backward").ToArray()
+                } : row).ToArray()
         };
         var partial = RescuerEvidenceMethodComparison.AnalyzePublicRelationAvailability(
             known, missing);
@@ -1821,13 +1824,16 @@ public sealed class RescuerEvidenceBoundaryTests
             .AnalyzePublicRelationAvailability(known, duplicated).Status);
         var empty = unprovided with
         {
-            ActualTimeline = unprovided.ActualTimeline.Select((row, index) => index == 2
-                ? row with
+            ActualTimeline = unprovided.ActualTimeline.Select((row, index) =>
+                index == 2 ? row with
                 {
                     Methods = row.Methods.Select(m => m.Method == "public-prior"
-                        ? m with { OuterCandidateRegionIds = [], CandidateCount = 0,
-                            CandidateReduction = m.BaselineCandidateCount }
-                        : m).ToArray()
+                        ? m with
+                        {
+                            OuterCandidateRegionIds = [],
+                            CandidateCount = 0,
+                            CandidateReduction = m.BaselineCandidateCount
+                        } : m).ToArray()
                 } : row).ToArray()
         };
         var genuineEmpty = RescuerEvidenceMethodComparison.AnalyzePublicRelationAvailability(
@@ -1852,4 +1858,33 @@ public sealed class RescuerEvidenceBoundaryTests
             .AnalyzePublicRelationAvailability(known, changedReceipt).Status);
     }
 
+
+    // Temporary data collection on the fixed #94 case. This assertion is
+    // replaced with pinned observed values before independent review.
+    [Fact]
+    public void PublicRelationAvailabilityDiagnosticSnapshot()
+    {
+        var (known, unprovided) = PublicRelationAvailabilityRuns();
+        static string Standing(IReadOnlyList<string>? items) =>
+            items is null ? "null" : string.Join(",", items);
+        var measured = string.Join("\n", new[]
+        {
+            (Label: "known", Report: known),
+            (Label: "unprovided", Report: unprovided)
+        }.SelectMany(condition => condition.Report.ActualTimeline
+            .Where(row => row.QueryTick == 7)
+            .SelectMany(row => row.Methods.Select(method =>
+                $"FP94 {condition.Label} {method.Method}: " +
+                $"outer={Standing(method.OuterCandidateRegionIds)}; " +
+                $"status={method.EvidenceStatus}; " +
+                $"uncertain={Standing(method.UncertainCandidateRegionIds)}; " +
+                $"conflict={Standing(method.ConflictedCandidateRegionIds)}; " +
+                $"genSources={Standing(method.GenerationDirectSourceIds)}; " +
+                $"traversalSources={Standing(method.TraversalDirectSourceIds)}; " +
+                $"groups={row.AvailableSourceGroupCount}/{method.UsedSourceGroupCount}; " +
+                $"work={method.GenerationSteps}/{method.VerificationSteps}/" +
+                $"{method.ForwardTransitionSteps}/{method.BackwardTransitionSteps}/" +
+                $"{method.EvidenceRecordsInspected}/{method.PublicRelationsInspected}"))));
+        throw new InvalidOperationException("FP94-MEASUREMENTS\n" + measured + "\nEND-FP94");
+    }
 }
