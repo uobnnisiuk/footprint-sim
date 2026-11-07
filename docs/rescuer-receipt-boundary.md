@@ -784,3 +784,50 @@ hypotheses, field-device/BLE data, physical search sites, rescue time,
 cost and survival effects remain untested. Revisit this interpretation
 if null is treated as a closed world, source/fixture controls differ,
 or the results cannot be obtained without a new inference assumption.
+
+**Observed synthetic model results at query tick 7 (two originals received).**
+These values were obtained from the actual `Run` under both fixed
+public-input conditions and then pinned in a direct test, rather than
+filled from the preregistered hypothesis. Candidate sets refer to the
+**past target tick 2**, not current physical positions.
+
+| Existing method | Declared transition outer | Unprovided transition outer | Used groups (both) | Direct source roles |
+| --- | --- | --- | --- | --- |
+| public-prior | {A,B,C} | {A,B,C} | 0 | none |
+| known-relation-backward | {B,C} | {A,B,C} | 1 | traversal: second-original |
+| distributed-reconstruction | {A,B} | {A,B} | 1 | generation: original-encounter-record |
+| distributed-reconstruction-local | {B} | {A,B} | 2 | generation: original-encounter-record; traversal: second-original |
+
+Both conditions retain **two eligible ancestry groups**, and all
+observed methods have an output. The method's `EvidenceStatus` is
+`method-executed` for the three inference methods on both sides,
+even when the available public model cannot narrow the candidates.
+An empty direct-source list is not evidence that the source never
+existed. In both M1-E methods the exposed uncertain/conflict sets
+are empty in this fixture, not null; for the two baseline methods
+these standings are **unavailable (null)**. Preferred standing is
+unavailable for every method.
+
+Work counters below are measured *generation / verification / forward
+transitions / backward transitions / evidence records inspected /
+public relations inspected*. They are model operations, not elapsed
+time.
+
+| Existing method | Declared transition work | Unprovided transition work |
+| --- | --- | --- |
+| public-prior | 0/0/0/0/0/0 | 0/0/0/0/0/0 |
+| known-relation-backward | 0/0/2/2/1/5 | 0/0/0/0/1/1 |
+| distributed-reconstruction | 4/0/0/0/1/1 | 4/0/0/0/1/1 |
+| distributed-reconstruction-local | 4/0/2/2/1/5 | 4/0/0/0/1/1 |
+
+Thus the unprovided condition retains {A,B,C} rather than {B,C}
+for backward tracing and retains {A,B} rather than {B} for local
+reconstruction. Public-prior and generation-only reconstruction are
+unchanged. This identifies an **input-knowledge effect within two
+methods**, not an advantage from switching algorithms at the same
+information level. The unchanged methods are valid results, not
+discarded failures. The model does not identify unknown transit edges,
+establish a true historical location, or calibrate physical search
+sites, costs, time or survival effects. The snapshot originates from
+a temporary measurement head and is preserved as a pinned final test;
+it is subject to final-head normal/F19 CI and independent review.

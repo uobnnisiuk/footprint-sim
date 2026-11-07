@@ -1859,8 +1859,8 @@ public sealed class RescuerEvidenceBoundaryTests
     }
 
 
-    // Temporary data collection on the fixed #94 case. This assertion is
-    // replaced with pinned observed values before independent review.
+    // #94: pin observed real Run outputs from fixed public evidence inputs.
+    // Values are model counters and candidate sets, not rescue statistics.
     [Fact]
     public void PublicRelationAvailabilityDiagnosticSnapshot()
     {
@@ -1885,6 +1885,16 @@ public sealed class RescuerEvidenceBoundaryTests
                 $"work={method.GenerationSteps}/{method.VerificationSteps}/" +
                 $"{method.ForwardTransitionSteps}/{method.BackwardTransitionSteps}/" +
                 $"{method.EvidenceRecordsInspected}/{method.PublicRelationsInspected}"))));
-        throw new InvalidOperationException("FP94-MEASUREMENTS\n" + measured + "\nEND-FP94");
+        const string expected = """
+            FP94 known public-prior: outer=A,B,C; status=last-confirmed-unavailable-public-prior; uncertain=null; conflict=null; genSources=; traversalSources=; groups=2/0; work=0/0/0/0/0/0
+            FP94 known known-relation-backward: outer=B,C; status=method-executed; uncertain=null; conflict=null; genSources=; traversalSources=second-original; groups=2/1; work=0/0/2/2/1/5
+            FP94 known distributed-reconstruction: outer=A,B; status=method-executed; uncertain=; conflict=; genSources=original-encounter-record; traversalSources=; groups=2/1; work=4/0/0/0/1/1
+            FP94 known distributed-reconstruction-local: outer=B; status=method-executed; uncertain=; conflict=; genSources=original-encounter-record; traversalSources=second-original; groups=2/2; work=4/0/2/2/1/5
+            FP94 unprovided public-prior: outer=A,B,C; status=last-confirmed-unavailable-public-prior; uncertain=null; conflict=null; genSources=; traversalSources=; groups=2/0; work=0/0/0/0/0/0
+            FP94 unprovided known-relation-backward: outer=A,B,C; status=method-executed; uncertain=null; conflict=null; genSources=; traversalSources=second-original; groups=2/1; work=0/0/0/0/1/1
+            FP94 unprovided distributed-reconstruction: outer=A,B; status=method-executed; uncertain=; conflict=; genSources=original-encounter-record; traversalSources=; groups=2/1; work=4/0/0/0/1/1
+            FP94 unprovided distributed-reconstruction-local: outer=A,B; status=method-executed; uncertain=; conflict=; genSources=original-encounter-record; traversalSources=second-original; groups=2/2; work=4/0/0/0/1/1
+            """;
+        Assert.Equal(expected, measured);
     }
 }
