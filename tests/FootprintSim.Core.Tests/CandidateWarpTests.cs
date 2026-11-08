@@ -465,7 +465,18 @@ public sealed class CandidateWarpTests
                     TimeWindow = InteractionTimeWindow.At(2),
                     TemporalKind = CandidateWarpTemporalKind.EventPoint,
                     RegionIds = ["X"],
-                    EvidenceBoundaryState = EvidenceState.Confirmed
+                    EvidenceBoundaryState = EvidenceState.Confirmed,
+                    Provenance =
+                    [
+                        CandidateWarpProvenance.Create(
+                            CandidateWarpSourceKind.LastConfirmed,
+                            "owned-x",
+                            2,
+                            true,
+                            false,
+                            EvidenceState.Confirmed,
+                            ["X"])
+                    ]
                 }
             ],
             CandidateWarpStanding.Preferred);
