@@ -693,6 +693,7 @@ public static class RescuerEvidenceMethodComparison
                             // public alternative makes a new direct edge *unneeded*
                             // for a formal explanation, not impossible or false.
                             var pending = new List<RescuerMissingDeclaredPathQuestion>();
+                            var pairExplained = false;
                             // Preserve disjoint candidate-state windows: never
                             // bridge a gap into a fabricated continuous interval.
                             var seenRanges = new HashSet<(long Minimum, long Maximum)>();
@@ -724,6 +725,7 @@ public static class RescuerEvidenceMethodComparison
                                 {
                                     explanations.Add("direct-pair-published-timing-unverified:" +
                                         region + ">" + destination);
+                                    pairExplained = true;
                                     continue;
                                 }
                                 // The public tracer admits staying at one region.
@@ -731,6 +733,7 @@ public static class RescuerEvidenceMethodComparison
                                 if (region == destination)
                                 {
                                     explanations.Add("formal-stay:" + region);
+                                    pairExplained = true;
                                     continue;
                                 }
                                 // Bounded two-hop explanation only: published
@@ -757,6 +760,7 @@ public static class RescuerEvidenceMethodComparison
                                 {
                                     explanations.Add("formal-two-hop:" + region + ">" +
                                         middle + ">" + destination);
+                                    pairExplained = true;
                                     continue;
                                 }
                                 var questionId = "unconfirmed:" + region + ":" +
@@ -777,10 +781,7 @@ public static class RescuerEvidenceMethodComparison
                             // If some compatible time window already has a public
                             // explanation, do not call the direct pair necessary.
                             // Keep the #104 direct-only status unchanged.
-                            if (!explanations.Any(note =>
-                                    note.EndsWith(">" + destination, StringComparison.Ordinal) ||
-                                    (region == destination &&
-                                     note == "formal-stay:" + region)))
+                            if (!pairExplained)
                             {
                                 questions.AddRange(pending);
                             }
