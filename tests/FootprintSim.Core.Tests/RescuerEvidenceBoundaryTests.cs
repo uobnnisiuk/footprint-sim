@@ -1289,6 +1289,181 @@ public sealed class RescuerEvidenceBoundaryTests
         return (Run(earlyReceipts), Run(lateReceipts));
     }
 
+
+    [Fact]
+    public void HistoricalUnitComparisonCountsActualFourMethodsWithFixedManyToOne()
+    {
+        var report = ComplementaryRun();
+        // Predeclare A,C→U1 and B→U2. {A,B,C}→{A,B} is 3→2
+        // regions, yet 2→2 known public units, not a rescue-site result.
+        var map = new[]
+        {
+            new PublicSearchUnitMapping("A", 2, ["U1"], true, "catalog", 0),
+            new PublicSearchUnitMapping("B", 2, ["U2"], true, "catalog", 0),
+            new PublicSearchUnitMapping("C", 2, ["U1"], true, "catalog", 0)
+        };
+        var original = JsonDefaults.Serialize(report);
+        var result = RescuerEvidenceMethodComparison.AnalyzeHistoricalSearchUnits(
+            report, ["A", "B", "C"], ["U1", "U2"], map);
+        Assert.Equal(original, JsonDefaults.Serialize(report));
+        Assert.Equal("available", result.Status);
+        Assert.Equal(2, result.HistoricalTick);
+        Assert.Equal([5L, 6L, 7L], result.ActualTimeline.Select(t => t.QueryTick));
+        Assert.Equal([0, 1, 2], result.ActualTimeline.Select(t => t.ReceivedOriginalCount));
+        Assert.All(result.ActualTimeline, t =>
+        {
+            Assert.Equal(4, t.Methods.Count);
+            Assert.All(t.Methods, m =>
+            {
+                Assert.True(m.ComparisonEligible);
+                Assert.Equal(["U1", "U2"], m.KnownUnitIds);
+                Assert.Empty(m.UnresolvedRegionIds);
+            });
+        });
+        Assert.Equal([3, 3, 3, 3],
+            result.ActualTimeline[0].Methods.Select(m => m.CandidateRegionCount));
+        Assert.Equal([3, 3, 2, 2],
+            result.ActualTimeline[1].Methods.Select(m => m.CandidateRegionCount));
+        Assert.Equal([3, 3, 2, 2],
+            result.ActualTimeline[2].Methods.Select(m => m.CandidateRegionCount));
+        Assert.All(result.ActualTimeline.SelectMany(t => t.Methods),
+            m => Assert.Equal(2, m.KnownUnitCount));
+        Assert.Equal(["A", "B"],
+            result.ActualTimeline[1].Methods[2].CandidateRegionIds);
+        Assert.Equal(["catalog"],
+            result.ActualTimeline[1].Methods[2].MappingSourceIds);
+
+        var reversed = RescuerEvidenceMethodComparison.AnalyzeHistoricalSearchUnits(
+            ComplementaryRun(reversed: true), ["C", "A", "B"], ["U2", "U1"],
+            map.Reverse().ToArray());
+        Assert.Equal(JsonDefaults.Serialize(result), JsonDefaults.Serialize(reversed));
+
+        // Different predeclared catalog: A,B→U1; C→U2 has 2→1 unit reduction.
+        var other = new[]
+        {
+            map[0], map[1] with { UnitIds = ["U1"] },
+            map[2] with { UnitIds = ["U2"] }
+        };
+        var contrast = RescuerEvidenceMethodComparison.AnalyzeHistoricalSearchUnits(
+            report, ["A", "B", "C"], ["U1", "U2"], other);
+        Assert.Equal(2, contrast.ActualTimeline[0].Methods[2].KnownUnitCount);
+        Assert.Equal(1, contrast.ActualTimeline[1].Methods[2].KnownUnitCount);
+    }
+
+    [Fact]
+    public void HistoricalUnitComparisonPreservesPartialFutureAndOneToManyUnknown()
+    {
+        var report = ComplementaryRun();
+        var map = new[]
+        {
+            new PublicSearchUnitMapping("A", 2, ["U2", "U1"], true, "early", 0),
+            new PublicSearchUnitMapping("B", 2, ["U2"], false, "partial", 0),
+            new PublicSearchUnitMapping("C", 2, ["U3"], true, "late", 6)
+        };
+        var result = RescuerEvidenceMethodComparison.AnalyzeHistoricalSearchUnits(
+            report, ["A", "B", "C"], ["U1", "U2", "U3"], map);
+        Assert.Equal("unavailable", result.Status);
+        var first = result.ActualTimeline[0].Methods[0];
+        Assert.Equal("partial", first.Status);
+        Assert.Equal(["U1", "U2"], first.KnownUnitIds);
+        Assert.Equal(["B", "C"], first.UnresolvedRegionIds);
+        Assert.Equal(["early", "partial"], first.MappingSourceIds);
+        Assert.False(first.ComparisonEligible);
+        var second = result.ActualTimeline[1].Methods[2];
+        Assert.Equal(2, second.CandidateRegionCount);
+        Assert.Equal(["B"], second.UnresolvedRegionIds);
+        Assert.Equal(["U1", "U2"], second.KnownUnitIds);
+        Assert.All(result.ActualTimeline.SelectMany(t => t.Methods),
+            m => Assert.False(m.ComparisonEligible));
+
+        var none = RescuerEvidenceMethodComparison.AnalyzeHistoricalSearchUnits(
+            report, ["A", "B", "C"], [], []);
+        Assert.Equal(["A", "B", "C"], none.ActualTimeline[0]
+            .Methods[0].UnresolvedRegionIds);
+        Assert.Empty(none.ActualTimeline[0].Methods[0].KnownUnitIds);
+        Assert.Equal("partial", none.ActualTimeline[0].Methods[0].Status);
+        var complete = RescuerEvidenceMethodComparison.AnalyzeHistoricalSearchUnits(
+            report, ["A", "B", "C"], ["U1", "U2", "U3"],
+            map.Select(m => m with { IsComplete = true, AvailableTick = 0 }).ToArray());
+        Assert.Equal("available", complete.Status);
+        Assert.Equal(["U1", "U2", "U3"],
+            complete.ActualTimeline[0].Methods[0].KnownUnitIds);
+        Assert.Equal(["U1", "U2"],
+            complete.ActualTimeline[1].Methods[2].KnownUnitIds);
+    }
+
+    [Fact]
+    public void HistoricalUnitComparisonSeparatesMissingDuplicateAndEmptyCandidate()
+    {
+        var report = ComplementaryRun();
+        var map = new[]
+        {
+            new PublicSearchUnitMapping("A", 2, ["U1"], true, "catalog", 0),
+            new PublicSearchUnitMapping("B", 2, ["U2"], true, "catalog", 0),
+            new PublicSearchUnitMapping("C", 2, ["U1"], true, "catalog", 0)
+        };
+        var missing = report with
+        {
+            ActualTimeline = report.ActualTimeline.Select((row, i) =>
+                i == 0 ? row with { Methods = row.Methods.Skip(1).ToArray() } : row).ToArray()
+        };
+        var result = RescuerEvidenceMethodComparison.AnalyzeHistoricalSearchUnits(
+            missing, ["A", "B", "C"], ["U1", "U2"], map);
+        Assert.Equal("partial", result.Status);
+        Assert.Equal("unavailable", result.ActualTimeline[0].Methods[0].Status);
+        Assert.Null(result.ActualTimeline[0].Methods[0].KnownUnitCount);
+        var duplicated = report with
+        {
+            ActualTimeline = report.ActualTimeline.Select((row, i) =>
+                i == 0 ? row with
+                {
+                    Methods = row.Methods.Concat([row.Methods[0]]).ToArray()
+                } : row).ToArray()
+        };
+        Assert.Equal("unavailable",
+            RescuerEvidenceMethodComparison.AnalyzeHistoricalSearchUnits(
+                duplicated, ["A", "B", "C"], ["U1", "U2"], map)
+            .ActualTimeline[0].Methods[0].Status);
+
+        var empty = report with
+        {
+            ActualTimeline = report.ActualTimeline.Select((row, i) =>
+                i == 0 ? row with
+                {
+                    Methods = row.Methods.Select((m, j) => j == 0 ? m with
+                    {
+                        OuterCandidateRegionIds = [], CandidateCount = 0,
+                        CandidateReduction = m.BaselineCandidateCount
+                    } : m).ToArray()
+                } : row).ToArray()
+        };
+        var trulyEmpty = RescuerEvidenceMethodComparison.AnalyzeHistoricalSearchUnits(
+            empty, ["A", "B", "C"], ["U1", "U2"], map)
+            .ActualTimeline[0].Methods[0];
+        Assert.Equal("empty-candidates", trulyEmpty.Status);
+        Assert.Equal(0, trulyEmpty.CandidateRegionCount);
+        Assert.Equal(0, trulyEmpty.KnownUnitCount);
+        Assert.False(trulyEmpty.ComparisonEligible);
+        Assert.Throws<ArgumentNullException>(() =>
+            RescuerEvidenceMethodComparison.AnalyzeHistoricalSearchUnits(
+                report, ["A", "B", "C"], ["U1", "U2"], null!));
+        Assert.Throws<InvalidDataException>(() =>
+            RescuerEvidenceMethodComparison.AnalyzeHistoricalSearchUnits(
+                report, ["A", "B", "C"], ["U1", "U1"], map));
+        Assert.Throws<InvalidDataException>(() =>
+            RescuerEvidenceMethodComparison.AnalyzeHistoricalSearchUnits(
+                report, ["A", "B", "C"], ["U1", "U2"],
+                map.Concat([map[0]]).ToArray()));
+        Assert.Throws<InvalidDataException>(() =>
+            RescuerEvidenceMethodComparison.AnalyzeHistoricalSearchUnits(
+                report, ["A", "B", "C"], ["U1", "U2"],
+                [map[0] with { TargetTick = 7 }]));
+        Assert.Equal("available",
+            RescuerEvidenceMethodComparison.AnalyzeHistoricalSearchUnits(
+                ComplementaryRun(secondAncestry: "weft-a"),
+                ["A", "B", "C"], ["U1", "U2"], map).Status);
+    }
+
     [Fact]
     public void ComplementaryReceiptTimingSeparatesTemporaryLossFromFinalConvergence()
     {
