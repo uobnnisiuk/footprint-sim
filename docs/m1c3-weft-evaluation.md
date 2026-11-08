@@ -175,15 +175,84 @@ positive travel warp while adding a separate outer-only stay warp when
 the public model does not prove compulsory departure. This is an existing synthetic
 physics parameter, not a calibrated probability or new physical law.
 
-The adversarial report of **65 errors in 200 trials** is a reported result,
-not an independently reproduced count. At the time of this draft,
-the revised code, new regressions and fixed S3 counterexample have
-**not been run in this execution environment**: the post-change S3
-outer/preferred/conflict counts, absolute false exclusions for each strategy,
-paired deltas and processing work remain **unmeasured**, not zero.
-Only a corresponding completed CI/evaluation on the exact commit can
-replace this status with measured figures. No current-method advantage,
-rescue time reduction, or general safety guarantee follows from this change.
+The fixed seed-0 regression and the full S3 evaluation answer different
+questions: the regression deliberately sets the existing
+`debris-fork.depositionProbability` to 1.0, whereas the independent
+adversarial run used 0.3 for the fork-stop variant and 0.3 at both
+`debris-fork` and `river-channel` for the second variant. The ordinary S3
+sample continues to set the nonterminal deposition probability to 0.0.
+Neither probability is calibrated to a real disaster.
+
+### Paired S3 measurements available as of 2026-11-08
+
+The following are **measurements reported by the separate adversarial
+reviewer**, not measurements independently rerun by this implementation
+task. [PR #99 adversarial measurement and method](https://github.com/uobnnisiuk/footprint-sim/pull/99#issuecomment-6715385578)
+reports building the original main/base
+`56e8da2715ac3ea48e7de4081c2effd90058ce2f` and revised PR head
+`fb44a9b20b3332cdfa3c61fdfc4e62f80081fa48` in Release mode and
+running the same S3 world, public model, observations, arrival/query
+cutoff, seed range **0..199**, and `--strategies all` for each version.
+Within a row the method/code revision changes; it does not add evidence
+to the revised method. The two stop variants change only the explicitly
+stated **synthetic truth-side deposition parameter** relative to the
+ordinary sample, not the information available to a strategy. Each
+strategy's absolute false exclusion is counted separately, in addition
+to the paired difference.
+
+| S3 condition (200 seeds) | Strategy | Outer false exclusions: base → head | Mean outer candidates: base → head | Mean preferred candidates (both) | Truth in preferred (both, /200) |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Ordinary sample (fork stop 0.0) | OwnEvidence | 0 → 0 | 5.000 → **8.000** | 5.000 | 200 |
+| Ordinary sample | CrossThread | 0 → 0 | 4.665 → **7.665** | 3.670 | 167 |
+| Ordinary sample | HazardAware, reference | 0 → 0 | 8.000 → 8.000 | 8.000 | 200 |
+| AR-6 fork-stop variant (fork 0.3) | OwnEvidence | **65 → 0** | 5.000 → **8.000** | 5.000 | 135 |
+| AR-6 fork-stop variant | CrossThread | **65 → 0** | 4.665 → **7.665** | 3.670 | 115 |
+| Two-site stop variant (fork and river-channel 0.3) | OwnEvidence | **80 → 0** | 5.000 → **8.000** | 5.000 | 120 |
+| Two-site stop variant | CrossThread | **80 → 0** | 4.665 → **7.665** | 3.670 | 102 |
+
+All counts and means in this table are attributed to that adversarial
+run; they are **not** an independent second measurement. The reviewer
+also reports unchanged truth, evidence-boundary state, and preferred
+sets across base/head, paired `CrossThread − OwnEvidence` **mean outer
+candidate difference −0.335** in all three variants both before and
+after the repair (−1 for Confirmed/Delayed and 0 for other conditions),
+and byte-identical repeated revised-run output. Thus the repair
+eliminated the observed absolute outer false exclusions **by retaining
+more alternatives**; it did not improve the preferred narrowing.
+For the ordinary sample, OwnEvidence's mean outer set now equals
+HazardAware's (8), and CrossThread's remaining mean outer reduction
+relative to HazardAware is only 0.335. Earlier outer reductions mostly
+depended on an unsupported compulsory-departure assumption. This is
+an unfavorable change to candidate reduction despite the favorable
+change to false exclusion; neither result is hidden or reclassified.
+
+The adversarial report additionally finds, for the fork-stop variant,
+20 of 67 run-level `confirmed` CrossThread records with truth outside
+preferred but **inside outer**. `confirmed` describes the historical
+evidence boundary, not certainty of the present location. The report
+corrects its older seed-30 example: seed 0, not seed 30, is a
+`debris-fork` false-exclusion example before repair.
+
+**What remains unmeasured here:** the cited report does not give
+`conflictedCandidateRegionIds` sizes, conflict count distributions, or
+a measured operation/work counter for base and head. No per-run
+`runs.jsonl` / `aggregate.json` from that run was transferred to
+this task, so it would be invalid to fill these fields with zero or to
+infer equal processing work from unchanged preferred results. The
+existing CI success does not determine these metrics. They require
+a comparable run-level extraction on both fixed revisions; the current
+record is **not measured/independently verified** for conflict and
+processing work. Pairing by seed, condition, strategy and query cutoff
+must be preserved if that measurement is performed.
+
+At head `fb44a9b`, the recorded [normal PR CI](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42430747204)
+passed 641 tests (0 failed, 0 skipped), and the
+[F19 research CI](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42430747208)
+also passed; the separate [independent code review](https://github.com/uobnnisiuk/footprint-sim/pull/99#pullrequestreview-5815926526)
+checked those jobs but requested this research-record update. Those
+CI checks confirm the implemented fixed regressions, **not** a second
+200-seed measurement, a general no-false-exclusion theorem, or a
+rescue-time/efficacy result.
 
 This repair is limited to a public propagation boundary. It does not
 evaluate discovery of unknown causal relations, the 24 lenses, or actual
