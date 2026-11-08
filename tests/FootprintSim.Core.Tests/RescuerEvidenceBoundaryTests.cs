@@ -1634,7 +1634,7 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Equal(1, sharedBoth.PublicMethod.AvailableSourceGroupCount);
 
         var uncertain = RescuerEvidenceMethodComparison.AnalyzePairedHistoricalSearchUnits(
-            ComplementaryRun(firstState: EvidenceState.Uncertain),
+            ComplementaryRun(firstState: EvidenceState.SupportedButUncertain),
             ["A", "B", "C"], ["U1", "U2", "U3"], validMap);
         Assert.NotNull(uncertain.Methods.Single(method =>
             method.Method == "distributed-reconstruction").Conditions[3]
