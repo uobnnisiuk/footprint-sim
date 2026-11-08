@@ -1034,11 +1034,13 @@ public sealed class RescuerEvidenceBoundaryTests
     private static DeviceHeldInteractionRecord ComplementaryOriginal(
         string originalId, string holder, long atTick, IReadOnlyList<string> regions,
         long available, string upstream, EvidenceState state = EvidenceState.Confirmed,
-        bool deviceOnly = false) => new(holder, available, InteractionObservation.Create(
+        bool deviceOnly = false, bool unrelatedTarget = false) =>
+        new(holder, available, InteractionObservation.Create(
             ScenarioId, Seed, originalId, null,
             InteractionRelationKind.PersonPersonEncounter,
             [
-                new InteractionParticipant(deviceOnly ? holder : TargetId,
+                new InteractionParticipant(deviceOnly ? holder :
+                    unrelatedTarget ? "person-c" : TargetId,
                     deviceOnly ? InteractionEntityKind.Device : InteractionEntityKind.Person,
                     InteractionParticipantRole.EncounterParticipant),
                 new InteractionParticipant("person-b", InteractionEntityKind.Person,
@@ -1541,6 +1543,272 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Empty(contrastLocal.Marginals[0].RemovedKnownUnitIds!);
         Assert.Equal(["U2"], contrastLocal.Marginals[1].RemovedKnownUnitIds);
         Assert.Equal("available", contrast.Status);
+    }
+
+
+    // #104: the late, distinct Person trace can witness formal compatibility
+    // with one *published* branch without hard-excluding unwitnessed regions.
+    [Fact]
+    public void DeclaredPathWitnessIsReceiptGatedAndDoesNotChangeSafeOuter()
+    {
+        var context = ComplementaryPublicContext();
+        var first = ComplementaryOriginal(
+            RecordId, HolderId, 2, ["A", "B", "C"], 3, "weft-a");
+        var second = ComplementaryOriginal(
+            "second-original", "holder-b", 5, ["D"], 6, "weft-b");
+        var builder = new RescuerEvidenceInputBuilder();
+        var before = builder.BuildDistinctOriginals(
+            context, Seed, 6, RescuerId, [first, second],
+            [Receipt(6), LaterComparisonReceipt(7)]);
+        var after = builder.BuildDistinctOriginals(
+            context, Seed, 7, RescuerId, [first, second],
+            [Receipt(6), LaterComparisonReceipt(7)]);
+        var earlier = RescuerEvidenceMethodComparison.AnalyzeDeclaredPathCompatibility(
+            before, InteractionTimeWindow.At(2));
+        var later = RescuerEvidenceMethodComparison.AnalyzeDeclaredPathCompatibility(
+            after, InteractionTimeWindow.At(2));
+        Assert.Equal([RecordId], earlier.ReceivedOriginalIds);
+        Assert.DoesNotContain("second-original", earlier.ReceivedOriginalIds);
+        Assert.All(earlier.Candidates, candidate =>
+        {
+            Assert.Equal("unavailable", candidate.Status);
+            Assert.Empty(candidate.Witnesses);
+        });
+        Assert.Equal([RecordId, "second-original"],
+            later.ReceivedOriginalIds.OrderBy(x => x, StringComparer.Ordinal));
+        Assert.Equal(["A", "B", "C"], later.Candidates.Select(c => c.RegionId));
+        Assert.Equal(["witnessed", "unknown", "unknown"],
+            later.Candidates.Select(c => c.Status));
+        var witness = Assert.Single(later.Candidates[0].Witnesses);
+        Assert.Equal("A", witness.CandidateRegionId);
+        Assert.Equal("D", witness.DestinationRegionId);
+        Assert.Equal("declared-A-D", witness.BranchProvenanceId);
+        Assert.Equal(2, witness.CompatibleEarlyTick);
+        Assert.Equal(5, witness.CompatibleLaterTick);
+        Assert.Equal(3, witness.MinimumTravelTicks);
+        Assert.Equal(3, witness.MaximumTravelTicks);
+        Assert.Equal(0, witness.BranchPublishedAtTick);
+        Assert.Equal(RecordId, witness.EarlyDirectSourceId);
+        Assert.Equal("second-original", witness.LaterDirectSourceId);
+        Assert.NotEqual(witness.EarlyConstraintId, witness.LaterConstraintId);
+        Assert.NotEqual(witness.EarlySourceObservationId, witness.LaterSourceObservationId);
+        Assert.Contains("weft-a", witness.EarlySourceAncestryIds);
+        Assert.Contains("weft-b", witness.LaterSourceAncestryIds);
+        Assert.True(witness.IndependentSourceAncestry);
+        Assert.Equal("unknown", witness.PersonTraversability);
+
+        var oldBefore = RescuerEvidenceMethodComparison.Compare(
+            before, InteractionTimeWindow.At(2));
+        var oldAfter = RescuerEvidenceMethodComparison.Compare(
+            after, InteractionTimeWindow.At(2));
+        Assert.Equal(4, oldAfter.Methods.Count);
+        Assert.All(oldAfter.Methods, method =>
+        {
+            Assert.Equal(["A", "B", "C"], method.OuterCandidateRegionIds);
+            Assert.Null(method.PreferredCandidateRegionIds);
+        });
+        Assert.All(oldBefore.Methods, method =>
+            Assert.Equal(["A", "B", "C"], method.OuterCandidateRegionIds));
+    }
+
+    [Fact]
+    public void DeclaredPathPartialFutureAndDeviceBranchesRemainUnknown()
+    {
+        var context = ComplementaryPublicContext();
+        var first = ComplementaryOriginal(
+            RecordId, HolderId, 2, ["A", "B", "C"], 3, "weft-a");
+        var second = ComplementaryOriginal(
+            "second-original", "holder-b", 5, ["D"], 6, "weft-b");
+        var builder = new RescuerEvidenceInputBuilder();
+        RescuerDeclaredPathCompatibilityReport Diagnostic(RescueContext source) =>
+            RescuerEvidenceMethodComparison.AnalyzeDeclaredPathCompatibility(
+                builder.BuildDistinctOriginals(source, Seed, 7, RescuerId,
+                    [first, second], [Receipt(6), LaterComparisonReceipt(7)]),
+                InteractionTimeWindow.At(2));
+        var partial = context with
+        {
+            PublicHazardEnvelope = context.PublicHazardEnvelope! with
+            {
+                Branches = [Branch("B", "E")]
+            }
+        };
+        Assert.All(Diagnostic(partial).Candidates, c =>
+        {
+            Assert.Equal("unknown", c.Status);
+            Assert.Empty(c.Witnesses);
+        });
+        var future = context with
+        {
+            PublicHazardEnvelope = context.PublicHazardEnvelope! with
+            {
+                Branches = [Branch("A", "D") with { PublishedAtTick = 8 }]
+            }
+        };
+        var atSeven = Diagnostic(future);
+        Assert.Equal(0, atSeven.PublicBranchesInspected);
+        Assert.All(atSeven.Candidates, c => Assert.Empty(c.Witnesses));
+        // The existing Compare future-publication guard is not weakened.
+        var notProjected = builder.BuildDistinctOriginals(
+            future, Seed, 7, RescuerId, [first, second],
+            [Receipt(6), LaterComparisonReceipt(7)]);
+        Assert.Throws<ArgumentException>(() =>
+            RescuerEvidenceMethodComparison.Compare(
+                notProjected, InteractionTimeWindow.At(2)));
+        var projected = future with
+        {
+            PublicHazardEnvelope = context.PublicHazardEnvelope! with { Branches = [] }
+        };
+        var comparison = RescuerEvidenceMethodComparison.Compare(
+            builder.BuildDistinctOriginals(projected, Seed, 7, RescuerId,
+                [first, second], [Receipt(6), LaterComparisonReceipt(7)]),
+            InteractionTimeWindow.At(2));
+        Assert.All(comparison.Methods, row =>
+            Assert.Contains("B", row.OuterCandidateRegionIds));
+
+        // HazardDriven's public projection omits Activation, which can have
+        // been DeviceOnly. A matching branch never proves Person traversability.
+        Assert.Equal("unknown", Assert.Single(
+            Diagnostic(context).Candidates[0].Witnesses).PersonTraversability);
+        var device = ComplementaryOriginal(
+            "second-original", "holder-b", 5, ["D"], 6, "weft-b",
+            deviceOnly: true);
+        var deviceInput = builder.BuildDistinctOriginals(
+            context, Seed, 7, RescuerId, [first, device],
+            [Receipt(6), LaterComparisonReceipt(7)]);
+        Assert.All(RescuerEvidenceMethodComparison.AnalyzeDeclaredPathCompatibility(
+            deviceInput, InteractionTimeWindow.At(2)).Candidates,
+            candidate =>
+            {
+                Assert.Equal("unavailable", candidate.Status);
+                Assert.Empty(candidate.Witnesses);
+            });
+
+        // Receiving an unrelated Person observation is not target evidence.
+        var unrelated = ComplementaryOriginal(
+            "second-original", "holder-b", 5, ["D"], 6, "weft-b",
+            unrelatedTarget: true);
+        var unrelatedInput = builder.BuildDistinctOriginals(
+            context, Seed, 7, RescuerId, [first, unrelated],
+            [Receipt(6), LaterComparisonReceipt(7)]);
+        Assert.Equal(2, unrelatedInput.ReceivedRecords.Count);
+        Assert.All(RescuerEvidenceMethodComparison.AnalyzeDeclaredPathCompatibility(
+            unrelatedInput, InteractionTimeWindow.At(2)).Candidates,
+            candidate => Assert.Equal("unavailable", candidate.Status));
+
+        // Even two receipts cannot imply two usable target-Person sources
+        // when the earlier original contains only Device evidence.
+        var earlyDevice = ComplementaryOriginal(
+            RecordId, HolderId, 2, ["A", "B", "C"], 3, "weft-a",
+            deviceOnly: true);
+        var firstDeviceInput = builder.BuildDistinctOriginals(
+            context, Seed, 7, RescuerId, [earlyDevice, second],
+            [Receipt(6), LaterComparisonReceipt(7)]);
+        Assert.All(RescuerEvidenceMethodComparison.AnalyzeDeclaredPathCompatibility(
+            firstDeviceInput, InteractionTimeWindow.At(2)).Candidates,
+            candidate => Assert.Equal("unavailable", candidate.Status));
+    }
+
+    [Fact]
+    public void DeclaredPathCandidateStateWindowMustContainWitnessTick()
+    {
+        var context = ComplementaryPublicContext();
+        var early = ComplementaryOriginal(
+            RecordId, HolderId, 2, ["A", "B", "C"], 3, "weft-a");
+        var late = ComplementaryOriginal(
+            "second-original", "holder-b", 5, ["D"], 6, "weft-b");
+        var target = new InteractionTimeWindow(2, 4);
+        var builder = new RescuerEvidenceInputBuilder();
+
+        var onlyLaterA = context with
+        {
+            PublicCausalTracingModel = new PublicCausalTracingModel
+            {
+                CandidateStates = [
+                    State(2, ["B", "C"]),
+                    State(4, ["A"]),
+                    State(5, ["D", "E", "F"])]
+            }
+        };
+        RescuerDeclaredPathCompatibilityReport Analyze(RescueContext source) =>
+            RescuerEvidenceMethodComparison.AnalyzeDeclaredPathCompatibility(
+                builder.BuildDistinctOriginals(source, Seed, 7, RescuerId,
+                    [early, late], [Receipt(6), LaterComparisonReceipt(7)]),
+                target);
+
+        var incompatible = Analyze(onlyLaterA);
+        Assert.Equal(["A", "B", "C"],
+            incompatible.Candidates.Select(candidate => candidate.RegionId));
+        Assert.All(incompatible.Candidates, candidate =>
+        {
+            Assert.Equal("unknown", candidate.Status);
+            Assert.Empty(candidate.Witnesses);
+        });
+
+        var earlyA = onlyLaterA with
+        {
+            PublicCausalTracingModel = new PublicCausalTracingModel
+            {
+                CandidateStates = [
+                    State(2, ["A", "B", "C"]),
+                    State(4, ["A"]),
+                    State(5, ["D", "E", "F"])]
+            }
+        };
+        var compatible = Analyze(earlyA);
+        var a = compatible.Candidates.Single(candidate => candidate.RegionId == "A");
+        Assert.Equal("witnessed", a.Status);
+        var witness = Assert.Single(a.Witnesses);
+        Assert.Equal(2, witness.CompatibleEarlyTick);
+        Assert.Equal(5, witness.CompatibleLaterTick);
+    }
+
+    [Fact]
+    public void DeclaredPathPreservesAncestryConflictOrderAndTime()
+    {
+        var context = ComplementaryPublicContext();
+        var first = ComplementaryOriginal(
+            RecordId, HolderId, 2, ["A", "B", "C"], 3, "weft-a");
+        var builder = new RescuerEvidenceInputBuilder();
+        RescuerDeclaredPathCompatibilityReport Diagnostic(
+            DeviceHeldInteractionRecord second, bool reverse = false)
+        {
+            var originals = reverse
+                ? new[] { second, first } : new[] { first, second };
+            var receipts = reverse
+                ? new[] { LaterComparisonReceipt(7), Receipt(6), Receipt(6) }
+                : new[] { Receipt(6), LaterComparisonReceipt(7) };
+            return RescuerEvidenceMethodComparison.AnalyzeDeclaredPathCompatibility(
+                builder.BuildDistinctOriginals(
+                    context, Seed, 7, RescuerId, originals, receipts),
+                InteractionTimeWindow.At(2));
+        }
+        var second = ComplementaryOriginal(
+            "second-original", "holder-b", 5, ["D"], 6, "weft-b");
+        var normal = Diagnostic(second);
+        var reversed = Diagnostic(second, true);
+        Assert.Equal(
+            System.Text.Json.JsonSerializer.Serialize(normal),
+            System.Text.Json.JsonSerializer.Serialize(reversed));
+        var shared = Diagnostic(ComplementaryOriginal(
+            "second-original", "holder-b", 5, ["D"], 6, "weft-a"));
+        Assert.False(Assert.Single(shared.Candidates[0].Witnesses)
+            .IndependentSourceAncestry);
+        Assert.Equal("witnessed", shared.Candidates[0].Status);
+
+        var uncertain = Diagnostic(ComplementaryOriginal(
+            "second-original", "holder-b", 5, ["D"], 6, "weft-b",
+            EvidenceState.SupportedButUncertain));
+        Assert.Empty(uncertain.Candidates[0].Witnesses);
+        Assert.Equal("unknown", uncertain.Candidates[0].Status);
+        var conflicting = Diagnostic(ComplementaryOriginal(
+            "second-original", "holder-b", 5, ["D"], 6, "weft-b",
+            EvidenceState.Conflicting));
+        Assert.Empty(conflicting.Candidates[0].Witnesses);
+        Assert.Equal("conflict", conflicting.Candidates[0].Status);
+        var tooEarly = Diagnostic(ComplementaryOriginal(
+            "second-original", "holder-b", 4, ["D"], 6, "weft-b"));
+        Assert.Empty(tooEarly.Candidates[0].Witnesses);
+        Assert.Equal("unknown", tooEarly.Candidates[0].Status);
     }
 
     // AR-9: a later observation that would inform a closed-world traversal

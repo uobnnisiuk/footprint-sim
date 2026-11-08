@@ -1291,3 +1291,84 @@ not establish current physical location, checking costs, elapsed
 rescue time or survival benefit. Future unknown-relation hypotheses
 and predeclared experimental comparisons remain open; an equal or
 worse result is allowed and should be preserved.
+
+
+## Indirect weft: directly joined declared-path compatibility (Issue #104)
+
+Work-Key: FP-INDIRECT-WEFT-PUBLIC-WITNESS-V1, Scope-Revision 1.
+The evaluation-only AnalyzeDeclaredPathCompatibility consumes only the
+RescuerEvidenceInput returned by BuildDistinctOriginals and the historical
+target window. It does not read retained originals, simulated truth,
+private observations, actual hazard transitions, or random outcomes.
+It directly joins each **public historical candidate × received confirmed
+early Person constraint × different received confirmed later Person constraint
+× published branch**. Each positive witness binds specific early/later
+constraint IDs, source/observation IDs and ancestry to a branch's
+provenance, endpoints, travel range, and admissible integer time pair.
+Aggregate source/transition columns of the four baseline methods are
+not cross-joined to manufacture candidate-specific evidence.
+Distinct source ancestry is reported separately; copied ancestry is
+not another independent original. Observed intervals remain intervals
+when checking possible travel times. For interval target queries, the public
+candidate state for the given region must **also contain the chosen early
+witness tick**. A region appearing only at another target tick cannot acquire
+a false-positive witness by flattening all candidate regions across ticks.
+
+The fixed explanatory control reuses AR-9 V1: candidate regions
+{A,B,C} at tick 2, later regions {D,E,F} at tick 5 and published
+three-tick branches A→D, B→E, C→F. The first Person original records
+{A,B,C} at tick 2 and arrives at tick 6; the second records {D} at
+tick 5 and arrives at tick 7. The four existing methods' hard outer
+remains {A,B,C} with preferred standing unexposed, rather than empty.
+The new additional diagnostic has the following hand-computable
+expected values (the test/CI gate is separate):
+
+| Actual cutoff | Received originals | Candidate A | Candidates B/C | Four-method hard outer |
+| --- | --- | --- | --- | --- |
+| tick 6 | first only | unavailable | unavailable | {A,B,C} |
+| tick 7 | both | witnessed A→D, 2→5 | unknown / not witnessed | {A,B,C} |
+
+One formally compatible published branch is **not proof** that the
+person could traverse it, did traverse it, or is more likely to have
+been at A. The PublicHazardBranch projection hides the original
+HazardTransitionActivation and could even have DeviceOnly origin.
+PersonTraversability is always unknown. Public branches are
+open-world declarations, not an exhaustive graph. Unwitnessed B/C
+must never become impossible, excluded or lower-ranked. Existing
+Compare, schema-v1, hard outer, preferred/null standing, published
+search units and four method implementations are unchanged.
+
+Negative controls address the actual tick-6 nonreceipt (separate
+from the tick-7 counterfactual ablation), partial/unpublished or future
+branch declarations, time incompatibility, Device-only records,
+uncertain/conflicting records, and shared ancestry. Two received originals
+with fewer than two distinct usable target-Person source IDs (including a
+Device-only or unrelated-Person original) yield `unavailable`, not
+`unknown`; received-original IDs remain reported separately. `unknown`
+is reserved for eligible evidence without a witnessed declared route.
+Future branches
+do not become available early; the existing Compare future guard is
+not weakened, and comparisons with future branches require a
+cutoff-filtered public projection. Future candidate provenance
+remains invalid. Repeated and reordered inputs must produce identical
+diagnostics. This deliberately selected fixture is a specification
+control, not a preregistered experiment.
+
+Measured outputs are formal source/branch witnesses, unknown/conflict
+and first-availability distinctions, independent-ancestry status,
+unchanged candidate sets, and counts of inspected public constraints,
+branches and combinations. Counts are not calibrated CPU or rescue
+time. No public diagnostic alone establishes synthetic truth coverage
+or false-exclusion rates; those require a separate truth-side
+evaluation. None of these model-side values calibrate real rescue
+locations, checking cost, survival or rescue outcome.
+
+**Alignment:** this tests the initial missing-person-history / later
+weft idea in one bounded existing-relationship case. The current
+public model cannot demonstrate Person-applicable travel, discovery
+of unknown relations (including the 24-edge exploration lens),
+preferred probabilities, real locations, or field utility. Those
+remain unimplemented or unevaluated, **not disproven**. Closed-world
+hard exclusion and forced preferred ranking are held back. Revisit
+only with a separately reviewed public-information contract and
+bounded comparison; equal, zero-effect and worse results remain valid.

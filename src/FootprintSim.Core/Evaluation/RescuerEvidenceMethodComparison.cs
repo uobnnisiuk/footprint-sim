@@ -362,8 +362,218 @@ public sealed record RescuerEvidencePairedHistoricalUnitReport
     public IReadOnlyList<RescuerEvidencePairedHistoricalUnitMethod> Methods { get; init; } = [];
 }
 
+
+// #104: A positive match between *received public Person constraints* and a
+// declared public branch. Neither a Person-traversable route nor a ranking.
+public sealed record RescuerDeclaredPathWitness(
+    string CandidateRegionId,
+    string EarlyConstraintId,
+    string EarlyDirectSourceId,
+    string EarlySourceObservationId,
+    IReadOnlyList<string> EarlySourceAncestryIds,
+    string LaterConstraintId,
+    string LaterDirectSourceId,
+    string LaterSourceObservationId,
+    IReadOnlyList<string> LaterSourceAncestryIds,
+    string DestinationRegionId,
+    string BranchProvenanceId,
+    long BranchPublishedAtTick,
+    int MinimumTravelTicks,
+    int MaximumTravelTicks,
+    long CompatibleEarlyTick,
+    long CompatibleLaterTick,
+    bool IndependentSourceAncestry,
+    string PersonTraversability);
+
+public sealed record RescuerDeclaredPathCandidate(
+    string RegionId,
+    string Status,
+    IReadOnlyList<RescuerDeclaredPathWitness> Witnesses);
+
+public sealed record RescuerDeclaredPathCompatibilityReport(
+    long QueryTick,
+    InteractionTimeWindow TargetWindow,
+    IReadOnlyList<string> ReceivedOriginalIds,
+    string Status,
+    IReadOnlyList<RescuerDeclaredPathCandidate> Candidates,
+    int PublicConstraintsInspected,
+    int PublicBranchesInspected,
+    int ConstraintBranchPairsInspected);
+
 public static class RescuerEvidenceMethodComparison
 {
+    /// <summary>
+    /// Evaluation-only declared-path compatibility, not proof of actual Person
+    /// travel. Uses only the receipt-projected public input; never reads
+    /// originals, truth, private observations or hidden branch Activation.
+    /// Missing public branches mean UNKNOWN, never impossible/hard exclusion.
+    /// </summary>
+    public static RescuerDeclaredPathCompatibilityReport AnalyzeDeclaredPathCompatibility(
+        RescuerEvidenceInput received,
+        InteractionTimeWindow targetWindow)
+    {
+        ArgumentNullException.ThrowIfNull(received);
+        ArgumentNullException.ThrowIfNull(targetWindow);
+        var input = received.Input;
+        var cutoff = input.CurrentTick;
+        if (cutoff < targetWindow.EndTick)
+        {
+            throw new ArgumentOutOfRangeException(nameof(targetWindow));
+        }
+        var states = input.PublicContext.PublicCausalTracingModel?.CandidateStates
+            ?? throw new ArgumentException("A public candidate-state model is required.");
+        if (states.SelectMany(state => state.Provenance)
+            .Any(source => source.AvailableAtTick > cutoff))
+        {
+            throw new ArgumentException("A public candidate state is not yet available.");
+        }
+        var regions = states
+            .Where(state => state.TimeWindow.StartTick <= targetWindow.EndTick &&
+                targetWindow.StartTick <= state.TimeWindow.EndTick)
+            .SelectMany(state => state.RegionIds)
+            .Distinct(StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal).ToArray();
+        if (regions.Length == 0)
+        {
+            throw new ArgumentException("There is no public candidate state at the target window.");
+        }
+
+        var receivedIds = received.ReceivedRecords
+            .Select(item => item.OriginalRecordId)
+            .Distinct(StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal).ToArray();
+        var availableOriginalIds = receivedIds.ToHashSet(StringComparer.Ordinal);
+        var constraints = (input.AvailableCausalTracingConstraints?
+            .PubliclyAvailableAt(cutoff).Constraints ?? [])
+            .Where(c => c.ScenarioId == input.ScenarioId && c.Seed == input.Seed &&
+                c.TargetEntityId == input.PublicContext.TargetPersonId &&
+                c.Visibility == InteractionVisibility.PublicEvidence &&
+                c.AvailableAtTick <= cutoff &&
+                availableOriginalIds.Contains(c.DirectSourceId) &&
+                c.IsPersonEvidence && !c.IsDeviceOnlyEvidence)
+            .OrderBy(c => c.ConstraintId, StringComparer.Ordinal).ToArray();
+
+        var envelope = input.PublicContext.PublicHazardEnvelope;
+        var envelopeAvailable = envelope is not null && envelope.PublishedAtTick <= cutoff;
+        // A not-yet-published branch is invisible to this diagnostic; callers
+        // must still supply a cutoff-filtered projection to the existing Compare.
+        var branches = envelopeAvailable
+            ? envelope!.Branches.Where(b => b.PublishedAtTick <= cutoff &&
+                    b.MinimumTravelTicks >= 0 &&
+                    b.MaximumTravelTicks >= b.MinimumTravelTicks)
+                .OrderBy(b => b.SourceRegionId, StringComparer.Ordinal)
+                .ThenBy(b => b.DestinationRegionId, StringComparer.Ordinal)
+                .ThenBy(b => b.ProvenanceId, StringComparer.Ordinal).ToArray()
+            : [];
+
+        static bool Overlaps(InteractionTimeWindow a, InteractionTimeWindow b) =>
+            a.StartTick <= b.EndTick && b.StartTick <= a.EndTick;
+
+        // Integer-interval feasibility: do not silently turn an observed window
+        // into a point. Select the earliest admissible pair deterministically.
+        static bool CompatibleTimes(
+            InteractionTimeWindow early, InteractionTimeWindow target,
+            InteractionTimeWindow candidateState, InteractionTimeWindow later,
+            int minimum, int maximum, out long earlyTick, out long laterTick)
+        {
+            var lo = Math.Max(Math.Max(early.StartTick, target.StartTick),
+                candidateState.StartTick);
+            var hi = Math.Min(Math.Min(early.EndTick, target.EndTick),
+                candidateState.EndTick);
+            var travelMin = Math.Max(1, minimum);
+            earlyTick = Math.Max(lo, later.StartTick - maximum);
+            laterTick = Math.Max(later.StartTick, earlyTick + travelMin);
+            return earlyTick <= hi && laterTick <= later.EndTick &&
+                laterTick - earlyTick <= maximum;
+        }
+
+        var pairInspections = 0;
+        var usablePersonSourceCount = constraints.Select(c => c.DirectSourceId)
+            .Distinct(StringComparer.Ordinal).Count();
+        var candidates = new List<RescuerDeclaredPathCandidate>();
+        foreach (var region in regions)
+        {
+            // A region may occur only at some ticks in the target window.
+            // Keep its public candidate-state windows when proving a witness.
+            var candidateWindows = states.Where(state =>
+                    Overlaps(state.TimeWindow, targetWindow) &&
+                    state.RegionIds.Contains(region, StringComparer.Ordinal))
+                .Select(state => state.TimeWindow)
+                .OrderBy(window => window.StartTick)
+                .ThenBy(window => window.EndTick).ToArray();
+            var witnesses = new List<RescuerDeclaredPathWitness>();
+            var earlyCandidates = constraints.Where(c =>
+                c.AllowedRegionIds.Contains(region, StringComparer.Ordinal) &&
+                Overlaps(c.ConstrainedTimeWindow, targetWindow)).ToArray();
+            foreach (var early in earlyCandidates.Where(c =>
+                c.EvidenceBoundaryState == EvidenceState.Confirmed))
+                foreach (var later in constraints.Where(c =>
+                    c.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                    c.DirectSourceId != early.DirectSourceId &&
+                    c.ConstrainedTimeWindow.EndTick > targetWindow.EndTick))
+                    foreach (var branch in branches.Where(b =>
+                        b.SourceRegionId == region &&
+                        later.AllowedRegionIds.Contains(b.DestinationRegionId, StringComparer.Ordinal)))
+                    {
+                        pairInspections++;
+                        long t0 = 0, t1 = 0;
+                        var compatible = false;
+                        foreach (var candidateWindow in candidateWindows)
+                        {
+                            if (!CompatibleTimes(early.ConstrainedTimeWindow, targetWindow,
+                                candidateWindow, later.ConstrainedTimeWindow,
+                                branch.MinimumTravelTicks, branch.MaximumTravelTicks,
+                                out t0, out t1))
+                            {
+                                continue;
+                            }
+                            compatible = true;
+                            break;
+                        }
+                        if (!compatible)
+                        {
+                            continue;
+                        }
+                        var ancestryIndependent = early.SourceAncestryIds.Count > 0 &&
+                            later.SourceAncestryIds.Count > 0 &&
+                            !early.SourceAncestryIds.Intersect(
+                                later.SourceAncestryIds, StringComparer.Ordinal).Any();
+                        witnesses.Add(new RescuerDeclaredPathWitness(
+                            region,
+                            early.ConstraintId, early.DirectSourceId, early.SourceObservationId,
+                            early.SourceAncestryIds.OrderBy(id => id, StringComparer.Ordinal).ToArray(),
+                            later.ConstraintId, later.DirectSourceId, later.SourceObservationId,
+                            later.SourceAncestryIds.OrderBy(id => id, StringComparer.Ordinal).ToArray(),
+                            branch.DestinationRegionId, branch.ProvenanceId,
+                            branch.PublishedAtTick, branch.MinimumTravelTicks,
+                            branch.MaximumTravelTicks, t0, t1,
+                            ancestryIndependent, "unknown"));
+                    }
+
+            // A conflict in a relevant publicly received Person observation is
+            // preserved, but never promoted to a confirmed positive witness.
+            var conflicting = constraints.Any(c =>
+                c.EvidenceBoundaryState == EvidenceState.Conflicting &&
+                (earlyCandidates.Contains(c) ||
+                    (c.ConstrainedTimeWindow.EndTick > targetWindow.EndTick &&
+                     branches.Any(b => b.SourceRegionId == region &&
+                         c.AllowedRegionIds.Contains(b.DestinationRegionId,
+                             StringComparer.Ordinal)))));
+            var ordered = witnesses
+                .OrderBy(w => w.EarlyConstraintId, StringComparer.Ordinal)
+                .ThenBy(w => w.LaterConstraintId, StringComparer.Ordinal)
+                .ThenBy(w => w.BranchProvenanceId, StringComparer.Ordinal)
+                .ToArray();
+            var status = ordered.Length > 0 ? "witnessed"
+                : conflicting ? "conflict"
+                : !envelopeAvailable || usablePersonSourceCount < 2
+                    ? "unavailable" : "unknown";
+            candidates.Add(new RescuerDeclaredPathCandidate(region, status, ordered));
+        }
+        return new RescuerDeclaredPathCompatibilityReport(
+            cutoff, targetWindow, receivedIds,
+            envelopeAvailable ? "available" : "unavailable",
+            candidates, constraints.Length, branches.Length, pairInspections);
+    }
+
     /// <summary>
     /// Builds both the actual receipt timeline and a same-cutoff 0/1/2-original
     /// ablation. With one selected original, both possible sources are tested.
