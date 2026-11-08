@@ -423,7 +423,10 @@ public sealed record RescuerMissingDeclaredPathQuestion(
 public sealed record RescuerMissingDeclaredPathCandidate(
     string RegionId,
     string DeclaredPathStatus,
-    IReadOnlyList<RescuerMissingDeclaredPathQuestion> Questions);
+    IReadOnlyList<RescuerMissingDeclaredPathQuestion> Questions,
+    // Formal public explanations that make a missing direct declaration
+    // non-essential. These are not verified Person movements.
+    IReadOnlyList<string> PublicAlternativeExplanations);
 
 public sealed record RescuerMissingDeclaredPathReport(
     long QueryTick,
@@ -652,6 +655,7 @@ public static class RescuerEvidenceMethodComparison
         foreach (var candidate in declared.Candidates)
         {
             var questions = new List<RescuerMissingDeclaredPathQuestion>();
+            var explanations = new SortedSet<string>(StringComparer.Ordinal);
             if (candidate.Status == "unknown" && declared.Status == "available")
             {
                 var region = candidate.RegionId;
@@ -681,10 +685,14 @@ public static class RescuerEvidenceMethodComparison
                             .Distinct(StringComparer.Ordinal)
                             .OrderBy(id => id, StringComparer.Ordinal))
                         {
-                            if (publishedPairs.Contains((region, destination)))
-                            {
-                                continue;
-                            }
+                            // A published direct pair can have incompatible
+                            // timing. Preserve that fact rather than pretending
+                            // that no published declaration exists (AR-12).
+                            var directPublished = publishedPairs.Contains((region, destination));
+                            // Build questions per endpoint pair. One compatible
+                            // public alternative makes a new direct edge *unneeded*
+                            // for a formal explanation, not impossible or false.
+                            var pending = new List<RescuerMissingDeclaredPathQuestion>();
                             // Preserve disjoint candidate-state windows: never
                             // bridge a gap into a fabricated continuous interval.
                             var seenRanges = new HashSet<(long Minimum, long Maximum)>();
@@ -712,10 +720,49 @@ public static class RescuerEvidenceMethodComparison
                                 {
                                     continue;
                                 }
+                                if (directPublished)
+                                {
+                                    explanations.Add("direct-pair-published-timing-unverified:" +
+                                        region + ">" + destination);
+                                    continue;
+                                }
+                                // The public tracer admits staying at one region.
+                                // This is formal continuity, not observed motion.
+                                if (region == destination)
+                                {
+                                    explanations.Add("formal-stay:" + region);
+                                    continue;
+                                }
+                                // Bounded two-hop explanation only: published
+                                // edges can compose without a new direct edge.
+                                // We do not claim completeness for longer paths.
+                                var middle = publishedBranches
+                                    .Where(firstBranch => firstBranch.SourceRegionId == region)
+                                    .OrderBy(firstBranch => firstBranch.DestinationRegionId,
+                                        StringComparer.Ordinal)
+                                    .ThenBy(firstBranch => firstBranch.ProvenanceId,
+                                        StringComparer.Ordinal)
+                                    .SelectMany(firstBranch => publishedBranches
+                                        .Where(secondBranch =>
+                                            secondBranch.SourceRegionId ==
+                                                firstBranch.DestinationRegionId &&
+                                            secondBranch.DestinationRegionId == destination &&
+                                            (long)firstBranch.MinimumTravelTicks +
+                                                secondBranch.MinimumTravelTicks <= maximum &&
+                                            (long)firstBranch.MaximumTravelTicks +
+                                                secondBranch.MaximumTravelTicks >= minimum)
+                                        .Select(_ => firstBranch.DestinationRegionId))
+                                    .FirstOrDefault();
+                                if (middle is not null)
+                                {
+                                    explanations.Add("formal-two-hop:" + region + ">" +
+                                        middle + ">" + destination);
+                                    continue;
+                                }
                                 var questionId = "unconfirmed:" + region + ":" +
                                     destination + ":" + early.ConstraintId + ":" +
                                     later.ConstraintId + ":" + minimum + "-" + maximum;
-                                questions.Add(new RescuerMissingDeclaredPathQuestion(
+                                pending.Add(new RescuerMissingDeclaredPathQuestion(
                                     questionId, region, destination, minimum, maximum,
                                     early.ConstraintId, early.DirectSourceId,
                                     early.SourceObservationId,
@@ -727,6 +774,16 @@ public static class RescuerEvidenceMethodComparison
                                         .OrderBy(id => id, StringComparer.Ordinal).ToArray(),
                                     independent, "unknown"));
                             }
+                            // If some compatible time window already has a public
+                            // explanation, do not call the direct pair necessary.
+                            // Keep the #104 direct-only status unchanged.
+                            if (!explanations.Any(note =>
+                                    note.EndsWith(">" + destination, StringComparison.Ordinal) ||
+                                    (region == destination &&
+                                     note == "formal-stay:" + region)))
+                            {
+                                questions.AddRange(pending);
+                            }
                         }
                     }
             }
@@ -736,7 +793,8 @@ public static class RescuerEvidenceMethodComparison
                     .ThenBy(q => q.EarlyConstraintId, StringComparer.Ordinal)
                     .ThenBy(q => q.LaterConstraintId, StringComparer.Ordinal)
                     .ThenBy(q => q.MinimumCompatibleDifferenceTicks)
-                    .ThenBy(q => q.MaximumCompatibleDifferenceTicks).ToArray()));
+                    .ThenBy(q => q.MaximumCompatibleDifferenceTicks).ToArray(),
+                explanations.ToArray()));
         }
         return new RescuerMissingDeclaredPathReport(
             cutoff, targetWindow, declared.ReceivedOriginalIds, declared.Status,

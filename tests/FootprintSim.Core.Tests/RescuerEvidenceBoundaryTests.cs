@@ -1723,6 +1723,146 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Empty(missingTick.Candidates.Single(row => row.RegionId == "B").Questions);
     }
 
+
+    // AR-11/12: a direct edge is not the only formal public explanation.
+    // All controls use two actually received Person originals at tick 7.
+    [Fact]
+    public void MissingRelationQuestionsDistinguishStayAndTwoHopFromAbsentDirectEdge()
+    {
+        var baseline = ComplementaryPublicContext();
+        var first = ComplementaryOriginal(
+            RecordId, HolderId, 2, ["A", "B", "C"], 3, "weft-a");
+        var laterD = ComplementaryOriginal(
+            "second-original", "holder-b", 5, ["D"], 6, "weft-b");
+        var builder = new RescuerEvidenceInputBuilder();
+        RescuerEvidenceInput At(RescueContext context,
+            DeviceHeldInteractionRecord later, long tick) =>
+            builder.BuildDistinctOriginals(context, Seed, tick, RescuerId,
+                [first, later], [Receipt(6), LaterComparisonReceipt(7)]);
+        static RescuerMissingDeclaredPathCandidate Row(
+            RescuerMissingDeclaredPathReport report, string id) =>
+            report.Candidates.Single(candidate => candidate.RegionId == id);
+
+        // Published B->E at one tick and E->D at two ticks compose
+        // into a formal three-tick path. Neither proves Person movement.
+        var twoHop = baseline with
+        {
+            PublicHazardEnvelope = baseline.PublicHazardEnvelope! with
+            {
+                Branches = [.. baseline.PublicHazardEnvelope!.Branches,
+                    Branch("B", "E") with
+                    {
+                        MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+                        ProvenanceId = "AR11-B-E"
+                    },
+                    Branch("E", "D") with
+                    {
+                        MinimumTravelTicks = 2, MaximumTravelTicks = 2,
+                        ProvenanceId = "AR11-E-D"
+                    }]
+            }
+        };
+        var onlyFirst = RescuerEvidenceMethodComparison
+            .AnalyzeMissingDeclaredPathQuestions(
+                At(twoHop, laterD, 6), InteractionTimeWindow.At(2));
+        Assert.All(onlyFirst.Candidates, candidate =>
+        {
+            Assert.Empty(candidate.Questions);
+            Assert.Empty(candidate.PublicAlternativeExplanations);
+        });
+        var twoHopInput = At(twoHop, laterD, 7);
+        var hop = RescuerEvidenceMethodComparison
+            .AnalyzeMissingDeclaredPathQuestions(
+                twoHopInput, InteractionTimeWindow.At(2));
+        Assert.Empty(Row(hop, "B").Questions);
+        Assert.Contains("formal-two-hop:B>E>D",
+            Row(hop, "B").PublicAlternativeExplanations);
+        Assert.Single(Row(hop, "C").Questions);
+        // #104 intentionally remains a *direct-branch* diagnostic.
+        Assert.Equal("unknown", Row(hop, "B").DeclaredPathStatus);
+        Assert.All(RescuerEvidenceMethodComparison.Compare(
+            twoHopInput, InteractionTimeWindow.At(2)).Methods,
+            method => Assert.Equal(["A", "B", "C"], method.OuterCandidateRegionIds));
+        var hopReversed = builder.BuildDistinctOriginals(twoHop, Seed, 7, RescuerId,
+            [laterD, first], [LaterComparisonReceipt(7), Receipt(6), Receipt(6)]);
+        Assert.Equal(JsonDefaults.Serialize(hop),
+            JsonDefaults.Serialize(RescuerEvidenceMethodComparison
+                .AnalyzeMissingDeclaredPathQuestions(
+                    hopReversed, InteractionTimeWindow.At(2))));
+
+        // Public future edges cannot suppress the currently unanswered pair.
+        var futureHop = twoHop with
+        {
+            PublicHazardEnvelope = twoHop.PublicHazardEnvelope! with
+            {
+                Branches = twoHop.PublicHazardEnvelope!.Branches.Select(b =>
+                    b.ProvenanceId.StartsWith("AR11-", StringComparison.Ordinal)
+                        ? b with { PublishedAtTick = 8 } : b).ToArray()
+            }
+        };
+        var future = RescuerEvidenceMethodComparison
+            .AnalyzeMissingDeclaredPathQuestions(
+                At(futureHop, laterD, 7), InteractionTimeWindow.At(2));
+        Assert.Single(Row(future, "B").Questions);
+        Assert.Empty(Row(future, "B").PublicAlternativeExplanations);
+
+        // Same-region persistence is a formal possibility even with no B->B.
+        var sameRegion = baseline with
+        {
+            PublicCausalTracingModel = new PublicCausalTracingModel
+            {
+                CandidateStates = [
+                    State(2, ["A", "B", "C"]), State(5, ["B", "E", "F"])]
+            }
+        };
+        var laterB = ComplementaryOriginal(
+            "second-original", "holder-b", 5, ["B"], 6, "weft-b");
+        var stayInput = At(sameRegion, laterB, 7);
+        var stay = RescuerEvidenceMethodComparison
+            .AnalyzeMissingDeclaredPathQuestions(
+                stayInput, InteractionTimeWindow.At(2));
+        Assert.Empty(Row(stay, "B").Questions);
+        Assert.Contains("formal-stay:B", Row(stay, "B").PublicAlternativeExplanations);
+        Assert.All(RescuerEvidenceMethodComparison.Compare(
+            stayInput, InteractionTimeWindow.At(2)).Methods,
+            method => Assert.Contains("B", method.OuterCandidateRegionIds));
+    }
+
+    [Fact]
+    public void PublishedEndpointWithWrongTimingIsNotCalledAnAbsentRelation()
+    {
+        var context = ComplementaryPublicContext();
+        var first = ComplementaryOriginal(
+            RecordId, HolderId, 2, ["A", "B", "C"], 3, "weft-a");
+        var later = ComplementaryOriginal(
+            "second-original", "holder-b", 5, ["D"], 6, "weft-b");
+        var timingMismatch = context with
+        {
+            PublicHazardEnvelope = context.PublicHazardEnvelope! with
+            {
+                Branches = [.. context.PublicHazardEnvelope!.Branches,
+                    Branch("B", "D") with
+                    {
+                        MinimumTravelTicks = 10, MaximumTravelTicks = 10
+                    }]
+            }
+        };
+        var input = new RescuerEvidenceInputBuilder().BuildDistinctOriginals(
+            timingMismatch, Seed, 7, RescuerId,
+            [first, later], [Receipt(6), LaterComparisonReceipt(7)]);
+        var report = RescuerEvidenceMethodComparison
+            .AnalyzeMissingDeclaredPathQuestions(input, InteractionTimeWindow.At(2));
+        var b = report.Candidates.Single(row => row.RegionId == "B");
+        Assert.Equal("unknown", b.DeclaredPathStatus);
+        Assert.Empty(b.Questions);
+        Assert.Contains("direct-pair-published-timing-unverified:B>D",
+            b.PublicAlternativeExplanations);
+        Assert.Single(report.Candidates.Single(row => row.RegionId == "C").Questions);
+        Assert.All(RescuerEvidenceMethodComparison.Compare(
+            input, InteractionTimeWindow.At(2)).Methods,
+            method => Assert.Contains("B", method.OuterCandidateRegionIds));
+    }
+
     // #104: the late, distinct Person trace can witness formal compatibility
     // with one *published* branch without hard-excluding unwitnessed regions.
     [Fact]

@@ -1389,6 +1389,32 @@ shared ancestry is explicitly marked non-independent. The question ID is
 synthetic, not public branch provenance. Multiple disconnected state windows
 remain distinct ranges, rather than one fabricated continuous interval.
 
+**AR-11/12 limitation and correction.** This is a *direct-declaration
+question diagnostic*, not an exhaustive public reachability search. A
+formally time-compatible two-hop published explanation (B→E at 1 tick,
+E→D at 2) can already account for B@2→D@5, even if #104's unchanged
+direct-edge-only `DeclaredPathStatus` remains `unknown`. Likewise a
+target possibly staying B@2→B@5 does not require an unpublished B→B
+branch. The question report now records `PublicAlternativeExplanations`
+(`formal-two-hop:B>E>D` or `formal-stay:B`) and suppresses those
+**unnecessary direct-edge questions**, while retaining the original
+candidate and all four hard outers. This two-hop/stay check is deliberately
+bounded and *does not* establish path completeness for three or more
+edges, intermediate state occupancy, or actual Person traversability.
+A future-published two-hop branch is not an available explanation.
+
+A pair already declared as B→D with a published ten-tick bound, but only
+a three-tick observation difference, receives
+`direct-pair-published-timing-unverified:B>D`; it is not mislabeled as
+an *absent* relation. The existing direct-edge witness remains
+`unknown`; a different timing declaration could still change that
+formal result. An empty question set therefore means neither that no
+additional investigation could help nor that the target region is
+impossible. The alternative explanations and mismatched direct pair
+are **formal, public-model statements**, not verified travel events.
+These controls are exploratory synthetic counterexamples, not calibrated
+rescue benefit or general proof of the initial weft hypothesis.
+
 The fixed AR-9 V1 comparison is hand-checkable:
 
 | Actual rescuer cutoff | Public declared-path diagnostic | Unconfirmed questions | Hard outer |
