@@ -1199,3 +1199,95 @@ relations, validate any 24-edge taxonomy, or supersede the initial
 hypothesis that distributed traces may help reconstruct missing history.
 A future physical or current-time projection would require separate
 bounded review and is not authorized here.
+
+
+## Same-cutoff marginal contribution of each received trace (Issue #102)
+
+Work-Key: `FP-WEFT-MARGINAL-SEARCH-UTILITY-V1`. This is a bounded,
+truth-free **public-input diagnostic** layered on #86 and #100. The
+`AnalyzePairedHistoricalSearchUnits` API uses the four already published
+`SameCutoffAblations` of the same `Run` (query tick 7, historical tick 2),
+with the fixed synthetic public world, two original records and the
+same published unit catalog. These are **counterfactual removal** conditions;
+only the original `ActualTimeline` describes what the rescuer actually
+received. No original record is re-read and no inference is rerun. The
+schema-v1 report and the existing two analysis APIs are unchanged.
+
+For each of the existing four methods, the output exposes four public
+outer/standing/source/work rows alongside the catalog projection, and two
+**distinct source additions**: first-only→both (add the second original)
+and second-only→both (add the first original). Source identity is checked
+from original IDs, not presumed from input order. Outer exclusions and
+reappearances are separate from known-unit removals and additions;
+preferred/uncertain/conflicted equality is nullable when the existing
+method does not publish that standing. An increased used ancestry-group
+count or traversal work is not an improvement in region or unit utility.
+
+The following is the pre-existing #86/#100 fixture's **hand-computable
+expected result**, not a newly randomized experiment or a claim of
+independent performance validation. The first received original covers
+historical {A,B} and the later one covers {E,F} at tick 5.
+
+| Method | Neither | First only | Second only | Both | Add second: outer / units removed | Add first: outer / units removed |
+| --- | --- | --- | --- | --- | --- | --- |
+| Public prior | {A,B,C} | {A,B,C} | {A,B,C} | {A,B,C} | ∅ / ∅ | ∅ / ∅ |
+| Known-relation backward | {A,B,C} | {A,B,C} | {A,B,C} | {A,B,C} | ∅ / ∅ | ∅ / ∅ |
+| Reconstruction | {A,B,C} | {A,B} | {A,B,C} | {A,B} | ∅ / ∅ | {C} / ∅ |
+| Reconstruction + local | {A,B,C} | {A,B} | {A,B,C} | {A,B} | ∅ / ∅ | {C} / ∅ |
+
+The unit column uses the already constructed complete catalog
+A,C→U1; B→U2, known at tick 0. Every condition has known {U1,U2};
+the second original therefore gives **no further safe outer or unit
+reduction**. In the separate alternative catalog A,B→U1; C→U2,
+adding the **first** original to second-only removes unit U2 for
+reconstruction/local; adding the second to first-only still removes
+none. These are different **catalog information conditions**, not a
+selectable evidential success metric. The fixed fixture and both
+catalogs were shaped using previously known candidate sets; their
+arithmetic is an explanatory regression, not a prospective hypothesis
+test, evidence of unknown-relation discovery or actual rescue benefit.
+
+**AR-9: the output boundary matters.** The zero in the fixture above
+means only that the existing *published* hard outer and unit indicators do
+not change on adding this later-tick trace. It does **not** establish that
+the indirect trace contains no information, is useless for causal tracing,
+or that the original weft hypothesis has failed. In the four current method
+rows, `PreferredCandidateRegionIds` is **null** (not published), so the
+marginal `SamePreferredCandidates=null` means **unmeasured/unknown**, not
+equal support or no supportive effect. An unchanged uncertainty list likewise
+does not imply that every form of indirect support has been evaluated.
+
+The independently supplied [AR-9 counterexamples](https://github.com/uobnnisiuk/footprint-sim/pull/103#issuecomment-6718507716)
+showed this limitation in additional synthetic configurations. A representative
+later-trace case (V1) directly observes {A,B,C} at historical tick 2 and later
+observes {D} at tick 5; the published branches A→D, B→E, C→F could favor
+A *if incorrectly treated as an exhaustive closed-world route list*. The
+four published methods nonetheless preserve the same historical hard outer,
+known units and uncertainty after the second trace, with preferred standing
+unpublished. A separate positive control (V3) places the second direct
+observation at **the same historical tick 2** with {B,C} against the first
+{A,B}: reconstruction/local then remove outer A and unit U1 (A,C→U1;
+B→U2), while leaving B. These two cases are **regression controls**, not
+prospective evidence that indirect traces can never contribute. The added
+tests check both behaviors on the real public comparison API.
+
+The present output is insufficient to assess indirect-trace contributions
+to preferred/support standing. Exposing a justified, non-overconfident
+support/priority signal would require **separately scoped research and
+independent review**, not a closed-world hard exclusion or a silent change
+to this PR's methods. Here the status remains **not measurable** for that
+axis; no benefit on the measured hard outer/unit axis is distinct from
+unknown benefit on an unexposed support axis. The labels first/second are
+ordered by original ID in the ablation API, not necessarily receipt order.
+
+Missing/duplicated method rows are `unavailable`; partial, incomplete
+or future mappings retain known units and unresolved regions but have
+no decisive unit delta. A genuine empty outer set is explicitly
+`empty-candidates`, not unknown and not an asserted zero-work rescue
+site. The same source ancestry is not counted twice; device-only
+evidence cannot become person evidence. All comparisons use the
+same synthetic world, cutoff and target tick. The new diagnostics do
+not establish current physical location, checking costs, elapsed
+rescue time or survival benefit. Future unknown-relation hypotheses
+and predeclared experimental comparisons remain open; an equal or
+worse result is allowed and should be preserved.

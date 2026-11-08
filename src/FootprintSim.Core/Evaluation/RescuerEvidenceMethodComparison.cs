@@ -308,6 +308,60 @@ public sealed record RescuerEvidenceHistoricalUnitReport
     public IReadOnlyList<RescuerEvidenceHistoricalUnitTick> ActualTimeline { get; init; } = [];
 }
 
+// #102: an evaluation-only join of the same-cutoff public-source ablations
+// and the historical public-unit catalog. No new inference or truth input.
+public sealed record RescuerEvidencePairedHistoricalUnitCondition
+{
+    public required string Label { get; init; }
+    public IReadOnlyList<string> ReceivedOriginalIds { get; init; } = [];
+    public required string Status { get; init; }
+    public RescuerEvidenceMethodRow? PublicMethod { get; init; }
+    public required RescuerEvidenceHistoricalUnitMethod UnitProjection { get; init; }
+}
+
+public sealed record RescuerEvidencePairedHistoricalUnitMarginal
+{
+    public required string FromCondition { get; init; }
+    public required string ToCondition { get; init; }
+    public required string AddedOriginalId { get; init; }
+    public required string Status { get; init; }
+    public required string UnitComparisonStatus { get; init; }
+    public IReadOnlyList<string>? ExcludedOuterRegionIds { get; init; }
+    public IReadOnlyList<string>? ReappearedOuterRegionIds { get; init; }
+    // Null means that incomplete, unavailable or genuinely empty projection
+    // cannot establish a safe known-unit difference.
+    public IReadOnlyList<string>? RemovedKnownUnitIds { get; init; }
+    public IReadOnlyList<string>? AddedKnownUnitIds { get; init; }
+    public bool? SamePreferredCandidates { get; init; }
+    public bool? SameUncertainCandidates { get; init; }
+    public bool? SameConflictedCandidates { get; init; }
+    public int? UsedSourceGroupDelta { get; init; }
+    public int? GenerationStepsDelta { get; init; }
+    public int? VerificationStepsDelta { get; init; }
+    public int? ForwardTransitionStepsDelta { get; init; }
+    public int? BackwardTransitionStepsDelta { get; init; }
+    public int? EvidenceRecordsInspectedDelta { get; init; }
+    public int? PublicRelationsInspectedDelta { get; init; }
+}
+
+public sealed record RescuerEvidencePairedHistoricalUnitMethod
+{
+    public required string Method { get; init; }
+    public required string Status { get; init; }
+    public IReadOnlyList<RescuerEvidencePairedHistoricalUnitCondition> Conditions { get; init; } = [];
+    public IReadOnlyList<RescuerEvidencePairedHistoricalUnitMarginal> Marginals { get; init; } = [];
+}
+
+public sealed record RescuerEvidencePairedHistoricalUnitReport
+{
+    public required string Status { get; init; }
+    public string? UnavailableReason { get; init; }
+    public required long HistoricalTick { get; init; }
+    public long? QueryTick { get; init; }
+    public IReadOnlyList<string> OriginalIds { get; init; } = [];
+    public IReadOnlyList<RescuerEvidencePairedHistoricalUnitMethod> Methods { get; init; } = [];
+}
+
 public static class RescuerEvidenceMethodComparison
 {
     /// <summary>
@@ -1385,6 +1439,165 @@ public static class RescuerEvidenceMethodComparison
                 methods.All(m => !m.ComparisonEligible) ? "unavailable" : "partial",
             HistoricalTick = report.TargetWindow.EndTick,
             ActualTimeline = timeline
+        };
+    }
+
+    /// <summary>
+    /// Project each of four published same-cutoff ablations onto one historical
+    /// public unit catalog, then compare addition of either original to the
+    /// other singleton. This only reads public method rows and reuses the
+    /// existing historical projection's catalog and cutoff validation.
+    /// An ablation is a counterfactual withheld source, not an actual receipt.
+    /// </summary>
+    public static RescuerEvidencePairedHistoricalUnitReport AnalyzePairedHistoricalSearchUnits(
+        RescuerEvidenceMethodReport report,
+        IReadOnlyList<string> regionIds,
+        IReadOnlyList<string> unitIds,
+        IReadOnlyList<PublicSearchUnitMapping> unitMappings)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+        ArgumentNullException.ThrowIfNull(report.TargetWindow);
+        ArgumentNullException.ThrowIfNull(report.SameCutoffAblations);
+        ArgumentNullException.ThrowIfNull(unitMappings);
+        RescuerEvidencePairedHistoricalUnitReport Unavailable(string reason) => new()
+        {
+            Status = "unavailable",
+            UnavailableReason = reason,
+            HistoricalTick = report.TargetWindow.EndTick
+        };
+        // The existing paired analysis validates exact source identities,
+        // singleton/both membership, one common cutoff and duplicate rows.
+        var paired = AnalyzePairedContributions(report);
+        if (paired.OriginalIds.Count != 2 || paired.QueryTick is null)
+        {
+            return Unavailable(paired.UnavailableReason ?? "Invalid same-cutoff ablations.");
+        }
+
+        var ablations = report.SameCutoffAblations;
+        var firstId = paired.OriginalIds[0];
+        var secondId = paired.OriginalIds[1];
+        var rows = new[]
+        {
+            ablations.Single(row => row.ReceivedOriginalCount == 0),
+            ablations.Single(row => row.ReceivedOriginalCount == 1 &&
+                row.ReceivedOriginalIds[0] == firstId),
+            ablations.Single(row => row.ReceivedOriginalCount == 1 &&
+                row.ReceivedOriginalIds[0] == secondId),
+            ablations.Single(row => row.ReceivedOriginalCount == 2)
+        };
+        var labels = new[] { "neither", "first-only", "second-only", "both" };
+        // The historical API intentionally accepts only actual rows. Convert
+        // the *published* ablation row's label on a temporary report, without
+        // changing candidates, cutoff, receipts or the original schema-v1.
+        var projections = rows.Select(row => AnalyzeHistoricalSearchUnits(
+            report with { ActualTimeline = [row with { Condition = "actual" }] },
+            regionIds, unitIds, unitMappings).ActualTimeline.Single()).ToArray();
+        static string[] Sorted(IEnumerable<string> ids) =>
+            ids.Distinct(StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal).ToArray();
+        static bool? SameStanding(IReadOnlyList<string>? a, IReadOnlyList<string>? b) =>
+            a is null || b is null ? null :
+                Sorted(a).SequenceEqual(Sorted(b), StringComparer.Ordinal);
+        var names = new[]
+        {
+            "public-prior", "known-relation-backward",
+            "distributed-reconstruction", "distributed-reconstruction-local"
+        };
+        var methods = names.Select(name =>
+        {
+            var conditions = rows.Select((row, i) =>
+            {
+                var unit = projections[i].Methods.Single(method => method.Method == name);
+                var matches = row.Methods.Where(method =>
+                    method is not null && method.Method == name).ToArray();
+                return new RescuerEvidencePairedHistoricalUnitCondition
+                {
+                    Label = labels[i],
+                    ReceivedOriginalIds = Sorted(row.ReceivedOriginalIds),
+                    Status = unit.Status,
+                    PublicMethod = unit.Status != "unavailable" && matches.Length == 1
+                        ? matches[0] : null,
+                    UnitProjection = unit
+                };
+            }).ToArray();
+
+            RescuerEvidencePairedHistoricalUnitMarginal CompareAddition(
+                int beforeIndex, string addedOriginalId)
+            {
+                var before = conditions[beforeIndex];
+                var after = conditions[3];
+                var b = before.PublicMethod;
+                var a = after.PublicMethod;
+                var eligible = before.UnitProjection.ComparisonEligible &&
+                    after.UnitProjection.ComparisonEligible;
+                var unitsStatus = b is null || a is null ? "unavailable" :
+                    eligible ? "available" :
+                    before.Status == "empty-candidates" || after.Status == "empty-candidates"
+                        ? "empty-candidates" : "partial";
+                return new RescuerEvidencePairedHistoricalUnitMarginal
+                {
+                    FromCondition = before.Label,
+                    ToCondition = after.Label,
+                    AddedOriginalId = addedOriginalId,
+                    Status = b is null || a is null ? "unavailable" :
+                        eligible ? "available" : "partial",
+                    UnitComparisonStatus = unitsStatus,
+                    ExcludedOuterRegionIds = b is null || a is null ? null :
+                        Sorted(b.OuterCandidateRegionIds.Except(
+                            a.OuterCandidateRegionIds, StringComparer.Ordinal)),
+                    ReappearedOuterRegionIds = b is null || a is null ? null :
+                        Sorted(a.OuterCandidateRegionIds.Except(
+                            b.OuterCandidateRegionIds, StringComparer.Ordinal)),
+                    RemovedKnownUnitIds = !eligible ? null :
+                        Sorted(before.UnitProjection.KnownUnitIds.Except(
+                            after.UnitProjection.KnownUnitIds, StringComparer.Ordinal)),
+                    AddedKnownUnitIds = !eligible ? null :
+                        Sorted(after.UnitProjection.KnownUnitIds.Except(
+                            before.UnitProjection.KnownUnitIds, StringComparer.Ordinal)),
+                    SamePreferredCandidates = b is null || a is null ? null :
+                        SameStanding(b.PreferredCandidateRegionIds, a.PreferredCandidateRegionIds),
+                    SameUncertainCandidates = b is null || a is null ? null :
+                        SameStanding(b.UncertainCandidateRegionIds, a.UncertainCandidateRegionIds),
+                    SameConflictedCandidates = b is null || a is null ? null :
+                        SameStanding(b.ConflictedCandidateRegionIds, a.ConflictedCandidateRegionIds),
+                    UsedSourceGroupDelta = b is null || a is null ? null :
+                        a.UsedSourceGroupCount - b.UsedSourceGroupCount,
+                    GenerationStepsDelta = b is null || a is null ? null :
+                        a.GenerationSteps - b.GenerationSteps,
+                    VerificationStepsDelta = b is null || a is null ? null :
+                        a.VerificationSteps - b.VerificationSteps,
+                    ForwardTransitionStepsDelta = b is null || a is null ? null :
+                        a.ForwardTransitionSteps - b.ForwardTransitionSteps,
+                    BackwardTransitionStepsDelta = b is null || a is null ? null :
+                        a.BackwardTransitionSteps - b.BackwardTransitionSteps,
+                    EvidenceRecordsInspectedDelta = b is null || a is null ? null :
+                        a.EvidenceRecordsInspected - b.EvidenceRecordsInspected,
+                    PublicRelationsInspectedDelta = b is null || a is null ? null :
+                        a.PublicRelationsInspected - b.PublicRelationsInspected
+                };
+            }
+
+            var marginals = new[]
+            {
+                CompareAddition(1, secondId),
+                CompareAddition(2, firstId)
+            };
+            return new RescuerEvidencePairedHistoricalUnitMethod
+            {
+                Method = name,
+                Status = conditions.All(item => item.Status == "available") ? "available" :
+                    conditions.All(item => item.Status == "unavailable") ? "unavailable" : "partial",
+                Conditions = conditions,
+                Marginals = marginals
+            };
+        }).ToArray();
+        return new RescuerEvidencePairedHistoricalUnitReport
+        {
+            Status = methods.All(method => method.Status == "available") ? "available" :
+                methods.All(method => method.Status == "unavailable") ? "unavailable" : "partial",
+            HistoricalTick = report.TargetWindow.EndTick,
+            QueryTick = paired.QueryTick,
+            OriginalIds = paired.OriginalIds,
+            Methods = methods
         };
     }
 
