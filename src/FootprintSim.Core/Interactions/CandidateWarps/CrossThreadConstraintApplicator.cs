@@ -343,8 +343,28 @@ public sealed class CrossThreadConstraintApplicator
             "constraint-applied");
         if (constraint.EvidenceBoundaryState == EvidenceState.Confirmed)
         {
+            // A historical confirmation can narrow the past, but a published
+            // outgoing branch cannot prove an actual departure. Preserve the
+            // undeclared stopping possibility as outer-only, not preferred.
+            var withUnobservedStay = BuildAppliedWarp(
+                warp,
+                constraint,
+                accessContext,
+                publicHazardEnvelope,
+                narrowRegions: true,
+                CandidateWarpStanding.OuterPlausible,
+                "unobserved-stay",
+                retainUndeclaredStay: true);
+            var hasExtraOuterRegion = withUnobservedStay
+                .CandidateRegionIdsAt(accessContext.CurrentTick)
+                .Except(constrainedWarp.CandidateRegionIdsAt(accessContext.CurrentTick),
+                    StringComparer.Ordinal)
+                .Any();
+            var resultWarps = hasExtraOuterRegion
+                ? new[] { constrainedWarp, withUnobservedStay }
+                : new[] { constrainedWarp };
             return new WarpApplication(
-                [constrainedWarp],
+                resultWarps,
                 CreateAudit(
                     warp.WarpId,
                     constraint,
@@ -353,7 +373,7 @@ public sealed class CrossThreadConstraintApplicator
                     ConstraintApplicationReason.Applied,
                     beforeCount,
                     afterCount,
-                    alternativesRetained: false,
+                    alternativesRetained: hasExtraOuterRegion,
                     conflictDetected: false));
         }
 
@@ -364,7 +384,8 @@ public sealed class CrossThreadConstraintApplicator
             publicHazardEnvelope,
             narrowRegions: false,
             CandidateWarpStanding.OuterPlausible,
-            "outer-alternative");
+            "outer-alternative",
+            retainUndeclaredStay: true);
         return new WarpApplication(
             [constrainedWarp, outerWarp],
             CreateAudit(
@@ -386,7 +407,8 @@ public sealed class CrossThreadConstraintApplicator
         PublicHazardEnvelope? publicHazardEnvelope,
         bool narrowRegions,
         CandidateWarpStanding standing,
-        string identityPrefix)
+        string identityPrefix,
+        bool retainUndeclaredStay = false)
     {
         var history = new List<CandidateWarpState>();
         var propagationSources = new List<CandidateWarpState>();
@@ -458,7 +480,8 @@ public sealed class CrossThreadConstraintApplicator
                 warp.TargetEntityId,
                 propagationSources,
                 accessContext.CurrentTick,
-                publicHazardEnvelope);
+                publicHazardEnvelope,
+                retainUndeclaredStay);
             history.Add(propagated);
         }
 
@@ -634,7 +657,8 @@ internal static class PublicCandidateWarpPropagator
         string targetEntityId,
         IEnumerable<CandidateWarpState> sourceStates,
         long currentTick,
-        PublicHazardEnvelope? envelope)
+        PublicHazardEnvelope? envelope,
+        bool retainUndeclaredStay = false)
     {
         var sources = sourceStates
             .OrderBy(state => state.TimeWindow.StartTick)
@@ -653,7 +677,8 @@ internal static class PublicCandidateWarpPropagator
                     state.TimeWindow.EndTick,
                     currentTick,
                     envelope,
-                    depth: 0);
+                    depth: 0,
+                    retainUndeclaredStay: retainUndeclaredStay);
                 foreach (var item in reached)
                 {
                     regions.Add(item.RegionId);
@@ -680,7 +705,8 @@ internal static class PublicCandidateWarpPropagator
         long latestTick,
         long currentTick,
         PublicHazardEnvelope? envelope,
-        int depth)
+        int depth,
+        bool retainUndeclaredStay)
     {
         if (envelope is null || depth > envelope.Branches.Count)
         {
@@ -712,9 +738,11 @@ internal static class PublicCandidateWarpPropagator
         }
 
         var reached = new List<ReachedRegion>();
-        if (branches.Any(branch => branch.TransportType == HazardTransportType.SecondaryTransport))
+        if (retainUndeclaredStay ||
+            branches.Any(branch => branch.TransportType == HazardTransportType.SecondaryTransport))
         {
-            // A public secondary route is possible, not proof that release/re-transport occurred.
+            // A public departure is a possibility, not proof it occurred.
+            // An unobserved stop adds no invented positive branch provenance.
             reached.Add(new ReachedRegion(regionId, []));
         }
 
@@ -747,7 +775,8 @@ internal static class PublicCandidateWarpPropagator
                 arrivalLatest,
                 currentTick,
                 envelope,
-                depth + 1).Select(item => item with
+                depth + 1,
+                retainUndeclaredStay).Select(item => item with
                 {
                     Provenance = item.Provenance.Append(branchProvenance).ToArray()
                 }));

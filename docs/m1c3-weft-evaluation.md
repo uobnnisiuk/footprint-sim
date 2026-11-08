@@ -128,3 +128,132 @@ This preservation follows the research hypothesis `Event Density != Relation Res
 M1-C3 does not implement a full Causal Weave graph, graph query language, 24-lens taxonomy or experiment, Index Access, probabilistic belief engine, ATMS, observation calibration, distributed holder flow, BLE/GIS/CRA, rescue policy, active probing, Causal Shadow, Good/Bad scoring, GUI, or parallel execution.
 
 S3 weights, topology, observations, and outcome frequencies are synthetic. They do not estimate real disaster probability, BLE performance, person location, survival, or rescue effectiveness.
+
+## AR-6: possible published travel is not compulsory departure (2026-11-08)
+
+The original `PublicCandidateWarpPropagator.Traverse` discarded the source
+region after a published HazardDriven branch's maximum arrival time. That is
+an unwarranted closed-world interpretation: the stochastic truth engine may
+stop in a nonterminal region, and its deposition probability and realized
+random choice are **not public inference inputs**.
+
+The adopted correction retains the unobserved stop as an **outer-only**
+alternative; positive published travel destinations remain preferred and
+keep their public branch provenance. A received Confirmed observation still
+narrows its historical tick, including when the later stop is not known.
+The optional secondary-transport alternative remains valid. We defer a
+hard exclusion conditional on independently proven complete departure
+information; we reject leaking private deposition probabilities or
+realized transition traces into inference. Revisit if a legal Confirmed
+constraint is lost or an independently supported public completeness
+guarantee is introduced.
+
+Hand-checkable toy prediction (not an executed performance measurement):
+
+| Fixed case | Preferred at tick 10 | Outer at tick 10 | False exclusion if truth stayed at X |
+| --- | --- | --- | --- |
+| Prior code: Confirmed X at tick 2, published X→Y in 3 ticks | {Y} | {Y} | yes |
+| Revised proposal, same public inputs | {Y} | {X, Y} | no |
+
+This increases the safe outer candidate count from 1 to 2, rather than
+claiming a rescue-time or life-saving improvement. Unobserved staying at X
+must not be presented as positively supported movement or as certain.
+The regression covers null public envelope, deterministic output, positive
+branch provenance, inclusive arrival, multiple published branches, and the
+fixed historical observation.
+
+The existing S3 fixture sets `debris-fork.depositionProbability=0.0`,
+so its original runs cannot validate a stop at that nonterminal node. The
+test-local counterexample chooses **seed 0 before results** and changes
+only this synthetic parameter to 1.0, retaining the same truth, public
+envelope, evidence and cutoff across OwnEvidence and CrossThread. It
+checks the absolute true-location containment of both OwnEvidence and
+CrossThread outer sets, and verifies that neither method presents the
+unobserved stop as preferred. Their truth, published envelope, and query
+cutoff are identical. The shared forward projection keeps the original
+positive travel warp while adding a separate outer-only stay warp when
+the public model does not prove compulsory departure. This is an existing synthetic
+physics parameter, not a calibrated probability or new physical law.
+
+The fixed seed-0 regression and the full S3 evaluation answer different
+questions: the regression deliberately sets the existing
+`debris-fork.depositionProbability` to 1.0, whereas the independent
+adversarial run used 0.3 for the fork-stop variant and 0.3 at both
+`debris-fork` and `river-channel` for the second variant. The ordinary S3
+sample continues to set the nonterminal deposition probability to 0.0.
+Neither probability is calibrated to a real disaster.
+
+### Paired S3 measurements available as of 2026-11-08
+
+The following are **measurements reported by the separate adversarial
+reviewer**, not measurements independently rerun by this implementation
+task. [PR #99 adversarial measurement and method](https://github.com/uobnnisiuk/footprint-sim/pull/99#issuecomment-6715385578)
+reports building the original main/base
+`56e8da2715ac3ea48e7de4081c2effd90058ce2f` and revised PR head
+`fb44a9b20b3332cdfa3c61fdfc4e62f80081fa48` in Release mode and
+running the same S3 world, public model, observations, arrival/query
+cutoff, seed range **0..199**, and `--strategies all` for each version.
+Within a row the method/code revision changes; it does not add evidence
+to the revised method. The two stop variants change only the explicitly
+stated **synthetic truth-side deposition parameter** relative to the
+ordinary sample, not the information available to a strategy. Each
+strategy's absolute false exclusion is counted separately, in addition
+to the paired difference.
+
+| S3 condition (200 seeds) | Strategy | Outer false exclusions: base → head | Mean outer candidates: base → head | Mean preferred candidates (both) | Truth in preferred (both, /200) |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Ordinary sample (fork stop 0.0) | OwnEvidence | 0 → 0 | 5.000 → **8.000** | 5.000 | 200 |
+| Ordinary sample | CrossThread | 0 → 0 | 4.665 → **7.665** | 3.670 | 167 |
+| Ordinary sample | HazardAware, reference | 0 → 0 | 8.000 → 8.000 | 8.000 | 200 |
+| AR-6 fork-stop variant (fork 0.3) | OwnEvidence | **65 → 0** | 5.000 → **8.000** | 5.000 | 135 |
+| AR-6 fork-stop variant | CrossThread | **65 → 0** | 4.665 → **7.665** | 3.670 | 115 |
+| Two-site stop variant (fork and river-channel 0.3) | OwnEvidence | **80 → 0** | 5.000 → **8.000** | 5.000 | 120 |
+| Two-site stop variant | CrossThread | **80 → 0** | 4.665 → **7.665** | 3.670 | 102 |
+
+All counts and means in this table are attributed to that adversarial
+run; they are **not** an independent second measurement. The reviewer
+also reports unchanged truth, evidence-boundary state, and preferred
+sets across base/head, paired `CrossThread − OwnEvidence` **mean outer
+candidate difference −0.335** in all three variants both before and
+after the repair (−1 for Confirmed/Delayed and 0 for other conditions),
+and byte-identical repeated revised-run output. Thus the repair
+eliminated the observed absolute outer false exclusions **by retaining
+more alternatives**; it did not improve the preferred narrowing.
+For the ordinary sample, OwnEvidence's mean outer set now equals
+HazardAware's (8), and CrossThread's remaining mean outer reduction
+relative to HazardAware is only 0.335. Earlier outer reductions mostly
+depended on an unsupported compulsory-departure assumption. This is
+an unfavorable change to candidate reduction despite the favorable
+change to false exclusion; neither result is hidden or reclassified.
+
+The adversarial report additionally finds, for the fork-stop variant,
+20 of 67 run-level `confirmed` CrossThread records with truth outside
+preferred but **inside outer**. `confirmed` describes the historical
+evidence boundary, not certainty of the present location. The report
+corrects its older seed-30 example: seed 0, not seed 30, is a
+`debris-fork` false-exclusion example before repair.
+
+**What remains unmeasured here:** the cited report does not give
+`conflictedCandidateRegionIds` sizes, conflict count distributions, or
+a measured operation/work counter for base and head. No per-run
+`runs.jsonl` / `aggregate.json` from that run was transferred to
+this task, so it would be invalid to fill these fields with zero or to
+infer equal processing work from unchanged preferred results. The
+existing CI success does not determine these metrics. They require
+a comparable run-level extraction on both fixed revisions; the current
+record is **not measured/independently verified** for conflict and
+processing work. Pairing by seed, condition, strategy and query cutoff
+must be preserved if that measurement is performed.
+
+At head `fb44a9b`, the recorded [normal PR CI](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42430747204)
+passed 641 tests (0 failed, 0 skipped), and the
+[F19 research CI](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42430747208)
+also passed; the separate [independent code review](https://github.com/uobnnisiuk/footprint-sim/pull/99#pullrequestreview-5815926526)
+checked those jobs but requested this research-record update. Those
+CI checks confirm the implemented fixed regressions, **not** a second
+200-seed measurement, a general no-false-exclusion theorem, or a
+rescue-time/efficacy result.
+
+This repair is limited to a public propagation boundary. It does not
+evaluate discovery of unknown causal relations, the 24 lenses, or actual
+rescue outcomes.
