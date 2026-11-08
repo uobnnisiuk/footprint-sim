@@ -1336,7 +1336,8 @@ public static class RescuerEvidenceMethodComparison
                 {
                     return new RescuerEvidenceHistoricalUnitMethod
                     {
-                        Method = name, Status = "unavailable",
+                        Method = name,
+                        Status = "unavailable",
                         UnavailableReason = "Missing, duplicated or inconsistent public method row.",
                         ComparisonEligible = false
                     };

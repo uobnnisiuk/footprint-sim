@@ -1433,7 +1433,8 @@ public sealed class RescuerEvidenceBoundaryTests
                 {
                     Methods = row.Methods.Select((m, j) => j == 0 ? m with
                     {
-                        OuterCandidateRegionIds = [], CandidateCount = 0,
+                        OuterCandidateRegionIds = [],
+                        CandidateCount = 0,
                         CandidateReduction = m.BaselineCandidateCount
                     } : m).ToArray()
                 } : row).ToArray()

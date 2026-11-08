@@ -1135,20 +1135,32 @@ counts calibrate rescue sites, elapsed time, cost, or survival.
 Work-Key: `FP-WEFT-SEARCH-UNIT-UTILITY-V1`. The comparison uses the
 existing two-original `BuildDistinctOriginals`→`RescuerEvidenceMethodComparison.Run`
 at query ticks 5, 6, 7 for the **same historical tick 2**. The four
-existing methods share exactly the same synthetic public world, source
-ancestry, original receipt cutoffs and outer candidates. The separate
+existing methods receive the same synthetic public world, original
+records, source ancestry and receipt cutoffs, but produce method-specific
+outer candidate sets. The separate
 `AnalyzeHistoricalSearchUnits` call counts distinct unit IDs in the
 historical outer set; it does not change existing schema-v1 report,
 source groups, work counters, confidence standing or original candidates.
 F20's future projection/footprint is not run; there is no fabricated
 `PastStateCandidate` or change to the future/current-state model.
 
-Before inspecting results, the synthetic catalog A,C→U1; B→U2 is
-fixed, publicly available at tick 0 with complete mappings at tick 2.
-The table below uses the previously verified fixture's **actual Run
-outer sets**, with the corresponding unit unions hand-computed.
-The new unit counting test and GitHub CI must still check the additional
-API; this table is not claimed as a fresh independent execution.
+The past outer sets were already known from the #97 fixture before this
+unit-count comparison. At query ticks 6 and 7, prior / backward keep
+{A,B,C}, while reconstruction / local have {A,B}. The first received
+trace directly observes the target at historical tick 2 and removes C;
+the second received trace does **not** further shrink the historical
+outer sets or unit counts in this fixture, even though source use and
+traversal work can differ. This does not demonstrate synergy of two
+indirect traces or discovery of an unknown relation.
+
+To illustrate a **definition-level mapping consequence**, we constructed
+the synthetic catalog A,C→U1; B→U2 against those already-known outer
+sets. Its mappings are complete for historical tick 2 and available at
+tick 0. The table uses the fixture's actual `Run` outer sets with unit
+unions hand-computed. These illustrative catalogs do **not** constitute
+pre-registered falsifiable hypotheses, an independent experiment or
+empirical evidence of improved rescue utility. The new unit-count tests
+and GitHub CI verify API behavior against fixed examples.
 
 | Query / eligible originals | Method | Past outer regions | Regions | Known units | Units |
 | --- | --- | --- | ---: | --- | ---: |
@@ -1159,7 +1171,7 @@ API; this table is not claimed as a fresh independent execution.
 | 7 / both | Reconstruction / local | {A,B} | 2 | {U1,U2} | 2 |
 
 A region reduction **3→2 does not necessarily reduce the two known
-units (2→2)**. In a *different fixed catalog* A,B→U1; C→U2, the
+units (2→2)**. In an *alternative illustrative catalog* A,B→U1; C→U2, the
 same actual method results are 2→1 known units. This is a **mapping
 information-model difference**, not additional evidence or a newly
 invented method. The one-to-many example A→{U1,U2} contributes both
