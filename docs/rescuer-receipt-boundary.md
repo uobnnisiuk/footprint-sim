@@ -1199,3 +1199,62 @@ relations, validate any 24-edge taxonomy, or supersede the initial
 hypothesis that distributed traces may help reconstruct missing history.
 A future physical or current-time projection would require separate
 bounded review and is not authorized here.
+
+
+## Same-cutoff marginal contribution of each received trace (Issue #102)
+
+Work-Key: `FP-WEFT-MARGINAL-SEARCH-UTILITY-V1`. This is a bounded,
+truth-free **public-input diagnostic** layered on #86 and #100. The
+`AnalyzePairedHistoricalSearchUnits` API uses the four already published
+`SameCutoffAblations` of the same `Run` (query tick 7, historical tick 2),
+with the fixed synthetic public world, two original records and the
+same published unit catalog. These are **counterfactual removal** conditions;
+only the original `ActualTimeline` describes what the rescuer actually
+received. No original record is re-read and no inference is rerun. The
+schema-v1 report and the existing two analysis APIs are unchanged.
+
+For each of the existing four methods, the output exposes four public
+outer/standing/source/work rows alongside the catalog projection, and two
+**distinct source additions**: first-only→both (add the second original)
+and second-only→both (add the first original). Source identity is checked
+from original IDs, not presumed from input order. Outer exclusions and
+reappearances are separate from known-unit removals and additions;
+preferred/uncertain/conflicted equality is nullable when the existing
+method does not publish that standing. An increased used ancestry-group
+count or traversal work is not an improvement in region or unit utility.
+
+The following is the pre-existing #86/#100 fixture's **hand-computable
+expected result**, not a newly randomized experiment or a claim of
+independent performance validation. The first received original covers
+historical {A,B} and the later one covers {E,F} at tick 5.
+
+| Method | Neither | First only | Second only | Both | Add second: outer / units removed | Add first: outer / units removed |
+| --- | --- | --- | --- | --- | --- | --- |
+| Public prior | {A,B,C} | {A,B,C} | {A,B,C} | {A,B,C} | ∅ / ∅ | ∅ / ∅ |
+| Known-relation backward | {A,B,C} | {A,B,C} | {A,B,C} | {A,B,C} | ∅ / ∅ | ∅ / ∅ |
+| Reconstruction | {A,B,C} | {A,B} | {A,B,C} | {A,B} | ∅ / ∅ | {C} / ∅ |
+| Reconstruction + local | {A,B,C} | {A,B} | {A,B,C} | {A,B} | ∅ / ∅ | {C} / ∅ |
+
+The unit column uses the already constructed complete catalog
+A,C→U1; B→U2, known at tick 0. Every condition has known {U1,U2};
+the second original therefore gives **no further safe outer or unit
+reduction**. In the separate alternative catalog A,B→U1; C→U2,
+adding the **first** original to second-only removes unit U2 for
+reconstruction/local; adding the second to first-only still removes
+none. These are different **catalog information conditions**, not a
+selectable evidential success metric. The fixed fixture and both
+catalogs were shaped using previously known candidate sets; their
+arithmetic is an explanatory regression, not a prospective hypothesis
+test, evidence of unknown-relation discovery or actual rescue benefit.
+
+Missing/duplicated method rows are `unavailable`; partial, incomplete
+or future mappings retain known units and unresolved regions but have
+no decisive unit delta. A genuine empty outer set is explicitly
+`empty-candidates`, not unknown and not an asserted zero-work rescue
+site. The same source ancestry is not counted twice; device-only
+evidence cannot become person evidence. All comparisons use the
+same synthetic world, cutoff and target tick. The new diagnostics do
+not establish current physical location, checking costs, elapsed
+rescue time or survival benefit. Future unknown-relation hypotheses
+and predeclared experimental comparisons remain open; an equal or
+worse result is allowed and should be preserved.

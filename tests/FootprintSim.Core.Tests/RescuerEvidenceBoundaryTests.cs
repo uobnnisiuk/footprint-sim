@@ -1467,6 +1467,188 @@ public sealed class RescuerEvidenceBoundaryTests
     }
 
     [Fact]
+    public void PairedHistoricalUnitsExposeSourceMarginalsWithoutInventingSiteBenefit()
+    {
+        var report = ComplementaryRun();
+        var map = new[]
+        {
+            new PublicSearchUnitMapping("A", 2, ["U1"], true, "catalog", 0),
+            new PublicSearchUnitMapping("B", 2, ["U2"], true, "catalog", 0),
+            new PublicSearchUnitMapping("C", 2, ["U1"], true, "catalog", 0)
+        };
+        var original = JsonDefaults.Serialize(report);
+        var result = RescuerEvidenceMethodComparison.AnalyzePairedHistoricalSearchUnits(
+            report, ["A", "B", "C"], ["U1", "U2"], map);
+        Assert.Equal(original, JsonDefaults.Serialize(report));
+        Assert.Equal("available", result.Status);
+        Assert.Equal(2, result.HistoricalTick);
+        Assert.Equal(7, result.QueryTick);
+        Assert.Equal([RecordId, "second-original"], result.OriginalIds);
+        Assert.Equal(4, result.Methods.Count);
+        Assert.All(result.Methods, method =>
+        {
+            Assert.Equal(["neither", "first-only", "second-only", "both"],
+                method.Conditions.Select(condition => condition.Label));
+            Assert.All(method.Conditions, condition =>
+            {
+                Assert.Equal("available", condition.Status);
+                Assert.True(condition.UnitProjection.ComparisonEligible);
+                Assert.Equal(["U1", "U2"], condition.UnitProjection.KnownUnitIds);
+                Assert.Empty(condition.UnitProjection.UnresolvedRegionIds);
+            });
+            Assert.Equal(["second-original", RecordId],
+                method.Marginals.Select(m => m.AddedOriginalId));
+            Assert.All(method.Marginals, margin =>
+            {
+                Assert.Equal("available", margin.UnitComparisonStatus);
+                Assert.Empty(margin.RemovedKnownUnitIds!);
+                Assert.Empty(margin.AddedKnownUnitIds!);
+            });
+        });
+        var local = result.Methods.Single(method =>
+            method.Method == "distributed-reconstruction-local");
+        Assert.Equal(["A", "B", "C"],
+            local.Conditions[2].UnitProjection.CandidateRegionIds);
+        Assert.Equal(["A", "B"],
+            local.Conditions[3].UnitProjection.CandidateRegionIds);
+        Assert.Empty(local.Marginals[0].ExcludedOuterRegionIds!);
+        Assert.Equal(["C"], local.Marginals[1].ExcludedOuterRegionIds);
+        Assert.Equal(1, local.Marginals[0].UsedSourceGroupDelta);
+        Assert.Null(local.Marginals[0].SamePreferredCandidates);
+        var prior = result.Methods.Single(method => method.Method == "public-prior");
+        Assert.All(prior.Marginals, margin =>
+        {
+            Assert.Empty(margin.ExcludedOuterRegionIds!);
+            Assert.Empty(margin.ReappearedOuterRegionIds!);
+            Assert.Equal(0, margin.UsedSourceGroupDelta);
+        });
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(RescuerEvidenceMethodComparison.AnalyzePairedHistoricalSearchUnits(
+                ComplementaryRun(reversed: true), ["C", "A", "B"], ["U2", "U1"],
+                map.Reverse().ToArray())));
+
+        // The other fixed catalog is an information-model sensitivity check,
+        // not a different evidence set or an empirical rescue result.
+        var contrastMap = new[]
+        {
+            map[0], map[1] with { UnitIds = ["U1"] },
+            map[2] with { UnitIds = ["U2"] }
+        };
+        var contrast = RescuerEvidenceMethodComparison.AnalyzePairedHistoricalSearchUnits(
+            report, ["A", "B", "C"], ["U1", "U2"], contrastMap);
+        var contrastLocal = contrast.Methods.Single(method =>
+            method.Method == "distributed-reconstruction-local");
+        Assert.Empty(contrastLocal.Marginals[0].RemovedKnownUnitIds!);
+        Assert.Equal(["U2"], contrastLocal.Marginals[1].RemovedKnownUnitIds);
+        Assert.Equal("available", contrast.Status);
+    }
+
+    [Fact]
+    public void PairedHistoricalUnitsPreserveMissingPartialEmptyAndSourceBoundaries()
+    {
+        var report = ComplementaryRun();
+        var map = new[]
+        {
+            new PublicSearchUnitMapping("A", 2, ["U1", "U2"], true, "catalog", 0),
+            new PublicSearchUnitMapping("B", 2, ["U2"], false, "partial", 0),
+            new PublicSearchUnitMapping("C", 2, ["U3"], true, "late", 8)
+        };
+        var partial = RescuerEvidenceMethodComparison.AnalyzePairedHistoricalSearchUnits(
+            report, ["A", "B", "C"], ["U1", "U2", "U3"], map);
+        Assert.Equal("partial", partial.Status);
+        var local = partial.Methods.Single(method =>
+            method.Method == "distributed-reconstruction-local");
+        Assert.Equal("partial", local.Conditions[3].Status);
+        Assert.Equal(["B"], local.Conditions[3].UnitProjection.UnresolvedRegionIds);
+        Assert.Equal("partial", local.Marginals[0].UnitComparisonStatus);
+        Assert.Null(local.Marginals[0].RemovedKnownUnitIds);
+        Assert.Empty(local.Marginals[0].ExcludedOuterRegionIds!);
+
+        var missing = report with
+        {
+            SameCutoffAblations = report.SameCutoffAblations.Select((row, index) =>
+                index == 1 ? row with
+                {
+                    Methods = row.Methods.Where(method =>
+                        method.Method != "distributed-reconstruction-local").ToArray()
+                } : row).ToArray()
+        };
+        var validMap = map.Select(mapping => mapping with
+        {
+            IsComplete = true,
+            AvailableTick = 0
+        }).ToArray();
+        var missingResult = RescuerEvidenceMethodComparison.AnalyzePairedHistoricalSearchUnits(
+            missing, ["A", "B", "C"], ["U1", "U2", "U3"], validMap);
+        var missingLocal = missingResult.Methods.Single(method =>
+            method.Method == "distributed-reconstruction-local");
+        Assert.Equal("unavailable", missingLocal.Conditions[1].Status);
+        Assert.Null(missingLocal.Marginals[0].ExcludedOuterRegionIds);
+        Assert.Equal("available", missingLocal.Marginals[1].UnitComparisonStatus);
+        var duplicate = report with
+        {
+            SameCutoffAblations = report.SameCutoffAblations.Select((row, index) =>
+                index == 1 ? row with
+                {
+                    Methods = row.Methods.Concat([row.Methods[0]]).ToArray()
+                } : row).ToArray()
+        };
+        Assert.Equal("unavailable",
+            RescuerEvidenceMethodComparison.AnalyzePairedHistoricalSearchUnits(
+                duplicate, ["A", "B", "C"], ["U1", "U2", "U3"], validMap)
+            .Methods.Single(method => method.Method == "public-prior")
+            .Conditions[1].Status);
+        Assert.Equal("unavailable",
+            RescuerEvidenceMethodComparison.AnalyzePairedHistoricalSearchUnits(
+                report with { SameCutoffAblations = report.SameCutoffAblations.Skip(1).ToArray() },
+                ["A", "B", "C"], ["U1", "U2", "U3"], validMap).Status);
+        var empty = report with
+        {
+            SameCutoffAblations = report.SameCutoffAblations.Select((row, index) =>
+                index == 3 ? row with
+                {
+                    Methods = row.Methods.Select(method =>
+                        method.Method == "public-prior" ? method with
+                        {
+                            OuterCandidateRegionIds = [],
+                            CandidateCount = 0,
+                            CandidateReduction = method.BaselineCandidateCount
+                        } : method).ToArray()
+                } : row).ToArray()
+        };
+        var emptyResult = RescuerEvidenceMethodComparison.AnalyzePairedHistoricalSearchUnits(
+            empty, ["A", "B", "C"], ["U1", "U2", "U3"], validMap);
+        var emptyPrior = emptyResult.Methods.Single(method => method.Method == "public-prior");
+        Assert.Equal("empty-candidates", emptyPrior.Conditions[3].Status);
+        Assert.Empty(emptyPrior.Conditions[3].UnitProjection.KnownUnitIds);
+        Assert.Equal("empty-candidates", emptyPrior.Marginals[0].UnitComparisonStatus);
+        Assert.Null(emptyPrior.Marginals[0].RemovedKnownUnitIds);
+
+        var shared = RescuerEvidenceMethodComparison.AnalyzePairedHistoricalSearchUnits(
+            ComplementaryRun(secondAncestry: "weft-a"),
+            ["A", "B", "C"], ["U1", "U2", "U3"], validMap);
+        var sharedBoth = shared.Methods.Single(method =>
+            method.Method == "distributed-reconstruction-local").Conditions[3];
+        Assert.True(sharedBoth.PublicMethod!.UsedSourceGroupCount <=
+            sharedBoth.PublicMethod.AvailableSourceGroupCount);
+        Assert.Equal(1, sharedBoth.PublicMethod.AvailableSourceGroupCount);
+
+        var uncertain = RescuerEvidenceMethodComparison.AnalyzePairedHistoricalSearchUnits(
+            ComplementaryRun(firstState: EvidenceState.Uncertain),
+            ["A", "B", "C"], ["U1", "U2", "U3"], validMap);
+        Assert.NotNull(uncertain.Methods.Single(method =>
+            method.Method == "distributed-reconstruction").Conditions[3]
+            .PublicMethod!.UncertainCandidateRegionIds);
+        var device = RescuerEvidenceMethodComparison.AnalyzePairedHistoricalSearchUnits(
+            ComplementaryRun(deviceOnly: true),
+            ["A", "B", "C"], ["U1", "U2", "U3"], validMap);
+        Assert.Equal("available", device.Status);
+        Assert.Throws<InvalidDataException>(() =>
+            RescuerEvidenceMethodComparison.AnalyzePairedHistoricalSearchUnits(
+                report, ["A", "B", "C"], ["U1", "U1"], validMap));
+    }
+
+    [Fact]
     public void ComplementaryReceiptTimingSeparatesTemporaryLossFromFinalConvergence()
     {
         var (early, late) = ComplementaryTimingRuns();
