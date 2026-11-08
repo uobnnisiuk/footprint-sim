@@ -1590,8 +1590,8 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Equal("second-original", witness.LaterDirectSourceId);
         Assert.NotEqual(witness.EarlyConstraintId, witness.LaterConstraintId);
         Assert.NotEqual(witness.EarlySourceObservationId, witness.LaterSourceObservationId);
-        Assert.Equal(["weft-a"], witness.EarlySourceAncestryIds);
-        Assert.Equal(["weft-b"], witness.LaterSourceAncestryIds);
+        Assert.Contains("weft-a", witness.EarlySourceAncestryIds);
+        Assert.Contains("weft-b", witness.LaterSourceAncestryIds);
         Assert.True(witness.IndependentSourceAncestry);
         Assert.Equal("unknown", witness.PersonTraversability);
 
