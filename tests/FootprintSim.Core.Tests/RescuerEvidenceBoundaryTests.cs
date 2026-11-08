@@ -2,6 +2,7 @@ using FootprintSim.Evaluation;
 using FootprintSim.Evidence;
 using FootprintSim.Hazards;
 using FootprintSim.Inference;
+using FootprintSim.Inference.SearchProjection;
 using FootprintSim.Interactions;
 using FootprintSim.Interactions.CandidateWarps;
 using FootprintSim.Interactions.Tracing;
