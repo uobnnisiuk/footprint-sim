@@ -493,36 +493,36 @@ public static class RescuerEvidenceMethodComparison
                 Overlaps(c.ConstrainedTimeWindow, targetWindow)).ToArray();
             foreach (var early in earlyCandidates.Where(c =>
                 c.EvidenceBoundaryState == EvidenceState.Confirmed))
-            foreach (var later in constraints.Where(c =>
-                c.EvidenceBoundaryState == EvidenceState.Confirmed &&
-                c.DirectSourceId != early.DirectSourceId &&
-                c.ConstrainedTimeWindow.EndTick > targetWindow.EndTick))
-            foreach (var branch in branches.Where(b =>
-                b.SourceRegionId == region &&
-                later.AllowedRegionIds.Contains(b.DestinationRegionId, StringComparer.Ordinal)))
-            {
-                pairInspections++;
-                if (!CompatibleTimes(early.ConstrainedTimeWindow, targetWindow,
-                    later.ConstrainedTimeWindow, branch.MinimumTravelTicks,
-                    branch.MaximumTravelTicks, out var t0, out var t1))
-                {
-                    continue;
-                }
-                var ancestryIndependent = early.SourceAncestryIds.Count > 0 &&
-                    later.SourceAncestryIds.Count > 0 &&
-                    !early.SourceAncestryIds.Intersect(
-                        later.SourceAncestryIds, StringComparer.Ordinal).Any();
-                witnesses.Add(new RescuerDeclaredPathWitness(
-                    region,
-                    early.ConstraintId, early.DirectSourceId, early.SourceObservationId,
-                    early.SourceAncestryIds.OrderBy(id => id, StringComparer.Ordinal).ToArray(),
-                    later.ConstraintId, later.DirectSourceId, later.SourceObservationId,
-                    later.SourceAncestryIds.OrderBy(id => id, StringComparer.Ordinal).ToArray(),
-                    branch.DestinationRegionId, branch.ProvenanceId,
-                    branch.PublishedAtTick, branch.MinimumTravelTicks,
-                    branch.MaximumTravelTicks, t0, t1,
-                    ancestryIndependent, "unknown"));
-            }
+                foreach (var later in constraints.Where(c =>
+                    c.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                    c.DirectSourceId != early.DirectSourceId &&
+                    c.ConstrainedTimeWindow.EndTick > targetWindow.EndTick))
+                    foreach (var branch in branches.Where(b =>
+                        b.SourceRegionId == region &&
+                        later.AllowedRegionIds.Contains(b.DestinationRegionId, StringComparer.Ordinal)))
+                    {
+                        pairInspections++;
+                        if (!CompatibleTimes(early.ConstrainedTimeWindow, targetWindow,
+                            later.ConstrainedTimeWindow, branch.MinimumTravelTicks,
+                            branch.MaximumTravelTicks, out var t0, out var t1))
+                        {
+                            continue;
+                        }
+                        var ancestryIndependent = early.SourceAncestryIds.Count > 0 &&
+                            later.SourceAncestryIds.Count > 0 &&
+                            !early.SourceAncestryIds.Intersect(
+                                later.SourceAncestryIds, StringComparer.Ordinal).Any();
+                        witnesses.Add(new RescuerDeclaredPathWitness(
+                            region,
+                            early.ConstraintId, early.DirectSourceId, early.SourceObservationId,
+                            early.SourceAncestryIds.OrderBy(id => id, StringComparer.Ordinal).ToArray(),
+                            later.ConstraintId, later.DirectSourceId, later.SourceObservationId,
+                            later.SourceAncestryIds.OrderBy(id => id, StringComparer.Ordinal).ToArray(),
+                            branch.DestinationRegionId, branch.ProvenanceId,
+                            branch.PublishedAtTick, branch.MinimumTravelTicks,
+                            branch.MaximumTravelTicks, t0, t1,
+                            ancestryIndependent, "unknown"));
+                    }
 
             // A conflict in a relevant publicly received Person observation is
             // preserved, but never promoted to a confirmed positive witness.
