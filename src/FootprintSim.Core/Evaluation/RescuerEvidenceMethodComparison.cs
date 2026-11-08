@@ -471,11 +471,13 @@ public static class RescuerEvidenceMethodComparison
         // into a point. Select the earliest admissible pair deterministically.
         static bool CompatibleTimes(
             InteractionTimeWindow early, InteractionTimeWindow target,
-            InteractionTimeWindow later, int minimum, int maximum,
-            out long earlyTick, out long laterTick)
+            InteractionTimeWindow candidateState, InteractionTimeWindow later,
+            int minimum, int maximum, out long earlyTick, out long laterTick)
         {
-            var lo = Math.Max(early.StartTick, target.StartTick);
-            var hi = Math.Min(early.EndTick, target.EndTick);
+            var lo = Math.Max(Math.Max(early.StartTick, target.StartTick),
+                candidateState.StartTick);
+            var hi = Math.Min(Math.Min(early.EndTick, target.EndTick),
+                candidateState.EndTick);
             var travelMin = Math.Max(1, minimum);
             earlyTick = Math.Max(lo, later.StartTick - maximum);
             laterTick = Math.Max(later.StartTick, earlyTick + travelMin);
@@ -484,9 +486,19 @@ public static class RescuerEvidenceMethodComparison
         }
 
         var pairInspections = 0;
+        var usablePersonSourceCount = constraints.Select(c => c.DirectSourceId)
+            .Distinct(StringComparer.Ordinal).Count();
         var candidates = new List<RescuerDeclaredPathCandidate>();
         foreach (var region in regions)
         {
+            // A region may occur only at some ticks in the target window.
+            // Keep its public candidate-state windows when proving a witness.
+            var candidateWindows = states.Where(state =>
+                    Overlaps(state.TimeWindow, targetWindow) &&
+                    state.RegionIds.Contains(region, StringComparer.Ordinal))
+                .Select(state => state.TimeWindow)
+                .OrderBy(window => window.StartTick)
+                .ThenBy(window => window.EndTick).ToArray();
             var witnesses = new List<RescuerDeclaredPathWitness>();
             var earlyCandidates = constraints.Where(c =>
                 c.AllowedRegionIds.Contains(region, StringComparer.Ordinal) &&
@@ -502,9 +514,21 @@ public static class RescuerEvidenceMethodComparison
                         later.AllowedRegionIds.Contains(b.DestinationRegionId, StringComparer.Ordinal)))
                     {
                         pairInspections++;
-                        if (!CompatibleTimes(early.ConstrainedTimeWindow, targetWindow,
-                            later.ConstrainedTimeWindow, branch.MinimumTravelTicks,
-                            branch.MaximumTravelTicks, out var t0, out var t1))
+                        long t0 = 0, t1 = 0;
+                        var compatible = false;
+                        foreach (var candidateWindow in candidateWindows)
+                        {
+                            if (!CompatibleTimes(early.ConstrainedTimeWindow, targetWindow,
+                                candidateWindow, later.ConstrainedTimeWindow,
+                                branch.MinimumTravelTicks, branch.MaximumTravelTicks,
+                                out t0, out t1))
+                            {
+                                continue;
+                            }
+                            compatible = true;
+                            break;
+                        }
+                        if (!compatible)
                         {
                             continue;
                         }
@@ -540,7 +564,8 @@ public static class RescuerEvidenceMethodComparison
                 .ToArray();
             var status = ordered.Length > 0 ? "witnessed"
                 : conflicting ? "conflict"
-                : !envelopeAvailable || receivedIds.Length < 2 ? "unavailable" : "unknown";
+                : !envelopeAvailable || usablePersonSourceCount < 2
+                    ? "unavailable" : "unknown";
             candidates.Add(new RescuerDeclaredPathCandidate(region, status, ordered));
         }
         return new RescuerDeclaredPathCompatibilityReport(

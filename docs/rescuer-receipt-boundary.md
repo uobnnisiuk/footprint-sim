@@ -1309,7 +1309,10 @@ Aggregate source/transition columns of the four baseline methods are
 not cross-joined to manufacture candidate-specific evidence.
 Distinct source ancestry is reported separately; copied ancestry is
 not another independent original. Observed intervals remain intervals
-when checking possible travel times.
+when checking possible travel times. For interval target queries, the public
+candidate state for the given region must **also contain the chosen early
+witness tick**. A region appearing only at another target tick cannot acquire
+a false-positive witness by flattening all candidate regions across ticks.
 
 The fixed explanatory control reuses AR-9 V1: candidate regions
 {A,B,C} at tick 2, later regions {D,E,F} at tick 5 and published
@@ -1338,7 +1341,12 @@ search units and four method implementations are unchanged.
 Negative controls address the actual tick-6 nonreceipt (separate
 from the tick-7 counterfactual ablation), partial/unpublished or future
 branch declarations, time incompatibility, Device-only records,
-uncertain/conflicting records, and shared ancestry. Future branches
+uncertain/conflicting records, and shared ancestry. Two received originals
+with fewer than two distinct usable target-Person source IDs (including a
+Device-only or unrelated-Person original) yield `unavailable`, not
+`unknown`; received-original IDs remain reported separately. `unknown`
+is reserved for eligible evidence without a witnessed declared route.
+Future branches
 do not become available early; the existing Compare future guard is
 not weakened, and comparisons with future branches require a
 cutoff-filtered public projection. Future candidate provenance
