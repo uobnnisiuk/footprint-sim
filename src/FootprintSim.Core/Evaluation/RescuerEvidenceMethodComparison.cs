@@ -1,6 +1,7 @@
 using FootprintSim.Evidence;
 using FootprintSim.Inference;
 using FootprintSim.Inference.PastStates;
+using FootprintSim.Inference.SearchProjection;
 using FootprintSim.Interactions;
 using FootprintSim.Interactions.Tracing;
 
@@ -273,6 +274,38 @@ public sealed record RescuerEvidenceRelationAvailabilityReport
     public required InteractionTimeWindow TargetWindow { get; init; }
     public IReadOnlyList<long> QueryTicks { get; init; } = [];
     public IReadOnlyList<RescuerEvidenceRelationAvailabilityMethod> Methods { get; init; } = [];
+}
+
+
+/* #100: an additional public historical-tick classification of actual outer
+ * regions, not a present-position or action-footprint projection. */
+public sealed record RescuerEvidenceHistoricalUnitMethod
+{
+    public required string Method { get; init; }
+    public required string Status { get; init; }
+    public string? UnavailableReason { get; init; }
+    public int? CandidateRegionCount { get; init; }
+    public IReadOnlyList<string>? CandidateRegionIds { get; init; }
+    public IReadOnlyList<string> KnownUnitIds { get; init; } = [];
+    public int? KnownUnitCount { get; init; }
+    public IReadOnlyList<string> UnresolvedRegionIds { get; init; } = [];
+    public IReadOnlyList<string> MappingSourceIds { get; init; } = [];
+    public required bool ComparisonEligible { get; init; }
+}
+
+public sealed record RescuerEvidenceHistoricalUnitTick
+{
+    public required long QueryTick { get; init; }
+    public required int ReceivedOriginalCount { get; init; }
+    public required int AvailableSourceGroupCount { get; init; }
+    public IReadOnlyList<RescuerEvidenceHistoricalUnitMethod> Methods { get; init; } = [];
+}
+
+public sealed record RescuerEvidenceHistoricalUnitReport
+{
+    public required string Status { get; init; }
+    public required long HistoricalTick { get; init; }
+    public IReadOnlyList<RescuerEvidenceHistoricalUnitTick> ActualTimeline { get; init; } = [];
 }
 
 public static class RescuerEvidenceMethodComparison
@@ -1193,6 +1226,165 @@ public static class RescuerEvidenceMethodComparison
             TargetWindow = withKnownRelations.TargetWindow,
             QueryTicks = known.Select(row => row.QueryTick).ToArray(),
             Methods = methods
+        };
+    }
+
+
+    /// <summary>
+    /// Pure same-historical-tick public unit count of actual receipt-gated outer
+    /// regions. Original report/method/ancestry remains unchanged. Future mapping,
+    /// partial mapping and missing region mapping are unresolved, never zero sites.
+    /// This does not call F20's future public projection or invent candidates.
+    /// </summary>
+    public static RescuerEvidenceHistoricalUnitReport AnalyzeHistoricalSearchUnits(
+        RescuerEvidenceMethodReport report,
+        IReadOnlyList<string> regionIds,
+        IReadOnlyList<string> unitIds,
+        IReadOnlyList<PublicSearchUnitMapping> unitMappings)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+        ArgumentNullException.ThrowIfNull(report.TargetWindow);
+        ArgumentNullException.ThrowIfNull(report.ActualTimeline);
+        ArgumentNullException.ThrowIfNull(unitMappings);
+        if (report.SchemaVersion != 1 || report.ActualTimeline.Count == 0 ||
+            report.TargetWindow.StartTick != report.TargetWindow.EndTick)
+        {
+            throw new InvalidDataException("An actual exact-tick schema-v1 report is required.");
+        }
+
+        static void RequireId(string id)
+        {
+            if (string.IsNullOrWhiteSpace(id) || id.Length > 512 ||
+                id != id.Trim() || id.Any(char.IsControl))
+            {
+                throw new InvalidDataException("Invalid public projection identifier.");
+            }
+        }
+        static HashSet<string> Catalog(IReadOnlyList<string> entries)
+        {
+            ArgumentNullException.ThrowIfNull(entries);
+            var result = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var id in entries)
+            {
+                RequireId(id);
+                if (!result.Add(id))
+                {
+                    throw new InvalidDataException("Duplicate public catalog identifier.");
+                }
+            }
+            return result;
+        }
+        static string[] Ordered(IEnumerable<string> ids) =>
+            ids.Distinct(StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal).ToArray();
+
+        var regions = Catalog(regionIds);
+        var units = Catalog(unitIds);
+        var mappings = new Dictionary<string, PublicSearchUnitMapping>(StringComparer.Ordinal);
+        foreach (var mapping in unitMappings)
+        {
+            ArgumentNullException.ThrowIfNull(mapping);
+            RequireId(mapping.RegionId);
+            RequireId(mapping.SourceId);
+            if (!regions.Contains(mapping.RegionId) ||
+                mapping.TargetTick != report.TargetWindow.EndTick || mapping.AvailableTick < 0)
+            {
+                throw new InvalidDataException("Invalid historical mapping region or time.");
+            }
+            var targets = Catalog(mapping.UnitIds);
+            if (targets.Any(id => !units.Contains(id)) ||
+                (mapping.IsComplete && targets.Count == 0) ||
+                !mappings.TryAdd(mapping.RegionId, mapping with { UnitIds = Ordered(targets) }))
+            {
+                throw new InvalidDataException("Invalid or duplicate public unit mapping.");
+            }
+        }
+
+        var names = new[]
+        {
+            "public-prior", "known-relation-backward",
+            "distributed-reconstruction", "distributed-reconstruction-local"
+        };
+        var ticks = report.ActualTimeline.OrderBy(row => row.QueryTick).ToArray();
+        if (ticks.Any(row => row is null || row.Condition != "actual" ||
+            row.QueryTick < report.TargetWindow.EndTick || row.Methods is null) ||
+            ticks.Select(row => row.QueryTick).Distinct().Count() != ticks.Length)
+        {
+            throw new InvalidDataException("Invalid or repeated actual query tick.");
+        }
+        var timeline = ticks.Select(row => new RescuerEvidenceHistoricalUnitTick
+        {
+            QueryTick = row.QueryTick,
+            ReceivedOriginalCount = row.ReceivedOriginalCount,
+            AvailableSourceGroupCount = row.AvailableSourceGroupCount,
+            Methods = names.Select(name =>
+            {
+                var matches = row.Methods.Where(method =>
+                    method is not null && method.Method == name).ToArray();
+                var valid = matches.Length == 1 &&
+                    matches[0].OuterCandidateRegionIds is not null &&
+                    matches[0].CandidateCount >= 0 && matches[0].BaselineCandidateCount >= 0 &&
+                    matches[0].CandidateCount == matches[0].OuterCandidateRegionIds.Count &&
+                    matches[0].CandidateReduction ==
+                        matches[0].BaselineCandidateCount - matches[0].CandidateCount &&
+                    matches[0].AvailableSourceGroupCount == row.AvailableSourceGroupCount &&
+                    matches[0].OuterCandidateRegionIds.All(id =>
+                        !string.IsNullOrWhiteSpace(id) && id.Length <= 512 &&
+                        id == id.Trim() && !id.Any(char.IsControl)) &&
+                    matches[0].OuterCandidateRegionIds.Distinct(StringComparer.Ordinal).Count() ==
+                        matches[0].CandidateCount;
+                if (!valid)
+                {
+                    return new RescuerEvidenceHistoricalUnitMethod
+                    {
+                        Method = name,
+                        Status = "unavailable",
+                        UnavailableReason = "Missing, duplicated or inconsistent public method row.",
+                        ComparisonEligible = false
+                    };
+                }
+                var candidates = Ordered(matches[0].OuterCandidateRegionIds);
+                var known = new HashSet<string>(StringComparer.Ordinal);
+                var unresolved = new List<string>();
+                var sources = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var region in candidates)
+                {
+                    if (!regions.Contains(region) ||
+                        !mappings.TryGetValue(region, out var mapping) ||
+                        mapping.AvailableTick > row.QueryTick)
+                    {
+                        unresolved.Add(region);
+                        continue;
+                    }
+                    known.UnionWith(mapping.UnitIds);
+                    sources.Add(mapping.SourceId);
+                    if (!mapping.IsComplete)
+                    {
+                        unresolved.Add(region);
+                    }
+                }
+                var empty = candidates.Length == 0;
+                return new RescuerEvidenceHistoricalUnitMethod
+                {
+                    Method = name,
+                    Status = empty ? "empty-candidates" :
+                        unresolved.Count == 0 ? "available" : "partial",
+                    CandidateRegionCount = candidates.Length,
+                    CandidateRegionIds = candidates,
+                    KnownUnitIds = Ordered(known),
+                    KnownUnitCount = known.Count,
+                    UnresolvedRegionIds = Ordered(unresolved),
+                    MappingSourceIds = Ordered(sources),
+                    ComparisonEligible = !empty && unresolved.Count == 0
+                };
+            }).ToArray()
+        }).ToArray();
+        var methods = timeline.SelectMany(row => row.Methods).ToArray();
+        return new RescuerEvidenceHistoricalUnitReport
+        {
+            Status = methods.All(m => m.ComparisonEligible) ? "available" :
+                methods.All(m => !m.ComparisonEligible) ? "unavailable" : "partial",
+            HistoricalTick = report.TargetWindow.EndTick,
+            ActualTimeline = timeline
         };
     }
 

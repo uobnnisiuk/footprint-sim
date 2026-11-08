@@ -1128,3 +1128,74 @@ physical movement) remains excluded. **AR-6**, a separate propagator
 path, is not addressed by this tracer repair and still requires
 independent scope review. Neither candidate counts nor tick/work
 counts calibrate rescue sites, elapsed time, cost, or survival.
+
+
+## Historical weft candidates versus published search units (Issue #100)
+
+Work-Key: `FP-WEFT-SEARCH-UNIT-UTILITY-V1`. The comparison uses the
+existing two-original `BuildDistinctOriginals`→`RescuerEvidenceMethodComparison.Run`
+at query ticks 5, 6, 7 for the **same historical tick 2**. The four
+existing methods receive the same synthetic public world, original
+records, source ancestry and receipt cutoffs, but produce method-specific
+outer candidate sets. The separate
+`AnalyzeHistoricalSearchUnits` call counts distinct unit IDs in the
+historical outer set; it does not change existing schema-v1 report,
+source groups, work counters, confidence standing or original candidates.
+F20's future projection/footprint is not run; there is no fabricated
+`PastStateCandidate` or change to the future/current-state model.
+
+The past outer sets were already known from the #97 fixture before this
+unit-count comparison. At query ticks 6 and 7, prior / backward keep
+{A,B,C}, while reconstruction / local have {A,B}. The first received
+trace directly observes the target at historical tick 2 and removes C;
+the second received trace does **not** further shrink the historical
+outer sets or unit counts in this fixture, even though source use and
+traversal work can differ. This does not demonstrate synergy of two
+indirect traces or discovery of an unknown relation.
+
+To illustrate a **definition-level mapping consequence**, we constructed
+the synthetic catalog A,C→U1; B→U2 against those already-known outer
+sets. Its mappings are complete for historical tick 2 and available at
+tick 0. The table uses the fixture's actual `Run` outer sets with unit
+unions hand-computed. These illustrative catalogs do **not** constitute
+pre-registered falsifiable hypotheses, an independent experiment or
+empirical evidence of improved rescue utility. The new unit-count tests
+and GitHub CI verify API behavior against fixed examples.
+
+| Query / eligible originals | Method | Past outer regions | Regions | Known units | Units |
+| --- | --- | --- | ---: | --- | ---: |
+| 5 / none | All four | {A,B,C} | 3 | {U1,U2} | 2 |
+| 6 / first | Prior / backward | {A,B,C} | 3 | {U1,U2} | 2 |
+| 6 / first | Reconstruction / local | {A,B} | 2 | {U1,U2} | 2 |
+| 7 / both | Prior / backward | {A,B,C} | 3 | {U1,U2} | 2 |
+| 7 / both | Reconstruction / local | {A,B} | 2 | {U1,U2} | 2 |
+
+A region reduction **3→2 does not necessarily reduce the two known
+units (2→2)**. In an *alternative illustrative catalog* A,B→U1; C→U2, the
+same actual method results are 2→1 known units. This is a **mapping
+information-model difference**, not additional evidence or a newly
+invented method. The one-to-many example A→{U1,U2} contributes both
+known unit IDs, deduplicated across candidates. Neither a reduced count
+nor a known unit means a unit is physically verified or searched.
+
+Partial-information control: A→{U1,U2} complete at tick 0,
+B→{U2} incomplete at tick 0, C→{U3} published only at query tick 6.
+At query tick 5, {A,B,C} has known {U1,U2} **and** unresolved {B,C};
+at tick 6, {A,B} has unresolved {B}. Even if the known union is empty,
+missing/partial mappings remain `partial` and cannot be called zero
+locations. Genuine empty outer candidates are separately flagged
+`empty-candidates`, while missing or duplicated method rows are
+`unavailable`. The catalog rejects duplicate IDs, invalid source and
+region references, complete empty unit mappings and incorrect target
+ticks. An unavailable future publication never leaks into earlier queries.
+
+This synthetic historical unit count is **not** a present-time location
+or an executable action footprint. It is not calibrated to buildings,
+travel, staffing, rescue time, financial cost, detection or survival.
+The method differences and the public catalog's available/completeness
+information differences are reported separately; same results, growth,
+unknown and no benefit are valid outcomes. This does not discover unknown
+relations, validate any 24-edge taxonomy, or supersede the initial
+hypothesis that distributed traces may help reconstruct missing history.
+A future physical or current-time projection would require separate
+bounded review and is not authorized here.
