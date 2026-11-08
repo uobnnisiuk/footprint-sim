@@ -400,6 +400,44 @@ public sealed record RescuerDeclaredPathCompatibilityReport(
     int PublicBranchesInspected,
     int ConstraintBranchPairsInspected);
 
+// #106: Questions about missing *public declarations*, not discovered
+// physical relations or observations. A time difference is only the formal
+// interval that could be compatible if the relation were later declared.
+public sealed record RescuerMissingDeclaredPathQuestion(
+    string QuestionId,
+    string SourceRegionId,
+    string DestinationRegionId,
+    long MinimumCompatibleDifferenceTicks,
+    long MaximumCompatibleDifferenceTicks,
+    string EarlyConstraintId,
+    string EarlyDirectSourceId,
+    string EarlySourceObservationId,
+    IReadOnlyList<string> EarlySourceAncestryIds,
+    string LaterConstraintId,
+    string LaterDirectSourceId,
+    string LaterSourceObservationId,
+    IReadOnlyList<string> LaterSourceAncestryIds,
+    bool IndependentSourceAncestry,
+    string PersonTraversability);
+
+public sealed record RescuerMissingDeclaredPathCandidate(
+    string RegionId,
+    string DeclaredPathStatus,
+    IReadOnlyList<RescuerMissingDeclaredPathQuestion> Questions,
+    // Formal public explanations that make a missing direct declaration
+    // non-essential. These are not verified Person movements.
+    IReadOnlyList<string> PublicAlternativeExplanations);
+
+public sealed record RescuerMissingDeclaredPathReport(
+    long QueryTick,
+    InteractionTimeWindow TargetWindow,
+    IReadOnlyList<string> ReceivedOriginalIds,
+    string Status,
+    IReadOnlyList<RescuerMissingDeclaredPathCandidate> Candidates,
+    int PublicConstraintsInspected,
+    int PublicBranchesInspected,
+    int ConstraintPairsInspected);
+
 public static class RescuerEvidenceMethodComparison
 {
     /// <summary>
@@ -572,6 +610,196 @@ public static class RescuerEvidenceMethodComparison
             cutoff, targetWindow, receivedIds,
             envelopeAvailable ? "available" : "unavailable",
             candidates, constraints.Length, branches.Length, pairInspections);
+    }
+
+    /// <summary>
+    /// Evaluation-only, receipt-gated questions for an *unconfirmed* public
+    /// relation. This does not assert that a relation exists or feed it into
+    /// inference. The #104 diagnostic supplies candidate eligibility/status;
+    /// all source joins and candidate-time intersections use its public rules.
+    /// </summary>
+    public static RescuerMissingDeclaredPathReport AnalyzeMissingDeclaredPathQuestions(
+        RescuerEvidenceInput received,
+        InteractionTimeWindow targetWindow)
+    {
+        // Keep #104's unavailable/conflict/witness distinction and validations
+        // unchanged. In particular, lack of a published branch is not absence.
+        var declared = AnalyzeDeclaredPathCompatibility(received, targetWindow);
+        var input = received.Input;
+        var cutoff = input.CurrentTick;
+        var originals = received.ReceivedRecords
+            .Select(record => record.OriginalRecordId)
+            .ToHashSet(StringComparer.Ordinal);
+        var constraints = (input.AvailableCausalTracingConstraints?
+            .PubliclyAvailableAt(cutoff).Constraints ?? [])
+            .Where(c => c.ScenarioId == input.ScenarioId && c.Seed == input.Seed &&
+                c.TargetEntityId == input.PublicContext.TargetPersonId &&
+                c.Visibility == InteractionVisibility.PublicEvidence &&
+                c.AvailableAtTick <= cutoff && originals.Contains(c.DirectSourceId) &&
+                c.IsPersonEvidence && !c.IsDeviceOnlyEvidence)
+            .OrderBy(c => c.ConstraintId, StringComparer.Ordinal).ToArray();
+        var states = input.PublicContext.PublicCausalTracingModel!.CandidateStates;
+        var envelope = input.PublicContext.PublicHazardEnvelope;
+        var publishedBranches = declared.Status == "available"
+            ? envelope!.Branches.Where(b => b.PublishedAtTick <= cutoff &&
+                b.MinimumTravelTicks >= 0 &&
+                b.MaximumTravelTicks >= b.MinimumTravelTicks).ToArray()
+            : [];
+        // A declared endpoint pair cannot become an "unknown relation" merely
+        // because its published travel bound has no formal witness.
+        var publishedPairs = publishedBranches
+            .Select(b => (b.SourceRegionId, b.DestinationRegionId)).ToHashSet();
+
+        var inspected = 0;
+        var result = new List<RescuerMissingDeclaredPathCandidate>();
+        foreach (var candidate in declared.Candidates)
+        {
+            var questions = new List<RescuerMissingDeclaredPathQuestion>();
+            var explanations = new SortedSet<string>(StringComparer.Ordinal);
+            if (candidate.Status == "unknown" && declared.Status == "available")
+            {
+                var region = candidate.RegionId;
+                var windows = states.Where(s =>
+                        s.RegionIds.Contains(region, StringComparer.Ordinal) &&
+                        s.TimeWindow.StartTick <= targetWindow.EndTick &&
+                        targetWindow.StartTick <= s.TimeWindow.EndTick)
+                    .Select(s => s.TimeWindow)
+                    .OrderBy(w => w.StartTick).ThenBy(w => w.EndTick).ToArray();
+                var earlyConstraints = constraints.Where(c =>
+                    c.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                    c.AllowedRegionIds.Contains(region, StringComparer.Ordinal) &&
+                    c.ConstrainedTimeWindow.StartTick <= targetWindow.EndTick &&
+                    targetWindow.StartTick <= c.ConstrainedTimeWindow.EndTick);
+                foreach (var early in earlyConstraints)
+                    foreach (var later in constraints.Where(c =>
+                        c.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                        c.DirectSourceId != early.DirectSourceId &&
+                        c.ConstrainedTimeWindow.EndTick > targetWindow.EndTick))
+                    {
+                        inspected++;
+                        var independent = early.SourceAncestryIds.Count > 0 &&
+                            later.SourceAncestryIds.Count > 0 &&
+                            !early.SourceAncestryIds.Intersect(
+                                later.SourceAncestryIds, StringComparer.Ordinal).Any();
+                        foreach (var destination in later.AllowedRegionIds
+                            .Distinct(StringComparer.Ordinal)
+                            .OrderBy(id => id, StringComparer.Ordinal))
+                        {
+                            // A published direct pair can have incompatible
+                            // timing. Preserve that fact rather than pretending
+                            // that no published declaration exists (AR-12).
+                            var directPublished = publishedPairs.Contains((region, destination));
+                            // Build questions per endpoint pair. One compatible
+                            // public alternative makes a new direct edge *unneeded*
+                            // for a formal explanation, not impossible or false.
+                            var pending = new List<RescuerMissingDeclaredPathQuestion>();
+                            var pairExplained = false;
+                            // Preserve disjoint candidate-state windows: never
+                            // bridge a gap into a fabricated continuous interval.
+                            var seenRanges = new HashSet<(long Minimum, long Maximum)>();
+                            foreach (var window in windows)
+                            {
+                                var earliest = Math.Max(
+                                    Math.Max(early.ConstrainedTimeWindow.StartTick,
+                                        targetWindow.StartTick), window.StartTick);
+                                var latest = Math.Min(
+                                    Math.Min(early.ConstrainedTimeWindow.EndTick,
+                                        targetWindow.EndTick), window.EndTick);
+                                if (earliest > latest ||
+                                    later.ConstrainedTimeWindow.EndTick <= earliest)
+                                {
+                                    continue;
+                                }
+                                // This is the integer difference between two
+                                // possible observation ticks, NOT a claimed
+                                // Person travel time or a new physical bound.
+                                var minimum = Math.Max(1L,
+                                    later.ConstrainedTimeWindow.StartTick - latest);
+                                var maximum = later.ConstrainedTimeWindow.EndTick - earliest;
+                                if (minimum > maximum ||
+                                    !seenRanges.Add((minimum, maximum)))
+                                {
+                                    continue;
+                                }
+                                if (directPublished)
+                                {
+                                    explanations.Add("direct-pair-published-timing-unverified:" +
+                                        region + ">" + destination);
+                                    pairExplained = true;
+                                    continue;
+                                }
+                                // The public tracer admits staying at one region.
+                                // This is formal continuity, not observed motion.
+                                if (region == destination)
+                                {
+                                    explanations.Add("formal-stay:" + region);
+                                    pairExplained = true;
+                                    continue;
+                                }
+                                // Bounded two-hop explanation only: published
+                                // edges can compose without a new direct edge.
+                                // We do not claim completeness for longer paths.
+                                var middle = publishedBranches
+                                    .Where(firstBranch => firstBranch.SourceRegionId == region)
+                                    .OrderBy(firstBranch => firstBranch.DestinationRegionId,
+                                        StringComparer.Ordinal)
+                                    .ThenBy(firstBranch => firstBranch.ProvenanceId,
+                                        StringComparer.Ordinal)
+                                    .SelectMany(firstBranch => publishedBranches
+                                        .Where(secondBranch =>
+                                            secondBranch.SourceRegionId ==
+                                                firstBranch.DestinationRegionId &&
+                                            secondBranch.DestinationRegionId == destination &&
+                                            (long)firstBranch.MinimumTravelTicks +
+                                                secondBranch.MinimumTravelTicks <= maximum &&
+                                            (long)firstBranch.MaximumTravelTicks +
+                                                secondBranch.MaximumTravelTicks >= minimum)
+                                        .Select(_ => firstBranch.DestinationRegionId))
+                                    .FirstOrDefault();
+                                if (middle is not null)
+                                {
+                                    explanations.Add("formal-two-hop:" + region + ">" +
+                                        middle + ">" + destination);
+                                    pairExplained = true;
+                                    continue;
+                                }
+                                var questionId = "unconfirmed:" + region + ":" +
+                                    destination + ":" + early.ConstraintId + ":" +
+                                    later.ConstraintId + ":" + minimum + "-" + maximum;
+                                pending.Add(new RescuerMissingDeclaredPathQuestion(
+                                    questionId, region, destination, minimum, maximum,
+                                    early.ConstraintId, early.DirectSourceId,
+                                    early.SourceObservationId,
+                                    early.SourceAncestryIds
+                                        .OrderBy(id => id, StringComparer.Ordinal).ToArray(),
+                                    later.ConstraintId, later.DirectSourceId,
+                                    later.SourceObservationId,
+                                    later.SourceAncestryIds
+                                        .OrderBy(id => id, StringComparer.Ordinal).ToArray(),
+                                    independent, "unknown"));
+                            }
+                            // If some compatible time window already has a public
+                            // explanation, do not call the direct pair necessary.
+                            // Keep the #104 direct-only status unchanged.
+                            if (!pairExplained)
+                            {
+                                questions.AddRange(pending);
+                            }
+                        }
+                    }
+            }
+            result.Add(new RescuerMissingDeclaredPathCandidate(
+                candidate.RegionId, candidate.Status,
+                questions.OrderBy(q => q.DestinationRegionId, StringComparer.Ordinal)
+                    .ThenBy(q => q.EarlyConstraintId, StringComparer.Ordinal)
+                    .ThenBy(q => q.LaterConstraintId, StringComparer.Ordinal)
+                    .ThenBy(q => q.MinimumCompatibleDifferenceTicks)
+                    .ThenBy(q => q.MaximumCompatibleDifferenceTicks).ToArray(),
+                explanations.ToArray()));
+        }
+        return new RescuerMissingDeclaredPathReport(
+            cutoff, targetWindow, declared.ReceivedOriginalIds, declared.Status,
+            result, constraints.Length, publishedBranches.Length, inspected);
     }
 
     /// <summary>

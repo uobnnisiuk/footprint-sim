@@ -1372,3 +1372,79 @@ remain unimplemented or unevaluated, **not disproven**. Closed-world
 hard exclusion and forced preferred ranking are held back. Revisit
 only with a separately reviewed public-information contract and
 bounded comparison; equal, zero-effect and worse results remain valid.
+
+
+## Unconfirmed public-relation questions (Issue #106)
+
+Work-Key: FP-MISSING-WEFT-RELATION-QUESTION-V1, Scope-Revision 0.
+The evaluation-only `AnalyzeMissingDeclaredPathQuestions` consumes the same
+`BuildDistinctOriginals` receipt-projected input and invokes #104's existing
+`AnalyzeDeclaredPathCompatibility` to retain its candidate statuses.
+A question is **not** a found relation or a new inference constraint.
+For eligible received confirmed Person constraints from different original
+sources and candidate-state windows, it identifies an *unpublished endpoint
+pair* and a compatible **integer tick-difference range**. Each row links
+the exact early/later constraint, original source, observation and ancestry;
+shared ancestry is explicitly marked non-independent. The question ID is
+synthetic, not public branch provenance. Multiple disconnected state windows
+remain distinct ranges, rather than one fabricated continuous interval.
+
+**AR-11/12 limitation and correction.** This is a *direct-declaration
+question diagnostic*, not an exhaustive public reachability search. A
+formally time-compatible two-hop published explanation (B→E at 1 tick,
+E→D at 2) can already account for B@2→D@5, even if #104's unchanged
+direct-edge-only `DeclaredPathStatus` remains `unknown`. Likewise a
+target possibly staying B@2→B@5 does not require an unpublished B→B
+branch. The question report now records `PublicAlternativeExplanations`
+(`formal-two-hop:B>E>D` or `formal-stay:B`) and suppresses those
+**unnecessary direct-edge questions**, while retaining the original
+candidate and all four hard outers. This two-hop/stay check is deliberately
+bounded and *does not* establish path completeness for three or more
+edges, intermediate state occupancy, or actual Person traversability.
+A future-published two-hop branch is not an available explanation.
+
+A pair already declared as B→D with a published ten-tick bound, but only
+a three-tick observation difference, receives
+`direct-pair-published-timing-unverified:B>D`; it is not mislabeled as
+an *absent* relation. The existing direct-edge witness remains
+`unknown`; a different timing declaration could still change that
+formal result. An empty question set therefore means neither that no
+additional investigation could help nor that the target region is
+impossible. The alternative explanations and mismatched direct pair
+are **formal, public-model statements**, not verified travel events.
+These controls are exploratory synthetic counterexamples, not calibrated
+rescue benefit or general proof of the initial weft hypothesis.
+
+The fixed AR-9 V1 comparison is hand-checkable:
+
+| Actual rescuer cutoff | Public declared-path diagnostic | Unconfirmed questions | Hard outer |
+| --- | --- | --- | --- |
+| tick 6, one original | A/B/C unavailable | none | {A,B,C} |
+| tick 7, both originals | A witnessed, B/C unknown | B→D and C→D, each formal difference 3 ticks | {A,B,C} |
+| tick 7, **separate hypothetical public declaration** B→D published at 7, difference bound 3 | A/B witnessed, C unknown | C→D remains; B→D is not an unanswered question | baseline unchanged |
+
+The last row is an **information-condition sensitivity** comparison using a
+separate synthetic public declaration; it is not proof of information delivery,
+an inferred physical route, or superiority of a method under identical
+information. The original world and received evidence are not mutated.
+A compatible formal tick difference is not a measured travel time.
+Published branches have unknown Person traversability even where they
+produce a formal witness. Existing four-method `Compare` hard outer,
+published search unit contracts and schema-v1 are not modified.
+
+At tick 6, absence of a second received Person source means
+`unavailable`, not evidence that the relationship is impossible. With
+two eligible sources but no supporting published branch, `unknown`
+is retained. Contradictory or soft evidence is not promoted to confirmed
+questions; future/private/Device-only or unrelated-Person inputs do not
+manufacture source evidence. No question does not mean no candidate or
+no relation. Reordered copies do not manufacture independent originals.
+
+This bounded example asks which missing *declaration* could change a formal
+status if separately supplied. It does not discover a missing edge, establish
+Person movement, evaluate all 24 relation types, identify actual search
+locations or measure rescue time, monetary cost or survival. Comparing
+equally available inputs with genuinely different method implementations,
+along with negative/equal/worse outcomes and truth-side false-exclusion
+checks, remains separate future research; the #106 sensitivity case changes
+available public information, not only processing.
