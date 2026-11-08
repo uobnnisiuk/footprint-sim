@@ -436,13 +436,13 @@ public static class PublicCandidateWarpProjection
             throw new ArgumentOutOfRangeException(nameof(currentTick));
         }
 
-        var projected = candidateWarps.Warps.Select(warp =>
+        var projected = candidateWarps.Warps.SelectMany(warp =>
         {
             if (warp.States.Any(state =>
                 state.TimeWindow.StartTick <= currentTick &&
                 currentTick <= state.TimeWindow.EndTick))
             {
-                return warp;
+                return new[] { warp };
             }
 
             var sources = warp.States
@@ -452,7 +452,7 @@ public static class PublicCandidateWarpProjection
                 .ToArray();
             if (sources.Length == 0)
             {
-                return warp;
+                return new[] { warp };
             }
 
             var latestTick = sources[0].TimeWindow.EndTick;
@@ -464,7 +464,7 @@ public static class PublicCandidateWarpProjection
                 latest,
                 currentTick,
                 publicHazardEnvelope);
-            return CandidateWarpNormalization.CreateWarp(
+            var propagated = CandidateWarpNormalization.CreateWarp(
                 warp.ScenarioId,
                 warp.Seed,
                 warp.TargetEntityId,
@@ -472,6 +472,37 @@ public static class PublicCandidateWarpProjection
                 warp.WarpId,
                 warp.States.Append(future),
                 $"public-forward:{currentTick}");
+
+            // A published route is not an observation of departure. Preserve
+            // the unobserved stop only in a non-preferred alternative; the
+            // positive route and its public provenance remain unchanged.
+            var withUnobservedStay = PublicCandidateWarpPropagator.Propagate(
+                warp.ScenarioId,
+                warp.Seed,
+                warp.TargetEntityId,
+                latest,
+                currentTick,
+                publicHazardEnvelope,
+                retainUndeclaredStay: true);
+            var hasExtraOuterRegion = withUnobservedStay.RegionIds
+                .Except(future.RegionIds, StringComparer.Ordinal)
+                .Any();
+            if (!hasExtraOuterRegion)
+            {
+                return new[] { propagated };
+            }
+
+            var outer = CandidateWarpNormalization.CreateWarp(
+                warp.ScenarioId,
+                warp.Seed,
+                warp.TargetEntityId,
+                warp.Standing == CandidateWarpStanding.Conflicted
+                    ? CandidateWarpStanding.Conflicted
+                    : CandidateWarpStanding.OuterPlausible,
+                warp.WarpId,
+                warp.States.Append(withUnobservedStay),
+                $"public-forward-unobserved-stay:{currentTick}");
+            return new[] { propagated, outer };
         });
 
         return CandidateWarpNormalization.CreateSet(

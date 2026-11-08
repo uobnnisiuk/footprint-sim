@@ -167,8 +167,12 @@ so its original runs cannot validate a stop at that nonterminal node. The
 test-local counterexample chooses **seed 0 before results** and changes
 only this synthetic parameter to 1.0, retaining the same truth, public
 envelope, evidence and cutoff across OwnEvidence and CrossThread. It
-checks the absolute true-location containment of the CrossThread outer,
-while the paired methods' truth is identical. This is an existing synthetic
+checks the absolute true-location containment of both OwnEvidence and
+CrossThread outer sets, and verifies that neither method presents the
+unobserved stop as preferred. Their truth, published envelope, and query
+cutoff are identical. The shared forward projection keeps the original
+positive travel warp while adding a separate outer-only stay warp when
+the public model does not prove compulsory departure. This is an existing synthetic
 physics parameter, not a calibrated probability or new physical law.
 
 The adversarial report of **65 errors in 200 trials** is a reported result,

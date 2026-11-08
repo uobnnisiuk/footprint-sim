@@ -452,6 +452,65 @@ public sealed class CandidateWarpTests
     }
 
 
+    [Fact]
+    public void SharedForwardProjectionKeepsUndeclaredStopOuterOnly()
+    {
+        var candidates = PublicCandidateWarpFactory.Create(
+            ScenarioId,
+            Seed,
+            TargetPersonId,
+            [
+                new PublicCandidateWarpStateDefinition
+                {
+                    TimeWindow = InteractionTimeWindow.At(2),
+                    TemporalKind = CandidateWarpTemporalKind.EventPoint,
+                    RegionIds = ["X"],
+                    EvidenceBoundaryState = EvidenceState.Confirmed
+                }
+            ],
+            CandidateWarpStanding.Preferred);
+        var envelope = new PublicHazardEnvelope
+        {
+            HazardId = "shared-forward-stop",
+            SourceRegionId = "X",
+            PublishedAtTick = 0,
+            Branches =
+            [
+                new PublicHazardBranch
+                {
+                    SourceRegionId = "X",
+                    DestinationRegionId = "Y",
+                    MinimumTravelTicks = 3,
+                    MaximumTravelTicks = 3,
+                    TransportType = HazardTransportType.HazardDriven,
+                    ProvenanceId = "published-x-y",
+                    PublishedAtTick = 0
+                }
+            ]
+        };
+
+        var projected = PublicCandidateWarpProjection.ForwardTo(candidates, 10, envelope);
+        Assert.Equal(["Y"], projected.PreferredRegionIdsAt(10));
+        Assert.Equal(["X", "Y"], projected.CandidateRegionIdsAt(10));
+        var preferred = Assert.Single(projected.Warps,
+            warp => warp.Standing == CandidateWarpStanding.Preferred);
+        Assert.Contains(preferred.States.Single(state => state.TimeWindow.StartTick == 10).Provenance,
+            item => item.SourceKind == CandidateWarpSourceKind.PublicHazardEnvelope &&
+                item.SourceIdentifier == "published-x-y");
+        var alternative = Assert.Single(projected.Warps,
+            warp => warp.Standing == CandidateWarpStanding.OuterPlausible);
+        Assert.Equal(["X", "Y"], alternative.CandidateRegionIdsAt(10));
+        Assert.DoesNotContain(alternative.States.Single(state => state.TimeWindow.StartTick == 10)
+                .Provenance,
+            item => item.SourceKind == CandidateWarpSourceKind.PublicHazardEnvelope &&
+                item.RegionIds.Contains("X", StringComparer.Ordinal));
+        Assert.Equal(["X"], PublicCandidateWarpProjection.ForwardTo(
+            candidates, 10, null).CandidateRegionIdsAt(10));
+        Assert.Equal(JsonDefaults.Serialize(projected),
+            JsonDefaults.Serialize(PublicCandidateWarpProjection.ForwardTo(
+                candidates, 10, envelope)));
+    }
+
     // #98 / AR-6: a published X->Y is a possible movement, not an observed departure.
     [Fact]
     public void PublishedHazardRouteRetainsUndeclaredStopOnlyInOuter()

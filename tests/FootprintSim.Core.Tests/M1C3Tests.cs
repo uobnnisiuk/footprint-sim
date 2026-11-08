@@ -276,7 +276,10 @@ public sealed class M1C3Tests
             // truth, not hidden by a zero paired difference.
             Assert.Equal("debris-fork", cross.RealizedPersonFinalRegionId);
             Assert.Equal(own.RealizedPersonFinalRegionId, cross.RealizedPersonFinalRegionId);
+            Assert.Contains("debris-fork", own.CandidateRegionIds);
             Assert.Contains("debris-fork", cross.CandidateRegionIds);
+            Assert.DoesNotContain("debris-fork", own.PreferredCandidateRegionIds);
+            Assert.DoesNotContain("debris-fork", cross.PreferredCandidateRegionIds);
             Assert.Equal(JsonDefaults.Serialize(paired.Runs),
                 JsonDefaults.Serialize(new BatchEvaluationRunner().Run(request).Runs));
         }
