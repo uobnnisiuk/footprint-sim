@@ -1546,6 +1546,183 @@ public sealed class RescuerEvidenceBoundaryTests
     }
 
 
+    // #106: Ask which absent public relations could change a formal
+    // witnessed/unknown status, without assuming those relations exist.
+    [Fact]
+    public void MissingDeclaredPathQuestionsRespectReceiptsAndExplicitWhatIf()
+    {
+        var context = ComplementaryPublicContext();
+        var first = ComplementaryOriginal(
+            RecordId, HolderId, 2, ["A", "B", "C"], 3, "weft-a");
+        var second = ComplementaryOriginal(
+            "second-original", "holder-b", 5, ["D"], 6, "weft-b");
+        var builder = new RescuerEvidenceInputBuilder();
+        var before = builder.BuildDistinctOriginals(
+            context, Seed, 6, RescuerId, [first, second],
+            [Receipt(6), LaterComparisonReceipt(7)]);
+        var after = builder.BuildDistinctOriginals(
+            context, Seed, 7, RescuerId, [first, second],
+            [Receipt(6), LaterComparisonReceipt(7)]);
+        var beforeQuestions =
+            RescuerEvidenceMethodComparison.AnalyzeMissingDeclaredPathQuestions(
+                before, InteractionTimeWindow.At(2));
+        Assert.All(beforeQuestions.Candidates, row =>
+        {
+            Assert.Equal("unavailable", row.DeclaredPathStatus);
+            Assert.Empty(row.Questions);
+        });
+        var afterQuestions =
+            RescuerEvidenceMethodComparison.AnalyzeMissingDeclaredPathQuestions(
+                after, InteractionTimeWindow.At(2));
+        Assert.Equal(["A", "B", "C"],
+            afterQuestions.Candidates.Select(row => row.RegionId));
+        Assert.Equal(["witnessed", "unknown", "unknown"],
+            afterQuestions.Candidates.Select(row => row.DeclaredPathStatus));
+        Assert.Empty(afterQuestions.Candidates[0].Questions);
+        var b = Assert.Single(afterQuestions.Candidates[1].Questions);
+        var c = Assert.Single(afterQuestions.Candidates[2].Questions);
+        Assert.Equal(("B", "D"), (b.SourceRegionId, b.DestinationRegionId));
+        Assert.Equal(("C", "D"), (c.SourceRegionId, c.DestinationRegionId));
+        Assert.Equal(3, b.MinimumCompatibleDifferenceTicks);
+        Assert.Equal(3, b.MaximumCompatibleDifferenceTicks);
+        Assert.Equal(RecordId, b.EarlyDirectSourceId);
+        Assert.Equal("second-original", b.LaterDirectSourceId);
+        Assert.NotEqual(b.EarlyConstraintId, b.LaterConstraintId);
+        Assert.NotEqual(b.EarlySourceObservationId, b.LaterSourceObservationId);
+        Assert.Contains("weft-a", b.EarlySourceAncestryIds);
+        Assert.Contains("weft-b", b.LaterSourceAncestryIds);
+        Assert.True(b.IndependentSourceAncestry);
+        Assert.Equal("unknown", b.PersonTraversability);
+        Assert.StartsWith("unconfirmed:", b.QuestionId);
+        Assert.Equal(3, c.MaximumCompatibleDifferenceTicks);
+        var originalBytes = JsonDefaults.Serialize(after);
+        var originalDiagnostic = RescuerEvidenceMethodComparison
+            .AnalyzeDeclaredPathCompatibility(after, InteractionTimeWindow.At(2));
+        Assert.Equal(["witnessed", "unknown", "unknown"],
+            originalDiagnostic.Candidates.Select(row => row.Status));
+
+        // A different PUBLIC INFORMATION condition, not evidence acquisition,
+        // truth discovery or mutation of the baseline received snapshot.
+        var whatIf = context with
+        {
+            PublicHazardEnvelope = context.PublicHazardEnvelope! with
+            {
+                Branches = [.. context.PublicHazardEnvelope!.Branches,
+                    Branch("B", "D") with { PublishedAtTick = 7 }]
+            }
+        };
+        var changed = builder.BuildDistinctOriginals(
+            whatIf, Seed, 7, RescuerId, [first, second],
+            [Receipt(6), LaterComparisonReceipt(7)]);
+        var changedDiagnostic = RescuerEvidenceMethodComparison
+            .AnalyzeDeclaredPathCompatibility(changed, InteractionTimeWindow.At(2));
+        Assert.Equal(["witnessed", "witnessed", "unknown"],
+            changedDiagnostic.Candidates.Select(row => row.Status));
+        var changedQuestions =
+            RescuerEvidenceMethodComparison.AnalyzeMissingDeclaredPathQuestions(
+                changed, InteractionTimeWindow.At(2));
+        Assert.Empty(changedQuestions.Candidates[1].Questions);
+        Assert.Single(changedQuestions.Candidates[2].Questions);
+        Assert.Equal(originalBytes, JsonDefaults.Serialize(after));
+        Assert.Equal(JsonDefaults.Serialize(afterQuestions),
+            JsonDefaults.Serialize(RescuerEvidenceMethodComparison
+                .AnalyzeMissingDeclaredPathQuestions(after, InteractionTimeWindow.At(2))));
+        Assert.All(RescuerEvidenceMethodComparison.Compare(
+            after, InteractionTimeWindow.At(2)).Methods, row =>
+                Assert.Equal(["A", "B", "C"], row.OuterCandidateRegionIds));
+    }
+
+    [Fact]
+    public void MissingDeclaredPathQuestionsDoNotPromoteUnavailableOrSoftEvidence()
+    {
+        var context = ComplementaryPublicContext();
+        var first = ComplementaryOriginal(
+            RecordId, HolderId, 2, ["A", "B", "C"], 3, "weft-a");
+        var second = ComplementaryOriginal(
+            "second-original", "holder-b", 5, ["D"], 6, "weft-b");
+        var builder = new RescuerEvidenceInputBuilder();
+        RescuerMissingDeclaredPathReport Questions(
+            RescueContext world, DeviceHeldInteractionRecord early,
+            DeviceHeldInteractionRecord late, bool reverse = false)
+        {
+            var originals = reverse ? new[] { late, early } : new[] { early, late };
+            var receipts = reverse
+                ? new[] { LaterComparisonReceipt(7), Receipt(6), Receipt(6) }
+                : new[] { Receipt(6), LaterComparisonReceipt(7) };
+            return RescuerEvidenceMethodComparison.AnalyzeMissingDeclaredPathQuestions(
+                builder.BuildDistinctOriginals(
+                    world, Seed, 7, RescuerId, originals, receipts),
+                InteractionTimeWindow.At(2));
+        }
+        var normal = Questions(context, first, second);
+        Assert.Equal(JsonDefaults.Serialize(normal),
+            JsonDefaults.Serialize(Questions(context, first, second, reverse: true)));
+
+        var shared = Questions(context, first, ComplementaryOriginal(
+            "second-original", "holder-b", 5, ["D"], 6, "weft-a"));
+        Assert.All(shared.Candidates.SelectMany(row => row.Questions),
+            question => Assert.False(question.IndependentSourceAncestry));
+        Assert.Equal(2, shared.Candidates.Sum(row => row.Questions.Count));
+        foreach (var soft in new[]
+        {
+            EvidenceState.SupportedButUncertain, EvidenceState.Conflicting
+        })
+        {
+            var questions = Questions(context, first, ComplementaryOriginal(
+                "second-original", "holder-b", 5, ["D"], 6, "weft-b", soft));
+            Assert.All(questions.Candidates, row => Assert.Empty(row.Questions));
+        }
+        var device = Questions(context, first, ComplementaryOriginal(
+            "second-original", "holder-b", 5, ["D"], 6, "weft-b",
+            deviceOnly: true));
+        Assert.All(device.Candidates, row =>
+        {
+            Assert.Equal("unavailable", row.DeclaredPathStatus);
+            Assert.Empty(row.Questions);
+        });
+        var otherPerson = Questions(context, first, ComplementaryOriginal(
+            "second-original", "holder-b", 5, ["D"], 6, "weft-b",
+            unrelatedTarget: true));
+        Assert.All(otherPerson.Candidates, row => Assert.Empty(row.Questions));
+        var firstDevice = Questions(context,
+            ComplementaryOriginal(RecordId, HolderId, 2,
+                ["A", "B", "C"], 3, "weft-a", deviceOnly: true), second);
+        Assert.All(firstDevice.Candidates, row => Assert.Empty(row.Questions));
+        var lateTooEarly = Questions(context, first, ComplementaryOriginal(
+            "second-original", "holder-b", 1, ["D"], 6, "weft-b"));
+        Assert.All(lateTooEarly.Candidates, row => Assert.Empty(row.Questions));
+
+        // Future declaration must not count as a present witness or as an
+        // already answered question; no truth is imported.
+        var future = context with
+        {
+            PublicHazardEnvelope = context.PublicHazardEnvelope! with
+            {
+                Branches = [.. context.PublicHazardEnvelope!.Branches,
+                    Branch("B", "D") with { PublishedAtTick = 8 }]
+            }
+        };
+        Assert.Equal(["B", "C"], Questions(future, first, second).Candidates
+            .Where(row => row.Questions.Count > 0).Select(row => row.RegionId));
+        var onlyLaterB = context with
+        {
+            PublicCausalTracingModel = new PublicCausalTracingModel
+            {
+                CandidateStates = [
+                    State(2, ["A", "C"]), State(4, ["B"]),
+                    State(5, ["D", "E", "F"])]
+            }
+        };
+        var builderAtInterval = new RescuerEvidenceInputBuilder();
+        var missingTick = RescuerEvidenceMethodComparison
+            .AnalyzeMissingDeclaredPathQuestions(
+                builderAtInterval.BuildDistinctOriginals(
+                    onlyLaterB, Seed, 7, RescuerId, [first, second],
+                    [Receipt(6), LaterComparisonReceipt(7)]),
+                new InteractionTimeWindow(2, 4));
+        Assert.Empty(missingTick.Candidates.Single(row => row.RegionId == "B").Questions);
+    }
+
     // #104: the late, distinct Person trace can witness formal compatibility
     // with one *published* branch without hard-excluding unwitnessed regions.
     [Fact]
