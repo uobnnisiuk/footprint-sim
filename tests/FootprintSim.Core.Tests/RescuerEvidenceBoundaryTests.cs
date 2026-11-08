@@ -1543,6 +1543,83 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Equal("available", contrast.Status);
     }
 
+    // AR-9: a later observation that would inform a closed-world traversal
+    // must not be declared useless because the public output has no preferred
+    // standing. The published envelope is not a complete transition graph.
+    [Fact]
+    public void LaterTraceRetainsUnmeasuredSupportDespiteUnchangedHardCandidates()
+    {
+        var first = ComplementaryOriginal(
+            RecordId, HolderId, 2, ["A", "B", "C"], 3, "weft-a");
+        var second = ComplementaryOriginal(
+            "second-original", "holder-b", 5, ["D"], 6, "weft-b");
+        var report = RescuerEvidenceMethodComparison.Run(
+            ComplementaryPublicContext(), Seed, RescuerId, [first, second],
+            [Receipt(6), LaterComparisonReceipt(7)],
+            InteractionTimeWindow.At(2), [5, 6, 7], 7);
+        var map = new[]
+        {
+            new PublicSearchUnitMapping("A", 2, ["U1"], true, "catalog", 0),
+            new PublicSearchUnitMapping("B", 2, ["U2"], true, "catalog", 0),
+            new PublicSearchUnitMapping("C", 2, ["U1"], true, "catalog", 0)
+        };
+        var result = RescuerEvidenceMethodComparison.AnalyzePairedHistoricalSearchUnits(
+            report, ["A", "B", "C"], ["U1", "U2"], map);
+        Assert.Equal("available", result.Status);
+        Assert.All(result.Methods, method =>
+        {
+            var addedLater = method.Marginals.Single(margin =>
+                margin.AddedOriginalId == "second-original");
+            Assert.Equal("available", addedLater.UnitComparisonStatus);
+            Assert.Empty(addedLater.ExcludedOuterRegionIds!);
+            Assert.Empty(addedLater.ReappearedOuterRegionIds!);
+            Assert.Empty(addedLater.RemovedKnownUnitIds!);
+            Assert.Empty(addedLater.AddedKnownUnitIds!);
+            Assert.NotEqual(false, addedLater.SameUncertainCandidates);
+            Assert.Null(addedLater.SamePreferredCandidates);
+            Assert.Null(method.Conditions[1].PublicMethod!.PreferredCandidateRegionIds);
+            Assert.Null(method.Conditions[3].PublicMethod!.PreferredCandidateRegionIds);
+        });
+    }
+
+    // AR-9 positive control: addition must be capable of reducing hard outer
+    // and published units when the second observation directly covers target tick.
+    [Fact]
+    public void SameTickSecondTraceCanReduceOuterAndKnownUnits()
+    {
+        var first = ComplementaryOriginal(
+            RecordId, HolderId, 2, ["A", "B"], 3, "weft-a");
+        var second = ComplementaryOriginal(
+            "second-original", "holder-b", 2, ["B", "C"], 6, "weft-b");
+        var report = RescuerEvidenceMethodComparison.Run(
+            ComplementaryPublicContext(), Seed, RescuerId, [first, second],
+            [Receipt(6), LaterComparisonReceipt(7)],
+            InteractionTimeWindow.At(2), [5, 6, 7], 7);
+        var map = new[]
+        {
+            new PublicSearchUnitMapping("A", 2, ["U1"], true, "catalog", 0),
+            new PublicSearchUnitMapping("B", 2, ["U2"], true, "catalog", 0),
+            new PublicSearchUnitMapping("C", 2, ["U1"], true, "catalog", 0)
+        };
+        var result = RescuerEvidenceMethodComparison.AnalyzePairedHistoricalSearchUnits(
+            report, ["A", "B", "C"], ["U1", "U2"], map);
+        Assert.Equal("available", result.Status);
+        foreach (var name in new[]
+            { "distributed-reconstruction", "distributed-reconstruction-local" })
+        {
+            var method = result.Methods.Single(row => row.Method == name);
+            var addedSecond = method.Marginals.Single(margin =>
+                margin.AddedOriginalId == "second-original");
+            Assert.Equal("available", addedSecond.UnitComparisonStatus);
+            Assert.Equal(["A"], addedSecond.ExcludedOuterRegionIds);
+            Assert.Equal(["U1"], addedSecond.RemovedKnownUnitIds);
+            Assert.Empty(addedSecond.ReappearedOuterRegionIds!);
+            Assert.Empty(addedSecond.AddedKnownUnitIds!);
+            Assert.Equal(["B"], method.Conditions[3].PublicMethod!.OuterCandidateRegionIds);
+            Assert.Null(addedSecond.SamePreferredCandidates);
+        }
+    }
+
     [Fact]
     public void PairedHistoricalUnitsPreserveMissingPartialEmptyAndSourceBoundaries()
     {

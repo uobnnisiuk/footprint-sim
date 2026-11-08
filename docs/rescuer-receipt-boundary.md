@@ -1247,6 +1247,39 @@ catalogs were shaped using previously known candidate sets; their
 arithmetic is an explanatory regression, not a prospective hypothesis
 test, evidence of unknown-relation discovery or actual rescue benefit.
 
+**AR-9: the output boundary matters.** The zero in the fixture above
+means only that the existing *published* hard outer and unit indicators do
+not change on adding this later-tick trace. It does **not** establish that
+the indirect trace contains no information, is useless for causal tracing,
+or that the original weft hypothesis has failed. In the four current method
+rows, `PreferredCandidateRegionIds` is **null** (not published), so the
+marginal `SamePreferredCandidates=null` means **unmeasured/unknown**, not
+equal support or no supportive effect. An unchanged uncertainty list likewise
+does not imply that every form of indirect support has been evaluated.
+
+The independently supplied [AR-9 counterexamples](https://github.com/uobnnisiuk/footprint-sim/pull/103#issuecomment-6718507716)
+showed this limitation in additional synthetic configurations. A representative
+later-trace case (V1) directly observes {A,B,C} at historical tick 2 and later
+observes {D} at tick 5; the published branches A→D, B→E, C→F could favor
+A *if incorrectly treated as an exhaustive closed-world route list*. The
+four published methods nonetheless preserve the same historical hard outer,
+known units and uncertainty after the second trace, with preferred standing
+unpublished. A separate positive control (V3) places the second direct
+observation at **the same historical tick 2** with {B,C} against the first
+{A,B}: reconstruction/local then remove outer A and unit U1 (A,C→U1;
+B→U2), while leaving B. These two cases are **regression controls**, not
+prospective evidence that indirect traces can never contribute. The added
+tests check both behaviors on the real public comparison API.
+
+The present output is insufficient to assess indirect-trace contributions
+to preferred/support standing. Exposing a justified, non-overconfident
+support/priority signal would require **separately scoped research and
+independent review**, not a closed-world hard exclusion or a silent change
+to this PR's methods. Here the status remains **not measurable** for that
+axis; no benefit on the measured hard outer/unit axis is distinct from
+unknown benefit on an unexposed support axis. The labels first/second are
+ordered by original ID in the ablation API, not necessarily receipt order.
+
 Missing/duplicated method rows are `unavailable`; partial, incomplete
 or future mappings retain known units and unresolved regions but have
 no decisive unit delta. A genuine empty outer set is explicitly
