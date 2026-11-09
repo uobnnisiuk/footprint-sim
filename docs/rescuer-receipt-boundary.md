@@ -1630,12 +1630,45 @@ operation/source counters. It does **not** assign a one-to-one causal credit
 for any candidate/unit change to an individual question: those associations
 are not identifiable from the present diagnostic.
 
-Fixture and expected scientific interpretation (to be checked by CI):
+**Observed fixed synthetic fixture** (PR #113 original head `e7005fd` CI:
+[standard](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42666720529),
+[F19](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42666719962);
+independent [AR-18 probe](https://github.com/uobnnisiuk/footprint-sim/pull/113#issuecomment-6748761669)).
+This is NOT an empirical estimate of whether obtaining a public relation
+would help rescue. At tick 7, U has two unconfirmed direct questions
+B→D and C→D. K has the formal B→D answer, but C→D remains unconfirmed:
+one resolved ID, zero new IDs. Both conditions receive the SAME two original
+records (two independent source ancestries); neither proves Person movement.
 
-| Tick 7 input | Question B→D | Question C→D | Safe outer / known public units |
-| --- | --- | --- | --- |
-| U: no B→D publication | still unconfirmed | still unconfirmed | method-specific, directly measured |
-| K: B→D published at 7 | formal direct question answered | still unconfirmed | compare with U; zero improvement is valid |
+| Existing method (historical tick 2, query tick 7) | U safe outer | K safe outer | U/K preferred | U/K known public units | U/K unresolved mappings | Public relations inspected U/K | Steps difference K−U |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| public-prior | {A,B,C} | {A,B,C} | null / null | {U1,U2} / {U1,U2} | 0 / 0 | 0 / 0 | 0 |
+| known-relation-backward | {A,B,C} | {A,B,C} | null / null | {U1,U2} / {U1,U2} | 0 / 0 | 5 / 5 | 0 |
+| distributed-reconstruction | {A,B,C} | {A,B,C} | null / null | {U1,U2} / {U1,U2} | 0 / 0 | 1 / 1 | 0 |
+| distributed-reconstruction-local | {A,B,C} | {A,B,C} | null / null | {U1,U2} / {U1,U2} | 0 / 0 | 5 / 5 | 0 |
+
+All four methods retain two available ancestry groups. In all rows,
+excluded/reappeared outer regions = ∅/∅ and removed/added known public
+unit IDs = ∅/∅. Steps and public-relation inspections are **existing method
+counters**, not time or actual search expense; the table records the verified
+zero steps *difference*, not a claim of zero total computation. The pinned
+regression assertions check the method-specific sets, inspection counts,
+source groups, and equal steps across U/K.
+
+**Structural limitation (AR-18):** For these four current open-world
+historical-outer methods, an additional positive `PublicHazardEnvelope.Branches`
+declaration does not drive hard outer exclusion or preferred-set changes
+in this fixed class of inputs; absence of a branch remains unknown.
+Consequently the zero candidate/unit difference is structurally imposed by
+what these methods consume, **not** a discriminating measurement of the
+value of answering B→D. An independent probe compared 512 branch subsets
+and 6 receipt-evidence configurations; the repository's regression test
+compares empty, existing three, and all nine declarations under identical
+evidence and query time. Neither proves every possible model or output.
+Future branch-consuming inference or different explicit completeness/negative
+public evidence would require a separately reviewed scope and reexamination.
+The initial question-value hypothesis remains **unresolved**, not supported,
+rejected or evidence of real-world rescue benefit.
 
 The 3-tick declaration is a public travel *contract*, not physical proof
 of movement or dwell. A source question becoming unnecessary must not be

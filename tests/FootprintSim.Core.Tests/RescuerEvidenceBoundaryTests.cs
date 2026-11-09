@@ -101,6 +101,16 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Single(result.ResolvedQuestionIds);
         Assert.Empty(result.NewlyUnconfirmedQuestionIds);
         Assert.Equal(4, result.Methods.Count);
+        // Independent fixture probe: U and K inspect 0/5/1/5 existing
+        // public relations respectively; an added declaration is not an
+        // additional measured historical-outer reduction.
+        var expectedInspections = new Dictionary<string, int>(StringComparer.Ordinal)
+        {
+            ["public-prior"] = 0,
+            ["known-relation-backward"] = 5,
+            ["distributed-reconstruction"] = 1,
+            ["distributed-reconstruction-local"] = 5
+        };
         Assert.All(result.Methods, method =>
         {
             Assert.Equal("available", method.UnitDifferenceStatus);
@@ -110,6 +120,17 @@ public sealed class RescuerEvidenceBoundaryTests
             Assert.Empty(method.AddedKnownUnitIds!);
             Assert.Equal(["U1", "U2"], method.UnitsWithoutDeclaration.KnownUnitIds);
             Assert.Equal(["U1", "U2"], method.UnitsWithDeclaration.KnownUnitIds);
+            Assert.Equal(["A", "B", "C"], method.WithoutDeclaration.OuterCandidateRegionIds);
+            Assert.Equal(["A", "B", "C"], method.WithDeclaration.OuterCandidateRegionIds);
+            Assert.Null(method.WithoutDeclaration.PreferredCandidateRegionIds);
+            Assert.Null(method.WithDeclaration.PreferredCandidateRegionIds);
+            Assert.Empty(method.UnitsWithoutDeclaration.UnresolvedRegionIds);
+            Assert.Empty(method.UnitsWithDeclaration.UnresolvedRegionIds);
+            Assert.Equal(expectedInspections[method.Method],
+                method.WithoutDeclaration.PublicRelationsInspected);
+            Assert.Equal(expectedInspections[method.Method],
+                method.WithDeclaration.PublicRelationsInspected);
+            Assert.Equal(method.WithoutDeclaration.Steps, method.WithDeclaration.Steps);
             Assert.Equal(2, method.WithoutDeclaration.AvailableSourceGroupCount);
             Assert.Equal(2, method.WithDeclaration.AvailableSourceGroupCount);
             Assert.All(method.WithoutDeclaration.OuterCandidateRegionIds,
@@ -181,6 +202,94 @@ public sealed class RescuerEvidenceBoundaryTests
             firstState: EvidenceState.Conflicting);
         var conflict = RelationUtility(conflictU, conflictK);
         Assert.Empty(conflict.ResolvedQuestionIds);
+    }
+
+    [Fact]
+    public void RelationQuestionUtilityRejectsSearchDomainAndReceiptDrift()
+    {
+        var (u, k) = RelationUtilityInputs();
+        var originals = new[]
+        {
+            ComplementaryOriginal(RecordId, HolderId, 2,
+                ["A", "B", "C"], 3, "weft-a"),
+            ComplementaryOriginal("second-original", "holder-b", 5,
+                ["D"], 6, "weft-b")
+        };
+        var builder = new RescuerEvidenceInputBuilder();
+        var restricted = builder.BuildDistinctOriginals(k.Input.PublicContext,
+            Seed, 7, RescuerId, originals, [Receipt(6), LaterComparisonReceipt(7)],
+            publicSearchDomainRegionIds: ["A", "B"]);
+        Assert.Throws<InvalidDataException>(() => RelationUtility(u, restricted));
+
+        var receivedOne = builder.BuildDistinctOriginals(k.Input.PublicContext,
+            Seed, 7, RescuerId, originals, [Receipt(6)]);
+        Assert.Throws<InvalidDataException>(() => RelationUtility(u, receivedOne));
+
+        var early = builder.BuildDistinctOriginals(u.Input.PublicContext,
+            Seed, 6, RescuerId, originals, [Receipt(6)]);
+        Assert.Throws<InvalidDataException>(() => RelationUtility(early, k));
+    }
+
+    [Fact]
+    public void RelationQuestionUtilityDocumentsCurrentBranchInsensitiveOuters()
+    {
+        // Three PUBLIC envelope branch sets with fixed source evidence/query.
+        // This is a CURRENT method limitation, not measured rescue utility.
+        var template = ComplementaryPublicContext();
+        var complete = new[] { "A", "B", "C" }
+            .SelectMany(source => new[] { "D", "E", "F" }
+                .Select(destination => Branch(source, destination))).ToArray();
+        var branchSets = new IReadOnlyList<PublicHazardBranch>[]
+        {
+            Array.Empty<PublicHazardBranch>(),
+            template.PublicHazardEnvelope!.Branches,
+            complete
+        };
+        var originals = new[]
+        {
+            ComplementaryOriginal(RecordId, HolderId, 2,
+                ["A", "B", "C"], 3, "weft-a"),
+            ComplementaryOriginal("second-original", "holder-b", 5,
+                ["D"], 6, "weft-b")
+        };
+        var builder = new RescuerEvidenceInputBuilder();
+        var conditions = branchSets.Select(branches =>
+        {
+            var world = template with
+            {
+                PublicHazardEnvelope = template.PublicHazardEnvelope! with
+                {
+                    Branches = branches
+                }
+            };
+            var input = builder.BuildDistinctOriginals(world, Seed, 7, RescuerId,
+                originals, [Receipt(6), LaterComparisonReceipt(7)]);
+            return RescuerEvidenceMethodComparison.Compare(
+                input, InteractionTimeWindow.At(2));
+        }).ToArray();
+        foreach (var condition in conditions)
+        {
+            Assert.Equal(4, condition.Methods.Count);
+            Assert.All(condition.Methods, method =>
+            {
+                Assert.Equal(["A", "B", "C"], method.OuterCandidateRegionIds);
+                Assert.Null(method.PreferredCandidateRegionIds);
+            });
+            Assert.Equal(JsonDefaults.Serialize(conditions[0].Methods.Select(
+                method => new
+                {
+                    method.Method,
+                    method.OuterCandidateRegionIds,
+                    method.PreferredCandidateRegionIds
+                })),
+                JsonDefaults.Serialize(condition.Methods.Select(
+                    method => new
+                    {
+                        method.Method,
+                        method.OuterCandidateRegionIds,
+                        method.PreferredCandidateRegionIds
+                    })));
+        }
     }
 
     [Fact]

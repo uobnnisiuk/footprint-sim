@@ -2554,7 +2554,12 @@ public static class RescuerEvidenceMethodComparison
             JsonDefaults.Serialize(u.AvailableEvidence) !=
                 JsonDefaults.Serialize(k.AvailableEvidence) ||
             JsonDefaults.Serialize(u.AvailableCausalTracingConstraints) !=
-                JsonDefaults.Serialize(k.AvailableCausalTracingConstraints))
+                JsonDefaults.Serialize(k.AvailableCausalTracingConstraints) ||
+            JsonDefaults.Serialize(u.AvailableCrossThreadConstraints) !=
+                JsonDefaults.Serialize(k.AvailableCrossThreadConstraints) ||
+            JsonDefaults.Serialize(u.PublicSearchDomainRegionIds) !=
+                JsonDefaults.Serialize(k.PublicSearchDomainRegionIds) ||
+            withoutDeclaration.RescuerId != withDeclaration.RescuerId)
         {
             throw new InvalidDataException("The public context or receipt-projected originals differ beyond B-to-D.");
         }
