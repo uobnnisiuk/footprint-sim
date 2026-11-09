@@ -1953,7 +1953,9 @@ public sealed class RescuerEvidenceBoundaryTests
         }
         var legacy = LegacyTwoHop(sameEvidence);
         Assert.Equal(["B", "C"], legacy.Questions);
-        Assert.True(legacy.Inspected > 0);
+        // Counts only the legacy one-/two-hop loop body; the direct-pair
+        // Any pre-scan is not included in this narrow operation counter.
+        Assert.Equal(6, legacy.Inspected);
         var report = RescuerEvidenceMethodComparison
             .AnalyzeMissingDeclaredPathQuestions(
                 sameEvidence, InteractionTimeWindow.At(2));
@@ -1966,7 +1968,8 @@ public sealed class RescuerEvidenceBoundaryTests
             reason => reason.StartsWith("formal-multihop:B>E>F>D:",
                 StringComparison.Ordinal) &&
                 reason.Contains("three-BE,three-EF,three-FD", StringComparison.Ordinal));
-        Assert.True(report.PublicTraversalBranchesInspected >= 3);
+        // Includes expanded-route edge visits for feasible and overlong paths.
+        Assert.Equal(9, report.PublicTraversalBranchesInspected);
         Assert.Equal(2, legacy.Questions.Length);
         Assert.Equal(1, report.Candidates.Sum(row => row.Questions.Count));
         Assert.Equal(JsonDefaults.Serialize(report), JsonDefaults.Serialize(
@@ -2124,6 +2127,76 @@ public sealed class RescuerEvidenceBoundaryTests
                 StringComparison.Ordinal));
     }
 
+
+    // A complete published route may exceed the gap at an intermediate edge.
+    // Only that route is too long; other routes and Person movement stay unknown.
+    [Fact]
+    public void PublishedThreeHopTooLongExplainsIntermediateAndTerminalOverruns()
+    {
+        var original = ComplementaryPublicContext();
+        var first = ComplementaryOriginal(RecordId, HolderId,
+            2, ["A", "B", "C"], 3, "weft-a");
+        var later = ComplementaryOriginal("second-original", "holder-b",
+            5, ["D"], 6, "weft-b");
+        var builder = new RescuerEvidenceInputBuilder();
+
+        RescuerMissingDeclaredPathReport Run(bool earlyOverrun, bool reverse)
+        {
+            var world = original with
+            {
+                PublicHazardEnvelope = original.PublicHazardEnvelope! with
+                {
+                    Branches = [.. original.PublicHazardEnvelope!.Branches.Where(
+                        edge => edge.SourceRegionId != "B" ||
+                            edge.DestinationRegionId != "E"),
+                        Branch("B", "E") with
+                        {
+                            MinimumTravelTicks = earlyOverrun ? 4 : 1,
+                            MaximumTravelTicks = earlyOverrun ? 4 : 1
+                        },
+                        Branch("E", "F") with
+                        {
+                            MinimumTravelTicks = 1, MaximumTravelTicks = 1
+                        },
+                        Branch("F", "D") with
+                        {
+                            MinimumTravelTicks = earlyOverrun ? 1 : 4,
+                            MaximumTravelTicks = earlyOverrun ? 1 : 4
+                        }]
+                }
+            };
+            var input = builder.BuildDistinctOriginals(world, Seed, 7,
+                RescuerId, reverse ? [later, first] : [first, later],
+                reverse
+                    ? [LaterComparisonReceipt(7), Receipt(6), Receipt(6)]
+                    : [Receipt(6), LaterComparisonReceipt(7)]);
+            return RescuerEvidenceMethodComparison
+                .AnalyzeMissingDeclaredPathQuestions(input, InteractionTimeWindow.At(2));
+        }
+
+        foreach (var earlyOverrun in new[] { true, false })
+        {
+            var report = Run(earlyOverrun, false);
+            var b = report.Candidates.Single(row => row.RegionId == "B");
+            Assert.Equal("unknown", b.DeclaredPathStatus);
+            Assert.Single(b.Questions);
+            Assert.Contains(b.PublicAlternativeExplanations,
+                explanation => explanation.StartsWith(
+                    "published-path-too-long:B>E>F>D:",
+                    StringComparison.Ordinal) &&
+                    explanation.Contains("travel=6-6:gap=3-3",
+                        StringComparison.Ordinal));
+            Assert.DoesNotContain(b.PublicAlternativeExplanations,
+                explanation => explanation.StartsWith("formal-multihop:",
+                    StringComparison.Ordinal) ||
+                    explanation.StartsWith("public-path-search-incomplete:",
+                        StringComparison.Ordinal));
+            Assert.Equal(["A", "B", "C"],
+                report.Candidates.Select(row => row.RegionId));
+            Assert.Equal(JsonDefaults.Serialize(report),
+                JsonDefaults.Serialize(Run(earlyOverrun, true)));
+        }
+    }
 
     // AR-14: an irrelevant dense alphabetically early subtree must not hide
     // an already published B->Y->D two-hop explanation.

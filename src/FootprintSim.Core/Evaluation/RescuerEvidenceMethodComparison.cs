@@ -849,21 +849,25 @@ public static class RescuerEvidenceMethodComparison
         var pending = new Queue<(string At, long Min, long Max,
             PublicHazardBranch[] Path, string[] Seen)>();
         pending.Enqueue((source, 0L, 0L, [], [source]));
+        // Keep feasible shallow explanations ahead of already overlong
+        // prefixes. Follow overlong prefixes later only to report complete
+        // published routes that cannot reach the later observation in time.
+        var overlongPending = new Queue<(string At, long Min, long Max,
+            PublicHazardBranch[] Path, string[] Seen)>();
         string? positive = null, shorter = null, tooLong = null;
         var incomplete = false;
         var inspections = 0;
 
-        while (pending.Count > 0)
+        while (pending.Count > 0 || overlongPending.Count > 0)
         {
-            var current = pending.Dequeue();
+            var current = pending.Count > 0
+                ? pending.Dequeue() : overlongPending.Dequeue();
             if (!outgoing.TryGetValue(current.At, out var edges))
                 continue;
             if (current.Path.Length >= maxDepth)
             {
-                if (edges.Any(edge =>
-                    !current.Seen.Contains(edge.DestinationRegionId,
-                        StringComparer.Ordinal) &&
-                    current.Min <= gapMax - edge.MinimumTravelTicks))
+                if (edges.Any(edge => !current.Seen.Contains(
+                    edge.DestinationRegionId, StringComparer.Ordinal)))
                     incomplete = true;
                 continue;
             }
@@ -909,17 +913,20 @@ public static class RescuerEvidenceMethodComparison
                             tooLong ??= "published-path-too-long:" + labels + details;
                     }
                 }
-                else if (nextMin <= gapMax)
+                else
                 {
-                    // Monotone travel bounds allow this conservative pruning;
-                    // zero-tick edges still need explicit finite limits.
-                    pending.Enqueue((edge.DestinationRegionId, nextMin, nextMax,
-                        nextPath, current.Seen.Append(edge.DestinationRegionId).ToArray()));
+                    var next = (At: edge.DestinationRegionId, Min: nextMin,
+                        Max: nextMax, Path: nextPath,
+                        Seen: current.Seen.Append(edge.DestinationRegionId).ToArray());
+                    if (nextMin <= gapMax)
+                        pending.Enqueue(next);
+                    else
+                        overlongPending.Enqueue(next);
                 }
             }
             if (inspections >= edgeBudget)
             {
-                if (pending.Count > 0)
+                if (pending.Count > 0 || overlongPending.Count > 0)
                     incomplete = true;
                 break;
             }
