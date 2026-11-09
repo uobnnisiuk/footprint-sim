@@ -882,7 +882,9 @@ public static class RescuerEvidenceMethodComparison
             !received.ReceivedRecords.Any(r => r.OriginalRecordId ==
                 question.LaterDirectSourceId && r.FirstReceivedAtTick == 8))
         {
-            withheld = "fixed-two-independent-originals-not-yet-eligible";
+            withheld = received.ReceivedRecords.Count < 2
+                ? "fixed-two-independent-originals-not-yet-eligible"
+                : "outside-fixed-calibration-slice";
         }
         else if (envelope is null)
         {
@@ -987,7 +989,8 @@ public static class RescuerEvidenceMethodComparison
                             "public-conditional-early-arrival-with-stay-assumption:" +
                             "B@2>E@3>F@4>D@5~D@6:" +
                             "sources=" + string.Join(",", selected.Select(b => b.ProvenanceId)) +
-                            ":assumption=no-unpublished-forced-departure-from-D");
+                            ":assumption=no-unpublished-forced-departure-from-D+" +
+                            "public-edges-person-applicable");
                     }
                     else
                     {
@@ -1012,8 +1015,10 @@ public static class RescuerEvidenceMethodComparison
         out int regionsInspected, out int branchesInspected,
         out bool? dagVerified, out bool? boundVerified, out string? reason)
     {
-        regionsInspected = envelope.Regions.Count;
-        branchesInspected = envelope.Branches.Count;
+        // Counts reflect per-entry validation work, not envelope sizes.
+        // Size/publication exits have inspected zero entries.
+        regionsInspected = 0;
+        branchesInspected = 0;
         dagVerified = null;
         boundVerified = null;
         reason = null;
@@ -1027,6 +1032,7 @@ public static class RescuerEvidenceMethodComparison
         var nodes = new HashSet<string>(StringComparer.Ordinal);
         foreach (var node in envelope.Regions)
         {
+            regionsInspected++;
             if (string.IsNullOrWhiteSpace(node.RegionId) ||
                 !nodes.Add(node.RegionId) ||
                 node.PublishedAtTick > targetTick ||
@@ -1041,6 +1047,7 @@ public static class RescuerEvidenceMethodComparison
         var provenanceIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var edge in envelope.Branches)
         {
+            branchesInspected++;
             if (!nodes.Contains(edge.SourceRegionId) ||
                 !nodes.Contains(edge.DestinationRegionId) ||
                 string.IsNullOrWhiteSpace(edge.ProvenanceId) ||

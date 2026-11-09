@@ -1532,9 +1532,13 @@ only when the second receipt arrives at tick 8. It invokes the existing
 baseline questions alongside a **separate conditional-candidate list**.
 The conditional label is
 \`public-conditional-early-arrival-with-stay-assumption\`: **if** no
-unpublished forced departure from D exists, this particular public
-three-edge path allows an arrival by tick 5 and a possible stay to tick 6.
-It is not proof of a Person's route, a true terminal, or actual staying.
+unpublished forced departure from D exists **and** the published
+B→E→F→D branches are applicable to the target Person, this public
+three-edge path conditionally allows D@5 arrival and possible D@6 stay.
+Neither assumption is verified: the public model omits entity-specific
+Activation (including DeviceOnly/AfterSeparation). The label's assumption
+field names both requirements. This is not proof of a Person's route,
+a true terminal, or actual staying.
 
 This conditional result never enters \`PublicAlternativeExplanations\`,
 the #108 question-suppression logic, hard outer/preferred/conflict sets,
@@ -1566,15 +1570,19 @@ to fall within that region's declared window, no published D out-branch,
 and D's inclusion from *one* B@2 public state propagated to tick 6 with
 \`retainUndeclaredStay=false\`. The aggregate D result alone is never
 the path witness. The new report keeps the full #108 baseline plus
-conditional count, separate question counts, guard region/branch counts,
+conditional count, separate question counts, region/branch **entries
+actually visited in the preflight validation loops** (not input sizes;
+an early cap/publication rejection counts zero, DAG/path work is separate),
 DAG/overflow checks, Propagate call count, path-probe count, and a
 deterministic hold reason. A preflight cap is a limited sufficient
 condition for this example, **not** a general runtime bound.
 
 | Fixed condition | #108 unknown B→D/C→D questions | New conditional item | Unconditionally resolved |
 | --- | ---: | ---: | ---: |
-| Both independent originals received at tick 8; public 3-hop path, no public D departure | 2 | 1, subject to the unpublished-departure assumption | 0 |
-| At tick 7 before second receipt | Not a two-original comparison | 0 | 0 |
+| Both independent originals received at tick 8; public 3-hop path, no public D departure | 2 | 1, subject to both unverified assumptions | 0 |
+| At tick 7 before second receipt | Not a two-original comparison | 0; awaiting receipt | 0 |
+| At query tick 9/12 with the same receipts, or tick 8 with receipts 7/7 | 2 in the fixed example | 0; outside the fixed calibration slice, not awaiting receipt | 0 |
+| E→F is truth-only DeviceOnly with identical public projection | 2 | Same two-assumption conditional item as BASE, not a verified Person route | 0 |
 | Public B minimum arrival is tick 3 while the advertised source is B@2 (B maximum remains tick 20) | 2 | 0; origin time incompatible, Propagate not called | 0 |
 | Non-public forced D→G truth with the *same* public input | 2 | Same conditional item as BASE | 0 |
 | Extra public cycle / ninth branch / overflow bound / later publication / published D out-edge | 2 in the fixed example | 0; conservative hold | 0 |
@@ -1585,6 +1593,11 @@ questions (A→D, B→D, C→D); the table explicitly counts only the targeted
 B→D and C→D pair. The separate report's overall question counts are
 3 before and 3 after, with **zero** unconditional resolutions.
 
+This fixed calibration does not generalize its conditional explanation to
+later query cutoffs or different receipt ticks. Those cases are marked
+`outside-fixed-calibration-slice`; genuinely missing second receipts use
+`fixed-two-independent-originals-not-yet-eligible`. Withholding later is a
+scope limit, not new negative evidence.
 The table is the fixed **expected** model result, not a claim about
 independently measured CPU time, rescue locations, physical travel,
 missing-relation discovery or lives saved. No inference uses the
