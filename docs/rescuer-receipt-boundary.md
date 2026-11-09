@@ -1520,3 +1520,65 @@ Person traversability, actual rescue time, location priority, search costs and
 rescue success rates remain untested. If many short paths remain unresolved,
 a separate reviewed scope may examine positive dwell feasibility (option A)
 without retrospectively rewriting this limited result.
+
+
+## Published early arrival with *unpublished departure unknown* (Issue #110 / AR-15)
+
+The evaluation-only \`AnalyzeConditionalPublishedDwell\` is a fixed
+B@2 → E@3 → F@4 → D@5, historical target D@6, query cutoff 8
+calibration. Two independent originals are available to the same rescuer
+only when the second receipt arrives at tick 8. It invokes the existing
+#108 \`AnalyzeMissingDeclaredPathQuestions\` unchanged and returns its
+baseline questions alongside a **separate conditional-candidate list**.
+The conditional label is
+\`public-conditional-early-arrival-with-stay-assumption\`: **if** no
+unpublished forced departure from D exists, this particular public
+three-edge path allows an arrival by tick 5 and a possible stay to tick 6.
+It is not proof of a Person's route, a true terminal, or actual staying.
+
+This conditional result never enters \`PublicAlternativeExplanations\`,
+the #108 question-suppression logic, hard outer/preferred/conflict sets,
+or any strategy input. It **does not remove B→D or C→D questions**.
+The unconditional question reduction is **zero**, even in the successful
+calibration. A separate synthetic BASE world marks D terminal; a VARIANT
+world has a non-public forced D→G departure. The public hazard projection,
+the rescuer inference input and the conditional report must be
+byte-identical. Only the test/evaluation side distinguishes private truth.
+A public model without departures is not a closed-world certificate.
+
+The deliberately narrow preflight inspects the *entire* public envelope
+before calling \`PublicCandidateWarpPropagator.Propagate\`: no more than
+16 declared regions and eight branches, unique valid region IDs, all
+region/branch/envelope publication ticks no later than historical tick 6,
+nonnegative ranges, valid endpoints, and a whole-graph DAG. Its
+long-integer bound uses \`M = max(2, all minimum arrival ticks)\`,
+\`T = max(all branch maximum travel ticks)\`, \`N = number of branches\`,
+and the overflow-free test \`N <= (long.MaxValue - M)/T\` for \`T > 0\`.
+A cycle, a ninth branch, a late publication, an unsafe bound, ambiguous
+selected path ticks, or an outgoing public D branch yields **no
+Propagate call** and retains the existing unknown questions.
+
+The positive conditional description separately requires the exact
+B→E→F→D path and each edge's public provenance and fixed one-tick
+travel, its region minimum arrivals, no published D out-branch, and
+D's inclusion from *one* B@2 public state propagated to tick 6 with
+\`retainUndeclaredStay=false\`. The aggregate D result alone is never
+the path witness. The new report keeps the full #108 baseline plus
+conditional count, separate question counts, guard region/branch counts,
+DAG/overflow checks, Propagate call count, path-probe count, and a
+deterministic hold reason. A preflight cap is a limited sufficient
+condition for this example, **not** a general runtime bound.
+
+| Fixed condition | #108 unknown B→D/C→D questions | New conditional item | Unconditionally resolved |
+| --- | ---: | ---: | ---: |
+| Both independent originals received at tick 8; public 3-hop path, no public D departure | 2 | 1, subject to the unpublished-departure assumption | 0 |
+| At tick 7 before second receipt | Not a two-original comparison | 0 | 0 |
+| Non-public forced D→G truth with the *same* public input | 2 | Same conditional item as BASE | 0 |
+| Extra public cycle / ninth branch / overflow bound / later publication / published D out-edge | 2 in the fixed example | 0; conservative hold | 0 |
+
+The table is the fixed **expected** model result, not a claim about
+independently measured CPU time, rescue locations, physical travel,
+missing-relation discovery or lives saved. No inference uses the
+private terminal/departure distinction. New evidence about genuine
+terminal completeness or independent stay observations would require a
+separate reviewed scope before an unconditional question could be removed.

@@ -1,3 +1,4 @@
+using FootprintSim.Interactions.CandidateWarps;
 using FootprintSim.Evidence;
 using FootprintSim.Hazards;
 using FootprintSim.Inference;
@@ -440,6 +441,24 @@ public sealed record RescuerMissingDeclaredPathReport(
     int ConstraintPairsInspected,
     int PublicTraversalBranchesInspected);
 
+
+// #110: This report is strictly separate from the existing question-suppression
+// explanations. A public conditional candidate never verifies a Person stay.
+public sealed record RescuerConditionalPublishedDwellReport(
+    RescuerMissingDeclaredPathReport Baseline,
+    string Status,
+    string? HoldReason,
+    IReadOnlyList<string> ConditionalPublicCandidates,
+    int BaselineQuestionCount,
+    int RemainingQuestionCount,
+    int UnconditionallyResolvedQuestionCount,
+    int PreflightRegionsInspected,
+    int PreflightBranchesInspected,
+    bool? PublicGraphIsDag,
+    bool? LongArithmeticBoundVerified,
+    int PropagateCalls,
+    int SelectedPathEdgesInspected);
+
 public static class RescuerEvidenceMethodComparison
 {
     /// <summary>
@@ -820,6 +839,253 @@ public static class RescuerEvidenceMethodComparison
             cutoff, targetWindow, declared.ReceivedOriginalIds, declared.Status,
             result, constraints.Length, publishedBranches.Length, inspected,
             traversedPublicBranches);
+    }
+
+
+    /// <summary>
+    /// #110 / AR-15. A deliberately fixed, synthetic B@2 -> D@6 calibration.
+    /// The #108 question report is never changed. The only new result is an
+    /// explicitly hypothetical public path conditional on NO unpublished forced
+    /// departure from D. This does not decide an actual Person location.
+    /// </summary>
+    public static RescuerConditionalPublishedDwellReport AnalyzeConditionalPublishedDwell(
+        RescuerEvidenceInput received,
+        InteractionTimeWindow targetWindow,
+        long historicalTargetTick)
+    {
+        var baseline = AnalyzeMissingDeclaredPathQuestions(received, targetWindow);
+        var questionCount = baseline.Candidates.Sum(row => row.Questions.Count);
+        var inspectedRegions = 0;
+        var inspectedBranches = 0;
+        int propagateCalls = 0, pathInspections = 0;
+        bool? dagVerified = null, boundVerified = null;
+        var conditional = new List<string>();
+        string? withheld = null;
+        var input = received.Input;
+        var envelope = input.PublicContext.PublicHazardEnvelope;
+
+        // The two independently received originals and historical Person ticks
+        // are a testable fixed slice, not a hidden rule for arbitrary histories.
+        var question = baseline.Candidates
+            .Where(row => row.RegionId == "B")
+            .SelectMany(row => row.Questions)
+            .FirstOrDefault(q => q.SourceRegionId == "B" &&
+                q.DestinationRegionId == "D" &&
+                q.MinimumCompatibleDifferenceTicks == 4 &&
+                q.MaximumCompatibleDifferenceTicks == 4 &&
+                q.IndependentSourceAncestry);
+        if (input.CurrentTick != 8 || historicalTargetTick != 6 ||
+            targetWindow.StartTick != 2 || targetWindow.EndTick != 2 ||
+            received.ReceivedRecords.Count != 2 || question is null ||
+            !received.ReceivedRecords.Any(r => r.OriginalRecordId ==
+                question.EarlyDirectSourceId && r.FirstReceivedAtTick == 7) ||
+            !received.ReceivedRecords.Any(r => r.OriginalRecordId ==
+                question.LaterDirectSourceId && r.FirstReceivedAtTick == 8))
+        {
+            withheld = "fixed-two-independent-originals-not-yet-eligible";
+        }
+        else if (envelope is null)
+        {
+            withheld = "public-envelope-unavailable";
+        }
+        else
+        {
+            var candidateStates = input.PublicContext.PublicCausalTracingModel!.CandidateStates
+                .Where(s => s.TimeWindow.StartTick == 2 &&
+                    s.TimeWindow.EndTick == 2 &&
+                    s.RegionIds.Contains("B", StringComparer.Ordinal)).ToArray();
+            var constraints = (input.AvailableCausalTracingConstraints?
+                .PubliclyAvailableAt(input.CurrentTick).Constraints ?? []).ToArray();
+            var early = constraints.SingleOrDefault(c =>
+                c.ConstraintId == question.EarlyConstraintId);
+            var later = constraints.SingleOrDefault(c =>
+                c.ConstraintId == question.LaterConstraintId);
+            if (candidateStates.Length != 1 || early is null || later is null ||
+                early.ConstrainedTimeWindow.StartTick != 2 ||
+                early.ConstrainedTimeWindow.EndTick != 2 ||
+                later.ConstrainedTimeWindow.StartTick != 6 ||
+                later.ConstrainedTimeWindow.EndTick != 6 ||
+                !early.AllowedRegionIds.Contains("B", StringComparer.Ordinal) ||
+                !later.AllowedRegionIds.Contains("D", StringComparer.Ordinal))
+            {
+                withheld = "person-window-not-exact";
+            }
+            else if (!ConditionalEnvelopePreflight(envelope, 2, historicalTargetTick,
+                out inspectedRegions, out inspectedBranches,
+                out dagVerified, out boundVerified, out withheld))
+            {
+                // On a failed preflight, do not call Propagate or infer a
+                // negative stay. The baseline's unknown questions survive.
+            }
+            else if (envelope.Branches.Any(b => b.SourceRegionId == "D"))
+            {
+                withheld = "published-departure-from-D";
+            }
+            else
+            {
+                // Check this very path, not simply an aggregated reached-D set.
+                // Each probe inspects all public branches, in canonical order.
+                var selected = new List<PublicHazardBranch>();
+                var hops = new[] { ("B", "E"), ("E", "F"), ("F", "D") };
+                for (var i = 0; i < hops.Length; i++)
+                {
+                    var (from, to) = hops[i];
+                    PublicHazardBranch? match = null;
+                    foreach (var branch in envelope.Branches.OrderBy(b =>
+                        b.SourceRegionId, StringComparer.Ordinal).ThenBy(b =>
+                        b.DestinationRegionId, StringComparer.Ordinal).ThenBy(b =>
+                        b.ProvenanceId, StringComparer.Ordinal))
+                    {
+                        pathInspections++;
+                        if (branch.SourceRegionId == from &&
+                            branch.DestinationRegionId == to &&
+                            branch.MinimumTravelTicks == 1 &&
+                            branch.MaximumTravelTicks == 1 && match is null)
+                            match = branch;
+                    }
+                    if (match is null)
+                    {
+                        withheld = "selected-route-not-fixed-or-unpublished";
+                        break;
+                    }
+                    var arrivalTick = 3L + i;
+                    var node = envelope.Regions.SingleOrDefault(r =>
+                        r.RegionId == to);
+                    if (node is null || node.MinimumArrivalTick > arrivalTick ||
+                        node.MaximumArrivalTick < arrivalTick)
+                    {
+                        withheld = "selected-route-arrival-window-incompatible";
+                        break;
+                    }
+                    selected.Add(match);
+                }
+                if (withheld is null)
+                {
+                    var source = CandidateWarpNormalization.CreateState(
+                        input.ScenarioId, input.Seed,
+                        input.PublicContext.TargetPersonId,
+                        InteractionTimeWindow.At(2),
+                        CandidateWarpTemporalKind.EventPoint, ["B"],
+                        EvidenceState.SupportedButUncertain, candidateStates[0].Provenance);
+                    propagateCalls++;
+                    var reached = PublicCandidateWarpPropagator.Propagate(
+                        input.ScenarioId, input.Seed,
+                        input.PublicContext.TargetPersonId,
+                        [source], historicalTargetTick, envelope,
+                        retainUndeclaredStay: false);
+                    if (reached.RegionIds.Contains("D", StringComparer.Ordinal))
+                    {
+                        conditional.Add(
+                            "public-conditional-early-arrival-with-stay-assumption:" +
+                            "B@2>E@3>F@4>D@5~D@6:" +
+                            "sources=" + string.Join(",", selected.Select(b => b.ProvenanceId)) +
+                            ":assumption=no-unpublished-forced-departure-from-D");
+                    }
+                    else
+                    {
+                        withheld = "public-propagation-does-not-retain-D";
+                    }
+                }
+            }
+        }
+        // No branch mutates the baseline, even when a conditional candidate
+        // exists. No conditional label enters PublicAlternativeExplanations.
+        return new RescuerConditionalPublishedDwellReport(
+            baseline, conditional.Count == 0 ? "withheld" : "conditional-only",
+            withheld, conditional,
+            questionCount, questionCount, 0, inspectedRegions, inspectedBranches,
+            dagVerified, boundVerified, propagateCalls, pathInspections);
+    }
+
+    // Sufficient guard for the limited synthetic model, not a general
+    // performance contract. ALL published entries are checked before recursion.
+    private static bool ConditionalEnvelopePreflight(
+        PublicHazardEnvelope envelope, long sourceTick, long targetTick,
+        out int regionsInspected, out int branchesInspected,
+        out bool? dagVerified, out bool? boundVerified, out string? reason)
+    {
+        regionsInspected = envelope.Regions.Count;
+        branchesInspected = envelope.Branches.Count;
+        dagVerified = null;
+        boundVerified = null;
+        reason = null;
+        if (sourceTick < 0 || sourceTick > targetTick ||
+            envelope.Regions.Count > 16 || envelope.Branches.Count > 8 ||
+            envelope.PublishedAtTick > targetTick)
+        {
+            reason = "preflight-size-or-publication";
+            return false;
+        }
+        var nodes = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var node in envelope.Regions)
+        {
+            if (string.IsNullOrWhiteSpace(node.RegionId) ||
+                !nodes.Add(node.RegionId) ||
+                node.PublishedAtTick > targetTick ||
+                node.MinimumArrivalTick < 0 ||
+                node.MaximumArrivalTick < node.MinimumArrivalTick)
+            {
+                reason = "preflight-invalid-region";
+                return false;
+            }
+        }
+        nodes.Add("B");
+        var provenanceIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var edge in envelope.Branches)
+        {
+            if (!nodes.Contains(edge.SourceRegionId) ||
+                !nodes.Contains(edge.DestinationRegionId) ||
+                string.IsNullOrWhiteSpace(edge.ProvenanceId) ||
+                !provenanceIds.Add(edge.ProvenanceId) ||
+                edge.PublishedAtTick > targetTick ||
+                edge.MinimumTravelTicks < 0 ||
+                edge.MaximumTravelTicks < edge.MinimumTravelTicks)
+            {
+                reason = "preflight-invalid-or-late-branch";
+                return false;
+            }
+        }
+        // Kahn's algorithm tests *all* edges including irrelevant zero-tick
+        // and hidden-from-this-query PUBLIC cycles; no path is pruned.
+        var degrees = nodes.ToDictionary(id => id, _ => 0, StringComparer.Ordinal);
+        foreach (var edge in envelope.Branches)
+            degrees[edge.DestinationRegionId]++;
+        var ready = new SortedSet<string>(
+            degrees.Where(kv => kv.Value == 0).Select(kv => kv.Key),
+            StringComparer.Ordinal);
+        var processed = 0;
+        while (ready.Count > 0)
+        {
+            var id = ready.Min!;
+            ready.Remove(id);
+            processed++;
+            foreach (var edge in envelope.Branches.Where(b => b.SourceRegionId == id))
+            {
+                degrees[edge.DestinationRegionId]--;
+                if (degrees[edge.DestinationRegionId] == 0)
+                    ready.Add(edge.DestinationRegionId);
+            }
+        }
+        dagVerified = processed == nodes.Count;
+        if (!dagVerified.Value)
+        {
+            reason = "preflight-public-cycle";
+            return false;
+        }
+        var maxArrival = Math.Max(sourceTick,
+            envelope.Regions.Select(r => r.MinimumArrivalTick)
+                .DefaultIfEmpty(sourceTick).Max());
+        var maxTravel = envelope.Branches.Select(b => (long)b.MaximumTravelTicks)
+            .DefaultIfEmpty(0L).Max();
+        // Division first prevents overflow even when a node is near long.Max.
+        boundVerified = maxTravel == 0 ||
+            envelope.Branches.Count <= (long.MaxValue - maxArrival) / maxTravel;
+        if (!boundVerified.Value)
+        {
+            reason = "preflight-long-overflow-bound";
+            return false;
+        }
+        return true;
     }
 
     // The positive route is existential and uses only public declarations.
