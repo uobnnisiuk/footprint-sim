@@ -2128,6 +2128,333 @@ public sealed class RescuerEvidenceBoundaryTests
     }
 
 
+
+    // #110 / AR-15: the publication is identical in two possible truth
+    // worlds. The new result is a separately labeled hypothesis, not a hard
+    // candidate change or an unconditional reduction of questions.
+    [Fact]
+    public void ConditionalPublishedDwellKeepsQuestionsInIndistinguishableWorlds()
+    {
+        static StochasticHazardDefinition Definition(
+            bool hiddenDeparture, bool deviceOnlyMiddle = false)
+        {
+            var nodes = new List<HazardNodeDefinition>();
+            foreach (var (id, tick) in new[]
+                { ("B", 2L), ("E", 3L), ("F", 4L), ("D", 5L) })
+            {
+                nodes.Add(new HazardNodeDefinition
+                {
+                    RegionId = id,
+                    MinimumArrivalTick = tick,
+                    MaximumArrivalTick = tick,
+                    PublishedAtTick = 0,
+                    PublicProvenanceId = "public-node-" + id,
+                    IsTerminal = id == "D" && !hiddenDeparture
+                });
+            }
+            if (hiddenDeparture)
+                nodes.Add(new HazardNodeDefinition
+                {
+                    RegionId = "G",
+                    MinimumArrivalTick = 6,
+                    MaximumArrivalTick = 6,
+                    PubliclyVisible = false,
+                    IsTerminal = true
+                });
+            var transitions = new List<HazardTransitionDefinition>();
+            foreach (var (from, to) in new[]
+                { ("B", "E"), ("E", "F"), ("F", "D") })
+            {
+                transitions.Add(new HazardTransitionDefinition
+                {
+                    Id = "public-" + from + to,
+                    SourceRegionId = from,
+                    DestinationRegionId = to,
+                    Weight = 1,
+                    MinimumTravelTicks = 1,
+                    MaximumTravelTicks = 1,
+                    TransportType = HazardTransportType.HazardDriven,
+                    Activation = deviceOnlyMiddle && from == "E" && to == "F"
+                        ? HazardTransitionActivation.DeviceOnly
+                        : HazardTransitionActivation.AnyEntity,
+                    ProvenanceId = "public-" + from + to
+                });
+            }
+            if (hiddenDeparture)
+                transitions.Add(new HazardTransitionDefinition
+                {
+                    Id = "hidden-DG",
+                    SourceRegionId = "D",
+                    DestinationRegionId = "G",
+                    Weight = 1,
+                    MinimumTravelTicks = 1,
+                    MaximumTravelTicks = 1,
+                    TransportType = HazardTransportType.HazardDriven,
+                    ProvenanceId = "private-DG",
+                    PubliclyVisible = false
+                });
+            return new StochasticHazardDefinition
+            {
+                HazardId = "same-public-hazard",
+                SourceRegionId = "B",
+                StartTick = 2,
+                Nodes = nodes,
+                Transitions = transitions
+            };
+        }
+        var baseDefinition = Definition(hiddenDeparture: false);
+        var variantDefinition = Definition(hiddenDeparture: true);
+        var deviceOnlyDefinition = Definition(hiddenDeparture: false,
+            deviceOnlyMiddle: true);
+        Assert.Equal(HazardTransitionActivation.DeviceOnly,
+            deviceOnlyDefinition.Transitions.Single(t =>
+                t.SourceRegionId == "E" && t.DestinationRegionId == "F").Activation);
+        Assert.True(baseDefinition.Nodes.Single(n => n.RegionId == "D").IsTerminal);
+        Assert.False(variantDefinition.Nodes.Single(n => n.RegionId == "D").IsTerminal);
+        Assert.Single(variantDefinition.Transitions, t => !t.PubliclyVisible);
+        var baseProjection = PublicHazardEnvelopeBuilder.Create(baseDefinition);
+        var variantProjection = PublicHazardEnvelopeBuilder.Create(variantDefinition);
+        var deviceOnlyProjection = PublicHazardEnvelopeBuilder.Create(deviceOnlyDefinition);
+        Assert.Equal(JsonDefaults.Serialize(baseProjection),
+            JsonDefaults.Serialize(variantProjection));
+        Assert.Equal(JsonDefaults.Serialize(baseProjection),
+            JsonDefaults.Serialize(deviceOnlyProjection));
+
+        var first = ComplementaryOriginal(RecordId, HolderId,
+            2, ["A", "B", "C"], 3, "weft-a");
+        var later = ComplementaryOriginal("second-original", "holder-b",
+            6, ["D"], 6, "weft-b");
+        var context = ComplementaryPublicContext();
+        var builder = new RescuerEvidenceInputBuilder();
+        RescuerEvidenceInput Input(PublicHazardEnvelope projected,
+            long queryTick = 8, bool reverse = false,
+            long firstReceiptTick = 7, long secondReceiptTick = 8)
+        {
+            var world = context with { PublicHazardEnvelope = projected };
+            return builder.BuildDistinctOriginals(world, Seed, queryTick, RescuerId,
+                reverse ? [later, first] : [first, later],
+                reverse ? [LaterComparisonReceipt(secondReceiptTick),
+                    Receipt(firstReceiptTick), Receipt(firstReceiptTick)]
+                    : [Receipt(firstReceiptTick),
+                        LaterComparisonReceipt(secondReceiptTick)]);
+        }
+        var a = Input(baseProjection);
+        var b = Input(variantProjection);
+        var deviceOnly = Input(deviceOnlyProjection);
+        // Both the public projection and the actual inputs supplied to the
+        // rescuer/candidate methods are byte-identical. Truth is not an input.
+        Assert.Equal(JsonDefaults.Serialize(a.Input), JsonDefaults.Serialize(b.Input));
+        Assert.Equal(JsonDefaults.Serialize(a.Input),
+            JsonDefaults.Serialize(deviceOnly.Input));
+        var baseline = RescuerEvidenceMethodComparison.AnalyzeMissingDeclaredPathQuestions(
+            a, InteractionTimeWindow.At(2));
+        Assert.Single(baseline.Candidates.Single(c => c.RegionId == "B").Questions);
+        Assert.Single(baseline.Candidates.Single(c => c.RegionId == "C").Questions);
+        var result = RescuerEvidenceMethodComparison.AnalyzeConditionalPublishedDwell(
+            a, InteractionTimeWindow.At(2), 6);
+        Assert.Equal("conditional-only", result.Status);
+        Assert.Single(result.ConditionalPublicCandidates);
+        Assert.StartsWith("public-conditional-early-arrival-with-stay-assumption:",
+            result.ConditionalPublicCandidates[0]);
+        Assert.Contains("public-BE,public-EF,public-FD",
+            result.ConditionalPublicCandidates[0], StringComparison.Ordinal);
+        Assert.Contains("no-unpublished-forced-departure-from-D+" +
+            "public-edges-person-applicable", result.ConditionalPublicCandidates[0],
+            StringComparison.Ordinal);
+        // A→D also stays unresolved: the two B→D / C→D questions
+        // are the selected comparison, not the entire question set.
+        Assert.Single(baseline.Candidates.Single(c => c.RegionId == "A").Questions);
+        Assert.Equal(3, result.BaselineQuestionCount);
+        Assert.Equal(3, result.RemainingQuestionCount);
+        Assert.Equal(0, result.UnconditionallyResolvedQuestionCount);
+        Assert.Equal(1, result.PropagateCalls);
+        Assert.Equal(true, result.PublicGraphIsDag);
+        Assert.Equal(true, result.LongArithmeticBoundVerified);
+        Assert.DoesNotContain("private-DG", JsonDefaults.Serialize(result));
+        Assert.Equal(JsonDefaults.Serialize(result), JsonDefaults.Serialize(
+            RescuerEvidenceMethodComparison.AnalyzeConditionalPublishedDwell(
+                b, InteractionTimeWindow.At(2), 6)));
+        // A truth-only E->F DeviceOnly transition cannot verify a Person path.
+        Assert.Equal(JsonDefaults.Serialize(result), JsonDefaults.Serialize(
+            RescuerEvidenceMethodComparison.AnalyzeConditionalPublishedDwell(
+                deviceOnly, InteractionTimeWindow.At(2), 6)));
+        Assert.Equal(JsonDefaults.Serialize(result), JsonDefaults.Serialize(
+            RescuerEvidenceMethodComparison.AnalyzeConditionalPublishedDwell(
+                Input(baseProjection, reverse: true), InteractionTimeWindow.At(2), 6)));
+        // At tick 7 the second original exists but has not been received.
+        var before = RescuerEvidenceMethodComparison.AnalyzeConditionalPublishedDwell(
+            Input(baseProjection, queryTick: 7), InteractionTimeWindow.At(2), 6);
+        Assert.Empty(before.ConditionalPublicCandidates);
+        Assert.Equal(0, before.PropagateCalls);
+        Assert.Equal("fixed-two-independent-originals-not-yet-eligible",
+            before.HoldReason);
+        // An already received pair that falls outside this synthetic slice
+        // is not "still awaiting" its second original.
+        var laterQuery = RescuerEvidenceMethodComparison.AnalyzeConditionalPublishedDwell(
+            Input(baseProjection, queryTick: 9), InteractionTimeWindow.At(2), 6);
+        var alteredReceipts = RescuerEvidenceMethodComparison.AnalyzeConditionalPublishedDwell(
+            Input(baseProjection, secondReceiptTick: 7), InteractionTimeWindow.At(2), 6);
+        foreach (var held in new[] { laterQuery, alteredReceipts })
+        {
+            Assert.Empty(held.ConditionalPublicCandidates);
+            Assert.Equal(0, held.PropagateCalls);
+            Assert.Equal("outside-fixed-calibration-slice", held.HoldReason);
+            Assert.Equal(held.BaselineQuestionCount, held.RemainingQuestionCount);
+            Assert.Equal(0, held.UnconditionallyResolvedQuestionCount);
+        }
+        // The old public method is not modified by calling the new one.
+        Assert.Equal(JsonDefaults.Serialize(baseline),
+            JsonDefaults.Serialize(RescuerEvidenceMethodComparison
+                .AnalyzeMissingDeclaredPathQuestions(a, InteractionTimeWindow.At(2))));
+    }
+
+    [Fact]
+    public void ConditionalPublishedDwellPreflightNeverExecutesUnboundedPropagation()
+    {
+        var original = ComplementaryPublicContext();
+        var nodes = new[] { "A", "B", "C", "D", "E", "F" }
+            .Select(id => new PublicHazardRegion
+            {
+                RegionId = id,
+                PublishedAtTick = 0,
+                MinimumArrivalTick = 0,
+                MaximumArrivalTick = 20
+            }).ToArray();
+        var clean = original.PublicHazardEnvelope! with
+        {
+            Regions = nodes,
+            Branches =
+            [
+                Branch("B", "E") with { MinimumTravelTicks = 1, MaximumTravelTicks = 1 },
+                Branch("E", "F") with { MinimumTravelTicks = 1, MaximumTravelTicks = 1 },
+                Branch("F", "D") with { MinimumTravelTicks = 1, MaximumTravelTicks = 1 }
+            ]
+        };
+        var early = ComplementaryOriginal(RecordId, HolderId,
+            2, ["A", "B", "C"], 3, "weft-a");
+        var late = ComplementaryOriginal("second-original", "holder-b",
+            6, ["D"], 6, "weft-b");
+        var builder = new RescuerEvidenceInputBuilder();
+        RescuerConditionalPublishedDwellReport Run(
+            PublicHazardEnvelope envelope,
+            EvidenceState firstState = EvidenceState.Confirmed,
+            bool deviceOnly = false, bool sharedAncestry = false)
+        {
+            var world = original with { PublicHazardEnvelope = envelope };
+            var first = firstState == EvidenceState.Confirmed && !deviceOnly
+                ? early : ComplementaryOriginal(RecordId, HolderId,
+                    2, ["A", "B", "C"], 3, "weft-a", firstState, deviceOnly);
+            var second = sharedAncestry
+                ? ComplementaryOriginal("second-original", "holder-b",
+                    6, ["D"], 6, "weft-a") : late;
+            var input = builder.BuildDistinctOriginals(world, Seed, 8, RescuerId,
+                [first, second], [Receipt(7), LaterComparisonReceipt(8)]);
+            return RescuerEvidenceMethodComparison.AnalyzeConditionalPublishedDwell(
+                input, InteractionTimeWindow.At(2), 6);
+        }
+        var good = Run(clean);
+        Assert.Single(good.ConditionalPublicCandidates);
+        Assert.Equal(1, good.PropagateCalls);
+        Assert.Equal(clean.Regions.Count, good.PreflightRegionsInspected);
+        Assert.Equal(clean.Branches.Count, good.PreflightBranchesInspected);
+
+        // A later public B minimum forces Propagate to start at B@3.
+        // Reaching D@6 that way cannot certify the advertised B@2 path.
+        var shiftedOrigin = clean with
+        {
+            Regions = clean.Regions.Select(node => node.RegionId == "B"
+                ? node with { MinimumArrivalTick = 3 } : node).ToArray()
+        };
+        var shifted = Run(shiftedOrigin);
+        Assert.Empty(shifted.ConditionalPublicCandidates);
+        Assert.Equal("selected-route-origin-window-incompatible", shifted.HoldReason);
+        Assert.Equal(0, shifted.PropagateCalls);
+        Assert.Equal(0, shifted.UnconditionallyResolvedQuestionCount);
+        Assert.Equal(shifted.BaselineQuestionCount, shifted.RemainingQuestionCount);
+        Assert.Single(shifted.Baseline.Candidates.Single(c => c.RegionId == "B").Questions);
+        Assert.Single(shifted.Baseline.Candidates.Single(c => c.RegionId == "C").Questions);
+        Assert.Equal(JsonDefaults.Serialize(shifted),
+            JsonDefaults.Serialize(Run(shiftedOrigin)));
+
+        var cycle = clean with
+        {
+            Branches = [.. clean.Branches,
+                Branch("F", "B") with { MinimumTravelTicks = 0,
+                    MaximumTravelTicks = 0 }]
+        };
+        var tooWide = clean with
+        {
+            Branches = [.. clean.Branches,
+                .. Enumerable.Range(0, 6).Select(i => Branch("B", "E") with
+                { ProvenanceId = "extra-" + i,
+                    MinimumTravelTicks = 10, MaximumTravelTicks = 10 })]
+        };
+        var overflow = clean with
+        {
+            Regions = [.. clean.Regions, new PublicHazardRegion
+            {
+                RegionId = "Z", PublishedAtTick = 0,
+                MinimumArrivalTick = long.MaxValue,
+                MaximumArrivalTick = long.MaxValue
+            }],
+            Branches = [.. clean.Branches, Branch("Z", "D") with
+            { MinimumTravelTicks = 1, MaximumTravelTicks = 1 }]
+        };
+        var latePublic = clean with
+        {
+            Branches = clean.Branches.Select(edge => edge.SourceRegionId == "E"
+                ? edge with { PublishedAtTick = 7 } : edge).ToArray()
+        };
+        var outbound = clean with
+        {
+            Regions = [.. clean.Regions, new PublicHazardRegion
+            {
+                RegionId = "G", PublishedAtTick = 0,
+                MinimumArrivalTick = 0, MaximumArrivalTick = 20
+            }],
+            Branches = [.. clean.Branches, Branch("D", "G")]
+        };
+        foreach (var scenario in new[] { cycle, tooWide, overflow, latePublic, outbound })
+        {
+            var held = Run(scenario);
+            Assert.Empty(held.ConditionalPublicCandidates);
+            Assert.Equal(0, held.PropagateCalls);
+            Assert.Equal(0, held.UnconditionallyResolvedQuestionCount);
+            Assert.Equal(held.BaselineQuestionCount, held.RemainingQuestionCount);
+            Assert.Single(held.Baseline.Candidates.Single(c => c.RegionId == "B").Questions);
+            Assert.Equal(JsonDefaults.Serialize(held), JsonDefaults.Serialize(Run(scenario)));
+        }
+        Assert.Equal("preflight-public-cycle", Run(cycle).HoldReason);
+        Assert.Equal("preflight-size-or-publication", Run(tooWide).HoldReason);
+        // The 9-branch cap rejects before entry-wise validation.
+        Assert.Equal(0, Run(tooWide).PreflightRegionsInspected);
+        Assert.Equal(0, Run(tooWide).PreflightBranchesInspected);
+        var invalidRegion = clean with
+        {
+            Regions = clean.Regions.Select((node, index) => index == 1
+                ? node with { PublishedAtTick = 7 } : node).ToArray()
+        };
+        var regionHold = Run(invalidRegion);
+        Assert.Equal("preflight-invalid-region", regionHold.HoldReason);
+        Assert.Equal(2, regionHold.PreflightRegionsInspected);
+        Assert.Equal(0, regionHold.PreflightBranchesInspected);
+        Assert.Equal(0, regionHold.PropagateCalls);
+        Assert.Equal(regionHold.BaselineQuestionCount, regionHold.RemainingQuestionCount);
+        // Late E->F is the second entry; F->D is never inspected.
+        var branchHold = Run(latePublic);
+        Assert.Equal(clean.Regions.Count, branchHold.PreflightRegionsInspected);
+        Assert.Equal(2, branchHold.PreflightBranchesInspected);
+        Assert.Equal(0, branchHold.PropagateCalls);
+        Assert.Equal(branchHold.BaselineQuestionCount, branchHold.RemainingQuestionCount);
+        Assert.Equal("preflight-long-overflow-bound", Run(overflow).HoldReason);
+        Assert.Equal("preflight-invalid-or-late-branch", Run(latePublic).HoldReason);
+        Assert.Equal("published-departure-from-D", Run(outbound).HoldReason);
+        Assert.Empty(Run(clean, firstState: EvidenceState.Conflicting)
+            .ConditionalPublicCandidates);
+        Assert.Empty(Run(clean, deviceOnly: true).ConditionalPublicCandidates);
+        Assert.Empty(Run(clean, sharedAncestry: true).ConditionalPublicCandidates);
+    }
+
     // A complete published route may exceed the gap at an intermediate edge.
     // Only that route is too long; other routes and Person movement stay unknown.
     [Fact]
