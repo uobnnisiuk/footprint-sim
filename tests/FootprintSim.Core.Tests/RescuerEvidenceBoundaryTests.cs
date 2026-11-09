@@ -1906,12 +1906,54 @@ public sealed class RescuerEvidenceBoundaryTests
             return builder.BuildDistinctOriginals(world, Seed, 7,
                 RescuerId, originals, receipts);
         }
-        var baseline = RescuerEvidenceMethodComparison
+        // World without the three extra declarations is an information
+        // ablation, not a same-world processing comparison.
+        var withoutThreeHop = RescuerEvidenceMethodComparison
             .AnalyzeMissingDeclaredPathQuestions(
                 At(baseWorld), InteractionTimeWindow.At(2));
-        Assert.Equal(["B", "C"], baseline.Candidates
+        Assert.Equal(["B", "C"], withoutThreeHop.Candidates
             .Where(row => row.Questions.Count > 0).Select(row => row.RegionId));
         var sameEvidence = At(threeHop);
+        // A separate, fixed legacy-two-hop reference on the SAME projected
+        // receipt/public model; the test's B/C at tick 2 and D at tick 5
+        // are the only endpoint pairs to compare. Count inspected edges.
+        static (string[] Questions, int Inspected) LegacyTwoHop(
+            RescuerEvidenceInput received)
+        {
+            var edges = received.Input.PublicContext.PublicHazardEnvelope!.Branches
+                .Where(edge => edge.PublishedAtTick <= received.Input.CurrentTick)
+                .ToArray();
+            var questions = new List<string>();
+            var inspected = 0;
+            foreach (var start in new[] { "B", "C" })
+            {
+                var explained = edges.Any(edge =>
+                    edge.SourceRegionId == start &&
+                    edge.DestinationRegionId == "D");
+                foreach (var firstEdge in edges.Where(edge =>
+                    edge.SourceRegionId == start))
+                {
+                    inspected++;
+                    foreach (var secondEdge in edges.Where(edge =>
+                        edge.SourceRegionId == firstEdge.DestinationRegionId))
+                    {
+                        inspected++;
+                        if (secondEdge.DestinationRegionId == "D" &&
+                            (long)firstEdge.MinimumTravelTicks +
+                                secondEdge.MinimumTravelTicks <= 3 &&
+                            (long)firstEdge.MaximumTravelTicks +
+                                secondEdge.MaximumTravelTicks >= 3)
+                            explained = true;
+                    }
+                }
+                if (!explained)
+                    questions.Add(start);
+            }
+            return (questions.ToArray(), inspected);
+        }
+        var legacy = LegacyTwoHop(sameEvidence);
+        Assert.Equal(["B", "C"], legacy.Questions);
+        Assert.True(legacy.Inspected > 0);
         var report = RescuerEvidenceMethodComparison
             .AnalyzeMissingDeclaredPathQuestions(
                 sameEvidence, InteractionTimeWindow.At(2));
@@ -1925,6 +1967,8 @@ public sealed class RescuerEvidenceBoundaryTests
                 StringComparison.Ordinal) &&
                 reason.Contains("three-BE,three-EF,three-FD", StringComparison.Ordinal));
         Assert.True(report.PublicTraversalBranchesInspected >= 3);
+        Assert.Equal(2, legacy.Questions.Length);
+        Assert.Equal(1, report.Candidates.Sum(row => row.Questions.Count));
         Assert.Equal(JsonDefaults.Serialize(report), JsonDefaults.Serialize(
             RescuerEvidenceMethodComparison.AnalyzeMissingDeclaredPathQuestions(
                 At(threeHop, reverse: true), InteractionTimeWindow.At(2))));
@@ -2076,6 +2120,220 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Contains(fourReport.Candidates.Single(row => row.RegionId == "B")
             .PublicAlternativeExplanations,
             reason => reason.StartsWith("formal-multihop:B>E>F>C>D:",
+                StringComparison.Ordinal));
+    }
+
+
+    // AR-14: an irrelevant dense alphabetically early subtree must not hide
+    // an already published B->Y->D two-hop explanation.
+    [Fact]
+    public void DensePublicGraphRetainsTwoHopRegardlessOfRegionNames()
+    {
+        var original = ComplementaryPublicContext();
+        var first = ComplementaryOriginal(RecordId, HolderId,
+            2, ["A", "B", "C"], 3, "weft-a");
+        var second = ComplementaryOriginal("second-original", "holder-b",
+            5, ["D"], 6, "weft-b");
+        var builder = new RescuerEvidenceInputBuilder();
+        RescuerEvidenceInput Input(string prefix, bool reverse)
+        {
+            var names = Enumerable.Range(0, 7)
+                .Select(i => prefix + (char)('A' + i)).ToArray();
+            var clique = names.SelectMany(a => names.Where(b => a != b)
+                .Select(b => Branch(a, b) with
+                {
+                    MinimumTravelTicks = 1, MaximumTravelTicks = 1
+                })).ToArray();
+            var world = original with
+            {
+                PublicRegions = [.. original.PublicRegions,
+                    .. names.Append("Y").Select((id, i) => new RegionDefinition
+                    {
+                        Id = id, Type = RegionType.Outdoor,
+                        Center = new Position(20 + i, 0, 0, id)
+                    })],
+                PublicHazardEnvelope = original.PublicHazardEnvelope! with
+                {
+                    Branches = [.. original.PublicHazardEnvelope!.Branches,
+                        Branch("B", names[0]) with
+                        {
+                            MinimumTravelTicks = 1, MaximumTravelTicks = 1
+                        },
+                        Branch("B", "Y") with
+                        {
+                            MinimumTravelTicks = 1, MaximumTravelTicks = 1
+                        },
+                        Branch("Y", "D") with
+                        {
+                            MinimumTravelTicks = 2, MaximumTravelTicks = 2
+                        }, .. clique]
+                }
+            };
+            return builder.BuildDistinctOriginals(world, Seed, 7, RescuerId,
+                reverse ? [second, first] : [first, second],
+                reverse
+                    ? [LaterComparisonReceipt(7), Receipt(6), Receipt(6)]
+                    : [Receipt(6), LaterComparisonReceipt(7)]);
+        }
+        var a = Input("A", false);
+        var b = Input("Z", true);
+        var report = RescuerEvidenceMethodComparison
+            .AnalyzeMissingDeclaredPathQuestions(a, InteractionTimeWindow.At(2));
+        var renamed = RescuerEvidenceMethodComparison
+            .AnalyzeMissingDeclaredPathQuestions(b, InteractionTimeWindow.At(2));
+        foreach (var item in new[] { report, renamed })
+        {
+            var candidate = item.Candidates.Single(row => row.RegionId == "B");
+            Assert.Empty(candidate.Questions);
+            Assert.Contains("formal-two-hop:B>Y>D", candidate.PublicAlternativeExplanations);
+            Assert.DoesNotContain(candidate.PublicAlternativeExplanations,
+                x => x.StartsWith("public-path-search-incomplete:B>D",
+                    StringComparison.Ordinal));
+            Assert.InRange(item.PublicTraversalBranchesInspected, 1, 4096 * 3);
+            Assert.Equal(["A", "B", "C"],
+                item.Candidates.Select(row => row.RegionId));
+        }
+        Assert.Equal(report.Candidates.Select(row => row.Questions.Count),
+            renamed.Candidates.Select(row => row.Questions.Count));
+        Assert.All(RescuerEvidenceMethodComparison.Compare(
+            a, InteractionTimeWindow.At(2)).Methods,
+            row => Assert.Equal(["A", "B", "C"], row.OuterCandidateRegionIds));
+    }
+
+    // Depth, edge budget and near-long-limit observation times are separate
+    // negative cases. Unknown is never reinterpreted as an excluded candidate.
+    [Fact]
+    public void PublicRouteCapsAndLargeTicksDoNotInventPositivePaths()
+    {
+        var original = ComplementaryPublicContext();
+        var first = ComplementaryOriginal(RecordId, HolderId,
+            2, ["A", "B", "C"], 3, "weft-a");
+        var second = ComplementaryOriginal("second-original", "holder-b",
+            5, ["D"], 6, "weft-b");
+        var builder = new RescuerEvidenceInputBuilder();
+        RescuerMissingDeclaredPathReport Run(RescueContext world, bool reverse = false)
+        {
+            var input = builder.BuildDistinctOriginals(world, Seed, 7, RescuerId,
+                reverse ? [second, first] : [first, second],
+                reverse
+                    ? [LaterComparisonReceipt(7), Receipt(6), Receipt(6)]
+                    : [Receipt(6), LaterComparisonReceipt(7)]);
+            return RescuerEvidenceMethodComparison
+                .AnalyzeMissingDeclaredPathQuestions(input, InteractionTimeWindow.At(2));
+        }
+
+        var chainNames = Enumerable.Range(0, 9).Select(i => "T" + i).ToArray();
+        var chain = new List<PublicHazardBranch>();
+        var source = "B";
+        foreach (var dest in chainNames.Append("D"))
+        {
+            chain.Add(Branch(source, dest) with
+            {
+                MinimumTravelTicks = 0, MaximumTravelTicks = 0
+            });
+            source = dest;
+        }
+        var chainWorld = original with
+        {
+            PublicRegions = [.. original.PublicRegions,
+                .. chainNames.Select((id, i) => new RegionDefinition
+                {
+                    Id = id, Type = RegionType.Outdoor,
+                    Center = new Position(40 + i, 0, 0, id)
+                })],
+            PublicHazardEnvelope = original.PublicHazardEnvelope! with
+            {
+                Branches = [.. original.PublicHazardEnvelope!.Branches, .. chain]
+            }
+        };
+        var depth = Run(chainWorld);
+        var depthCandidate = depth.Candidates.Single(row => row.RegionId == "B");
+        Assert.Single(depthCandidate.Questions);
+        Assert.Contains(depthCandidate.PublicAlternativeExplanations,
+            x => x.StartsWith("public-path-search-incomplete:B>D",
+                StringComparison.Ordinal));
+        Assert.Equal(JsonDefaults.Serialize(depth),
+            JsonDefaults.Serialize(Run(chainWorld, true)));
+
+        var cliqueNames = Enumerable.Range(0, 7).Select(i => "Q" + i).ToArray();
+        var clique = cliqueNames.SelectMany(a => cliqueNames.Where(b => a != b)
+            .Select(b => Branch(a, b) with
+            {
+                MinimumTravelTicks = 0, MaximumTravelTicks = 0
+            })).ToArray();
+        var cappedWorld = original with
+        {
+            PublicRegions = [.. original.PublicRegions,
+                .. cliqueNames.Select((id, i) => new RegionDefinition
+                {
+                    Id = id, Type = RegionType.Outdoor,
+                    Center = new Position(60 + i, 0, 0, id)
+                })],
+            PublicHazardEnvelope = original.PublicHazardEnvelope! with
+            {
+                Branches = [.. original.PublicHazardEnvelope!.Branches,
+                    Branch("B", cliqueNames[0]) with
+                    {
+                        MinimumTravelTicks = 0, MaximumTravelTicks = 0
+                    }, .. clique]
+            }
+        };
+        var cap = Run(cappedWorld);
+        var capCandidate = cap.Candidates.Single(row => row.RegionId == "B");
+        Assert.Single(capCandidate.Questions);
+        Assert.Contains(capCandidate.PublicAlternativeExplanations,
+            x => x.StartsWith("public-path-search-incomplete:B>D",
+                StringComparison.Ordinal));
+        Assert.InRange(cap.PublicTraversalBranchesInspected, 4096, 4096 * 3);
+        Assert.Equal(JsonDefaults.Serialize(cap),
+            JsonDefaults.Serialize(Run(cappedWorld, true)));
+        Assert.Equal(["A", "B", "C"], cap.Candidates.Select(row => row.RegionId));
+
+        var nearMax = long.MaxValue - 12;
+        var highWorld = original with
+        {
+            PublicRegions = [.. original.PublicRegions, new RegionDefinition
+            {
+                Id = "X", Type = RegionType.Outdoor,
+                Center = new Position(80, 0, 0, "X")
+            }],
+            PublicCausalTracingModel = new PublicCausalTracingModel
+            {
+                CandidateStates = [State(nearMax, ["A", "B", "C"]),
+                    State(nearMax + 3, ["D", "E", "F"])]
+            },
+            PublicHazardEnvelope = original.PublicHazardEnvelope! with
+            {
+                Branches = [.. original.PublicHazardEnvelope!.Branches,
+                    Branch("B", "X") with
+                    {
+                        MinimumTravelTicks = int.MaxValue,
+                        MaximumTravelTicks = int.MaxValue
+                    },
+                    Branch("X", "D") with
+                    {
+                        MinimumTravelTicks = int.MaxValue,
+                        MaximumTravelTicks = int.MaxValue
+                    }]
+            }
+        };
+        var highInput = builder.BuildDistinctOriginals(highWorld, Seed, nearMax + 6,
+            RescuerId,
+            [ComplementaryOriginal(RecordId, HolderId, nearMax,
+                ["A", "B", "C"], nearMax + 1, "weft-a"),
+             ComplementaryOriginal("second-original", "holder-b", nearMax + 3,
+                ["D"], nearMax + 4, "weft-b")],
+            [Receipt(nearMax + 2), LaterComparisonReceipt(nearMax + 5)]);
+        var highReport = RescuerEvidenceMethodComparison
+            .AnalyzeMissingDeclaredPathQuestions(highInput,
+                InteractionTimeWindow.At(nearMax));
+        var highCandidate = highReport.Candidates.Single(row => row.RegionId == "B");
+        Assert.Single(highCandidate.Questions);
+        Assert.DoesNotContain(highCandidate.PublicAlternativeExplanations,
+            x => x.StartsWith("formal-two-hop:", StringComparison.Ordinal) ||
+                x.StartsWith("formal-multihop:", StringComparison.Ordinal));
+        Assert.Contains(highCandidate.PublicAlternativeExplanations,
+            x => x.StartsWith("published-path-too-long:B>X>D:",
                 StringComparison.Ordinal));
     }
 
