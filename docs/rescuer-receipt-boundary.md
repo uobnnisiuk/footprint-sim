@@ -1763,3 +1763,74 @@ Build/test/format/sample/evaluation checks should be read from CI on the
 proposed PR because the local runner may lack the pinned .NET SDK. A passing
 CI establishes the specified synthetic assertions, **not** real-world
 search benefit.
+
+### #114 executed fixture assertions and measurement boundary
+
+**Result, distinct from the pre-test expectations above.** The fixed synthetic
+test \`DeclaredWitnessUnitsKeepMixedCandidateStatusesAndDirectProvenance\`
+ran in [normal CI #42712326620](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42712326620)
+(success on PR #115's *original* head); the test asserts the actual returned
+candidate/unit collections rather than just checking for a successful API call.
+The companion #112 assertion of the method counters was also green there.
+The revised head must pass its own CI before independent acceptance. No
+serialized eight-row output artifact or timing benchmark was retained:
+**assertion-verified values** are separated from **unmeasured values** below.
+
+All eight rows refer to the **same** two received Person originals, public
+region catalog and target tick 2, with query tick 7. Original
+\`original-encounter-record\` was observed at tick 2 and received at tick 6;
+\`second-original\` was observed at tick 5 and received at tick 7. All three
+region mappings were public at tick 0: A,C→U1 and B→U2.
+Only K has the extra B→D public declaration (published tick 7). U/K
+therefore differ in available public information, **not** in evidence,
+scenario, seed, cutoff or candidate-to-unit catalog.
+
+| Executed condition | Existing method | Safe outer / known units | U1 (A,C) | U2 (B) | Witness branch provenance and publication tick | Existing method public relations inspected |
+|---|---|---|---|---|---|---:|
+| U | public-prior | A,B,C / U1,U2 | A witnessed; C unknown | B unknown | A→D \`declared-A-D\` @0 | 0 |
+| K | public-prior | A,B,C / U1,U2 | A witnessed; C unknown | B witnessed | A→D @0; B→D \`separate-public-BD\` @7 | 0 |
+| U | known-relation-backward | A,B,C / U1,U2 | A witnessed; C unknown | B unknown | A→D @0 | 5 |
+| K | known-relation-backward | A,B,C / U1,U2 | A witnessed; C unknown | B witnessed | A→D @0; B→D @7 | 5 |
+| U | distributed-reconstruction | A,B,C / U1,U2 | A witnessed; C unknown | B unknown | A→D @0 | 1 |
+| K | distributed-reconstruction | A,B,C / U1,U2 | A witnessed; C unknown | B witnessed | A→D @0; B→D @7 | 1 |
+| U | distributed-reconstruction-local | A,B,C / U1,U2 | A witnessed; C unknown | B unknown | A→D @0 | 5 |
+| K | distributed-reconstruction-local | A,B,C / U1,U2 | A witnessed; C unknown | B witnessed | A→D @0; B→D @7 | 5 |
+
+For each **A witness** (U and K), branch provenance is
+\`declared-A-D\`, published at tick **0**; for each **B witness** (K
+only), branch provenance is \`separate-public-BD\`, published at tick
+**7**. In both cases the direct early/later source IDs are respectively
+\`original-encounter-record\` / \`second-original\`; source-observation
+ancestries include \`weft-a\` / \`weft-b\`, and the direct witnesses
+have \`IndependentSourceAncestry=true\`. Formal compatible early/later ticks
+are **2/5**, and \`PersonTraversability=unknown\`. The exact
+source-observation IDs are retained in the returned witness objects but were
+**not separately captured as report text**. Two received originals with two
+distinct ancestry groups are not two validated real journeys.
+
+In each of the eight rows the API status is \`available\`, unmapped
+regions = ∅, U1 has witnessed set {A} and unknown set {C}, and U2 is
+unknown {B} in U versus witnessed {B} in K. No fixed-row
+conflict/unavailable candidate is asserted; the separate partial,
+shared-ancestry, Device-only and conflict tests verify their own conditions.
+Every method retains safe outer size **3** and known public-unit count **2**:
+removed units = **0**, not a confirmed reduction in real physical sites.
+Existing method \`Steps\` **K−U=0** for each method (asserted equality);
+**absolute Steps, GenerationSteps, VerificationSteps and CPU time were not
+captured** and must not be inferred from that zero delta. The #114 join's
+\`PublicConstraintsInspected\`, \`PublicBranchesInspected\`, and
+\`ConstraintBranchPairsInspected\` are exposed as counters but their **numeric
+values were not captured or independently asserted in this fixed run**.
+Their absence here is *unmeasured*, not zero. The public-relations-inspected
+0/5/1/5 values in the table are pinned by the fixed #112 test and explicitly
+checked via each #114 method row in the revised test.
+
+The pre-test forecast and assertion-verified statuses **agree in this fixed
+case**. This is a model-internal classification change (B at U2 acquires a
+formal, separately published explanation), **not** evidence that U2 is
+visited, safe, traversable or eliminable. The existing four historical-outer
+methods are structurally insensitive to that extra positive branch for
+candidate removal. No unknown relation was discovered; true Person motion,
+real search time/cost, rescue benefit, and generalization remain unmeasured.
+The next independent review must evaluate the revised head's CI and any new
+adversarial findings, not reuse the previous head's approval or checks.
