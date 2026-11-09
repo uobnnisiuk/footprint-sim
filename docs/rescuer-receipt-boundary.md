@@ -1686,3 +1686,151 @@ travel time, rescue staff hours, actual sites, cost, rescue success or any
 A change in source/world/timing/catalog is rejected rather than mislabeled
 as a comparable result. Incomplete mapping requires a later reviewed scope
 or additional public evidence, not a favorable assumed zero.
+
+
+## #114: candidate-level declared-path witnesses within historical public units
+
+Work-Key: `FP-DECLARED-WITNESS-UNIT-COVERAGE-V1` / [Issue #114](https://github.com/uobnnisiuk/footprint-sim/issues/114).
+This is the next *evaluation-only* slice after #112, not a new location
+inference rule, safety certificate, route traversal claim or 24-relation engine.
+
+`AnalyzeDeclaredWitnessUnitCoverage(U, K, historicalWindow, regionIds,
+unitIds, mappings)` first calls the same #112 strict receipt/public-world
+comparison. It reuses the #104 candidate-level declared-path explanation and
+#100 public same-historical-tick unit projection, grouping **only regions in
+each method's actual outer candidates** into public units. A unit stores
+candidate-specific `witnessed`, `unknown`, `conflict` and `unavailable`
+states; direct witnesses retain both source observation IDs, source ancestry,
+published branch provenance, compatible ticks, and the independent-ancestry
+flag. The positive witness still has `PersonTraversability=unknown`.
+The witness count is not the count of independently verified real traces.
+
+### Fixed synthetic contrast and directly checkable expected entries
+
+The test uses the exact #112 `RelationUtilityInputs` fixture: first original
+observed at tick 2/received at tick 6; distinct later original observed at
+tick 5/received at tick 7; query at tick 7 and historical tick 2.
+The publicly available candidate and unit catalogs are `A,C -> U1`,
+`B -> U2` (catalog published at tick 0). The K condition has exactly one
+extra separately published `B -> D` 3-tick declaration (published at tick 7).
+The U condition lacks that declaration. The actual Person path is **not**
+provided. These entries are expectations from the existing #104/#112
+diagnostics, fixed before testing, not post-hoc fitted rescue effects:
+
+| Condition | Method | Outer regions | Known units | U1 candidate detail | U2 candidate detail |
+|---|---|---|---|---|---|
+| U | each of four published methods | A,B,C | U1,U2 | A witnessed by published A-D; C unknown | B unknown |
+| K | same four methods | A,B,C | U1,U2 | A witnessed by published A-D; C unknown | B witnessed by separately published B-D |
+
+For A and B, the formal witnesses pair distinct received originals
+(`original-encounter-record`, `second-original`) and their observation
+ancestry (`weft-a`, `weft-b`). K's B witness refers to
+`separate-public-BD` at publication tick 7 and compatible ticks 2 and 5.
+Receipt order and duplicate delivery must not change the serialized report;
+shared ancestry must flip *independence*, not manufacture or erase formal
+compatibility. Device-only and conflicting observations must not be upgraded
+to positive Person witnesses. Future, missing and incomplete catalog mapping
+is explicitly unresolved, never a proven zero saving. Many-to-one (A,C in U1)
+never upgrades the unit as a whole; one-to-many (A in U1 and U2) does not
+multiply unique candidate evidence.
+
+**Interpretation and limitations:** Any U/K difference here is a difference
+in accessible public information; within either condition the four methods
+are compared on their own actual outer. All four safe outers and known unit
+sets remain unchanged in this fixed example, so reduction of actual public
+confirmation units is **zero**, even if the internal *explanation of a candidate*
+changes. Neither a witnessed region nor a complete mapping proves a Person
+stayed at, crossed, or can traverse a real place. Public route declarations
+are stipulated, not discovered; unknown physical relations, partial records,
+real rescue effort, time, cost, success and false-exclusion risk in actual
+conditions remain unmeasured. For a partial or empty candidate projection,
+the result is `partial`/`unavailable`/`empty-candidates`, not a comparable
+zero improvement. The new method exposes its own public inspection counters
+and the existing per-method work counters, not measured rescue workload.
+
+Compared with #100/#104/#106/#112, the new output is a *candidate-specific
+unit join*, not a repeated outer count or a new question generator. It keeps
+the original “missing personal timeline supplemented by other traces”
+hypothesis under examination while the full 24 relations and unknown-relation
+discovery remain **unevaluated**, not discarded. Alternatives of hard
+closed-world exclusion, unit ranking, new physical assumptions, and extra
+receipt API count were not selected because they overclaim or exceed scope.
+If the join offers no independently discriminating information, or if source
+links cannot be verified, re-examine the claim without altering the fixed
+fixture to make the result favorable.
+
+Build/test/format/sample/evaluation checks should be read from CI on the
+proposed PR because the local runner may lack the pinned .NET SDK. A passing
+CI establishes the specified synthetic assertions, **not** real-world
+search benefit.
+
+### #114 executed fixture assertions and measurement boundary
+
+**Result, distinct from the pre-test expectations above.** The fixed synthetic
+test `DeclaredWitnessUnitsKeepMixedCandidateStatusesAndDirectProvenance`
+ran in [normal CI #42712326620](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42712326620)
+(success on PR #115's *original* head); the test asserts the actual returned
+candidate/unit collections rather than just checking for a successful API call.
+The companion #112 assertion of the method counters was also green there.
+The revised head must pass its own CI before independent acceptance. No
+serialized eight-row output artifact or timing benchmark was retained:
+**assertion-verified values** are separated from **unmeasured values** below.
+
+All eight rows refer to the **same** two received Person originals, public
+region catalog and target tick 2, with query tick 7. Original
+`original-encounter-record` was observed at tick 2 and received at tick 6;
+`second-original` was observed at tick 5 and received at tick 7. All three
+region mappings were public at tick 0: A,C→U1 and B→U2.
+Only K has the extra B→D public declaration (published tick 7). U/K
+therefore differ in available public information, **not** in evidence,
+scenario, seed, cutoff or candidate-to-unit catalog.
+
+| Executed condition | Existing method | Safe outer / known units | U1 (A,C) | U2 (B) | Witness branch provenance and publication tick | Existing method public relations inspected |
+|---|---|---|---|---|---|---:|
+| U | public-prior | A,B,C / U1,U2 | A witnessed; C unknown | B unknown | A→D `declared-A-D` @0 | 0 |
+| K | public-prior | A,B,C / U1,U2 | A witnessed; C unknown | B witnessed | A→D @0; B→D `separate-public-BD` @7 | 0 |
+| U | known-relation-backward | A,B,C / U1,U2 | A witnessed; C unknown | B unknown | A→D @0 | 5 |
+| K | known-relation-backward | A,B,C / U1,U2 | A witnessed; C unknown | B witnessed | A→D @0; B→D @7 | 5 |
+| U | distributed-reconstruction | A,B,C / U1,U2 | A witnessed; C unknown | B unknown | A→D @0 | 1 |
+| K | distributed-reconstruction | A,B,C / U1,U2 | A witnessed; C unknown | B witnessed | A→D @0; B→D @7 | 1 |
+| U | distributed-reconstruction-local | A,B,C / U1,U2 | A witnessed; C unknown | B unknown | A→D @0 | 5 |
+| K | distributed-reconstruction-local | A,B,C / U1,U2 | A witnessed; C unknown | B witnessed | A→D @0; B→D @7 | 5 |
+
+For each **A witness** (U and K), branch provenance is
+`declared-A-D`, published at tick **0**; for each **B witness** (K
+only), branch provenance is `separate-public-BD`, published at tick
+**7**. In both cases the direct early/later source IDs are respectively
+`original-encounter-record` / `second-original`; source-observation
+ancestries include `weft-a` / `weft-b`, and the direct witnesses
+have `IndependentSourceAncestry=true`. Formal compatible early/later ticks
+are **2/5**, and `PersonTraversability=unknown`. The exact
+source-observation IDs are retained in the returned witness objects but were
+**not separately captured as report text**. Two received originals with two
+distinct ancestry groups are not two validated real journeys.
+
+In each of the eight rows the API status is `available`, unmapped
+regions = ∅, U1 has witnessed set {A} and unknown set {C}, and U2 is
+unknown {B} in U versus witnessed {B} in K. No fixed-row
+conflict/unavailable candidate is asserted; the separate partial,
+shared-ancestry, Device-only and conflict tests verify their own conditions.
+Every method retains safe outer size **3** and known public-unit count **2**:
+removed units = **0**, not a confirmed reduction in real physical sites.
+Existing method `Steps` **K−U=0** for each method (asserted equality);
+**absolute Steps, GenerationSteps, VerificationSteps and CPU time were not
+captured** and must not be inferred from that zero delta. The #114 join's
+`PublicConstraintsInspected`, `PublicBranchesInspected`, and
+`ConstraintBranchPairsInspected` are exposed as counters but their **numeric
+values were not captured or independently asserted in this fixed run**.
+Their absence here is *unmeasured*, not zero. The public-relations-inspected
+0/5/1/5 values in the table are pinned by the fixed #112 test and explicitly
+checked via each #114 method row in the revised test.
+
+The pre-test forecast and assertion-verified statuses **agree in this fixed
+case**. This is a model-internal classification change (B at U2 acquires a
+formal, separately published explanation), **not** evidence that U2 is
+visited, safe, traversable or eliminable. The existing four historical-outer
+methods are structurally insensitive to that extra positive branch for
+candidate removal. No unknown relation was discovered; true Person motion,
+real search time/cost, rescue benefit, and generalization remain unmeasured.
+The next independent review must evaluate the revised head's CI and any new
+adversarial findings, not reuse the previous head's approval or checks.
