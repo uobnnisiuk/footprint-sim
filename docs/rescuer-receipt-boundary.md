@@ -1448,3 +1448,52 @@ equally available inputs with genuinely different method implementations,
 along with negative/equal/worse outcomes and truth-side false-exclusion
 checks, remains separate future research; the #106 sensitivity case changes
 available public information, not only processing.
+
+
+## Published multihop question calibration (Issue #108 / AR-13, Scope-Revision 1)
+
+This is an **evaluation-only public-structure diagnostic**, not an additional
+search strategy, a discovered relation, a reconstructed complete history, or
+proof of Person movement. The source of each public edge is retained in the
+diagnostic path label, as are its combined travel-tick interval and the
+received-observation difference interval. The existing #104 direct-edge status,
+four method rows and outer-safe candidate sets are unchanged.
+
+The bounded traversal enumerates simple published paths in deterministic
+region/provenance order, with a maximum of eight edges and 4096 inspected
+edges per source/candidate-time-window pair. It skips cycles, and marks
+\`public-path-search-incomplete\` if the budget or depth prevents full
+exploration. A missing positive witness, including after the cap, is **not**
+proof that there is no path or that a historical candidate is impossible.
+\`PublicTraversalBranchesInspected\` counts actual edge inspections in this
+diagnostic; \`ConstraintPairsInspected\` counts the relevant received source
+pairs and \`PublicBranchesInspected\` counts eligible public declarations.
+
+| Fixed synthetic case (two originals received at tick 6/7; cutoff 7) | Earlier direct/2-hop diagnostic | Expanded public-route diagnostic |
+| --- | --- | --- |
+| B@2, D@5, public B→E→F→D, 1+1+1 ticks, same public model | B→D unconfirmed; C→D unconfirmed | B→D direct question suppressed by formal three-hop explanation; C→D remains unconfirmed |
+| B@2, D@6, same three-edge travel sum 3 | No positive three-hop witness | Three-hop travel *shorter* than gap 4; dwell unverified; B→D question is provisional, not proven necessary |
+| B@2, D@5, public B→D travel 1 | Direct status unknown | Direct pair already published; early-arrival/dwell-unverified label, no absent-pair question |
+| B@2, D@5, public B→D travel 10 | Direct status unknown | Direct pair already published; too-long label, no absent-pair question |
+| B@2, D@6, public B→E→F→C→D, four edges of 1 tick | B→D unconfirmed by the two-hop limit | Formal four-hop witness, not a verified Person route |
+
+The first row is a **processing-method comparison under identical information**:
+the old two-hop-limited algorithm would emit 2 unanswered endpoint questions
+(B→D and C→D), whereas the expanded diagnostic emits 1 (C→D).
+The remaining rows change observation or public-world conditions to test
+classification, **not** to demonstrate superiority by adding information.
+The actual route-edge inspection count is available from each serialized report
+and is not a real-world time/cost measurement. Equal or worse diagnostic
+outcomes must be retained in future scenarios.
+
+Only interval overlap is a positive *formal* route explanation. If the maximum
+public travel time is below the minimum observation gap, a subsequent stay
+might help but has **not** been verified against CandidateWarp dwell rules.
+If minimum public travel time exceeds maximum gap, that particular route
+cannot arrive by the later observation; this does not exclude all routes.
+Unknown edges, future publications, missing or duplicate original records,
+and shared ancestry never become invented independent evidence. Truth,
+Person traversability, actual rescue time, location priority, search costs and
+rescue success rates remain untested. If many short paths remain unresolved,
+a separate reviewed scope may examine positive dwell feasibility (option A)
+without retrospectively rewriting this limited result.

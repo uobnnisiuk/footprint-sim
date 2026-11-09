@@ -436,7 +436,8 @@ public sealed record RescuerMissingDeclaredPathReport(
     IReadOnlyList<RescuerMissingDeclaredPathCandidate> Candidates,
     int PublicConstraintsInspected,
     int PublicBranchesInspected,
-    int ConstraintPairsInspected);
+    int ConstraintPairsInspected,
+    int PublicTraversalBranchesInspected);
 
 public static class RescuerEvidenceMethodComparison
 {
@@ -651,6 +652,7 @@ public static class RescuerEvidenceMethodComparison
             .Select(b => (b.SourceRegionId, b.DestinationRegionId)).ToHashSet();
 
         var inspected = 0;
+        var traversedPublicBranches = 0;
         var result = new List<RescuerMissingDeclaredPathCandidate>();
         foreach (var candidate in declared.Candidates)
         {
@@ -723,46 +725,62 @@ public static class RescuerEvidenceMethodComparison
                                 }
                                 if (directPublished)
                                 {
+                                    // A published pair remains known even when
+                                    // #104 has no direct witness. Distinguish
+                                    // early arrival (dwell untested) from a
+                                    // route that cannot arrive by the later tick.
                                     explanations.Add("direct-pair-published-timing-unverified:" +
                                         region + ">" + destination);
+                                    foreach (var edge in publishedBranches.Where(b =>
+                                        b.SourceRegionId == region &&
+                                        b.DestinationRegionId == destination)
+                                        .OrderBy(b => b.ProvenanceId, StringComparer.Ordinal))
+                                    {
+                                        traversedPublicBranches++;
+                                        var tag = ":source=" + edge.ProvenanceId +
+                                            ":travel=" + edge.MinimumTravelTicks + "-" +
+                                            edge.MaximumTravelTicks + ":gap=" +
+                                            minimum + "-" + maximum;
+                                        if (edge.MaximumTravelTicks < minimum)
+                                            explanations.Add(
+                                                "direct-pair-published-shorter-dwell-unverified:" +
+                                                region + ">" + destination + tag);
+                                        else if (edge.MinimumTravelTicks > maximum)
+                                            explanations.Add(
+                                                "direct-pair-published-too-long:" +
+                                                region + ">" + destination + tag);
+                                    }
                                     pairExplained = true;
                                     continue;
                                 }
-                                // The public tracer admits staying at one region.
-                                // This is formal continuity, not observed motion.
+                                // This is a formal same-region explanation,
+                                // never evidence of a realized Person stay.
                                 if (region == destination)
                                 {
                                     explanations.Add("formal-stay:" + region);
                                     pairExplained = true;
                                     continue;
                                 }
-                                // Bounded two-hop explanation only: published
-                                // edges can compose without a new direct edge.
-                                // We do not claim completeness for longer paths.
-                                var middle = publishedBranches
-                                    .Where(firstBranch => firstBranch.SourceRegionId == region)
-                                    .OrderBy(firstBranch => firstBranch.DestinationRegionId,
-                                        StringComparer.Ordinal)
-                                    .ThenBy(firstBranch => firstBranch.ProvenanceId,
-                                        StringComparer.Ordinal)
-                                    .SelectMany(firstBranch => publishedBranches
-                                        .Where(secondBranch =>
-                                            secondBranch.SourceRegionId ==
-                                                firstBranch.DestinationRegionId &&
-                                            secondBranch.DestinationRegionId == destination &&
-                                            (long)firstBranch.MinimumTravelTicks +
-                                                secondBranch.MinimumTravelTicks <= maximum &&
-                                            (long)firstBranch.MaximumTravelTicks +
-                                                secondBranch.MaximumTravelTicks >= minimum)
-                                        .Select(_ => firstBranch.DestinationRegionId))
-                                    .FirstOrDefault();
-                                if (middle is not null)
+                                // Search only finite simple routes of already-
+                                // published branches. A positive interval overlap
+                                // needs no missing direct declaration; too-short
+                                // paths still need an untested dwell assumption.
+                                var paths = FindPublishedRoutes(region, destination,
+                                    minimum, maximum, publishedBranches);
+                                traversedPublicBranches += paths.BranchesInspected;
+                                if (paths.Positive is not null)
                                 {
-                                    explanations.Add("formal-two-hop:" + region + ">" +
-                                        middle + ">" + destination);
+                                    explanations.Add(paths.Positive);
                                     pairExplained = true;
-                                    continue;
                                 }
+                                if (paths.Shorter is not null)
+                                    explanations.Add(paths.Shorter);
+                                if (paths.TooLong is not null)
+                                    explanations.Add(paths.TooLong);
+                                if (paths.Incomplete)
+                                    explanations.Add("public-path-search-incomplete:" +
+                                        region + ">" + destination +
+                                        ":depth=8:edge-budget=4096");
                                 var questionId = "unconfirmed:" + region + ":" +
                                     destination + ":" + early.ConstraintId + ":" +
                                     later.ConstraintId + ":" + minimum + "-" + maximum;
@@ -799,7 +817,105 @@ public static class RescuerEvidenceMethodComparison
         }
         return new RescuerMissingDeclaredPathReport(
             cutoff, targetWindow, declared.ReceivedOriginalIds, declared.Status,
-            result, constraints.Length, publishedBranches.Length, inspected);
+            result, constraints.Length, publishedBranches.Length, inspected,
+            traversedPublicBranches);
+    }
+
+    // The positive route is existential and uses only public declarations.
+    // Search absence is never proof of physical impossibility or of no relation.
+    // The cap is per candidate/source-pair/window and prevents unbounded paths.
+    private sealed record PublishedRouteSearch(
+        string? Positive, string? Shorter, string? TooLong,
+        bool Incomplete, int BranchesInspected);
+
+    private static PublishedRouteSearch FindPublishedRoutes(
+        string source, string destination, long gapMin, long gapMax,
+        IReadOnlyList<PublicHazardBranch> branches)
+    {
+        const int maxDepth = 8;
+        const int edgeBudget = 4096;
+        var outgoing = branches
+            .GroupBy(edge => edge.SourceRegionId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key,
+                group => group.OrderBy(edge => edge.DestinationRegionId,
+                        StringComparer.Ordinal)
+                    .ThenBy(edge => edge.ProvenanceId, StringComparer.Ordinal)
+                    .ThenBy(edge => edge.MinimumTravelTicks)
+                    .ThenBy(edge => edge.MaximumTravelTicks).ToArray(),
+                StringComparer.Ordinal);
+        var visited = new HashSet<string>(StringComparer.Ordinal) { source };
+        var route = new List<PublicHazardBranch>();
+        string? positive = null, shorter = null, tooLong = null;
+        var incomplete = false;
+        var inspections = 0;
+
+        void Visit(string at, long totalMin, long totalMax)
+        {
+            if (!outgoing.TryGetValue(at, out var edges))
+                return;
+            if (route.Count >= maxDepth)
+            {
+                if (edges.Any(edge => !visited.Contains(edge.DestinationRegionId)))
+                    incomplete = true;
+                return;
+            }
+            foreach (var edge in edges)
+            {
+                if (inspections >= edgeBudget)
+                {
+                    incomplete = true;
+                    return;
+                }
+                inspections++;
+                if (visited.Contains(edge.DestinationRegionId))
+                    continue;
+                // Every edge bound is nonnegative; checked arithmetic ensures
+                // overflow cannot accidentally turn a long path into a witness.
+                if (totalMax > long.MaxValue - edge.MaximumTravelTicks ||
+                    totalMin > long.MaxValue - edge.MinimumTravelTicks)
+                {
+                    incomplete = true;
+                    continue;
+                }
+                var nextMin = totalMin + edge.MinimumTravelTicks;
+                var nextMax = totalMax + edge.MaximumTravelTicks;
+                route.Add(edge);
+                if (edge.DestinationRegionId == destination)
+                {
+                    if (route.Count >= 2)
+                    {
+                        var labels = source + ">" + string.Join(">",
+                            route.Select(part => part.DestinationRegionId));
+                        var details = ":sources=" + string.Join(",",
+                            route.Select(part => part.ProvenanceId)) +
+                            ":travel=" + nextMin + "-" + nextMax +
+                            ":gap=" + gapMin + "-" + gapMax;
+                        if (nextMin <= gapMax && nextMax >= gapMin)
+                            positive ??= (route.Count == 2
+                                ? "formal-two-hop:" + labels
+                                : "formal-multihop:" + labels + details);
+                        else if (nextMax < gapMin)
+                            shorter ??= "published-path-shorter-dwell-unverified:" +
+                                labels + details;
+                        else if (nextMin > gapMax)
+                            tooLong ??= "published-path-too-long:" + labels + details;
+                    }
+                }
+                else
+                {
+                    visited.Add(edge.DestinationRegionId);
+                    Visit(edge.DestinationRegionId, nextMin, nextMax);
+                    visited.Remove(edge.DestinationRegionId);
+                }
+                route.RemoveAt(route.Count - 1);
+                if (incomplete && inspections >= edgeBudget)
+                    return;
+            }
+        }
+
+        Visit(source, 0, 0);
+        return new PublishedRouteSearch(positive, shorter, tooLong,
+            incomplete, inspections);
     }
 
     /// <summary>
