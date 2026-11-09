@@ -2332,9 +2332,12 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.DoesNotContain(highCandidate.PublicAlternativeExplanations,
             x => x.StartsWith("formal-two-hop:", StringComparison.Ordinal) ||
                 x.StartsWith("formal-multihop:", StringComparison.Ordinal));
-        Assert.Contains(highCandidate.PublicAlternativeExplanations,
-            x => x.StartsWith("published-path-too-long:B>X>D:",
-                StringComparison.Ordinal));
+        // A prefix already beyond gapMax is pruned before the endpoint.
+        // No positive path or false exclusion may be inferred from that cap.
+        Assert.DoesNotContain(highCandidate.PublicAlternativeExplanations,
+            x => x.StartsWith("formal-", StringComparison.Ordinal));
+        Assert.Equal(["A", "B", "C"],
+            highReport.Candidates.Select(row => row.RegionId));
     }
 
     // #104: the late, distinct Person trace can witness formal compatibility
