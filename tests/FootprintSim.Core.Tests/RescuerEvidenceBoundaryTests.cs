@@ -2060,19 +2060,19 @@ public sealed class RescuerEvidenceBoundaryTests
         {
             PublicHazardEnvelope = three.PublicHazardEnvelope! with
             {
-                Branches = [.. three.PublicHazardEnvelope!.Branches,
-                    Branch("F", "C") with
-                    {
-                        MinimumTravelTicks = 1, MaximumTravelTicks = 1
-                    },
-                    Branch("C", "D") with
-                    {
-                        MinimumTravelTicks = 1, MaximumTravelTicks = 1
-                    }]
+                Branches = three.PublicHazardEnvelope!.Branches
                     .Where(edge => !(edge.SourceRegionId == "F" &&
-                        edge.DestinationRegionId == "D")).ToArray()
-           
-      }
+                        edge.DestinationRegionId == "D"))
+                    .Append(Branch("F", "C") with
+                    {
+                        MinimumTravelTicks = 1, MaximumTravelTicks = 1
+                    })
+                    .Append(Branch("C", "D") with
+                    {
+                        MinimumTravelTicks = 1, MaximumTravelTicks = 1
+                    })
+                    .ToArray()
+            }
         };
         var inputFour = builder.BuildDistinctOriginals(four, Seed, 7, RescuerId,
             [early, laterAtSix], [Receipt(6), LaterComparisonReceipt(7)]);
