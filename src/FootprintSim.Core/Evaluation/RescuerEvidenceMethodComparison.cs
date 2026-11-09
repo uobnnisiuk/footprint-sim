@@ -1,4 +1,5 @@
 using FootprintSim.Evidence;
+using FootprintSim.Hazards;
 using FootprintSim.Inference;
 using FootprintSim.Inference.PastStates;
 using FootprintSim.Inference.SearchProjection;
