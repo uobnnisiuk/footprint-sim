@@ -2063,7 +2063,8 @@ public sealed class RescuerEvidenceBoundaryTests
                 Branches = [.. world.PublicHazardEnvelope!.Branches,
                     Branch("B", "E") with
                     {
-                        MinimumTravelTicks = 1, MaximumTravelTicks = 1
+                        MinimumTravelTicks = 1,
+                    MaximumTravelTicks = 1
                     },
                     Branch("E", "F") with
                     {
@@ -2229,7 +2230,8 @@ public sealed class RescuerEvidenceBoundaryTests
         {
             chain.Add(Branch(source, dest) with
             {
-                MinimumTravelTicks = 0, MaximumTravelTicks = 0
+                MinimumTravelTicks = 0,
+                MaximumTravelTicks = 0
             });
             source = dest;
         }
@@ -2259,7 +2261,8 @@ public sealed class RescuerEvidenceBoundaryTests
         var clique = cliqueNames.SelectMany(a => cliqueNames.Where(b => a != b)
             .Select(b => Branch(a, b) with
             {
-                MinimumTravelTicks = 0, MaximumTravelTicks = 0
+                MinimumTravelTicks = 0,
+                MaximumTravelTicks = 0
             })).ToArray();
         var cappedWorld = original with
         {
