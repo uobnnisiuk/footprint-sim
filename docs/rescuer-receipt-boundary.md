@@ -1686,3 +1686,80 @@ travel time, rescue staff hours, actual sites, cost, rescue success or any
 A change in source/world/timing/catalog is rejected rather than mislabeled
 as a comparable result. Incomplete mapping requires a later reviewed scope
 or additional public evidence, not a favorable assumed zero.
+
+
+## #114: candidate-level declared-path witnesses within historical public units
+
+Work-Key: `FP-DECLARED-WITNESS-UNIT-COVERAGE-V1` / [Issue #114](https://github.com/uobnnisiuk/footprint-sim/issues/114).
+This is the next *evaluation-only* slice after #112, not a new location
+inference rule, safety certificate, route traversal claim or 24-relation engine.
+
+`AnalyzeDeclaredWitnessUnitCoverage(U, K, historicalWindow, regionIds,
+unitIds, mappings)` first calls the same #112 strict receipt/public-world
+comparison. It reuses the #104 candidate-level declared-path explanation and
+#100 public same-historical-tick unit projection, grouping **only regions in
+each method's actual outer candidates** into public units. A unit stores
+candidate-specific `witnessed`, `unknown`, `conflict` and `unavailable`
+states; direct witnesses retain both source observation IDs, source ancestry,
+published branch provenance, compatible ticks, and the independent-ancestry
+flag. The positive witness still has `PersonTraversability=unknown`.
+The witness count is not the count of independently verified real traces.
+
+### Fixed synthetic contrast and directly checkable expected entries
+
+The test uses the exact #112 `RelationUtilityInputs` fixture: first original
+observed at tick 2/received at tick 6; distinct later original observed at
+tick 5/received at tick 7; query at tick 7 and historical tick 2.
+The publicly available candidate and unit catalogs are `A,C -> U1`,
+`B -> U2` (catalog published at tick 0). The K condition has exactly one
+extra separately published `B -> D` 3-tick declaration (published at tick 7).
+The U condition lacks that declaration. The actual Person path is **not**
+provided. These entries are expectations from the existing #104/#112
+diagnostics, fixed before testing, not post-hoc fitted rescue effects:
+
+| Condition | Method | Outer regions | Known units | U1 candidate detail | U2 candidate detail |
+|---|---|---|---|---|---|
+| U | each of four published methods | A,B,C | U1,U2 | A witnessed by published A-D; C unknown | B unknown |
+| K | same four methods | A,B,C | U1,U2 | A witnessed by published A-D; C unknown | B witnessed by separately published B-D |
+
+For A and B, the formal witnesses pair distinct received originals
+(`original-encounter-record`, `second-original`) and their observation
+ancestry (`weft-a`, `weft-b`). K's B witness refers to
+`separate-public-BD` at publication tick 7 and compatible ticks 2 and 5.
+Receipt order and duplicate delivery must not change the serialized report;
+shared ancestry must flip *independence*, not manufacture or erase formal
+compatibility. Device-only and conflicting observations must not be upgraded
+to positive Person witnesses. Future, missing and incomplete catalog mapping
+is explicitly unresolved, never a proven zero saving. Many-to-one (A,C in U1)
+never upgrades the unit as a whole; one-to-many (A in U1 and U2) does not
+multiply unique candidate evidence.
+
+**Interpretation and limitations:** Any U/K difference here is a difference
+in accessible public information; within either condition the four methods
+are compared on their own actual outer. All four safe outers and known unit
+sets remain unchanged in this fixed example, so reduction of actual public
+confirmation units is **zero**, even if the internal *explanation of a candidate*
+changes. Neither a witnessed region nor a complete mapping proves a Person
+stayed at, crossed, or can traverse a real place. Public route declarations
+are stipulated, not discovered; unknown physical relations, partial records,
+real rescue effort, time, cost, success and false-exclusion risk in actual
+conditions remain unmeasured. For a partial or empty candidate projection,
+the result is `partial`/`unavailable`/`empty-candidates`, not a comparable
+zero improvement. The new method exposes its own public inspection counters
+and the existing per-method work counters, not measured rescue workload.
+
+Compared with #100/#104/#106/#112, the new output is a *candidate-specific
+unit join*, not a repeated outer count or a new question generator. It keeps
+the original “missing personal timeline supplemented by other traces”
+hypothesis under examination while the full 24 relations and unknown-relation
+discovery remain **unevaluated**, not discarded. Alternatives of hard
+closed-world exclusion, unit ranking, new physical assumptions, and extra
+receipt API count were not selected because they overclaim or exceed scope.
+If the join offers no independently discriminating information, or if source
+links cannot be verified, re-examine the claim without altering the fixed
+fixture to make the result favorable.
+
+Build/test/format/sample/evaluation checks should be read from CI on the
+proposed PR because the local runner may lack the pinned .NET SDK. A passing
+CI establishes the specified synthetic assertions, **not** real-world
+search benefit.

@@ -77,6 +77,172 @@ public sealed class RescuerEvidenceBoundaryTests
             u, k, InteractionTimeWindow.At(2), ["A", "B", "C"],
             ["U1", "U2"], mappings ?? RelationUtilityMappings());
 
+
+    // #114: a formal witness is per candidate, not an endorsement of a
+    // whole public unit or a new hard exclusion. All four methods keep their
+    // actual outer while the separately published B->D declaration adds one
+    // sourced explanation in U2.
+    private static RescuerDeclaredWitnessUnitReport DeclaredUnitCoverage(
+        RescuerEvidenceInput u, RescuerEvidenceInput k,
+        IReadOnlyList<PublicSearchUnitMapping>? mappings = null,
+        IReadOnlyList<string>? unitIds = null) =>
+        RescuerEvidenceMethodComparison.AnalyzeDeclaredWitnessUnitCoverage(
+            u, k, InteractionTimeWindow.At(2), ["A", "B", "C"],
+            unitIds ?? ["U1", "U2"], mappings ?? RelationUtilityMappings());
+
+    [Fact]
+    public void DeclaredWitnessUnitsKeepMixedCandidateStatusesAndDirectProvenance()
+    {
+        var (u, k) = RelationUtilityInputs();
+        var before = JsonDefaults.Serialize(u);
+        var after = JsonDefaults.Serialize(k);
+        var report = DeclaredUnitCoverage(u, k);
+        Assert.Equal("available", report.Status);
+        Assert.Equal(7, report.QueryTick);
+        Assert.Equal(2, report.HistoricalTick);
+        Assert.Equal([RecordId, "second-original"], report.ReceivedOriginalIds);
+        Assert.Equal(4, report.Methods.Count);
+        foreach (var method in report.Methods)
+        {
+            foreach (var condition in new[]
+                     { method.WithoutDeclaration, method.WithDeclaration })
+            {
+                Assert.Equal("available", condition.Status);
+                Assert.Equal(["A", "B", "C"],
+                    condition.PublicMethod.OuterCandidateRegionIds);
+                Assert.Equal(["U1", "U2"], condition.UnitProjection.KnownUnitIds);
+                Assert.Empty(condition.UnresolvedRegions);
+                Assert.Equal(2, condition.Units.Count);
+                Assert.All(condition.Units.SelectMany(unit => unit.Regions),
+                    region => Assert.Contains(region.RegionId,
+                        condition.PublicMethod.OuterCandidateRegionIds));
+            }
+            var u1Before = method.WithoutDeclaration.Units.Single(unit => unit.UnitId == "U1");
+            var u1After = method.WithDeclaration.Units.Single(unit => unit.UnitId == "U1");
+            Assert.Equal(["A"], u1Before.WitnessedRegionIds);
+            Assert.Equal(["C"], u1Before.UnknownRegionIds);
+            Assert.Equal(["A"], u1After.WitnessedRegionIds);
+            Assert.Equal(["C"], u1After.UnknownRegionIds);
+            var u2Before = method.WithoutDeclaration.Units.Single(unit => unit.UnitId == "U2");
+            var u2After = method.WithDeclaration.Units.Single(unit => unit.UnitId == "U2");
+            Assert.Empty(u2Before.WitnessedRegionIds);
+            Assert.Equal(["B"], u2Before.UnknownRegionIds);
+            Assert.Equal(["B"], u2After.WitnessedRegionIds);
+            Assert.Empty(u2After.UnknownRegionIds);
+            var witnessA = Assert.Single(u1Before.Regions.Single(
+                region => region.RegionId == "A").DirectWitnesses);
+            Assert.Equal("declared-A-D", witnessA.BranchProvenanceId);
+            var witnessB = Assert.Single(u2After.Regions.Single(
+                region => region.RegionId == "B").DirectWitnesses);
+            Assert.Equal("separate-public-BD", witnessB.BranchProvenanceId);
+            Assert.Equal(7, witnessB.BranchPublishedAtTick);
+            Assert.Equal(2, witnessB.CompatibleEarlyTick);
+            Assert.Equal(5, witnessB.CompatibleLaterTick);
+            Assert.Equal(RecordId, witnessB.EarlyDirectSourceId);
+            Assert.Equal("second-original", witnessB.LaterDirectSourceId);
+            Assert.Contains("weft-a", witnessB.EarlySourceAncestryIds);
+            Assert.Contains("weft-b", witnessB.LaterSourceAncestryIds);
+            Assert.True(witnessB.IndependentSourceAncestry);
+            Assert.Equal("unknown", witnessB.PersonTraversability);
+            // One witness does not certify the whole many-to-one unit.
+            Assert.Equal(2, u1Before.Regions.Count);
+        }
+        Assert.Equal(before, JsonDefaults.Serialize(u));
+        Assert.Equal(after, JsonDefaults.Serialize(k));
+        var (revU, revK) = RelationUtilityInputs(
+            reversed: true, duplicateReceipt: true);
+        Assert.Equal(JsonDefaults.Serialize(report),
+            JsonDefaults.Serialize(DeclaredUnitCoverage(revU, revK)));
+    }
+
+    [Fact]
+    public void DeclaredWitnessUnitsHoldUnreceivedAndKeepAncestrySeparate()
+    {
+        var (earlyU, earlyK) = RelationUtilityInputs(receiveSecond: false);
+        var early = DeclaredUnitCoverage(earlyU, earlyK);
+        Assert.Equal("unavailable", early.Status);
+        Assert.Empty(early.Methods);
+
+        var (deviceU, deviceK) = RelationUtilityInputs(deviceOnly: true);
+        var device = DeclaredUnitCoverage(deviceU, deviceK);
+        Assert.All(device.Methods.SelectMany(method => new[]
+                   { method.WithoutDeclaration, method.WithDeclaration })
+                   .SelectMany(condition => condition.Units)
+                   .SelectMany(unit => unit.Regions),
+            region => Assert.Empty(region.DirectWitnesses));
+
+        var (sharedU, sharedK) = RelationUtilityInputs(laterAncestry: "weft-a");
+        var shared = DeclaredUnitCoverage(sharedU, sharedK);
+        var b = shared.Methods[0].WithDeclaration.Units.Single(
+            unit => unit.UnitId == "U2").Regions.Single(
+                region => region.RegionId == "B");
+        Assert.Equal("witnessed", b.CompatibilityStatus);
+        Assert.False(Assert.Single(b.DirectWitnesses).IndependentSourceAncestry);
+
+        var (conflictU, conflictK) = RelationUtilityInputs(
+            firstState: EvidenceState.Conflicting);
+        var conflict = DeclaredUnitCoverage(conflictU, conflictK);
+        Assert.DoesNotContain(conflict.Methods.SelectMany(method =>
+                method.WithDeclaration.Units).SelectMany(unit => unit.Regions),
+            region => region.CompatibilityStatus == "witnessed");
+    }
+
+    [Fact]
+    public void DeclaredWitnessUnitsPreserveFuturePartialAndManyToManyMapping()
+    {
+        var (u, k) = RelationUtilityInputs();
+        var partialMap = new PublicSearchUnitMapping[]
+        {
+            new("A", 2, ["U1"], true, "source-a", 0),
+            new("B", 2, ["U2"], false, "source-b", 0),
+            new("C", 2, ["U1"], true, "source-c", 8)
+        };
+        var partial = DeclaredUnitCoverage(u, k, partialMap);
+        Assert.Equal("partial", partial.Status);
+        Assert.All(partial.Methods, method =>
+        {
+            foreach (var condition in new[]
+                     { method.WithoutDeclaration, method.WithDeclaration })
+            {
+                Assert.Equal("partial", condition.Status);
+                Assert.Equal(["B", "C"], condition.UnitProjection.UnresolvedRegionIds);
+                Assert.Contains(condition.UnresolvedRegions,
+                    region => region.RegionId == "B" &&
+                        region.Reason == "incomplete-public-mapping");
+                Assert.Contains(condition.UnresolvedRegions,
+                    region => region.RegionId == "C" &&
+                        region.Reason == "future-public-mapping");
+                Assert.Equal(["A"], condition.Units.Single(unit =>
+                    unit.UnitId == "U1").Regions.Select(region => region.RegionId));
+            }
+        });
+
+        var many = DeclaredUnitCoverage(u, k, [
+            new("A", 2, ["U1", "U2"], true, "source-a", 0),
+            new("B", 2, ["U2"], true, "source-b", 0),
+            new("C", 2, ["U1"], true, "source-c", 0)
+        ]);
+        Assert.Equal("available", many.Status);
+        Assert.All(many.Methods, method =>
+        {
+            var u2 = method.WithDeclaration.Units.Single(unit => unit.UnitId == "U2");
+            Assert.Equal(["A", "B"], u2.Regions.Select(region => region.RegionId));
+            Assert.Equal(2, u2.WitnessedRegionIds.Count);
+            Assert.Equal(2, method.WithDeclaration.Units.Count);
+        });
+        var missing = DeclaredUnitCoverage(u, k, [
+            new("A", 2, ["U1"], true, "source-a", 0)
+        ]);
+        Assert.Equal("partial", missing.Status);
+        Assert.All(missing.Methods, method =>
+            Assert.Contains(method.WithDeclaration.UnresolvedRegions,
+                region => region.RegionId == "B" &&
+                    region.Reason == "missing-public-mapping"));
+        Assert.Throws<InvalidDataException>(() => DeclaredUnitCoverage(u, k, [
+            new("A", 2, ["U1", "U1"], true, "invalid", 0)
+        ]));
+    }
+
     [Fact]
     public void RelationQuestionUtilitySeparatesAnswerFromActualSearchUnitChange()
     {

@@ -489,6 +489,53 @@ public sealed record RescuerRelationQuestionUtilityReport
     public IReadOnlyList<RescuerRelationQuestionUtilityMethod> Methods { get; init; } = [];
 }
 
+
+
+/* #114: public unit-level grouping of the #104 declared-path diagnostics.
+ * A witness is a formal, sourced compatibility explanation, never proof of
+ * Person travel, safety, or a warrant to remove outer candidates/units. */
+public sealed record RescuerDeclaredWitnessUnitRegion(
+    string RegionId,
+    string CompatibilityStatus,
+    IReadOnlyList<RescuerDeclaredPathWitness> DirectWitnesses);
+
+public sealed record RescuerDeclaredWitnessUnit(
+    string UnitId,
+    IReadOnlyList<RescuerDeclaredWitnessUnitRegion> Regions,
+    IReadOnlyList<string> WitnessedRegionIds,
+    IReadOnlyList<string> UnknownRegionIds,
+    IReadOnlyList<string> ConflictedRegionIds,
+    IReadOnlyList<string> UnavailableRegionIds);
+
+public sealed record RescuerDeclaredWitnessUnresolvedRegion(
+    string RegionId,
+    string Reason);
+
+public sealed record RescuerDeclaredWitnessUnitCondition(
+    string Label,
+    string Status,
+    string? HoldReason,
+    RescuerEvidenceMethodRow PublicMethod,
+    RescuerEvidenceHistoricalUnitMethod UnitProjection,
+    IReadOnlyList<RescuerDeclaredWitnessUnit> Units,
+    IReadOnlyList<RescuerDeclaredWitnessUnresolvedRegion> UnresolvedRegions,
+    int PublicConstraintsInspected,
+    int PublicBranchesInspected,
+    int ConstraintBranchPairsInspected);
+
+public sealed record RescuerDeclaredWitnessUnitMethod(
+    string Method,
+    RescuerDeclaredWitnessUnitCondition WithoutDeclaration,
+    RescuerDeclaredWitnessUnitCondition WithDeclaration);
+
+public sealed record RescuerDeclaredWitnessUnitReport(
+    string Status,
+    string? HoldReason,
+    long QueryTick,
+    long HistoricalTick,
+    IReadOnlyList<string> ReceivedOriginalIds,
+    IReadOnlyList<RescuerDeclaredWitnessUnitMethod> Methods);
+
 public static class RescuerEvidenceMethodComparison
 {
     /// <summary>
@@ -2666,6 +2713,199 @@ public static class RescuerEvidenceMethodComparison
             NewlyUnconfirmedQuestionIds = Sorted(qKIds.Except(qUIds, StringComparer.Ordinal)),
             Methods = methods
         };
+    }
+
+
+    /// <summary>
+    /// #114: join formal declared-path witnesses to the SAME tick's public
+    /// historical search units for each method's actual outer candidates.
+    /// This is a receipt-gated, evaluation-only classification. It neither
+    /// excludes unknown candidates nor claims any whole unit is witnessed.
+    /// The #112 identical-world/receipt gate runs before either diagnostic.
+    /// </summary>
+    public static RescuerDeclaredWitnessUnitReport AnalyzeDeclaredWitnessUnitCoverage(
+        RescuerEvidenceInput withoutDeclaration,
+        RescuerEvidenceInput withDeclaration,
+        InteractionTimeWindow historicalWindow,
+        IReadOnlyList<string> regionIds,
+        IReadOnlyList<string> unitIds,
+        IReadOnlyList<PublicSearchUnitMapping> unitMappings)
+    {
+        var comparison = AnalyzeRelationQuestionUtility(
+            withoutDeclaration, withDeclaration, historicalWindow,
+            regionIds, unitIds, unitMappings);
+        if (comparison.Methods.Count == 0)
+        {
+            return new RescuerDeclaredWitnessUnitReport(
+                "unavailable", comparison.HoldReason, comparison.QueryTick,
+                comparison.HistoricalTick, comparison.ReceivedOriginalIds, []);
+        }
+
+        var diagnosticU = AnalyzeDeclaredPathCompatibility(
+            withoutDeclaration, historicalWindow);
+        var diagnosticK = AnalyzeDeclaredPathCompatibility(
+            withDeclaration, historicalWindow);
+        if (diagnosticU.QueryTick != comparison.QueryTick ||
+            diagnosticK.QueryTick != comparison.QueryTick ||
+            !diagnosticU.ReceivedOriginalIds.SequenceEqual(
+                comparison.ReceivedOriginalIds, StringComparer.Ordinal) ||
+            !diagnosticK.ReceivedOriginalIds.SequenceEqual(
+                comparison.ReceivedOriginalIds, StringComparer.Ordinal))
+        {
+            throw new InvalidDataException(
+                "Declared-path diagnostics do not match the receipt-gated comparison.");
+        }
+
+        static string[] Sorted(IEnumerable<string> values) =>
+            values.Distinct(StringComparer.Ordinal)
+                .OrderBy(value => value, StringComparer.Ordinal).ToArray();
+
+        // AnalyzeHistoricalSearchUnits has already validated the public
+        // catalog, historical tick, target identifiers and duplicate mapping.
+        // We reuse its projection for every method instead of inventing a
+        // second unit-completeness or empty-candidates rule.
+        var publicRegions = regionIds.ToHashSet(StringComparer.Ordinal);
+        var mappings = unitMappings.ToDictionary(
+            mapping => mapping.RegionId, StringComparer.Ordinal);
+        RescuerDeclaredWitnessUnitCondition Group(
+            string label,
+            RescuerEvidenceMethodRow method,
+            RescuerEvidenceHistoricalUnitMethod projection,
+            RescuerDeclaredPathCompatibilityReport diagnostic)
+        {
+            var empty = Array.Empty<RescuerDeclaredWitnessUnit>();
+            var noUnresolved = Array.Empty<RescuerDeclaredWitnessUnresolvedRegion>();
+            if (projection.Status == "unavailable" ||
+                projection.CandidateRegionIds is null ||
+                method.OuterCandidateRegionIds is null ||
+                diagnostic.Status != "available")
+            {
+                return new RescuerDeclaredWitnessUnitCondition(
+                    label, "unavailable", "public-method-or-diagnostic-unavailable",
+                    method, projection, empty, noUnresolved,
+                    diagnostic.PublicConstraintsInspected,
+                    diagnostic.PublicBranchesInspected,
+                    diagnostic.ConstraintBranchPairsInspected);
+            }
+
+            var candidates = Sorted(method.OuterCandidateRegionIds);
+            if (!candidates.SequenceEqual(
+                    Sorted(projection.CandidateRegionIds), StringComparer.Ordinal))
+            {
+                return new RescuerDeclaredWitnessUnitCondition(
+                    label, "unavailable", "method-and-unit-candidates-mismatch",
+                    method, projection, empty, noUnresolved,
+                    diagnostic.PublicConstraintsInspected,
+                    diagnostic.PublicBranchesInspected,
+                    diagnostic.ConstraintBranchPairsInspected);
+            }
+            var diagnosticByRegion = diagnostic.Candidates.ToDictionary(
+                candidate => candidate.RegionId, StringComparer.Ordinal);
+            if (candidates.Any(id => !diagnosticByRegion.ContainsKey(id)))
+            {
+                return new RescuerDeclaredWitnessUnitCondition(
+                    label, "unavailable", "method-and-declared-path-candidates-mismatch",
+                    method, projection, empty, noUnresolved,
+                    diagnostic.PublicConstraintsInspected,
+                    diagnostic.PublicBranchesInspected,
+                    diagnostic.ConstraintBranchPairsInspected);
+            }
+
+            var grouped = new SortedDictionary<string,
+                List<RescuerDeclaredWitnessUnitRegion>>(StringComparer.Ordinal);
+            var unresolved = new List<RescuerDeclaredWitnessUnresolvedRegion>();
+            foreach (var region in candidates)
+            {
+                if (!publicRegions.Contains(region))
+                {
+                    unresolved.Add(new(region, "outside-public-region-catalog"));
+                    continue;
+                }
+                if (!mappings.TryGetValue(region, out var mapping))
+                {
+                    unresolved.Add(new(region, "missing-public-mapping"));
+                    continue;
+                }
+                if (mapping.AvailableTick > comparison.QueryTick)
+                {
+                    unresolved.Add(new(region, "future-public-mapping"));
+                    continue;
+                }
+                if (!mapping.IsComplete)
+                {
+                    unresolved.Add(new(region, "incomplete-public-mapping"));
+                }
+                var diagnosticRegion = diagnosticByRegion[region];
+                // The positive evidence remains attached to its actual
+                // candidate, even for many-to-one and one-to-many mappings.
+                var entry = new RescuerDeclaredWitnessUnitRegion(
+                    region, diagnosticRegion.Status, diagnosticRegion.Witnesses);
+                foreach (var unit in Sorted(mapping.UnitIds))
+                {
+                    if (!grouped.TryGetValue(unit, out var members))
+                    {
+                        members = [];
+                        grouped.Add(unit, members);
+                    }
+                    members.Add(entry);
+                }
+            }
+            var units = grouped.Select(item =>
+            {
+                var members = item.Value.OrderBy(
+                    member => member.RegionId, StringComparer.Ordinal).ToArray();
+                string[] InState(string status) => Sorted(
+                    members.Where(member => member.CompatibilityStatus == status)
+                        .Select(member => member.RegionId));
+                return new RescuerDeclaredWitnessUnit(
+                    item.Key, members, InState("witnessed"), InState("unknown"),
+                    InState("conflict"), InState("unavailable"));
+            }).ToArray();
+            if (!Sorted(units.Select(unit => unit.UnitId))
+                    .SequenceEqual(projection.KnownUnitIds, StringComparer.Ordinal) ||
+                !Sorted(unresolved.Select(item => item.RegionId))
+                    .SequenceEqual(projection.UnresolvedRegionIds,
+                        StringComparer.Ordinal))
+            {
+                return new RescuerDeclaredWitnessUnitCondition(
+                    label, "unavailable", "public-unit-projection-inconsistent",
+                    method, projection, empty, noUnresolved,
+                    diagnostic.PublicConstraintsInspected,
+                    diagnostic.PublicBranchesInspected,
+                    diagnostic.ConstraintBranchPairsInspected);
+            }
+            var status = projection.Status;
+            return new RescuerDeclaredWitnessUnitCondition(
+                label, status,
+                status == "available" ? null :
+                    status == "empty-candidates" ? "no-outer-candidates" :
+                    "incomplete-or-unavailable-public-mapping",
+                method, projection, units,
+                unresolved.OrderBy(item => item.RegionId, StringComparer.Ordinal)
+                    .ToArray(),
+                diagnostic.PublicConstraintsInspected,
+                diagnostic.PublicBranchesInspected,
+                diagnostic.ConstraintBranchPairsInspected);
+        }
+
+        var methods = comparison.Methods.Select(row =>
+            new RescuerDeclaredWitnessUnitMethod(
+                row.Method,
+                Group("U", row.WithoutDeclaration,
+                    row.UnitsWithoutDeclaration, diagnosticU),
+                Group("K", row.WithDeclaration,
+                    row.UnitsWithDeclaration, diagnosticK))).ToArray();
+        var statuses = methods.SelectMany(method => new[]
+            { method.WithoutDeclaration.Status, method.WithDeclaration.Status }).ToArray();
+        var overallStatus = statuses.All(status => status == "available")
+            ? "available" : statuses.All(status => status == "unavailable")
+                ? "unavailable" : "partial";
+        return new RescuerDeclaredWitnessUnitReport(
+            overallStatus,
+            overallStatus == "available" ? null :
+                "some-unit-projections-or-witness-joins-are-unavailable",
+            comparison.QueryTick, comparison.HistoricalTick,
+            comparison.ReceivedOriginalIds, methods);
     }
 
     /// <summary>
