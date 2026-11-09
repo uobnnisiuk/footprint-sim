@@ -2143,7 +2143,8 @@ public sealed class RescuerEvidenceBoundaryTests
             var clique = names.SelectMany(a => names.Where(b => a != b)
                 .Select(b => Branch(a, b) with
                 {
-                    MinimumTravelTicks = 1, MaximumTravelTicks = 1
+                    MinimumTravelTicks = 1,
+                    MaximumTravelTicks = 1
                 })).ToArray();
             var world = original with
             {
