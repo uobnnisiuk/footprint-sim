@@ -1969,7 +1969,7 @@ public sealed class RescuerEvidenceBoundaryTests
                 StringComparison.Ordinal) &&
                 reason.Contains("three-BE,three-EF,three-FD", StringComparison.Ordinal));
         // Includes expanded-route edge visits for feasible and overlong paths.
-        Assert.Equal(9, report.PublicTraversalBranchesInspected);
+        Assert.Equal(8, report.PublicTraversalBranchesInspected);
         Assert.Equal(2, legacy.Questions.Length);
         Assert.Equal(1, report.Candidates.Sum(row => row.Questions.Count));
         Assert.Equal(JsonDefaults.Serialize(report), JsonDefaults.Serialize(

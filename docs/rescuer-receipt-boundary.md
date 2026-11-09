@@ -1494,7 +1494,7 @@ world, original receipts, query cutoff, candidate windows and target tick.
 The two-hop reference examines the fixed B/C→D pairs (two questions);
 the new diagnostic recognizes B→E→F→D (one remaining C→D question).
 The fixed same-evidence test asserts **6** counted legacy loop-edge visits
-versus **9** expanded-route edge inspections, alongside **2 versus 1**
+versus **8** expanded-route edge inspections, alongside **2 versus 1**
 unconfirmed direct questions. The legacy count includes first-/second-hop
 loop entries but **excludes** its direct-pair `Any` pre-scan; the expanded
 count includes edge visits in both feasible and overlong route traversal,
