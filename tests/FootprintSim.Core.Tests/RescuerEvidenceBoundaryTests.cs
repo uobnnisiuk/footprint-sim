@@ -2143,8 +2143,10 @@ public sealed class RescuerEvidenceBoundaryTests
             {
                 nodes.Add(new HazardNodeDefinition
                 {
-                    RegionId = id, MinimumArrivalTick = tick,
-                    MaximumArrivalTick = tick, PublishedAtTick = 0,
+                    RegionId = id,
+                    MinimumArrivalTick = tick,
+                    MaximumArrivalTick = tick,
+                    PublishedAtTick = 0,
                     PublicProvenanceId = "public-node-" + id,
                     IsTerminal = id == "D" && !hiddenDeparture
                 });
@@ -2152,8 +2154,10 @@ public sealed class RescuerEvidenceBoundaryTests
             if (hiddenDeparture)
                 nodes.Add(new HazardNodeDefinition
                 {
-                    RegionId = "G", MinimumArrivalTick = 6,
-                    MaximumArrivalTick = 6, PubliclyVisible = false,
+                    RegionId = "G",
+                    MinimumArrivalTick = 6,
+                    MaximumArrivalTick = 6,
+                    PubliclyVisible = false,
                     IsTerminal = true
                 });
             var transitions = new List<HazardTransitionDefinition>();
@@ -2163,8 +2167,10 @@ public sealed class RescuerEvidenceBoundaryTests
                 transitions.Add(new HazardTransitionDefinition
                 {
                     Id = "public-" + from + to,
-                    SourceRegionId = from, DestinationRegionId = to,
-                    Weight = 1, MinimumTravelTicks = 1,
+                    SourceRegionId = from,
+                    DestinationRegionId = to,
+                    Weight = 1,
+                    MinimumTravelTicks = 1,
                     MaximumTravelTicks = 1,
                     TransportType = HazardTransportType.HazardDriven,
                     ProvenanceId = "public-" + from + to
@@ -2173,17 +2179,23 @@ public sealed class RescuerEvidenceBoundaryTests
             if (hiddenDeparture)
                 transitions.Add(new HazardTransitionDefinition
                 {
-                    Id = "hidden-DG", SourceRegionId = "D",
-                    DestinationRegionId = "G", Weight = 1,
-                    MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+                    Id = "hidden-DG",
+                    SourceRegionId = "D",
+                    DestinationRegionId = "G",
+                    Weight = 1,
+                    MinimumTravelTicks = 1,
+                    MaximumTravelTicks = 1,
                     TransportType = HazardTransportType.HazardDriven,
-                    ProvenanceId = "private-DG", PubliclyVisible = false
+                    ProvenanceId = "private-DG",
+                    PubliclyVisible = false
                 });
             return new StochasticHazardDefinition
             {
                 HazardId = "same-public-hazard",
-                SourceRegionId = "B", StartTick = 2,
-                Nodes = nodes, Transitions = transitions
+                SourceRegionId = "B",
+                StartTick = 2,
+                Nodes = nodes,
+                Transitions = transitions
             };
         }
         var baseDefinition = Definition(hiddenDeparture: false);
@@ -2262,8 +2274,10 @@ public sealed class RescuerEvidenceBoundaryTests
         var nodes = new[] { "A", "B", "C", "D", "E", "F" }
             .Select(id => new PublicHazardRegion
             {
-                RegionId = id, PublishedAtTick = 0,
-                MinimumArrivalTick = 0, MaximumArrivalTick = 20
+                RegionId = id,
+                PublishedAtTick = 0,
+                MinimumArrivalTick = 0,
+                MaximumArrivalTick = 20
             }).ToArray();
         var clean = original.PublicHazardEnvelope! with
         {
