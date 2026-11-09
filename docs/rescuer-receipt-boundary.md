@@ -1448,3 +1448,75 @@ equally available inputs with genuinely different method implementations,
 along with negative/equal/worse outcomes and truth-side false-exclusion
 checks, remains separate future research; the #106 sensitivity case changes
 available public information, not only processing.
+
+
+## Published multihop question calibration (Issue #108 / AR-13, Scope-Revision 1)
+
+This is an **evaluation-only public-structure diagnostic**, not an additional
+search strategy, a discovered relation, a reconstructed complete history, or
+proof of Person movement. For **3+ hops**, the path label retains the
+provenance of each public edge and the combined travel/gap intervals. The
+legacy \`formal-two-hop\` marker deliberately retains its original path-only
+format, not source/interval details. The existing #104 direct-edge status,
+four method rows and outer-safe candidate sets are unchanged.
+
+The bounded traversal visits simple published paths **breadth-first** in
+deterministic region/provenance order. It considers feasible shallow routes
+before dense irrelevant deeper subtrees. Prefixes whose minimum travel
+already exceeds the observation gap are deferred to a secondary bounded
+queue: they cannot become a positive witness (nonnegative declared travel),
+but a complete published route may still explain **why that route is too
+long**, even when the excess begins at its first edge. Both queues share
+the same depth/edge budget. Zero-tick branches still require these limits;
+a positive formal route prevents an unnecessary
+direct question even when other routes remain unexamined.
+The original depth of eight and budget of 4096 inspected edges per
+candidate/source-pair/window remain unchanged.
+A missing positive witness after a cap is **unknown**, not a proof of
+route absence or candidate impossibility. Very wide two-hop frontiers can
+still exceed the budget; complete public-graph reachability is not claimed.
+\`PublicTraversalBranchesInspected\` counts actual edge inspections in this
+diagnostic; \`ConstraintPairsInspected\` counts the relevant received source
+pairs and \`PublicBranchesInspected\` counts eligible public declarations.
+
+| Fixed synthetic case (two originals received at tick 6/7; cutoff 7) | Earlier direct/2-hop diagnostic | Expanded public-route diagnostic |
+| --- | --- | --- |
+| B@2, D@5, public B→E→F→D, 1+1+1 ticks, same public model | B→D unconfirmed; C→D unconfirmed | B→D direct question suppressed by formal three-hop explanation; C→D remains unconfirmed |
+| B@2, D@5, B→E→F→D with travel 4+1+1 or 1+1+4 | B→D remains unconfirmed | Both prefix-overrun and last-edge overrun report this **published path** as too long; neither proves all routes absent or excludes B |
+| B@2, D@6, same three-edge travel sum 3 | No positive three-hop witness | Three-hop travel *shorter* than gap 4; dwell unverified; B→D question is provisional, not proven necessary |
+| B@2, D@5, public B→D travel 1 | Direct status unknown | Direct pair already published; early-arrival/dwell-unverified label, no absent-pair question |
+| B@2, D@5, public B→D travel 10 | Direct status unknown | Direct pair already published; too-long label, no absent-pair question |
+| B@2, D@6, public B→E→F→C→D, four edges of 1 tick | B→D unconfirmed by the two-hop limit | Formal four-hop witness, not a verified Person route |
+
+For the first row, the test now evaluates a **separate fixed two-hop
+reference** and the expanded diagnostic on the **same** projected public
+world, original receipts, query cutoff, candidate windows and target tick.
+The two-hop reference examines the fixed B/C→D pairs (two questions);
+the new diagnostic recognizes B→E→F→D (one remaining C→D question).
+The fixed same-evidence test asserts **6** counted legacy loop-edge visits
+versus **8** expanded-route edge inspections, alongside **2 versus 1**
+unconfirmed direct questions. The legacy count includes first-/second-hop
+loop entries but **excludes** its direct-pair `Any` pre-scan; the expanded
+count includes edge visits in both feasible and overlong route traversal,
+but excludes constructing the public-edge index and other setup. They are
+explicitly scoped operation counters, **not exhaustive or equivalent
+CPU work**. The separate world without extra branches is an **information-condition
+check**, not a processing-only comparison. Dense AA–AG / ZA–ZG examples
+retain a valid B→Y→D two-hop explanation in either name order.
+Zero-tick depth/budget counterexamples preserve unknown/incomplete,
+and near-long-limit ticks with very large legal travel bounds do not
+fabricate a positive witness. Method outcomes can be equal or worse in
+other synthetic cases; this is not a general superiority or rescue-cost
+claim. Inspected edges are model operations, not real-world time/cost.
+
+Only interval overlap is a positive *formal* route explanation. If the maximum
+public travel time is below the minimum observation gap, a subsequent stay
+might help but has **not** been verified against CandidateWarp dwell rules.
+If minimum public travel time exceeds maximum gap, that particular route
+cannot arrive by the later observation; this does not exclude all routes.
+Unknown edges, future publications, missing or duplicate original records,
+and shared ancestry never become invented independent evidence. Truth,
+Person traversability, actual rescue time, location priority, search costs and
+rescue success rates remain untested. If many short paths remain unresolved,
+a separate reviewed scope may examine positive dwell feasibility (option A)
+without retrospectively rewriting this limited result.
