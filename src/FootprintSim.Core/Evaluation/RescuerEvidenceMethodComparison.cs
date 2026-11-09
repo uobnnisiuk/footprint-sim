@@ -923,11 +923,19 @@ public static class RescuerEvidenceMethodComparison
             }
             else
             {
+                // A reached-D aggregate can originate at a shifted time. Verify
+                // the advertised B@2 source against the public region before
+                // interpreting any B@2>E@3>F@4>D@5 path as time compatible.
+                var origin = envelope.Regions.SingleOrDefault(r => r.RegionId == "B");
+                if (origin is null || origin.MinimumArrivalTick > 2 ||
+                    origin.MaximumArrivalTick < 2)
+                    withheld = "selected-route-origin-window-incompatible";
+
                 // Check this very path, not simply an aggregated reached-D set.
                 // Each probe inspects all public branches, in canonical order.
                 var selected = new List<PublicHazardBranch>();
                 var hops = new[] { ("B", "E"), ("E", "F"), ("F", "D") };
-                for (var i = 0; i < hops.Length; i++)
+                for (var i = 0; withheld is null && i < hops.Length; i++)
                 {
                     var (from, to) = hops[i];
                     PublicHazardBranch? match = null;

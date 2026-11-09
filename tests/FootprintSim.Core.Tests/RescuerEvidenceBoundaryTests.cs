@@ -2314,6 +2314,25 @@ public sealed class RescuerEvidenceBoundaryTests
         var good = Run(clean);
         Assert.Single(good.ConditionalPublicCandidates);
         Assert.Equal(1, good.PropagateCalls);
+
+        // A later public B minimum forces Propagate to start at B@3.
+        // Reaching D@6 that way cannot certify the advertised B@2 path.
+        var shiftedOrigin = clean with
+        {
+            Regions = clean.Regions.Select(node => node.RegionId == "B"
+                ? node with { MinimumArrivalTick = 3 } : node).ToArray()
+        };
+        var shifted = Run(shiftedOrigin);
+        Assert.Empty(shifted.ConditionalPublicCandidates);
+        Assert.Equal("selected-route-origin-window-incompatible", shifted.HoldReason);
+        Assert.Equal(0, shifted.PropagateCalls);
+        Assert.Equal(0, shifted.UnconditionallyResolvedQuestionCount);
+        Assert.Equal(shifted.BaselineQuestionCount, shifted.RemainingQuestionCount);
+        Assert.Single(shifted.Baseline.Candidates.Single(c => c.RegionId == "B").Questions);
+        Assert.Single(shifted.Baseline.Candidates.Single(c => c.RegionId == "C").Questions);
+        Assert.Equal(JsonDefaults.Serialize(shifted),
+            JsonDefaults.Serialize(Run(shiftedOrigin)));
+
         var cycle = clean with
         {
             Branches = [.. clean.Branches,

@@ -1560,8 +1560,10 @@ Propagate call** and retains the existing unknown questions.
 
 The positive conditional description separately requires the exact
 B→E→F→D path and each edge's public provenance and fixed one-tick
-travel, its region minimum arrivals, no published D out-branch, and
-D's inclusion from *one* B@2 public state propagated to tick 6 with
+travel, **B@2 itself to fall within the public origin region's
+minimum/maximum arrival window**, every subsequent E@3/F@4/D@5 arrival
+to fall within that region's declared window, no published D out-branch,
+and D's inclusion from *one* B@2 public state propagated to tick 6 with
 \`retainUndeclaredStay=false\`. The aggregate D result alone is never
 the path witness. The new report keeps the full #108 baseline plus
 conditional count, separate question counts, guard region/branch counts,
@@ -1573,6 +1575,7 @@ condition for this example, **not** a general runtime bound.
 | --- | ---: | ---: | ---: |
 | Both independent originals received at tick 8; public 3-hop path, no public D departure | 2 | 1, subject to the unpublished-departure assumption | 0 |
 | At tick 7 before second receipt | Not a two-original comparison | 0 | 0 |
+| Public B minimum arrival is tick 3 while the advertised source is B@2 (B maximum remains tick 20) | 2 | 0; origin time incompatible, Propagate not called | 0 |
 | Non-public forced D→G truth with the *same* public input | 2 | Same conditional item as BASE | 0 |
 | Extra public cycle / ninth branch / overflow bound / later publication / published D out-edge | 2 in the fixed example | 0; conservative hold | 0 |
 
