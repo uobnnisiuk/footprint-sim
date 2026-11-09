@@ -844,55 +844,62 @@ public static class RescuerEvidenceMethodComparison
                     .ThenBy(edge => edge.MinimumTravelTicks)
                     .ThenBy(edge => edge.MaximumTravelTicks).ToArray(),
                 StringComparer.Ordinal);
-        var visited = new HashSet<string>(StringComparer.Ordinal) { source };
-        var route = new List<PublicHazardBranch>();
+        // Breadth-first traversal cannot exhaust its budget in a dense deep
+        // subtree before considering a shallow, already published route.
+        var pending = new Queue<(string At, long Min, long Max,
+            PublicHazardBranch[] Path, string[] Seen)>();
+        pending.Enqueue((source, 0L, 0L, [], [source]));
         string? positive = null, shorter = null, tooLong = null;
         var incomplete = false;
         var inspections = 0;
 
-        void Visit(string at, long totalMin, long totalMax)
+        while (pending.Count > 0)
         {
-            if (!outgoing.TryGetValue(at, out var edges))
-                return;
-            if (route.Count >= maxDepth)
+            var current = pending.Dequeue();
+            if (!outgoing.TryGetValue(current.At, out var edges))
+                continue;
+            if (current.Path.Length >= maxDepth)
             {
-                if (edges.Any(edge => !visited.Contains(edge.DestinationRegionId)))
+                if (edges.Any(edge =>
+                    !current.Seen.Contains(edge.DestinationRegionId,
+                        StringComparer.Ordinal) &&
+                    current.Min <= gapMax - edge.MinimumTravelTicks))
                     incomplete = true;
-                return;
+                continue;
             }
             foreach (var edge in edges)
             {
                 if (inspections >= edgeBudget)
                 {
                     incomplete = true;
-                    return;
+                    break;
                 }
                 inspections++;
-                if (visited.Contains(edge.DestinationRegionId))
+                if (current.Seen.Contains(edge.DestinationRegionId,
+                    StringComparer.Ordinal))
                     continue;
-                // Every edge bound is nonnegative; checked arithmetic ensures
-                // overflow cannot accidentally turn a long path into a witness.
-                if (totalMax > long.MaxValue - edge.MaximumTravelTicks ||
-                    totalMin > long.MaxValue - edge.MinimumTravelTicks)
+                // Only nonnegative public travel is accepted by the caller.
+                if (current.Max > long.MaxValue - edge.MaximumTravelTicks ||
+                    current.Min > long.MaxValue - edge.MinimumTravelTicks)
                 {
                     incomplete = true;
                     continue;
                 }
-                var nextMin = totalMin + edge.MinimumTravelTicks;
-                var nextMax = totalMax + edge.MaximumTravelTicks;
-                route.Add(edge);
+                var nextMin = current.Min + edge.MinimumTravelTicks;
+                var nextMax = current.Max + edge.MaximumTravelTicks;
+                var nextPath = current.Path.Append(edge).ToArray();
                 if (edge.DestinationRegionId == destination)
                 {
-                    if (route.Count >= 2)
+                    if (nextPath.Length >= 2)
                     {
                         var labels = source + ">" + string.Join(">",
-                            route.Select(part => part.DestinationRegionId));
+                            nextPath.Select(part => part.DestinationRegionId));
                         var details = ":sources=" + string.Join(",",
-                            route.Select(part => part.ProvenanceId)) +
+                            nextPath.Select(part => part.ProvenanceId)) +
                             ":travel=" + nextMin + "-" + nextMax +
                             ":gap=" + gapMin + "-" + gapMax;
                         if (nextMin <= gapMax && nextMax >= gapMin)
-                            positive ??= (route.Count == 2
+                            positive ??= (nextPath.Length == 2
                                 ? "formal-two-hop:" + labels
                                 : "formal-multihop:" + labels + details);
                         else if (nextMax < gapMin)
@@ -902,21 +909,25 @@ public static class RescuerEvidenceMethodComparison
                             tooLong ??= "published-path-too-long:" + labels + details;
                     }
                 }
-                else
+                else if (nextMin <= gapMax)
                 {
-                    visited.Add(edge.DestinationRegionId);
-                    Visit(edge.DestinationRegionId, nextMin, nextMax);
-                    visited.Remove(edge.DestinationRegionId);
+                    // Monotone travel bounds allow this conservative pruning;
+                    // zero-tick edges still need explicit finite limits.
+                    pending.Enqueue((edge.DestinationRegionId, nextMin, nextMax,
+                        nextPath, current.Seen.Append(edge.DestinationRegionId).ToArray()));
                 }
-                route.RemoveAt(route.Count - 1);
-                if (incomplete && inspections >= edgeBudget)
-                    return;
+            }
+            if (inspections >= edgeBudget)
+            {
+                if (pending.Count > 0)
+                    incomplete = true;
+                break;
             }
         }
-
-        Visit(source, 0, 0);
+        // A positive witness is enough to avoid the direct-edge question
+        // even when unrelated, deeper alternatives remain unexplored.
         return new PublishedRouteSearch(positive, shorter, tooLong,
-            incomplete, inspections);
+            positive is null && incomplete, inspections);
     }
 
     /// <summary>
