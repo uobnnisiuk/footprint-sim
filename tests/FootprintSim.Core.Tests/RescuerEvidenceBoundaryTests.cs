@@ -102,6 +102,16 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Equal(2, report.HistoricalTick);
         Assert.Equal([RecordId, "second-original"], report.ReceivedOriginalIds);
         Assert.Equal(4, report.Methods.Count);
+        // Real counter values on this fixed U/K fixture, not CPU time or
+        // rescue workload. The branch-specific diagnostic counters remain
+        // separately exposed and are not inferred from these values.
+        var expectedPublicInspections = new Dictionary<string, int>(StringComparer.Ordinal)
+        {
+            ["public-prior"] = 0,
+            ["known-relation-backward"] = 5,
+            ["distributed-reconstruction"] = 1,
+            ["distributed-reconstruction-local"] = 5
+        };
         foreach (var method in report.Methods)
         {
             foreach (var condition in new[]
@@ -113,10 +123,15 @@ public sealed class RescuerEvidenceBoundaryTests
                 Assert.Equal(["U1", "U2"], condition.UnitProjection.KnownUnitIds);
                 Assert.Empty(condition.UnresolvedRegions);
                 Assert.Equal(2, condition.Units.Count);
+                Assert.Equal(expectedPublicInspections[method.Method],
+                    condition.PublicMethod.PublicRelationsInspected);
+                Assert.Equal(2, condition.PublicMethod.AvailableSourceGroupCount);
                 Assert.All(condition.Units.SelectMany(unit => unit.Regions),
                     region => Assert.Contains(region.RegionId,
                         condition.PublicMethod.OuterCandidateRegionIds));
             }
+            Assert.Equal(method.WithoutDeclaration.PublicMethod.Steps,
+                method.WithDeclaration.PublicMethod.Steps);
             var u1Before = method.WithoutDeclaration.Units.Single(unit => unit.UnitId == "U1");
             var u1After = method.WithDeclaration.Units.Single(unit => unit.UnitId == "U1");
             Assert.Equal(["A"], u1Before.WitnessedRegionIds);
@@ -132,6 +147,15 @@ public sealed class RescuerEvidenceBoundaryTests
             var witnessA = Assert.Single(u1Before.Regions.Single(
                 region => region.RegionId == "A").DirectWitnesses);
             Assert.Equal("declared-A-D", witnessA.BranchProvenanceId);
+            Assert.Equal(0, witnessA.BranchPublishedAtTick);
+            Assert.Equal(2, witnessA.CompatibleEarlyTick);
+            Assert.Equal(5, witnessA.CompatibleLaterTick);
+            Assert.Equal(RecordId, witnessA.EarlyDirectSourceId);
+            Assert.Equal("second-original", witnessA.LaterDirectSourceId);
+            Assert.Contains("weft-a", witnessA.EarlySourceAncestryIds);
+            Assert.Contains("weft-b", witnessA.LaterSourceAncestryIds);
+            Assert.True(witnessA.IndependentSourceAncestry);
+            Assert.Equal("unknown", witnessA.PersonTraversability);
             var witnessB = Assert.Single(u2After.Regions.Single(
                 region => region.RegionId == "B").DirectWitnesses);
             Assert.Equal("separate-public-BD", witnessB.BranchProvenanceId);
