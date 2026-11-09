@@ -1576,6 +1576,12 @@ condition for this example, **not** a general runtime bound.
 | Non-public forced D→G truth with the *same* public input | 2 | Same conditional item as BASE | 0 |
 | Extra public cycle / ninth branch / overflow bound / later publication / published D out-edge | 2 in the fixed example | 0; conservative hold | 0 |
 
+In the executable fixture, the early observation also permits A at tick 2.
+The full existing diagnostic therefore retains **three** unknown direct
+questions (A→D, B→D, C→D); the table explicitly counts only the targeted
+B→D and C→D pair. The separate report's overall question counts are
+3 before and 3 after, with **zero** unconditional resolutions.
+
 The table is the fixed **expected** model result, not a claim about
 independently measured CPU time, rescue locations, physical travel,
 missing-relation discovery or lives saved. No inference uses the

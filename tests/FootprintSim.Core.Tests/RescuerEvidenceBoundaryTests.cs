@@ -2190,7 +2190,7 @@ public sealed class RescuerEvidenceBoundaryTests
         var variantDefinition = Definition(hiddenDeparture: true);
         Assert.True(baseDefinition.Nodes.Single(n => n.RegionId == "D").IsTerminal);
         Assert.False(variantDefinition.Nodes.Single(n => n.RegionId == "D").IsTerminal);
-        Assert.Single(variantDefinition.Transitions.Where(t => !t.PubliclyVisible));
+        Assert.Single(variantDefinition.Transitions, t => !t.PubliclyVisible);
         var baseProjection = PublicHazardEnvelopeBuilder.Create(baseDefinition);
         var variantProjection = PublicHazardEnvelopeBuilder.Create(variantDefinition);
         Assert.Equal(JsonDefaults.Serialize(baseProjection),
@@ -2228,8 +2228,11 @@ public sealed class RescuerEvidenceBoundaryTests
             result.ConditionalPublicCandidates[0]);
         Assert.Contains("public-BE,public-EF,public-FD",
             result.ConditionalPublicCandidates[0], StringComparison.Ordinal);
-        Assert.Equal(2, result.BaselineQuestionCount);
-        Assert.Equal(2, result.RemainingQuestionCount);
+        // A→D also stays unresolved: the two B→D / C→D questions
+        // are the selected comparison, not the entire question set.
+        Assert.Single(baseline.Candidates.Single(c => c.RegionId == "A").Questions);
+        Assert.Equal(3, result.BaselineQuestionCount);
+        Assert.Equal(3, result.RemainingQuestionCount);
         Assert.Equal(0, result.UnconditionallyResolvedQuestionCount);
         Assert.Equal(1, result.PropagateCalls);
         Assert.Equal(true, result.PublicGraphIsDag);
