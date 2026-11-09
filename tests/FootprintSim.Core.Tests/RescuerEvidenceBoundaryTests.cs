@@ -1890,8 +1890,7 @@ public sealed class RescuerEvidenceBoundaryTests
                         MinimumTravelTicks = 1, MaximumTravelTicks = 1,
                         ProvenanceId = "three-FD"
                     }]
-           
-      }
+            }
         };
         var first = ComplementaryOriginal(RecordId, HolderId,
             2, ["A", "B", "C"], 3, "weft-a");
@@ -1906,8 +1905,7 @@ public sealed class RescuerEvidenceBoundaryTests
                 : new[] { Receipt(6), LaterComparisonReceipt(7) };
             return builder.BuildDistinctOriginals(world, Seed, 7,
                 RescuerId, originals, receipts);
-       
-  }
+        }
         var baseline = RescuerEvidenceMethodComparison
             .AnalyzeMissingDeclaredPathQuestions(
                 At(baseWorld), InteractionTimeWindow.At(2));
@@ -1941,8 +1939,7 @@ public sealed class RescuerEvidenceBoundaryTests
                 Branches = threeHop.PublicHazardEnvelope!.Branches.Select(edge =>
                     edge.ProvenanceId == "three-EF"
                         ? edge with { PublishedAtTick = 8 } : edge).ToArray()
-           
-      }
+            }
         };
         var futureReport = RescuerEvidenceMethodComparison
             .AnalyzeMissingDeclaredPathQuestions(At(future), InteractionTimeWindow.At(2));
@@ -1960,15 +1957,13 @@ public sealed class RescuerEvidenceBoundaryTests
                         MinimumTravelTicks = 1, MaximumTravelTicks = 1,
                         ProvenanceId = "cycle-FB"
                     }]
-           
-      }
+            }
         };
         var cycleReport = RescuerEvidenceMethodComparison
             .AnalyzeMissingDeclaredPathQuestions(At(cycle), InteractionTimeWindow.At(2));
         Assert.Empty(cycleReport.Candidates.Single(row => row.RegionId == "B").Questions);
         Assert.InRange(cycleReport.PublicTraversalBranchesInspected, 1, 4096 * 3);
-   
-}
+    }
 
     [Fact]
     public void PublishedTravelClassifiesShortAndLongWithoutClaimingDwell()
@@ -1992,16 +1987,14 @@ public sealed class RescuerEvidenceBoundaryTests
                             MinimumTravelTicks = travel, MaximumTravelTicks = travel,
                             ProvenanceId = "direct-calibration"
                         }]
-               
-          }
+                }
             };
             var input = builder.BuildDistinctOriginals(directWorld, Seed, 7, RescuerId,
                 [early, later], [Receipt(6), LaterComparisonReceipt(7)]);
             return RescuerEvidenceMethodComparison
                 .AnalyzeMissingDeclaredPathQuestions(input, InteractionTimeWindow.At(2))
                 .Candidates.Single(row => row.RegionId == "B");
-       
-  }
+        }
 
         var shortDirect = Direct(1);
         var longDirect = Direct(10);
@@ -2036,8 +2029,7 @@ public sealed class RescuerEvidenceBoundaryTests
                     {
                         MinimumTravelTicks = 1, MaximumTravelTicks = 1
                     }]
-           
-      }
+            }
         };
         var laterAtSix = ComplementaryOriginal("second-original", "holder-b",
             6, ["D"], 6, "weft-b");
@@ -2065,11 +2057,13 @@ public sealed class RescuerEvidenceBoundaryTests
                         edge.DestinationRegionId == "D"))
                     .Append(Branch("F", "C") with
                     {
-                        MinimumTravelTicks = 1, MaximumTravelTicks = 1
+                        MinimumTravelTicks = 1,
+                        MaximumTravelTicks = 1
                     })
                     .Append(Branch("C", "D") with
                     {
-                        MinimumTravelTicks = 1, MaximumTravelTicks = 1
+                        MinimumTravelTicks = 1,
+                        MaximumTravelTicks = 1
                     })
                     .ToArray()
             }
@@ -2083,8 +2077,7 @@ public sealed class RescuerEvidenceBoundaryTests
             .PublicAlternativeExplanations,
             reason => reason.StartsWith("formal-multihop:B>E>F>C>D:",
                 StringComparison.Ordinal));
-   
-}
+    }
 
     // #104: the late, distinct Person trace can witness formal compatibility
     // with one *published* branch without hard-excluding unwitnessed regions.
