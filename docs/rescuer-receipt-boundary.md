@@ -1604,3 +1604,52 @@ missing-relation discovery or lives saved. No inference uses the
 private terminal/departure distinction. New evidence about genuine
 terminal completeness or independent stay observations would require a
 separate reviewed scope before an unconditional question could be removed.
+
+## Fixed public-relation question versus search-unit utility (#112)
+
+Work-Key: `FP-RELATION-QUESTION-UTILITY-AUDIT-V1`, Scope-Revision 0.
+This is an **evaluation-only information-condition contrast**, not a new
+inference strategy. `AnalyzeRelationQuestionUtility` consumes two
+`BuildDistinctOriginals` outputs with identical two original records,
+source ancestry, rescuer receipt times (tick 6/7), historical target tick 2,
+query tick 7 and public candidate-state model. The two public worlds are
+structurally checked, allowing **only** one appended public B→D declaration
+(3 ticks, first published at tick 7) in the K condition. This models what
+would happen **if** a separately obtained publication were available, not
+a discovery of a missing relation or a verified Person journey.
+
+The implementation composes existing `Compare`, `AnalyzeMissingDeclaredPathQuestions`
+and `AnalyzeHistoricalSearchUnits` outputs, with exactly the same region and
+public unit catalog in each condition. Each of the four existing methods has
+its own U/K row; those differences are **information differences**, whereas
+differences between methods within U or K are method differences. The report
+exposes every unanswered question ID (with evidence, ancestry, time range),
+resolved/newly unconfirmed question IDs, actual safe outer exclusion/reappearance,
+known unit removal/addition, unresolved mapping and the existing method
+operation/source counters. It does **not** assign a one-to-one causal credit
+for any candidate/unit change to an individual question: those associations
+are not identifiable from the present diagnostic.
+
+Fixture and expected scientific interpretation (to be checked by CI):
+
+| Tick 7 input | Question B→D | Question C→D | Safe outer / known public units |
+| --- | --- | --- | --- |
+| U: no B→D publication | still unconfirmed | still unconfirmed | method-specific, directly measured |
+| K: B→D published at 7 | formal direct question answered | still unconfirmed | compare with U; zero improvement is valid |
+
+The 3-tick declaration is a public travel *contract*, not physical proof
+of movement or dwell. A source question becoming unnecessary must not be
+interpreted as a Person using the declared edge, a region being safe or a
+public unit being removed. Complete multi-region→single-unit mappings
+deduplicate unit IDs. If either mapping is missing, partial, ineligible or
+genuinely empty, unit removal/addition is `null`, **not zero**. Before a
+second original is received the audit is `unavailable`; a future public
+declaration is not legal input to a query at tick 6. Device-only input and
+shared ancestry are not silently upgraded to independent Person evidence.
+
+The fixed comparison is an exploratory synthetic case. It does not calibrate
+travel time, rescue staff hours, actual sites, cost, rescue success or any
+24-relation discovery. We do not change observations after observing a result.
+A change in source/world/timing/catalog is rejected rather than mislabeled
+as a comparable result. Incomplete mapping requires a later reviewed scope
+or additional public evidence, not a favorable assumed zero.

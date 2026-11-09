@@ -6,6 +6,7 @@ using FootprintSim.Inference.PastStates;
 using FootprintSim.Inference.SearchProjection;
 using FootprintSim.Interactions;
 using FootprintSim.Interactions.Tracing;
+using FootprintSim.Serialization;
 
 namespace FootprintSim.Evaluation;
 
@@ -458,6 +459,35 @@ public sealed record RescuerConditionalPublishedDwellReport(
     bool? LongArithmeticBoundVerified,
     int PropagateCalls,
     int SelectedPathEdgesInspected);
+
+
+/* #112: one fixed, evaluation-only information contrast. Neither a new
+ * inference method nor evidence that a declared public edge was traversed. */
+public sealed record RescuerRelationQuestionUtilityMethod(
+    string Method,
+    string UnitDifferenceStatus,
+    RescuerEvidenceMethodRow WithoutDeclaration,
+    RescuerEvidenceMethodRow WithDeclaration,
+    RescuerEvidenceHistoricalUnitMethod UnitsWithoutDeclaration,
+    RescuerEvidenceHistoricalUnitMethod UnitsWithDeclaration,
+    IReadOnlyList<string> ExcludedOuterRegionIds,
+    IReadOnlyList<string> ReappearedOuterRegionIds,
+    IReadOnlyList<string>? RemovedKnownUnitIds,
+    IReadOnlyList<string>? AddedKnownUnitIds);
+
+public sealed record RescuerRelationQuestionUtilityReport
+{
+    public required string Status { get; init; }
+    public string? HoldReason { get; init; }
+    public required long QueryTick { get; init; }
+    public required long HistoricalTick { get; init; }
+    public IReadOnlyList<string> ReceivedOriginalIds { get; init; } = [];
+    public IReadOnlyList<RescuerMissingDeclaredPathQuestion> QuestionsWithoutDeclaration { get; init; } = [];
+    public IReadOnlyList<RescuerMissingDeclaredPathQuestion> QuestionsWithDeclaration { get; init; } = [];
+    public IReadOnlyList<string> ResolvedQuestionIds { get; init; } = [];
+    public IReadOnlyList<string> NewlyUnconfirmedQuestionIds { get; init; } = [];
+    public IReadOnlyList<RescuerRelationQuestionUtilityMethod> Methods { get; init; } = [];
+}
 
 public static class RescuerEvidenceMethodComparison
 {
@@ -2451,6 +2481,184 @@ public static class RescuerEvidenceMethodComparison
             HistoricalTick = report.TargetWindow.EndTick,
             QueryTick = paired.QueryTick,
             OriginalIds = paired.OriginalIds,
+            Methods = methods
+        };
+    }
+
+
+    /// <summary>
+    /// #112: compare the SAME received evidence at tick 7 / historical tick 2,
+    /// with exactly one separately published B->D public 3-tick declaration.
+    /// The public declaration is an information difference, not a fourth
+    /// inference method, a verified Person movement, or a unit saving.
+    /// </summary>
+    public static RescuerRelationQuestionUtilityReport AnalyzeRelationQuestionUtility(
+        RescuerEvidenceInput withoutDeclaration,
+        RescuerEvidenceInput withDeclaration,
+        InteractionTimeWindow historicalWindow,
+        IReadOnlyList<string> regionIds,
+        IReadOnlyList<string> unitIds,
+        IReadOnlyList<PublicSearchUnitMapping> unitMappings)
+    {
+        ArgumentNullException.ThrowIfNull(withoutDeclaration);
+        ArgumentNullException.ThrowIfNull(withDeclaration);
+        ArgumentNullException.ThrowIfNull(historicalWindow);
+        ArgumentNullException.ThrowIfNull(regionIds);
+        ArgumentNullException.ThrowIfNull(unitIds);
+        ArgumentNullException.ThrowIfNull(unitMappings);
+        var u = withoutDeclaration.Input;
+        var k = withDeclaration.Input;
+        var cutoff = u.CurrentTick;
+        if (cutoff != 7 || k.CurrentTick != cutoff ||
+            historicalWindow.StartTick != 2 || historicalWindow.EndTick != 2)
+        {
+            throw new InvalidDataException("The fixed #112 contrast requires historical tick 2 and common query tick 7.");
+        }
+
+        var uPublic = u.PublicContext;
+        var kPublic = k.PublicContext;
+        var uEnvelope = uPublic.PublicHazardEnvelope
+            ?? throw new InvalidDataException("Both inputs require a declared public envelope.");
+        var kEnvelope = kPublic.PublicHazardEnvelope
+            ?? throw new InvalidDataException("Both inputs require a declared public envelope.");
+        var uEdges = uEnvelope.Branches;
+        var kEdges = kEnvelope.Branches;
+        if (kEdges.Count != uEdges.Count + 1)
+        {
+            throw new InvalidDataException("Exactly one additional public declaration is required.");
+        }
+        var added = kEdges[^1];
+        if (added.SourceRegionId != "B" || added.DestinationRegionId != "D" ||
+            added.MinimumTravelTicks != 3 || added.MaximumTravelTicks != 3 ||
+            added.PublishedAtTick != 7 ||
+            uEdges.Any(edge => edge.SourceRegionId == "B" &&
+                edge.DestinationRegionId == "D"))
+        {
+            throw new InvalidDataException("Only the separately published B-to-D 3-tick relation is allowed.");
+        }
+        // Compare the actual complete PUBLIC contexts, not merely a label,
+        // after removing the single appended K branch. This rejects extra
+        // state, availability, transition or public-model changes. Both
+        // inputs must also carry byte-equivalent receipt-projected evidence.
+        var normalizedK = kPublic with
+        {
+            PublicHazardEnvelope = kEnvelope with
+            {
+                Branches = kEdges.Take(kEdges.Count - 1).ToArray()
+            }
+        };
+        if (JsonDefaults.Serialize(uPublic) != JsonDefaults.Serialize(normalizedK) ||
+            u.ScenarioId != k.ScenarioId || u.Seed != k.Seed ||
+            JsonDefaults.Serialize(withoutDeclaration.ReceivedRecords) !=
+                JsonDefaults.Serialize(withDeclaration.ReceivedRecords) ||
+            JsonDefaults.Serialize(u.AvailableEvidence) !=
+                JsonDefaults.Serialize(k.AvailableEvidence) ||
+            JsonDefaults.Serialize(u.AvailableCausalTracingConstraints) !=
+                JsonDefaults.Serialize(k.AvailableCausalTracingConstraints))
+        {
+            throw new InvalidDataException("The public context or receipt-projected originals differ beyond B-to-D.");
+        }
+        var ids = withoutDeclaration.ReceivedRecords
+            .Select(item => item.OriginalRecordId)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(id => id, StringComparer.Ordinal).ToArray();
+        if (ids.Length != 2 || withoutDeclaration.ReceivedRecords.Count != 2)
+        {
+            return new RescuerRelationQuestionUtilityReport
+            {
+                Status = "unavailable",
+                HoldReason = "two-distinct-received-originals-not-yet-eligible",
+                QueryTick = cutoff,
+                HistoricalTick = historicalWindow.EndTick,
+                ReceivedOriginalIds = ids
+            };
+        }
+        var questionsU = AnalyzeMissingDeclaredPathQuestions(withoutDeclaration, historicalWindow);
+        var questionsK = AnalyzeMissingDeclaredPathQuestions(withDeclaration, historicalWindow);
+        if (questionsU.Status != "available" || questionsK.Status != "available")
+        {
+            return new RescuerRelationQuestionUtilityReport
+            {
+                Status = "unavailable",
+                HoldReason = "public-question-diagnostic-unavailable",
+                QueryTick = cutoff,
+                HistoricalTick = historicalWindow.EndTick,
+                ReceivedOriginalIds = ids
+            };
+        }
+        static string[] Sorted(IEnumerable<string> source) =>
+            source.Distinct(StringComparer.Ordinal)
+                .OrderBy(id => id, StringComparer.Ordinal).ToArray();
+        static RescuerMissingDeclaredPathQuestion[] AllQuestions(
+            RescuerMissingDeclaredPathReport report) =>
+            report.Candidates.SelectMany(candidate => candidate.Questions)
+                .OrderBy(question => question.QuestionId, StringComparer.Ordinal).ToArray();
+
+        var qU = AllQuestions(questionsU);
+        var qK = AllQuestions(questionsK);
+        var qUIds = Sorted(qU.Select(question => question.QuestionId));
+        var qKIds = Sorted(qK.Select(question => question.QuestionId));
+        var methodU = Compare(withoutDeclaration, historicalWindow);
+        var methodK = Compare(withDeclaration, historicalWindow);
+        RescuerEvidenceMethodReport AsHistoricalReport(RescuerEvidenceMethodQueryRow row) =>
+            new()
+            {
+                ScenarioId = u.ScenarioId,
+                Seed = u.Seed,
+                RescuerId = "fixed-receipt-scoped-comparison",
+                TargetWindow = historicalWindow,
+                ActualTimeline = [row]
+            };
+        // The same supplied public unit catalog is applied separately to
+        // each condition. Ineligible projections never become zero savings.
+        var unitsU = AnalyzeHistoricalSearchUnits(AsHistoricalReport(methodU),
+            regionIds, unitIds, unitMappings).ActualTimeline.Single();
+        var unitsK = AnalyzeHistoricalSearchUnits(AsHistoricalReport(methodK),
+            regionIds, unitIds, unitMappings).ActualTimeline.Single();
+        var names = new[]
+        {
+            "public-prior", "known-relation-backward",
+            "distributed-reconstruction", "distributed-reconstruction-local"
+        };
+        var methods = names.Select(name =>
+        {
+            var before = methodU.Methods.Single(row => row.Method == name);
+            var after = methodK.Methods.Single(row => row.Method == name);
+            var beforeUnits = unitsU.Methods.Single(row => row.Method == name);
+            var afterUnits = unitsK.Methods.Single(row => row.Method == name);
+            var eligible = beforeUnits.ComparisonEligible && afterUnits.ComparisonEligible;
+            return new RescuerRelationQuestionUtilityMethod(
+                name,
+                eligible ? "available" :
+                    beforeUnits.Status == "empty-candidates" ||
+                        afterUnits.Status == "empty-candidates"
+                        ? "empty-candidates" : "partial",
+                before,
+                after,
+                beforeUnits,
+                afterUnits,
+                Sorted(before.OuterCandidateRegionIds.Except(
+                    after.OuterCandidateRegionIds, StringComparer.Ordinal)),
+                Sorted(after.OuterCandidateRegionIds.Except(
+                    before.OuterCandidateRegionIds, StringComparer.Ordinal)),
+                eligible ? Sorted(beforeUnits.KnownUnitIds.Except(
+                    afterUnits.KnownUnitIds, StringComparer.Ordinal)) : null,
+                eligible ? Sorted(afterUnits.KnownUnitIds.Except(
+                    beforeUnits.KnownUnitIds, StringComparer.Ordinal)) : null);
+        }).ToArray();
+        return new RescuerRelationQuestionUtilityReport
+        {
+            Status = methods.All(row => row.UnitDifferenceStatus == "available")
+                ? "available" : "partial",
+            HoldReason = methods.All(row => row.UnitDifferenceStatus == "available")
+                ? null : "incomplete-or-empty-public-unit-projection",
+            QueryTick = cutoff,
+            HistoricalTick = historicalWindow.EndTick,
+            ReceivedOriginalIds = ids,
+            QuestionsWithoutDeclaration = qU,
+            QuestionsWithDeclaration = qK,
+            ResolvedQuestionIds = Sorted(qUIds.Except(qKIds, StringComparer.Ordinal)),
+            NewlyUnconfirmedQuestionIds = Sorted(qKIds.Except(qUIds, StringComparer.Ordinal)),
             Methods = methods
         };
     }

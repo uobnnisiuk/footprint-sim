@@ -21,6 +21,168 @@ public sealed class RescuerEvidenceBoundaryTests
     private const string TargetId = "person-a";
     private const string RecordId = "original-encounter-record";
 
+
+    // #112: questions about a separately published branch are NOT evidence
+    // that any Person took that route or that safe search units decreased.
+    private static (RescuerEvidenceInput U, RescuerEvidenceInput K)
+        RelationUtilityInputs(bool reversed = false, bool duplicateReceipt = false,
+            string laterAncestry = "weft-b", bool deviceOnly = false,
+            EvidenceState firstState = EvidenceState.Confirmed,
+            bool receiveSecond = true)
+    {
+        var uWorld = ComplementaryPublicContext();
+        var kWorld = uWorld with
+        {
+            PublicHazardEnvelope = uWorld.PublicHazardEnvelope! with
+            {
+                Branches = [.. uWorld.PublicHazardEnvelope!.Branches,
+                    Branch("B", "D") with
+                    {
+                        MinimumTravelTicks = 3,
+                        MaximumTravelTicks = 3,
+                        PublishedAtTick = 7,
+                        ProvenanceId = "separate-public-BD"
+                    }]
+            }
+        };
+        var early = ComplementaryOriginal(RecordId, HolderId, 2,
+            ["A", "B", "C"], 3, "weft-a", firstState, deviceOnly);
+        var later = ComplementaryOriginal("second-original", "holder-b", 5,
+            ["D"], 6, laterAncestry);
+        var originals = reversed ? new[] { later, early } : new[] { early, later };
+        var receipts = new List<InteractionRecordReceipt> { Receipt(6) };
+        if (receiveSecond)
+            receipts.Add(LaterComparisonReceipt(7));
+        if (duplicateReceipt)
+            receipts.Add(Receipt(6));
+        if (reversed)
+            receipts.Reverse();
+        var builder = new RescuerEvidenceInputBuilder();
+        return (
+            builder.BuildDistinctOriginals(uWorld, Seed, 7, RescuerId, originals, receipts),
+            builder.BuildDistinctOriginals(kWorld, Seed, 7, RescuerId, originals, receipts));
+    }
+
+    private static PublicSearchUnitMapping[] RelationUtilityMappings() =>
+    [
+        new("A", 2, ["U1"], true, "catalog-a", 0),
+        new("B", 2, ["U2"], true, "catalog-b", 0),
+        new("C", 2, ["U1"], true, "catalog-c", 0)
+    ];
+
+    private static RescuerRelationQuestionUtilityReport RelationUtility(
+        RescuerEvidenceInput u, RescuerEvidenceInput k,
+        IReadOnlyList<PublicSearchUnitMapping>? mappings = null) =>
+        RescuerEvidenceMethodComparison.AnalyzeRelationQuestionUtility(
+            u, k, InteractionTimeWindow.At(2), ["A", "B", "C"],
+            ["U1", "U2"], mappings ?? RelationUtilityMappings());
+
+    [Fact]
+    public void RelationQuestionUtilitySeparatesAnswerFromActualSearchUnitChange()
+    {
+        var (u, k) = RelationUtilityInputs();
+        var beforeJson = JsonDefaults.Serialize(u);
+        var afterJson = JsonDefaults.Serialize(k);
+        var result = RelationUtility(u, k);
+        Assert.Equal("available", result.Status);
+        Assert.Equal(7, result.QueryTick);
+        Assert.Equal(2, result.HistoricalTick);
+        Assert.Equal([RecordId, "second-original"], result.ReceivedOriginalIds);
+        Assert.Contains(result.QuestionsWithoutDeclaration, question =>
+            question.SourceRegionId == "B" &&
+            question.DestinationRegionId == "D" &&
+            question.IndependentSourceAncestry);
+        Assert.Contains(result.QuestionsWithoutDeclaration, question =>
+            question.SourceRegionId == "C" && question.DestinationRegionId == "D");
+        Assert.DoesNotContain(result.QuestionsWithDeclaration, question =>
+            question.SourceRegionId == "B" && question.DestinationRegionId == "D");
+        Assert.Contains(result.QuestionsWithDeclaration, question =>
+            question.SourceRegionId == "C" && question.DestinationRegionId == "D");
+        Assert.Single(result.ResolvedQuestionIds);
+        Assert.Empty(result.NewlyUnconfirmedQuestionIds);
+        Assert.Equal(4, result.Methods.Count);
+        Assert.All(result.Methods, method =>
+        {
+            Assert.Equal("available", method.UnitDifferenceStatus);
+            Assert.Empty(method.ExcludedOuterRegionIds);
+            Assert.Empty(method.ReappearedOuterRegionIds);
+            Assert.Empty(method.RemovedKnownUnitIds!);
+            Assert.Empty(method.AddedKnownUnitIds!);
+            Assert.Equal(["U1", "U2"], method.UnitsWithoutDeclaration.KnownUnitIds);
+            Assert.Equal(["U1", "U2"], method.UnitsWithDeclaration.KnownUnitIds);
+            Assert.Equal(2, method.WithoutDeclaration.AvailableSourceGroupCount);
+            Assert.Equal(2, method.WithDeclaration.AvailableSourceGroupCount);
+            Assert.All(method.WithoutDeclaration.OuterCandidateRegionIds,
+                id => Assert.Contains(id, method.WithDeclaration.OuterCandidateRegionIds));
+        });
+        // Truth-free evaluation leaves both input snapshots unchanged.
+        Assert.Equal(beforeJson, JsonDefaults.Serialize(u));
+        Assert.Equal(afterJson, JsonDefaults.Serialize(k));
+        var (uReversed, kReversed) = RelationUtilityInputs(reversed: true,
+            duplicateReceipt: true);
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(RelationUtility(uReversed, kReversed)));
+    }
+
+    [Fact]
+    public void RelationQuestionUtilityRetainsUnavailablePartialAndNonindependentOutcomes()
+    {
+        var (u, k) = RelationUtilityInputs(receiveSecond: false);
+        var unavailable = RelationUtility(u, k);
+        Assert.Equal("unavailable", unavailable.Status);
+        Assert.Empty(unavailable.Methods);
+        Assert.Empty(unavailable.ResolvedQuestionIds);
+
+        var (fullU, fullK) = RelationUtilityInputs();
+        var partial = RelationUtility(fullU, fullK,
+            [new PublicSearchUnitMapping("A", 2, ["U1"], true, "only-a", 0)]);
+        Assert.Equal("partial", partial.Status);
+        Assert.All(partial.Methods, method =>
+        {
+            Assert.Equal("partial", method.UnitDifferenceStatus);
+            Assert.Null(method.RemovedKnownUnitIds);
+            Assert.Null(method.AddedKnownUnitIds);
+            Assert.NotEmpty(method.UnitsWithoutDeclaration.UnresolvedRegionIds);
+        });
+        var (sharedU, sharedK) = RelationUtilityInputs(laterAncestry: "weft-a");
+        var shared = RelationUtility(sharedU, sharedK);
+        Assert.All(shared.QuestionsWithoutDeclaration,
+            question => Assert.False(question.IndependentSourceAncestry));
+        Assert.All(shared.Methods, method =>
+            Assert.Equal(1, method.WithoutDeclaration.AvailableSourceGroupCount));
+    }
+
+    [Fact]
+    public void RelationQuestionUtilityRejectsModelAndEvidenceDrift()
+    {
+        var (u, k) = RelationUtilityInputs();
+        var tamperedModel = k.Input.PublicContext with
+        {
+            PublicCausalTracingModel = new PublicCausalTracingModel
+            {
+                CandidateStates = [State(2, ["A", "B"]), State(5, ["D", "E", "F"])]
+            }
+        };
+        var other = new RescuerEvidenceInputBuilder().BuildDistinctOriginals(
+            tamperedModel, Seed, 7, RescuerId,
+            [
+                ComplementaryOriginal(RecordId, HolderId, 2,
+                    ["A", "B", "C"], 3, "weft-a"),
+                ComplementaryOriginal("second-original", "holder-b", 5,
+                    ["D"], 6, "weft-b")
+            ], [Receipt(6), LaterComparisonReceipt(7)]);
+        Assert.Throws<InvalidDataException>(() => RelationUtility(u, other));
+        Assert.Throws<InvalidDataException>(() => RelationUtility(k, u));
+        var (deviceU, deviceK) = RelationUtilityInputs(deviceOnly: true);
+        var device = RelationUtility(deviceU, deviceK);
+        Assert.DoesNotContain(device.QuestionsWithoutDeclaration,
+            question => question.EarlyDirectSourceId == RecordId);
+        var (conflictU, conflictK) = RelationUtilityInputs(
+            firstState: EvidenceState.Conflicting);
+        var conflict = RelationUtility(conflictU, conflictK);
+        Assert.Empty(conflict.ResolvedQuestionIds);
+    }
+
     [Fact]
     public void ReceiptGatesInputsAndConnectsExistingCandidateAndTracingImplementations()
     {
