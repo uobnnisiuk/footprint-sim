@@ -1822,7 +1822,7 @@ public static class RescuerEvidenceMethodComparison
         // Compare against the genuine F20 output for M1-E, including unknown.
         var m1e = rows.Single(row =>
             row.HistoricalMethod.Method == "distributed-reconstruction");
-        if (m1e.HistoricalRegions.Length != realF20.Candidates.Length)
+        if (m1e.HistoricalRegions.Count != realF20.Candidates.Count)
         {
             throw new InvalidDataException("M1-E current-unit comparison is not F20-equivalent.");
         }
