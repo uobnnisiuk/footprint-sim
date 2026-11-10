@@ -1610,7 +1610,7 @@ public static class RescuerEvidenceMethodComparison
             EvidenceRecordsInspected = 0,
             PublicRelationsInspected = 0
         };
-        return new RescuerEvidenceMethodQueryRow
+        return (new RescuerEvidenceMethodQueryRow
         {
             Condition = condition,
             QueryTick = input.CurrentTick,
