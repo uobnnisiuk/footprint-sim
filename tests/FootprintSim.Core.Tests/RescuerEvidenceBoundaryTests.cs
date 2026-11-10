@@ -28,7 +28,8 @@ public sealed class RescuerEvidenceBoundaryTests
         RelationUtilityInputs(bool reversed = false, bool duplicateReceipt = false,
             string laterAncestry = "weft-b", bool deviceOnly = false,
             EvidenceState firstState = EvidenceState.Confirmed,
-            bool receiveSecond = true)
+            bool receiveSecond = true, IReadOnlyList<string>? firstRegions = null,
+            long laterTick = 5)
     {
         var uWorld = ComplementaryPublicContext();
         var kWorld = uWorld with
@@ -46,9 +47,9 @@ public sealed class RescuerEvidenceBoundaryTests
             }
         };
         var early = ComplementaryOriginal(RecordId, HolderId, 2,
-            ["A", "B", "C"], 3, "weft-a", firstState, deviceOnly);
-        var later = ComplementaryOriginal("second-original", "holder-b", 5,
-            ["D"], 6, laterAncestry);
+            firstRegions ?? ["A", "B", "C"], 3, "weft-a", firstState, deviceOnly);
+        var later = ComplementaryOriginal("second-original", "holder-b", laterTick,
+            ["D"], laterTick + 1, laterAncestry);
         var originals = reversed ? new[] { later, early } : new[] { early, later };
         var receipts = new List<InteractionRecordReceipt> { Receipt(6) };
         if (receiveSecond)
@@ -413,6 +414,100 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.DoesNotContain(conflict.Methods.SelectMany(method =>
                 method.WithDeclaration.Units).SelectMany(unit => unit.Regions),
             region => region.CompatibilityStatus == "witnessed");
+    }
+
+    // #118: AR-19 V0/N10/N11 use the actual received input builder.
+    // The new reason codes may explain "unknown", but may not eliminate
+    // any candidate or give a whole unit a positive Person interpretation.
+    [Fact]
+    public void DeclaredWitnessUnitsDistinguishUnwitnessedReasonsWithoutExclusion()
+    {
+        var (vU, vK) = RelationUtilityInputs();
+        var (nU, nK) = RelationUtilityInputs(firstRegions: ["A", "B"]);
+        var (tU, tK) = RelationUtilityInputs(firstRegions: ["A", "B"], laterTick: 6);
+        var v0 = DeclaredUnitCoverage(vU, vK);
+        var n10 = DeclaredUnitCoverage(nU, nK);
+        var n11 = DeclaredUnitCoverage(tU, tK);
+
+        static RescuerDeclaredWitnessUnitRegion Region(
+            RescuerDeclaredWitnessUnitReport report, string method,
+            string unit, string region, bool knownDeclaration = false)
+        {
+            var row = report.Methods.Single(m => m.Method == method);
+            var condition = knownDeclaration ? row.WithDeclaration : row.WithoutDeclaration;
+            return condition.Units.Single(u => u.UnitId == unit).Regions.Single(
+                r => r.RegionId == region);
+        }
+
+        foreach (var report in new[] { v0, n10, n11 })
+        {
+            Assert.Equal("available", report.Status);
+            foreach (var method in report.Methods)
+            {
+                Assert.Equal(method.WithoutDeclaration.PublicMethod.OuterCandidateRegionIds,
+                    method.WithDeclaration.PublicMethod.OuterCandidateRegionIds);
+                Assert.Equal(method.WithoutDeclaration.UnitProjection.KnownUnitIds,
+                    method.WithDeclaration.UnitProjection.KnownUnitIds);
+                Assert.Equal(["U1", "U2"], method.WithoutDeclaration.UnitProjection.KnownUnitIds);
+                Assert.All(method.WithoutDeclaration.Units
+                    .Concat(method.WithDeclaration.Units)
+                    .SelectMany(u => u.Regions)
+                    .Where(r => r.CompatibilityStatus != "unknown"),
+                    r => Assert.Empty(r.UnwitnessedReasonCodes));
+            }
+        }
+        foreach (var method in v0.Methods)
+        {
+            Assert.Equal(["endpoint-pair-unpublished"],
+                Region(v0, method.Method, "U1", "C").UnwitnessedReasonCodes);
+            Assert.Equal(["endpoint-pair-unpublished"],
+                Region(v0, method.Method, "U1", "C", true).UnwitnessedReasonCodes);
+            Assert.Empty(Region(v0, method.Method, "U1", "A").UnwitnessedReasonCodes);
+        }
+
+        foreach (var method in new[] { "public-prior", "known-relation-backward" })
+        {
+            Assert.Equal(["A", "B", "C"], n10.Methods.Single(m =>
+                m.Method == method).WithoutDeclaration.PublicMethod.OuterCandidateRegionIds);
+            Assert.Equal(["early-person-not-supported"],
+                Region(n10, method, "U1", "C").UnwitnessedReasonCodes);
+            Assert.Equal(["early-person-not-supported"],
+                Region(n10, method, "U1", "C", true).UnwitnessedReasonCodes);
+            Assert.Equal(["A", "C"],
+                n11.Methods.Single(m => m.Method == method).WithoutDeclaration.Units
+                    .Single(u => u.UnitId == "U1").UnknownRegionIds);
+            Assert.Equal(["published-pair-timing-incompatible"],
+                Region(n11, method, "U1", "A").UnwitnessedReasonCodes);
+            Assert.Equal(["early-person-not-supported"],
+                Region(n11, method, "U1", "C").UnwitnessedReasonCodes);
+        }
+        foreach (var method in new[] { "distributed-reconstruction",
+                     "distributed-reconstruction-local" })
+        {
+            Assert.DoesNotContain("C", n10.Methods.Single(m =>
+                m.Method == method).WithoutDeclaration.PublicMethod.OuterCandidateRegionIds);
+            Assert.DoesNotContain(n10.Methods.Single(m => m.Method == method)
+                .WithoutDeclaration.Units.SelectMany(u => u.Regions),
+                r => r.RegionId == "C");
+        }
+        var (revU, revK) = RelationUtilityInputs(
+            reversed: true, duplicateReceipt: true, firstRegions: ["A", "B"]);
+        Assert.Equal(JsonDefaults.Serialize(n10),
+            JsonDefaults.Serialize(DeclaredUnitCoverage(revU, revK)));
+
+        var (deviceU, deviceK) = RelationUtilityInputs(deviceOnly: true);
+        var device = DeclaredUnitCoverage(deviceU, deviceK);
+        Assert.All(device.Methods.SelectMany(m => m.WithoutDeclaration.Units
+            .Concat(m.WithDeclaration.Units)).SelectMany(u => u.Regions),
+            r => Assert.Empty(r.UnwitnessedReasonCodes));
+        var (softU, softK) = RelationUtilityInputs(
+            firstState: EvidenceState.SupportedButUncertain);
+        var soft = DeclaredUnitCoverage(softU, softK);
+        Assert.All(soft.Methods.SelectMany(m => m.WithoutDeclaration.Units
+            .Concat(m.WithDeclaration.Units)).SelectMany(u => u.Regions)
+            .Where(r => r.CompatibilityStatus == "unknown"),
+            r => Assert.Equal(["insufficient-public-evidence"],
+                r.UnwitnessedReasonCodes));
     }
 
     [Fact]

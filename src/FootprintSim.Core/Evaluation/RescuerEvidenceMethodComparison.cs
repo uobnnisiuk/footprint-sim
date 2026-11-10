@@ -513,7 +513,9 @@ public sealed record RescuerRelationQuestionUtilityReport
 public sealed record RescuerDeclaredWitnessUnitRegion(
     string RegionId,
     string CompatibilityStatus,
-    IReadOnlyList<RescuerDeclaredPathWitness> DirectWitnesses);
+    IReadOnlyList<RescuerDeclaredPathWitness> DirectWitnesses,
+    // #118: diagnostic labels on unwitnessed candidates, not negative evidence.
+    IReadOnlyList<string> UnwitnessedReasonCodes);
 
 public sealed record RescuerDeclaredWitnessUnit(
     string UnitId,
@@ -2829,6 +2831,99 @@ public static class RescuerEvidenceMethodComparison
                 "Declared-path diagnostics do not match the receipt-gated comparison.");
         }
 
+        // #118: Preserve #104's classification, and explain a missing positive
+        // witness using only the same received, public Person observations and
+        // declared branches. Do not interpret absence of a branch as nonexistence.
+        static Dictionary<string, string[]> UnwitnessedReasons(
+            RescuerEvidenceInput received,
+            RescuerDeclaredPathCompatibilityReport diagnostic)
+        {
+            var input = received.Input;
+            var cutoff = diagnostic.QueryTick;
+            var originals = received.ReceivedRecords.Select(record =>
+                record.OriginalRecordId).ToHashSet(StringComparer.Ordinal);
+            var constraints = (input.AvailableCausalTracingConstraints?
+                .PubliclyAvailableAt(cutoff).Constraints ?? [])
+                .Where(c => c.ScenarioId == input.ScenarioId && c.Seed == input.Seed &&
+                    c.TargetEntityId == input.PublicContext.TargetPersonId &&
+                    c.Visibility == InteractionVisibility.PublicEvidence &&
+                    c.AvailableAtTick <= cutoff && originals.Contains(c.DirectSourceId) &&
+                    c.IsPersonEvidence && !c.IsDeviceOnlyEvidence)
+                .OrderBy(c => c.ConstraintId, StringComparer.Ordinal).ToArray();
+            var envelope = input.PublicContext.PublicHazardEnvelope;
+            var publishedPairs = envelope is not null && envelope.PublishedAtTick <= cutoff
+                ? envelope.Branches.Where(branch => branch.PublishedAtTick <= cutoff &&
+                        branch.MinimumTravelTicks >= 0 &&
+                        branch.MaximumTravelTicks >= branch.MinimumTravelTicks)
+                    .Select(branch => (branch.SourceRegionId, branch.DestinationRegionId))
+                    .ToHashSet()
+                : new HashSet<(string SourceRegionId, string DestinationRegionId)>();
+            var earlyAtWindow = constraints.Where(c =>
+                c.ConstrainedTimeWindow.StartTick <= diagnostic.TargetWindow.EndTick &&
+                diagnostic.TargetWindow.StartTick <= c.ConstrainedTimeWindow.EndTick)
+                .ToArray();
+            var confirmedEarly = earlyAtWindow.Where(c =>
+                c.EvidenceBoundaryState == EvidenceState.Confirmed).ToArray();
+            var reasons = new Dictionary<string, string[]>(StringComparer.Ordinal);
+            foreach (var candidate in diagnostic.Candidates)
+            {
+                // Conflict, unavailable and witnessed already have their own
+                // semantics. Never add a negative claim to those states.
+                if (candidate.Status != "unknown")
+                {
+                    reasons.Add(candidate.RegionId, []);
+                    continue;
+                }
+                var flags = new SortedSet<string>(StringComparer.Ordinal);
+                var supportingEarly = confirmedEarly.Where(c =>
+                    c.AllowedRegionIds.Contains(candidate.RegionId, StringComparer.Ordinal))
+                    .ToArray();
+                // Only classify non-support if an actual confirmed early Person
+                // constraint is available AND no uncertain/conflicting early
+                // constraint could support the candidate.
+                if (confirmedEarly.Length > 0 && supportingEarly.Length == 0 &&
+                    earlyAtWindow.All(c =>
+                        c.EvidenceBoundaryState == EvidenceState.Confirmed))
+                {
+                    flags.Add("early-person-not-supported");
+                }
+                foreach (var early in supportingEarly)
+                {
+                    foreach (var later in constraints.Where(c =>
+                        c.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                        c.DirectSourceId != early.DirectSourceId &&
+                        c.ConstrainedTimeWindow.EndTick > diagnostic.TargetWindow.EndTick))
+                    {
+                        foreach (var destination in later.AllowedRegionIds)
+                        {
+                            // No new declared edge is required to ask whether
+                            // a Person remained in the same region.
+                            if (destination == candidate.RegionId)
+                                continue;
+                            if (publishedPairs.Contains((candidate.RegionId, destination)))
+                            {
+                                // #104 has already found no compatible witness:
+                                // this published endpoint pair has no formal
+                                // time-window match, not proven impassability.
+                                flags.Add("published-pair-timing-incompatible");
+                            }
+                            else
+                            {
+                                flags.Add("endpoint-pair-unpublished");
+                            }
+                        }
+                    }
+                }
+                if (flags.Count == 0)
+                    flags.Add("insufficient-public-evidence");
+                reasons.Add(candidate.RegionId, flags.ToArray());
+            }
+            return reasons;
+        }
+
+        var unwitnessedU = UnwitnessedReasons(withoutDeclaration, diagnosticU);
+        var unwitnessedK = UnwitnessedReasons(withDeclaration, diagnosticK);
+
         static string[] Sorted(IEnumerable<string> values) =>
             values.Distinct(StringComparer.Ordinal)
                 .OrderBy(value => value, StringComparer.Ordinal).ToArray();
@@ -2844,7 +2939,8 @@ public static class RescuerEvidenceMethodComparison
             string label,
             RescuerEvidenceMethodRow method,
             RescuerEvidenceHistoricalUnitMethod projection,
-            RescuerDeclaredPathCompatibilityReport diagnostic)
+            RescuerDeclaredPathCompatibilityReport diagnostic,
+            IReadOnlyDictionary<string, string[]> unwitnessed)
         {
             var empty = Array.Empty<RescuerDeclaredWitnessUnit>();
             var noUnresolved = Array.Empty<RescuerDeclaredWitnessUnresolvedRegion>();
@@ -2912,7 +3008,8 @@ public static class RescuerEvidenceMethodComparison
                 // The positive evidence remains attached to its actual
                 // candidate, even for many-to-one and one-to-many mappings.
                 var entry = new RescuerDeclaredWitnessUnitRegion(
-                    region, diagnosticRegion.Status, diagnosticRegion.Witnesses);
+                    region, diagnosticRegion.Status, diagnosticRegion.Witnesses,
+                    unwitnessed[region]);
                 foreach (var unit in Sorted(mapping.UnitIds))
                 {
                     if (!grouped.TryGetValue(unit, out var members))
@@ -2965,9 +3062,9 @@ public static class RescuerEvidenceMethodComparison
             new RescuerDeclaredWitnessUnitMethod(
                 row.Method,
                 Group("U", row.WithoutDeclaration,
-                    row.UnitsWithoutDeclaration, diagnosticU),
+                    row.UnitsWithoutDeclaration, diagnosticU, unwitnessedU),
                 Group("K", row.WithDeclaration,
-                    row.UnitsWithDeclaration, diagnosticK))).ToArray();
+                    row.UnitsWithDeclaration, diagnosticK, unwitnessedK))).ToArray();
         var statuses = methods.SelectMany(method => new[]
             { method.WithoutDeclaration.Status, method.WithDeclaration.Status }).ToArray();
         var overallStatus = statuses.All(status => status == "available")

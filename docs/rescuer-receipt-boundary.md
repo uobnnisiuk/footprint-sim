@@ -1920,3 +1920,73 @@ ranking visits or extending the receipt API were not adopted because
 they introduce unsupported inference or scope expansion. Revisit the
 same scoped comparison if current-head CI or independent review
 disputes the provenance, completeness, or actual fixed results.
+
+## #118: AR-19 — why a candidate has no formal declared-path witness
+
+Work-Key: `FP-RECEIPT-GATED-UNWITNESSED-REASON-V1` /
+[Issue #118](https://github.com/uobnnisiuk/footprint-sim/issues/118).
+Scope: the #114 evaluation-only `RescuerDeclaredWitnessUnitRegion` view,
+not #104's shared diagnostic, #106 question generator, the four historical
+candidate methods, F20, or the #116 projection.
+
+The existing `CompatibilityStatus=unknown` means **no positive formal
+witness is established**. It does **not** assert that a route has not been
+published, that a Person could not travel, or that the candidate may be
+safely removed. `UnknownRegionIds`, `WitnessedRegionIds`, outer
+candidates, units and source-carrying direct witnesses are unchanged.
+The additional deterministic `UnwitnessedReasonCodes` belongs to each
+actual outer candidate in each public unit, and is empty for witnessed,
+conflicted and unavailable candidates.
+
+The reason codes use only the original IDs already received by the rescuer,
+publicly available confirmed Person constraints and branches published by
+the query cutoff, with the historical target window kept distinct:
+
+- `endpoint-pair-unpublished`: a confirmed early Person constraint admits
+  the candidate and a distinct confirmed later Person source admits a
+  different destination, but that endpoint pair has no published branch by
+  the cutoff. This does **not** assert physical absence.
+- `published-pair-timing-incompatible`: the same qualified endpoint pair
+  is published, yet #104 already found no compatible witness across its
+  observation/candidate time windows and declared integer travel bounds.
+  This is a **formal witness mismatch**, not proof of impassability.
+- `early-person-not-supported`: at least one confirmed received Person
+  constraint overlaps the historical target window, none admits this
+  candidate, and no uncertain/conflicting early constraint is being used
+  to force a negative conclusion. It is a lack of early *support*, not
+  hard exclusion.
+- `insufficient-public-evidence`: the known inputs do not justify
+  any of those more specific reasons. Multiple applicable reasons are
+  retained together in sorted order, rather than forced into one cause.
+
+### Frozen synthetic counterexamples (expectations, not CI evidence)
+
+All use the same public world/region-to-unit catalog, prior, query cutoff
+7, early receipt 6, later receipt 7 and U/K public-branch contrast (#112).
+Only the *observed* early regions or later observation tick change.
+The V0/N10/N11 expectations are set before this PR's CI:
+
+| Case | Changed Person observation | Public-prior and known-relation-backward, U1 | Model-internal interpretation |
+|---|---|---|---|
+| V0 | early {A,B,C}@2, later D@5 | A witnessed; C unknown + `endpoint-pair-unpublished` | C is admitted early; C→D has no published pair |
+| N10 | early {A,B}@2, later D@5 | A witnessed; C unknown + `early-person-not-supported` | C remains in these methods' safe outer, but early Person evidence does not support C |
+| N11 | early {A,B}@2, later D@6 | A unknown + `published-pair-timing-incompatible`; C unknown + `early-person-not-supported` | A→D is published, but 3 ticks do not match 2→6; C lacks early support |
+
+Under N10 the two distributed variants exclude C from **their existing**
+outer, so this evaluation-only view does not invent a C row for them.
+The code does not change those original methods' exclusions or the public
+unit projection. All examples remain synthetic and use declared public
+relations; they do not discover an unknown physical relation.
+
+**Verification boundary:** The new tests assert reason-code differences,
+original outer/known-unit stability between U and K, output determinism,
+and Device-only/uncertain safeguards. At authoring time, full .NET build,
+tests, format, samples and research evaluation have not been executed
+locally (pinned SDK not installed); GitHub PR CI is required before any
+claim of an executed result or independent pass. No real confirmation
+visits, false exclusions in the physical world, time, money or rescue
+success are measured. This slice addresses AR-19's output ambiguity,
+not the distinct AR-20 concern about #116's evidentially insensitive
+projection fixture. Revisit if an independent review shows a false
+non-support diagnosis, incorrect source cutoff, changed outer or unit,
+or a synthetic contrast that fails on the actual PR head.
