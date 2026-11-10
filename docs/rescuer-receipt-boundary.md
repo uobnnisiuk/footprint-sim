@@ -1869,12 +1869,23 @@ A/B share E, and F has partial multiple mapping. A synthetic action
 covers only U2. U1/U2/U3 here are **current-tick-7** units, not
 #114's identically named historical-tick-2 units.
 
-| Receipt condition at query cutoff 7 | Historical expected outer | Declared known current regions | Distinct known current units | Unresolved |
-|---|---|---|---|---|
-| No received originals | A,B,C | D,E,F | U1,U2,U3 | C: partial transition + mapping |
-| First only | A,B,C | D,E,F | U1,U2,U3 | C: same |
-| Second only | A,B,C | D,E,F | U1,U2,U3 | C: same |
-| Both | A,B,C | D,E,F | U1,U2,U3 | C: same |
+| Receipt at cutoff 7 | Historical outer | Candidate disposition | M1-E used source groups | Known regions | Known units | Unresolved |
+|---|---|---|---:|---|---|---|
+| No originals | A,B,C | Unavailable | 0 | D,E,F | U1,U2,U3 | C: partial |
+| First only | A,B,C | Supported | 1 (weft-a) | D,E,F | U1,U2,U3 | C: partial |
+| Second only | A,B,C | Unavailable | 0 | D,E,F | U1,U2,U3 | C: partial |
+| Both | A,B,C | Supported | 1 (weft-a) | D,E,F | U1,U2,U3 | C: partial |
+
+The old #116 CI directly asserted outer/regions/units/unresolved but **not**
+these dispositions or source-group counts. The latter values came from the
+[AR-20 adversarial probe](https://github.com/uobnnisiuk/footprint-sim/issues/116#issuecomment-6758602882)
+and are now proposed direct regression assertions, **pending #120 current-head CI**.
+The first Person observation equals the prior {A,B,C}@tick2, so it adds
+no narrowing information. The later D@tick5 is traversal-side; it does not
+enter the M1-E target-tick2 candidate ancestry. Candidate JSON is predicted
+to be identical for zero vs second-only, and first-only vs both.
+This fixture's zero known-unit reduction is *structural insensitivity*,
+not evidence that the original weft idea has no benefit.
 
 **Assertion-verified synthetic results, separated from the original
 pre-test expectation:** The four new `BuildDistinctOriginals`-origin
@@ -1913,8 +1924,9 @@ visits, money, real Person transit, or lives saved.
 **Interpretation:** The original missing-person-timeline / other-trace
 hypothesis is partially connected to known publicly *declared* current
 units. Unknown-relationship discovery and the 24-edge search lens are
-not implemented or rejected here. We retain zero improvement,
-equivalence, or worsening. Alternatives of inventing a closed-world
+not implemented or rejected here. The original insensitive example cannot test whether an informative
+received trace reduces current public units. Improvement, equivalence, and
+worsening all remain possible. Alternatives of inventing a closed-world
 transition, inferring completeness from a public hazard envelope,
 ranking visits or extending the receipt API were not adopted because
 they introduce unsupported inference or scope expansion. Revisit the
@@ -1990,3 +2002,57 @@ not the distinct AR-20 concern about #116's evidentially insensitive
 projection fixture. Revisit if an independent review shows a false
 non-support diagnosis, incorrect source cutoff, changed outer or unit,
 or a synthetic contrast that fails on the actual PR head.
+
+
+## #120 AR-20: a discriminating receipt-to-current projection contrast
+
+Work-Key: FP-RECEIPT-PROJECTION-DISCRIMINATING-EVIDENCE-V1;
+[Issue #120](https://github.com/uobnnisiuk/footprint-sim/issues/120).
+This qualifies rather than deletes the original
+[#116 CORE-RESULT](https://github.com/uobnnisiuk/footprint-sim/issues/116#issuecomment-6757680640):
+the common receipt bridge exists, but both originals do not necessarily
+contribute to the historical M1-E candidate's ancestry, and the original
+unchanged units do not establish zero general search utility.
+
+**Frozen synthetic comparison, pre-CI expectation.** Keep world, seed,
+public prior {A,B,C}@tick2, declared public F20 transitions and mappings,
+source identity/ancestry, later D@tick5 original, receipt ticks 6/7,
+historical target tick2, query cutoff and current tick7, and U2 action
+fixed. Change only first Person observation {A,B,C}@tick2 to
+{A,B}@tick2. At the same cutoff7 compare no receipt, first-only, both.
+These change **available evidence**, not the method. Separate
+same-information method comparisons remain in #84 and later research.
+
+| Condition | Expected historical outer | Expected current regions | Expected units | Expected unresolved |
+|---|---|---|---|---|
+| None | A,B,C | D,E,F | U1,U2,U3 | 1 (partial C) |
+| First only | A,B | D,E | U1,U2 | 0 |
+| Both | A,B | D,E | U1,U2 | 0 |
+
+The above are **pre-test predictions** (based on adversarial exploration),
+not independent xUnit or CI-verified results as of drafting. New direct
+assertions inspect real receipt-built M1-E candidates projected by
+unchanged F20: disposition, source ancestry (first weft-a, not later
+weft-b as target-window generation), actual JSON changes, known units,
+unresolved cases and duplicate/reordered delivery stability. A regression
+that substitutes zero-receipt past candidates for received candidates
+must fail this discriminating test. The original 4-case example now
+also pins candidate JSON equality and method-specific source usage;
+later evidence still has a separate known-relation traversal role.
+
+**Research interpretation and limits.** Neither table measures rescue
+visits, time, cost or survival. Synthetic declarations do not follow
+from or validate the public hazard envelope. This is an information
+sensitivity check, not proof of automatic discovery of unknown
+relationships, complete causal paths, Person traversability or the
+24-edge search lens's superiority. The other observation can matter
+to traversal without entering tick2 M1-E generation. Excluding later
+evidence from that specific stage does not scientifically reject it.
+
+**Adopt/hold/revisit.** Adopt the two-file discriminating test and
+correction. Hold (do not reject) broad changes to target-window
+generation, post-hoc revisions of public prior or movement rules, and
+a new broad method comparison. Preserve zero or negative results if
+observed. If current-head CI contradicts the predicted values, retain
+the failing evidence and return to independent scope review rather
+than weakening assertions or changing the scenario to force a gain.
