@@ -188,6 +188,59 @@ public sealed class RescuerEvidenceBoundaryTests
     }
 
     [Fact]
+    public void TargetTickSharedSourceAlternativesUseTransitiveAncestryGroups()
+    {
+        RescuerEvidenceInput Build(string finalRegion, bool reversed = false)
+        {
+            var originals = new[]
+            {
+                ComplementaryOriginal(RecordId, HolderId, 2, ["A", "B"], 3, "weft-a"),
+                ComplementaryOriginal("second-original", "holder-b", 7, ["F"], 7,
+                    "chain-a"),
+                ComplementaryOriginal("third-original", "holder-b", 7, ["F"], 7,
+                    "chain-a", extraAncestry: "chain-b"),
+                ComplementaryOriginal("fourth-original", "holder-b", 7, [finalRegion], 7,
+                    "chain-b")
+            };
+            var receipts = new[]
+            {
+                Receipt(6),
+                LaterComparisonReceipt(7),
+                new InteractionRecordReceipt(ScenarioId, Seed, "third-original",
+                    "holder-b", RescuerId, 7),
+                new InteractionRecordReceipt(ScenarioId, Seed, "fourth-original",
+                    "holder-b", RescuerId, 7)
+            };
+            return new RescuerEvidenceInputBuilder().BuildDistinctOriginals(
+                ComplementaryPublicContext(), Seed, 7, RescuerId,
+                reversed ? originals.Reverse().ToArray() : originals,
+                reversed ? receipts.Reverse().ToArray() : receipts);
+        }
+
+        // The F and D alternatives share ancestry only through the
+        // intermediate {chain-a, chain-b} observation. Pairwise suppression
+        // incorrectly reported a hard F-vs-{D,E} conflict.
+        var matching = CompareCurrentMethods(Build("D"));
+        var m1e = matching.Methods.Single(m =>
+            m.HistoricalMethod.Method == "distributed-reconstruction");
+        Assert.Equal("available", m1e.ProjectionStatus);
+        Assert.Empty(m1e.TargetTickConflicts);
+        Assert.Equal(["D", "E"], m1e.KnownCurrentRegionIds);
+        Assert.Equal(["U1", "U2"], m1e.KnownUnitIds);
+        Assert.Equal(JsonDefaults.Serialize(matching),
+            JsonDefaults.Serialize(CompareCurrentMethods(Build("D", reversed: true))));
+
+        // With no compatible alternative, the connected source group gives
+        // one contradiction, not three independent confirmations.
+        var mismatching = CompareCurrentMethods(Build("F"));
+        var conflictRow = mismatching.Methods.Single(m =>
+            m.HistoricalMethod.Method == "distributed-reconstruction");
+        Assert.Equal("conflict", conflictRow.ProjectionStatus);
+        Assert.Single(conflictRow.TargetTickConflicts);
+        Assert.Equal(["D", "E"], conflictRow.KnownCurrentRegionIds);
+    }
+
+    [Fact]
     public void TargetTickPersonConflictIsSourcedAndDoesNotRewriteMethodOutersOrF20()
     {
         var received = TargetTickOriginalInput(7, ["F"]);
@@ -2645,7 +2698,8 @@ public sealed class RescuerEvidenceBoundaryTests
     private static DeviceHeldInteractionRecord ComplementaryOriginal(
         string originalId, string holder, long atTick, IReadOnlyList<string> regions,
         long available, string upstream, EvidenceState state = EvidenceState.Confirmed,
-        bool deviceOnly = false, bool unrelatedTarget = false) =>
+        bool deviceOnly = false, bool unrelatedTarget = false,
+        string? extraAncestry = null) =>
         new(holder, available, InteractionObservation.Create(
             ScenarioId, Seed, originalId, null,
             InteractionRelationKind.PersonPersonEncounter,
@@ -2660,7 +2714,11 @@ public sealed class RescuerEvidenceBoundaryTests
             InteractionTimeWindow.At(atTick), regions, available, state,
             isPersonEvidence: !deviceOnly, isDeviceOnlyEvidence: deviceOnly,
             InteractionVisibility.PrivateEvidence,
-            [new InteractionProvenance(InteractionProvenanceKind.EvidenceRecord, upstream)]));
+            (extraAncestry is null
+                ? new[] { upstream }
+                : new[] { upstream, extraAncestry })
+                .Select(source => new InteractionProvenance(
+                    InteractionProvenanceKind.EvidenceRecord, source)).ToArray()));
 
     private static RescuerEvidenceMethodReport ComplementaryRun(
         EvidenceState firstState = EvidenceState.Confirmed,

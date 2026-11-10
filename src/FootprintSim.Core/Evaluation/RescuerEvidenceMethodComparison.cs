@@ -1816,6 +1816,26 @@ public static class RescuerEvidenceMethodComparison
             .OrderBy(c => c.ConstraintId, StringComparer.Ordinal)
             .ToArray();
 
+        // Group all target-tick alternatives by the transitive closure of
+        // shared source ancestry, not just direct pairwise intersections.
+        // A matching or unsupported alternative anywhere in one component
+        // prevents a hard contradiction from that same source component.
+        var observationSourceGroups = new List<List<int>>();
+        for (var index = 0; index < targetObservations.Length; index++)
+        {
+            var merged = new List<int> { index };
+            var overlapping = observationSourceGroups.Where(group =>
+                group.Any(member => targetObservations[member].SourceAncestryIds
+                    .Intersect(targetObservations[index].SourceAncestryIds,
+                        StringComparer.Ordinal).Any())).ToArray();
+            foreach (var group in overlapping)
+            {
+                merged.AddRange(group);
+                observationSourceGroups.Remove(group);
+            }
+            observationSourceGroups.Add(merged.OrderBy(i => i).ToList());
+        }
+
         var rows = comparison.Methods.Select(method =>
         {
             var historicalRegions = method.OuterCandidateRegionIds.Select(region =>
@@ -1879,21 +1899,17 @@ public static class RescuerEvidenceMethodComparison
             // of a shared original into a definite, independent contradiction.
             var knownSet = knownRegions.ToHashSet(StringComparer.Ordinal);
             var contradictions = status == "available"
-                ? targetObservations.Where(c =>
-                    c.EvidenceBoundaryState == EvidenceState.Confirmed &&
-                    c.SourceAncestryIds.Count > 0 &&
-                    !string.IsNullOrWhiteSpace(c.DirectSourceId) &&
-                    !string.IsNullOrWhiteSpace(c.SourceObservationId) &&
-                    c.AllowedRegionIds.All(id => !knownSet.Contains(id)) &&
-                    !targetObservations.Any(other =>
-                        other.ConstraintId != c.ConstraintId &&
-                        other.SourceAncestryIds.Intersect(
-                            c.SourceAncestryIds, StringComparer.Ordinal).Any() &&
-                        (other.EvidenceBoundaryState != EvidenceState.Confirmed ||
-                            other.AllowedRegionIds.Any(knownSet.Contains))))
-                    .GroupBy(c => string.Join("\u001f",
-                        OrderedIds(c.SourceAncestryIds)), StringComparer.Ordinal)
-                    .Select(group => group.First())
+                ? observationSourceGroups
+                    .Where(group => group.All(index =>
+                    {
+                        var c = targetObservations[index];
+                        return c.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                            c.SourceAncestryIds.Count > 0 &&
+                            !string.IsNullOrWhiteSpace(c.DirectSourceId) &&
+                            !string.IsNullOrWhiteSpace(c.SourceObservationId) &&
+                            c.AllowedRegionIds.All(id => !knownSet.Contains(id));
+                    }))
+                    .Select(group => targetObservations[group.Min()])
                     .Select(c => new RescuerCurrentUnitTargetObservationConflict(
                         "confirmed-target-observation-outside-complete-declaration",
                         c.ConstraintId, c.DirectSourceId, c.SourceObservationId,
