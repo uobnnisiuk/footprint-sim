@@ -2130,3 +2130,66 @@ and untested. Revisit if same-world/cutoff validation, fixed synthetic tests,
 CI or independent review detect lost unanswered questions, changed safe outer
 or a false positive Person witness. Results of equivalence or regression must
 be reported without changing the frozen cases to manufacture improvement.
+
+## #124 — four-method, same-receipt declared CURRENT-unit comparison (design and validation)
+
+Work-Key: `FP-SAME-EVIDENCE-CURRENT-UNIT-METHOD-COMPARISON-V1` /
+[scope #124](https://github.com/uobnnisiuk/footprint-sim/issues/124).
+This tests whether the missing Person history constrained by *received other-person
+wefts* changes what the **same published present-tick catalog** can say.
+It reuses #84's real four historical-method rows, #116's genuine M1-E
+reconstruction and F20, and #120's distinguishable receipt fixture.
+Neither an unknown physical relation nor a 24-edge engine is inferred.
+
+**Precommitted comparison**: synthetic scenario and seed from the existing
+`PastToCurrentInput` fixture; historical `At(2)`, receipt ticks 6 and 7,
+query cutoff 7, current tick 7, early Person observation `{A,B}`,
+later independent original at `D@5`, public prior `{A,B,C}`.
+Published declaration `A→{D,E}`, `B→E`, partial `C→F`;
+present unit catalog `D→U1`, `E→U2`, partial `F→{U1,U3}`.
+The declarations and query time are held identical for all four method rows.
+Compare four **methods** within each input; separately compare receipt-quantity
+ablations 0, 1 and 2 at the same cutoff. No adaptive case selection after results.
+
+**Hypotheses before running the new CI**: the public prior retains A/B/C and
+known units U1/U2/U3 with partial unknown C. The actual M1-E reconstruction
+with the informative early received source retains A/B, and its declared
+known units are U1/U2; with zero receipts its outer retains A/B/C.
+Other methods may tie, be worse, or be unavailable without disqualification.
+The test records their actual method counters and source usage, and deliberately
+does not assume a strict winner. Exact results are **pending new PR CI**;
+the above values are predictions from existing #120 examples, not new measurements.
+
+**Projection definition and safety**: For each real method's
+`OuterCandidateRegionIds`, calculate a *declaration-only known outer*: the
+union of publicly mapped current regions, then publicly mapped unit IDs.
+A missing/incomplete region or unit declaration produces explicit unresolved
+reasons and a partial/unavailable status, **never a safe empty outer**.
+This is not an authentic F20 candidate projection: method-specific candidate
+IDs, disposition and ancestry cannot be supplied by the other three methods.
+The declaration catalog is validated using F20 with **zero candidates**;
+the genuine M1-E candidates, produced once from the same receipt-gated
+comparison, independently pass F20 and must match the declaration-only
+current regions, units, unresolved reasons and public source IDs.
+This is a consistency check, not a synthetic extra inference run.
+
+Per historical method the output carries original historical candidate IDs,
+count, verification/traversal/source-group/step metrics, each declared
+historical→current→unit row, public transition/mapping source IDs and unknown
+reasons. Shared current units are deduplicated (many-to-one); multiple published
+units remain (one-to-many). The actual time each original became available
+is recorded separately. Synthetic truth is checked only after the method
+returns, for model-internal false exclusion, never fed to inference.
+Receipt duplicate/reordering, earlier cutoff, Device-only, shared ancestry,
+missing/partial/future publication and genuine F20 equivalence are regression
+tests. No modeled unit-count change represents measured rescue minutes, cost,
+real travel, successful rescue, or a generally superior algorithm.
+
+**Alternatives and limits**: juxtaposing #84 historical and #100 historical-unit
+tables with #116 M1-E-only present units would confound times and methods
+(rejected). Creating fake F20 candidate provenance for the other methods is
+also rejected. Unknown causal links/relations and 24-edge discovery remain
+unimplemented, neither disproved nor declared unnecessary. If F20 and
+declaration-only outputs disagree or receipt/cutoff/public validity cannot
+be preserved, this comparison must be held and the same issue revised and
+reviewed; tests are not weakened to produce a positive result.

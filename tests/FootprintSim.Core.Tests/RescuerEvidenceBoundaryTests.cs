@@ -145,6 +145,188 @@ public sealed class RescuerEvidenceBoundaryTests
             mappings ?? CurrentDeclaredUnits(),
             [new PublicActionFootprint("inspect-U2", 7, ["U2"], "published-action", 0)]);
 
+    // #124: four real methods and one published current catalog. Neither
+    // direct Person history nor synthetic truth is available to inference.
+    private static RescuerCurrentUnitMethodComparison CompareCurrentMethods(
+        RescuerEvidenceInput received,
+        IReadOnlyList<PublicRegionProjection>? transitions = null,
+        IReadOnlyList<PublicSearchUnitMapping>? mappings = null) =>
+        RescuerEvidenceMethodComparison.CompareReceivedCurrentUnits(
+            received, InteractionTimeWindow.At(2), 7,
+            ["A", "B", "C", "D", "E", "F"], ["U1", "U2", "U3"],
+            transitions ?? CurrentDeclaredTransitions(),
+            mappings ?? CurrentDeclaredUnits(),
+            [new PublicActionFootprint("inspect-U2", 7, ["U2"], "published-action", 0)]);
+
+    [Fact]
+    public void FourReceivedMethodsShareActualEvidenceAndOneCurrentPublicCatalog()
+    {
+        var received = PastToCurrentInput(7, true, true, firstRegions: ["A", "B"]);
+        var original = JsonDefaults.Serialize(received);
+        var compared = CompareCurrentMethods(received);
+        var historical = RescuerEvidenceMethodComparison.Compare(
+            received, InteractionTimeWindow.At(2));
+        Assert.Equal(7, compared.QueryTick);
+        Assert.Equal(7, compared.TargetTick);
+        Assert.Equal(2, compared.HistoricalWindow.EndTick);
+        Assert.Equal([RecordId, "second-original"],
+            compared.ReceivedOriginals.Select(row => row.OriginalRecordId));
+        Assert.Equal([6L, 7L],
+            compared.ReceivedOriginals.Select(row => row.FirstReceivedAtTick));
+        Assert.Equal(4, compared.Methods.Count);
+        Assert.Equal(historical.Methods.Select(row => row.Method),
+            compared.Methods.Select(row => row.HistoricalMethod.Method));
+        foreach (var method in compared.Methods)
+        {
+            var source = historical.Methods.Single(row =>
+                row.Method == method.HistoricalMethod.Method);
+            Assert.Equal(JsonDefaults.Serialize(source),
+                JsonDefaults.Serialize(method.HistoricalMethod));
+            Assert.Equal(source.OuterCandidateRegionIds,
+                method.HistoricalRegions.Select(row => row.HistoricalRegionId));
+            Assert.True(source.Steps >= 0);
+            if (method.ProjectionStatus != "unavailable")
+            {
+                Assert.NotNull(method.KnownUnitIds);
+                Assert.Equal(method.KnownUnitIds!.Distinct(StringComparer.Ordinal).Count(),
+                    method.KnownUnitIds.Count);
+            }
+        }
+
+        var prior = compared.Methods.Single(row =>
+            row.HistoricalMethod.Method == "public-prior");
+        Assert.Equal(["A", "B", "C"], prior.HistoricalMethod.OuterCandidateRegionIds);
+        Assert.Equal(["D", "E", "F"], prior.KnownCurrentRegionIds);
+        Assert.Equal(["U1", "U2", "U3"], prior.KnownUnitIds);
+        Assert.Equal("partial", prior.ProjectionStatus);
+        Assert.Equal(["C"], prior.UnresolvedHistoricalRegionIds);
+        var m1e = compared.Methods.Single(row =>
+            row.HistoricalMethod.Method == "distributed-reconstruction");
+        Assert.Equal(["A", "B"], m1e.HistoricalMethod.OuterCandidateRegionIds);
+        Assert.Equal(["D", "E"], m1e.KnownCurrentRegionIds);
+        Assert.Equal(["U1", "U2"], m1e.KnownUnitIds);
+        Assert.Empty(m1e.UnresolvedHistoricalRegionIds!);
+        Assert.Equal("available", m1e.ProjectionStatus);
+        Assert.Equal(m1e.KnownUnitIds, compared.ActualReconstructionF20Projection.KnownUnitIds);
+        Assert.Equal(m1e.KnownCurrentRegionIds,
+            compared.ActualReconstructionF20Projection.KnownCurrentRegionIds);
+        Assert.Empty(compared.ActualReconstructionF20Projection.UnresolvedCandidateIds);
+        // Synthetic truth A is consulted AFTER the method rows are materialized.
+        Assert.All(compared.Methods, row =>
+        {
+            var falseExclusion = !row.HistoricalMethod.OuterCandidateRegionIds.Contains(
+                "A", StringComparer.Ordinal);
+            Assert.Equal(falseExclusion,
+                !row.HistoricalRegions.Any(item => item.HistoricalRegionId == "A"));
+        });
+        Assert.Equal(original, JsonDefaults.Serialize(received));
+    }
+
+    [Fact]
+    public void CurrentMethodComparisonSeparatesReceivedEvidenceQuantityFromMethodChoice()
+    {
+        var none = CompareCurrentMethods(PastToCurrentInput(
+            7, false, false, firstRegions: ["A", "B"]));
+        var first = CompareCurrentMethods(PastToCurrentInput(
+            7, true, false, firstRegions: ["A", "B"]));
+        var both = CompareCurrentMethods(PastToCurrentInput(
+            7, true, true, firstRegions: ["A", "B"]));
+        Assert.Equal([0, 1, 2],
+            new[] { none.ReceivedOriginals.Count, first.ReceivedOriginals.Count,
+                both.ReceivedOriginals.Count });
+        var noM1e = none.Methods.Single(row =>
+            row.HistoricalMethod.Method == "distributed-reconstruction");
+        var yesM1e = both.Methods.Single(row =>
+            row.HistoricalMethod.Method == "distributed-reconstruction");
+        Assert.Equal(["A", "B", "C"], noM1e.HistoricalMethod.OuterCandidateRegionIds);
+        Assert.Equal(["U1", "U2", "U3"], noM1e.KnownUnitIds);
+        Assert.Equal(["A", "B"], yesM1e.HistoricalMethod.OuterCandidateRegionIds);
+        Assert.Equal(["U1", "U2"], yesM1e.KnownUnitIds);
+        Assert.Equal([RecordId], first.ReceivedOriginals.Select(r => r.OriginalRecordId));
+        Assert.Equal(["A", "B"], first.Methods.Single(row =>
+            row.HistoricalMethod.Method == "distributed-reconstruction")
+                .HistoricalMethod.OuterCandidateRegionIds);
+        Assert.Equal(["A", "B", "C"], both.Methods.Single(row =>
+            row.HistoricalMethod.Method == "public-prior")
+                .HistoricalMethod.OuterCandidateRegionIds);
+
+        var duplicateAndReordered = CompareCurrentMethods(PastToCurrentInput(
+            7, true, true, reversed: true, duplicate: true, firstRegions: ["A", "B"]));
+        Assert.Equal(JsonDefaults.Serialize(both), JsonDefaults.Serialize(duplicateAndReordered));
+        var early = CompareCurrentMethods(PastToCurrentInput(
+            6, true, true, firstRegions: ["A", "B"]));
+        Assert.Equal(6, early.QueryTick);
+        Assert.Single(early.ReceivedOriginals);
+        Assert.DoesNotContain("second-original", JsonDefaults.Serialize(early));
+        var deviceOnly = CompareCurrentMethods(PastToCurrentInput(
+            7, true, true, deviceOnly: true, firstRegions: ["A", "B"]));
+        Assert.Equal(0, deviceOnly.Methods.Single(row =>
+            row.HistoricalMethod.Method == "distributed-reconstruction")
+                .HistoricalMethod.UsedSourceGroupCount);
+        var shared = CompareCurrentMethods(PastToCurrentInput(
+            7, true, true, laterAncestry: "weft-a", firstRegions: ["A", "B"]));
+        Assert.Equal(1, shared.Methods.Single(row =>
+            row.HistoricalMethod.Method == "distributed-reconstruction-local")
+                .HistoricalMethod.AvailableSourceGroupCount);
+    }
+
+    [Fact]
+    public void CurrentMethodPublicDeclarationsKeepUnknownAndUnitCardinality()
+    {
+        var received = PastToCurrentInput(7, true, true);
+        var normal = CompareCurrentMethods(received);
+        var prior = normal.Methods.Single(row =>
+            row.HistoricalMethod.Method == "public-prior");
+        var c = prior.HistoricalRegions.Single(row => row.HistoricalRegionId == "C");
+        Assert.Equal(["F"], c.KnownCurrentRegionIds);
+        Assert.Equal(["U1", "U3"], c.KnownUnitIds);
+        Assert.Equal(["transition-incomplete", "unit-mapping-incomplete"],
+            c.UnresolvedReasons);
+        Assert.Equal(["published-C-partial"], c.TransitionSourceIds);
+        Assert.Equal(["published-F-partial"], c.UnitMappingSourceIds);
+        var missing = CompareCurrentMethods(received, transitions:
+            CurrentDeclaredTransitions().Where(row => row.HistoricalRegionId != "C").ToArray());
+        var unknown = missing.Methods.Single(row =>
+            row.HistoricalMethod.Method == "public-prior").HistoricalRegions.Single(row =>
+                row.HistoricalRegionId == "C");
+        Assert.Empty(unknown.KnownCurrentRegionIds);
+        Assert.Equal("partial", missing.Methods.Single(row =>
+            row.HistoricalMethod.Method == "public-prior").ProjectionStatus);
+        Assert.Contains("transition-unmapped", unknown.UnresolvedReasons);
+
+        var sameUnit = CompareCurrentMethods(received, mappings:
+            CurrentDeclaredUnits().Select(row => row.RegionId == "D"
+                ? row with { UnitIds = ["U2"] } : row).ToArray());
+        var a = sameUnit.Methods.Single(row =>
+            row.HistoricalMethod.Method == "distributed-reconstruction")
+                .HistoricalRegions.Single(row => row.HistoricalRegionId == "A");
+        Assert.Equal(["U2"], a.KnownUnitIds);
+        var multiple = CompareCurrentMethods(received, mappings:
+            CurrentDeclaredUnits().Select(row => row.RegionId == "D"
+                ? row with { UnitIds = ["U1", "U3"] } : row).ToArray());
+        Assert.Equal(["U1", "U2", "U3"],
+            multiple.Methods.Single(row =>
+                row.HistoricalMethod.Method == "distributed-reconstruction").KnownUnitIds);
+        var allUnmapped = CompareCurrentMethods(received, transitions: []);
+        Assert.All(allUnmapped.Methods, row =>
+        {
+            Assert.Equal("unavailable", row.ProjectionStatus);
+            Assert.Null(row.KnownUnitIds);
+            Assert.Null(row.KnownCurrentRegionIds);
+            Assert.All(row.HistoricalRegions, historic =>
+                Assert.Contains("transition-unmapped", historic.UnresolvedReasons));
+        });
+        Assert.Throws<InvalidDataException>(() => CompareCurrentMethods(received,
+            CurrentDeclaredTransitions().Select(row => row with
+            { AvailableTick = 8 }).ToArray()));
+        Assert.Throws<InvalidDataException>(() => CompareCurrentMethods(received,
+            mappings: CurrentDeclaredUnits().Select(row => row with
+            { AvailableTick = 8 }).ToArray()));
+        Assert.Throws<InvalidDataException>(() => CompareCurrentMethods(received,
+            CurrentDeclaredTransitions().Select(row => row.HistoricalRegionId == "A"
+                ? row with { IsComplete = true, CurrentRegionIds = [] } : row).ToArray()));
+    }
+
     [Fact]
     public void ReceiptGatedPastReconstructionReachesDeclaredCurrentUnitsWithoutFalseCertainty()
     {
