@@ -1834,3 +1834,89 @@ candidate removal. No unknown relation was discovered; true Person motion,
 real search time/cost, rescue benefit, and generalization remain unmeasured.
 The next independent review must evaluate the revised head's CI and any new
 adversarial findings, not reuse the previous head's approval or checks.
+
+
+## #116: receipt-gated reconstruction to query-time public confirmation units
+
+Work-Key: `FP-RECEIPT-GATED-PAST-TO-CURRENT-UNITS-V1` /
+[Issue #116](https://github.com/uobnnisiuk/footprint-sim/issues/116).
+Unlike #100/#114's historical-tick-2 unit classification, this is a
+**target-tick-7 public projection** of the actual #84 `distributed-reconstruction`
+M1-E candidates. The method row and the candidate objects come from the
+**same** receipt-filtered reconstruction call; candidate ID, historical
+window, target Person, disposition and source ancestry travel through the
+unchanged #56 F20 adapter/projector. A mismatch between the M1-E method's
+safe outer and the actual candidate region set causes a hard error rather
+than manufactured candidates. Neither F20 nor M1-E inference changes.
+
+The fixed synthetic fixture has two distinct original Person encounter
+records observed at ticks **2** and **5**, received at ticks **6** and
+**7**. Historical target = tick **2**, query/receipt cutoff = tick **7**,
+declared target = tick **7**. The **0, first-only, second-only and both**
+conditions with the same query cutoff/world/public model are ablations;
+a separate actual query at cutoff **6** lacks the second receipt and
+must not be confused with a first-only same-cutoff-7 ablation. Repeated
+delivery/reversed order does not amplify independent source ancestry.
+No private/future/Device-only observation is promoted to Person proof.
+
+Public declarations are explicitly stipulated synthetic contracts,
+all **published tick 0**, **not inferred from the hazard envelope**.
+Full historical window tick 2 projects A→{D,E} (declared complete),
+B→{E} (complete), C→{F} (**incomplete**) at target tick 7.
+Current-tick-7 public-unit mappings: D→{U1} complete, E→{U2}
+complete, F→{U1,U3} **incomplete**. A has one-to-many projection,
+A/B share E, and F has partial multiple mapping. A synthetic action
+covers only U2. U1/U2/U3 here are **current-tick-7** units, not
+#114's identically named historical-tick-2 units.
+
+| Receipt condition at query cutoff 7 | Historical expected outer | Declared known current regions | Distinct known current units | Unresolved |
+|---|---|---|---|---|
+| No received originals | A,B,C | D,E,F | U1,U2,U3 | C: partial transition + mapping |
+| First only | A,B,C | D,E,F | U1,U2,U3 | C: same |
+| Second only | A,B,C | D,E,F | U1,U2,U3 | C: same |
+| Both | A,B,C | D,E,F | U1,U2,U3 | C: same |
+
+**Assertion-verified synthetic results, separated from the original
+pre-test expectation:** The four new `BuildDistinctOriginals`-origin
+direct tests executed against the actual M1-E reconstruction in
+[normal CI run #42737243251](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42737243251)
+at head `e92dde5b2cde0e841cedcb1eb71b2909c79039b1`.
+The run completed **Build** successfully, and its **Test** step
+passed all **675** tests (0 failed, 0 skipped). The four fixed
+0/1/2-original ablations returned safe historical outer {A,B,C},
+current known regions {D,E,F}, and distinct current units {U1,U2,U3};
+C retained two unresolved reasons (partial transition and mapping).
+The separate actual early cutoff 6 included only the first received
+original; repeated/reversed receipt ordering retained the deterministic
+report. The model returned the source candidates unchanged through
+the F20 projector, and declared U2 action support overlapped A/B but
+fully contained only B's **declared** known support.
+These are model-internal test assertions, not an independently measured
+CPU benchmark, rescue outcome or real location reduction. The same CI
+run's **Format** step failed on one indentation-only whitespace issue
+in a test, subsequently corrected on the same PR. The **final revised
+head** still requires its own full normal/F19 CI and independent review;
+passing the earlier test step is not a completed full-CI acceptance.
+
+The fixed candidate-level assertions also expect A→{D,E}/{U1,U2},
+B→{E}/{U2}, and C→{F}/{U1,U3} with explicit
+`transition-incomplete` and `unit-mapping-incomplete`. An action on
+U2 intersects A and B, but covers B's **declared whole support** only:
+A has a second U1 unit, and C has unresolved possibilities.
+Missing projection/mapping stays unresolved; sources published tick 8
+at a query cutoff 7 are invalid, not silently treated as negative
+evidence. Candidate-ID count and distinct-unit count are separate.
+Model-internal `ReconstructionSteps`, existing method counters and
+declared action intersections are not measured rescue time, physical
+visits, money, real Person transit, or lives saved.
+
+**Interpretation:** The original missing-person-timeline / other-trace
+hypothesis is partially connected to known publicly *declared* current
+units. Unknown-relationship discovery and the 24-edge search lens are
+not implemented or rejected here. We retain zero improvement,
+equivalence, or worsening. Alternatives of inventing a closed-world
+transition, inferring completeness from a public hazard envelope,
+ranking visits or extending the receipt API were not adopted because
+they introduce unsupported inference or scope expansion. Revisit the
+same scoped comparison if current-head CI or independent review
+disputes the provenance, completeness, or actual fixed results.

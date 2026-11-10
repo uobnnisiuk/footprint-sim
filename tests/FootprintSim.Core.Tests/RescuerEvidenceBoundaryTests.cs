@@ -90,6 +90,210 @@ public sealed class RescuerEvidenceBoundaryTests
             u, k, InteractionTimeWindow.At(2), ["A", "B", "C"],
             unitIds ?? ["U1", "U2"], mappings ?? RelationUtilityMappings());
 
+
+    // #116: Actual BuildDistinctOriginals receipts are the only input source;
+    // no manually fabricated F20 PastStateCandidate objects.
+    private static RescuerEvidenceInput PastToCurrentInput(
+        long cutoff, bool firstReceived, bool secondReceived,
+        bool reversed = false, bool duplicate = false,
+        string laterAncestry = "weft-b", bool deviceOnly = false,
+        EvidenceState firstState = EvidenceState.Confirmed)
+    {
+        var first = ComplementaryOriginal(RecordId, HolderId, 2,
+            ["A", "B", "C"], 3, "weft-a", firstState, deviceOnly);
+        var second = ComplementaryOriginal("second-original", "holder-b", 5,
+            ["D"], 6, laterAncestry);
+        var originals = reversed ? new[] { second, first } : new[] { first, second };
+        var ledger = new List<InteractionRecordReceipt>();
+        if (firstReceived)
+            ledger.Add(Receipt(6));
+        if (secondReceived)
+            ledger.Add(LaterComparisonReceipt(7));
+        if (duplicate && firstReceived)
+            ledger.Add(Receipt(6));
+        if (reversed)
+            ledger.Reverse();
+        return new RescuerEvidenceInputBuilder().BuildDistinctOriginals(
+            ComplementaryPublicContext(), Seed, cutoff, RescuerId,
+            originals, ledger);
+    }
+
+    private static PublicRegionProjection[] CurrentDeclaredTransitions() =>
+    [
+        new("A", 2, 2, 7, ["D", "E"], true, "published-A-current", 0),
+        new("B", 2, 2, 7, ["E"], true, "published-B-current", 0),
+        new("C", 2, 2, 7, ["F"], false, "published-C-partial", 0)
+    ];
+
+    private static PublicSearchUnitMapping[] CurrentDeclaredUnits() =>
+    [
+        new("D", 7, ["U1"], true, "published-D-units", 0),
+        new("E", 7, ["U2"], true, "published-E-units", 0),
+        new("F", 7, ["U1", "U3"], false, "published-F-partial", 0)
+    ];
+
+    private static RescuerReceivedPastProjectionReport ProjectReceivedCurrent(
+        RescuerEvidenceInput received,
+        IReadOnlyList<PublicRegionProjection>? transitions = null,
+        IReadOnlyList<PublicSearchUnitMapping>? mappings = null) =>
+        RescuerEvidenceMethodComparison.ProjectReceivedPastCandidates(
+            received, InteractionTimeWindow.At(2), 7,
+            ["A", "B", "C", "D", "E", "F"], ["U1", "U2", "U3"],
+            transitions ?? CurrentDeclaredTransitions(),
+            mappings ?? CurrentDeclaredUnits(),
+            [new PublicActionFootprint("inspect-U2", 7, ["U2"], "published-action", 0)]);
+
+    [Fact]
+    public void ReceiptGatedPastReconstructionReachesDeclaredCurrentUnitsWithoutFalseCertainty()
+    {
+        var input = PastToCurrentInput(7, true, true);
+        var before = JsonDefaults.Serialize(input);
+        var result = ProjectReceivedCurrent(input);
+        var method = RescuerEvidenceMethodComparison.Compare(
+            input, InteractionTimeWindow.At(2)).Methods.Single(row =>
+            row.Method == "distributed-reconstruction");
+        Assert.Equal(JsonDefaults.Serialize(method),
+            JsonDefaults.Serialize(result.DistributedReconstructionMethod));
+        Assert.Equal([RecordId, "second-original"], result.ReceivedOriginalIds);
+        Assert.Equal(7, result.QueryTick);
+        Assert.Equal(7, result.TargetTick);
+        Assert.Equal(7, result.Projection.EvidenceCutoff);
+        Assert.Equal(["A", "B", "C"],
+            result.Projection.Candidates.Select(row => row.SourceCandidate.RegionId)
+                .OrderBy(id => id, StringComparer.Ordinal));
+        Assert.Equal(["D", "E", "F"], result.Projection.KnownCurrentRegionIds);
+        Assert.Equal(["U1", "U2", "U3"], result.Projection.KnownUnitIds);
+
+        var a = result.Projection.Candidates.Single(row =>
+            row.SourceCandidate.RegionId == "A");
+        var b = result.Projection.Candidates.Single(row =>
+            row.SourceCandidate.RegionId == "B");
+        var c = result.Projection.Candidates.Single(row =>
+            row.SourceCandidate.RegionId == "C");
+        Assert.Equal(["D", "E"], a.KnownCurrentRegionIds);
+        Assert.Equal(["U1", "U2"], a.KnownUnitIds);
+        Assert.Empty(a.UnresolvedReasons);
+        Assert.Equal(["E"], b.KnownCurrentRegionIds);
+        Assert.Equal(["U2"], b.KnownUnitIds);
+        Assert.Empty(b.UnresolvedReasons);
+        Assert.Equal(["F"], c.KnownCurrentRegionIds);
+        Assert.Equal(["U1", "U3"], c.KnownUnitIds);
+        Assert.Contains("transition-incomplete", c.UnresolvedReasons);
+        Assert.Contains("unit-mapping-incomplete", c.UnresolvedReasons);
+        Assert.Contains(c.SourceCandidate.CandidateId, result.Projection.UnresolvedCandidateIds);
+        Assert.All(result.Projection.Candidates, row =>
+        {
+            Assert.Equal(result.Projection.QueryId, row.SourceCandidate.QueryId);
+            Assert.Equal(TargetId, row.SourceCandidate.TargetEntityId);
+            Assert.Equal(2, row.SourceCandidate.TargetTimeWindow.StartTick);
+            Assert.Equal(2, row.SourceCandidate.TargetTimeWindow.EndTick);
+            Assert.True(Enum.IsDefined(row.SourceCandidate.Disposition));
+        });
+        Assert.Equal(["published-A-current"], a.TransitionSourceIds);
+        Assert.Equal(["published-D-units", "published-E-units"], a.UnitMappingSourceIds);
+        var action = Assert.Single(result.Projection.Actions);
+        Assert.Equal(["U2"], action.KnownIntersectingUnitIds);
+        Assert.Contains(a.SourceCandidate.CandidateId, action.KnownIntersectingCandidateIds);
+        Assert.Contains(b.SourceCandidate.CandidateId, action.KnownIntersectingCandidateIds);
+        Assert.DoesNotContain(a.SourceCandidate.CandidateId, action.WholeSupportContainedCandidateIds);
+        Assert.Contains(b.SourceCandidate.CandidateId, action.WholeSupportContainedCandidateIds);
+        Assert.DoesNotContain(c.SourceCandidate.CandidateId, action.WholeSupportContainedCandidateIds);
+        Assert.Equal(before, JsonDefaults.Serialize(input));
+    }
+
+    [Fact]
+    public void ReceiptGatedCurrentProjectionSeparatesSameCutoffAblationFromActualArrival()
+    {
+        var zero = ProjectReceivedCurrent(PastToCurrentInput(7, false, false));
+        var first = ProjectReceivedCurrent(PastToCurrentInput(7, true, false));
+        var second = ProjectReceivedCurrent(PastToCurrentInput(7, false, true));
+        var both = ProjectReceivedCurrent(PastToCurrentInput(7, true, true));
+        Assert.Equal(new[] { 0, 1, 1, 2 },
+            new[] { zero.ReceivedOriginalIds.Count, first.ReceivedOriginalIds.Count,
+                second.ReceivedOriginalIds.Count, both.ReceivedOriginalIds.Count });
+        foreach (var condition in new[] { zero, first, second, both })
+        {
+            Assert.Equal(["A", "B", "C"],
+                condition.DistributedReconstructionMethod.OuterCandidateRegionIds);
+            Assert.Equal(["A", "B", "C"],
+                condition.Projection.Candidates.Select(row => row.SourceCandidate.RegionId)
+                    .OrderBy(id => id, StringComparer.Ordinal));
+            Assert.Equal(["U1", "U2", "U3"], condition.Projection.KnownUnitIds);
+            Assert.Single(condition.Projection.UnresolvedCandidateIds);
+            Assert.True(condition.ReconstructionSteps >= 0);
+        }
+
+        // Arrival at cutoff six is not a same-cutoff-seven ablation.
+        var early = ProjectReceivedCurrent(PastToCurrentInput(6, true, true));
+        Assert.Equal(6, early.QueryTick);
+        Assert.Equal(6, early.Projection.EvidenceCutoff);
+        Assert.Equal([RecordId], early.ReceivedOriginalIds);
+        Assert.DoesNotContain("second-original", JsonDefaults.Serialize(early.Projection));
+        var reordered = ProjectReceivedCurrent(PastToCurrentInput(
+            7, true, true, reversed: true, duplicate: true));
+        Assert.Equal(JsonDefaults.Serialize(both), JsonDefaults.Serialize(reordered));
+        Assert.Equal(2, reordered.AvailableSourceGroupCount);
+    }
+
+    [Fact]
+    public void ReceiptGatedCurrentProjectionKeepsPartialAndUnavailablePublicDeclarationsUnknown()
+    {
+        var input = PastToCurrentInput(7, true, true);
+        var missing = ProjectReceivedCurrent(input,
+            CurrentDeclaredTransitions().Where(row => row.HistoricalRegionId != "C").ToArray());
+        var c = missing.Projection.Candidates.Single(row =>
+            row.SourceCandidate.RegionId == "C");
+        Assert.Empty(c.KnownCurrentRegionIds);
+        Assert.Contains("transition-unmapped", c.UnresolvedReasons);
+        Assert.Contains(c.SourceCandidate.CandidateId, missing.Projection.UnresolvedCandidateIds);
+
+        var noE = ProjectReceivedCurrent(input, mappings:
+            CurrentDeclaredUnits().Where(row => row.RegionId != "E").ToArray());
+        var a = noE.Projection.Candidates.Single(row =>
+            row.SourceCandidate.RegionId == "A");
+        Assert.Contains("unit-mapping-unmapped", a.UnresolvedReasons);
+        Assert.DoesNotContain(a.SourceCandidate.CandidateId,
+            Assert.Single(noE.Projection.Actions).WholeSupportContainedCandidateIds);
+        Assert.Throws<InvalidDataException>(() => ProjectReceivedCurrent(input,
+            CurrentDeclaredTransitions().Select(row =>
+                row.HistoricalRegionId == "B" ? row with { AvailableTick = 8 } : row)
+                .ToArray()));
+        Assert.Throws<InvalidDataException>(() => ProjectReceivedCurrent(input,
+            mappings: CurrentDeclaredUnits().Select(row =>
+                row.RegionId == "D" ? row with { AvailableTick = 8 } : row)
+                .ToArray()));
+        Assert.Throws<InvalidDataException>(() => ProjectReceivedCurrent(input,
+            CurrentDeclaredTransitions().Select(row =>
+                row.HistoricalRegionId == "B" ? row with
+                { IsComplete = true, CurrentRegionIds = [] } : row).ToArray()));
+    }
+
+    [Fact]
+    public void ReceiptGatedCurrentProjectionDoesNotPromoteSharedOrDeviceOnlyOrigins()
+    {
+        var shared = ProjectReceivedCurrent(PastToCurrentInput(
+            7, true, true, laterAncestry: "weft-a"));
+        var device = ProjectReceivedCurrent(PastToCurrentInput(
+            7, true, true, deviceOnly: true));
+        var conflict = ProjectReceivedCurrent(PastToCurrentInput(
+            7, true, true, firstState: EvidenceState.Conflicting));
+        Assert.Equal(1, shared.AvailableSourceGroupCount);
+        foreach (var result in new[] { shared, device, conflict })
+        {
+            Assert.Equal(result.DistributedReconstructionMethod.OuterCandidateRegionIds,
+                result.Projection.Candidates.Select(row => row.SourceCandidate.RegionId)
+                    .OrderBy(id => id, StringComparer.Ordinal));
+            Assert.All(result.Projection.Candidates, candidate =>
+                Assert.True(Enum.IsDefined(candidate.SourceCandidate.Disposition)));
+            Assert.Contains("transition-incomplete",
+                result.Projection.Candidates.Single(row =>
+                    row.SourceCandidate.RegionId == "C").UnresolvedReasons);
+        }
+        var ordinary = ProjectReceivedCurrent(PastToCurrentInput(7, true, true));
+        Assert.True(device.DistributedReconstructionMethod.UsedSourceGroupCount <=
+            ordinary.DistributedReconstructionMethod.UsedSourceGroupCount);
+    }
+
     [Fact]
     public void DeclaredWitnessUnitsKeepMixedCandidateStatusesAndDirectProvenance()
     {

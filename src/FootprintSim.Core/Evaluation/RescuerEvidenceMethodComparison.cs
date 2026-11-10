@@ -72,6 +72,22 @@ public sealed record RescuerEvidenceMethodReport
     public IReadOnlyList<RescuerEvidenceMethodFirstDifference> FirstDifferences { get; init; } = [];
 }
 
+
+// #116: Evaluation-only bridge from the receipt-gated M1-E result to the
+// existing F20 public-declaration projector; no inferred real position.
+public sealed record RescuerReceivedPastProjectionReport
+{
+    public required long QueryTick { get; init; }
+    public required long TargetTick { get; init; }
+    public required InteractionTimeWindow HistoricalWindow { get; init; }
+    public IReadOnlyList<string> ReceivedOriginalIds { get; init; } = [];
+    public IReadOnlyList<string> ReceivedSourceObservationIds { get; init; } = [];
+    public required int AvailableSourceGroupCount { get; init; }
+    public required int ReconstructionSteps { get; init; }
+    public required RescuerEvidenceMethodRow DistributedReconstructionMethod { get; init; }
+    public required PublicSearchProjectionResult Projection { get; init; }
+}
+
 // Only the separate evaluation call receives a synthetic truth region.
 public sealed record RescuerEvidenceMethodTruthRow(
     string Condition,
@@ -1394,7 +1410,16 @@ public static class RescuerEvidenceMethodComparison
     public static RescuerEvidenceMethodQueryRow Compare(
         RescuerEvidenceInput received,
         InteractionTimeWindow targetWindow,
-        string condition = "actual")
+        string condition = "actual") =>
+        CompareWithReconstruction(received, targetWindow, condition).Row;
+
+    // Both the published row and the original candidate objects come from
+    // one identical receipt-filtered M1-E execution, never a second inference.
+    private static (RescuerEvidenceMethodQueryRow Row,
+        PastStateReconstructionResult Reconstruction) CompareWithReconstruction(
+        RescuerEvidenceInput received,
+        InteractionTimeWindow targetWindow,
+        string condition)
     {
         ArgumentNullException.ThrowIfNull(received);
         ArgumentNullException.ThrowIfNull(targetWindow);
@@ -1585,7 +1610,7 @@ public static class RescuerEvidenceMethodComparison
             EvidenceRecordsInspected = 0,
             PublicRelationsInspected = 0
         };
-        return new RescuerEvidenceMethodQueryRow
+        return (new RescuerEvidenceMethodQueryRow
         {
             Condition = condition,
             QueryTick = input.CurrentTick,
@@ -1605,9 +1630,57 @@ public static class RescuerEvidenceMethodComparison
                 Make("distributed-reconstruction", reconstruction, true),
                 Make("distributed-reconstruction-local", local, true)
             ]
-        };
+        }, weftComparison.Reconstruction);
     }
 
+
+    /// <summary>
+    /// Project actual receipt-gated M1-E past candidates with explicit F20
+    /// published maps. No physical journey, completeness, or site reduction
+    /// is inferred from a successful projection.
+    /// </summary>
+    public static RescuerReceivedPastProjectionReport ProjectReceivedPastCandidates(
+        RescuerEvidenceInput received,
+        InteractionTimeWindow historicalWindow,
+        long targetTick,
+        IReadOnlyList<string> regionIds,
+        IReadOnlyList<string> searchUnitIds,
+        IReadOnlyList<PublicRegionProjection> regionProjections,
+        IReadOnlyList<PublicSearchUnitMapping> unitMappings,
+        IReadOnlyList<PublicActionFootprint> actions)
+    {
+        var (comparison, reconstruction) =
+            CompareWithReconstruction(received, historicalWindow, "actual");
+        var method = comparison.Methods.Single(row =>
+            row.Method == "distributed-reconstruction");
+        var actualRegions = reconstruction.Candidates
+            .Select(candidate => candidate.RegionId)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(id => id, StringComparer.Ordinal).ToArray();
+        if (!actualRegions.SequenceEqual(method.OuterCandidateRegionIds,
+            StringComparer.Ordinal))
+        {
+            throw new InvalidDataException(
+                "Receipt-gated reconstruction candidates disagree with the method outer.");
+        }
+
+        var projectionInput = PublicPastStateProjectionAdapter.CreateInput(
+            reconstruction, targetTick, regionIds, searchUnitIds,
+            regionProjections, unitMappings, actions);
+        var projected = PublicSearchProjector.Project(projectionInput);
+        return new RescuerReceivedPastProjectionReport
+        {
+            QueryTick = comparison.QueryTick,
+            TargetTick = targetTick,
+            HistoricalWindow = historicalWindow,
+            ReceivedOriginalIds = comparison.ReceivedOriginalIds,
+            ReceivedSourceObservationIds = comparison.ReceivedSourceObservationIds,
+            AvailableSourceGroupCount = comparison.AvailableSourceGroupCount,
+            ReconstructionSteps = reconstruction.ReconstructionSteps,
+            DistributedReconstructionMethod = method,
+            Projection = projected
+        };
+    }
 
     /// <summary>
     /// Compare four published same-cutoff ablations without reading originals,
