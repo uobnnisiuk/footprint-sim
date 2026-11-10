@@ -2130,3 +2130,79 @@ and untested. Revisit if same-world/cutoff validation, fixed synthetic tests,
 CI or independent review detect lost unanswered questions, changed safe outer
 or a false positive Person witness. Results of equivalence or regression must
 be reported without changing the frozen cases to manufacture improvement.
+
+## #124 — four-method, same-receipt declared CURRENT-unit comparison (design and validation)
+
+Work-Key: `FP-SAME-EVIDENCE-CURRENT-UNIT-METHOD-COMPARISON-V1` /
+[scope #124](https://github.com/uobnnisiuk/footprint-sim/issues/124).
+This tests whether the missing Person history constrained by *received other-person
+wefts* changes what the **same published present-tick catalog** can say.
+It reuses #84's real four historical-method rows, #116's genuine M1-E
+reconstruction and F20, and #120's distinguishable receipt fixture.
+Neither an unknown physical relation nor a 24-edge engine is inferred.
+
+**Precommitted comparison**: synthetic scenario and seed from the existing
+`PastToCurrentInput` fixture; historical `At(2)`, receipt ticks 6 and 7,
+query cutoff 7, current tick 7, early Person observation `{A,B}`,
+later independent original at `D@5`, public prior `{A,B,C}`.
+Published declaration `A→{D,E}`, `B→E`, partial `C→F`;
+present unit catalog `D→U1`, `E→U2`, partial `F→{U1,U3}`.
+The declarations and query time are held identical for all four method rows.
+Compare four **methods** within each input; separately compare receipt-quantity
+ablations 0, 1 and 2 at the same cutoff. No adaptive case selection after results.
+
+**Fixed expected row snapshot (same-world/tick, two received originals)**:
+the four names below are the *actual four M1-E method outputs*, with publicly
+declared current regions and units derived afterward. These outcomes were frozen before execution and verified by the
+[normal CI on the code-and-test head](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42823292241)
+(successful build, tests, format and required scenario/evaluation steps on
+commit `c595f40`). The documentation-only confirmation creates a subsequent
+head whose CI must be checked independently:
+
+| Method | Historical outer at tick 2 | Declared known region outer at tick 7 | Known public units at tick 7 | Public incompleteness |
+| --- | --- | --- | --- | --- |
+| public-prior | A,B,C | D,E,F | U1,U2,U3 | C partial |
+| known-relation-backward | A,B,C | D,E,F | U1,U2,U3 | C partial |
+| distributed-reconstruction | A,B | D,E | U1,U2 | none on A/B |
+| distributed-reconstruction-local | A,B | D,E | U1,U2 | none on A/B |
+
+With zero receipts the M1-E historical outer is A/B/C; the early informative
+receipt removes C from its historical outer in this *one* fixed model.
+The local method may tie M1-E in candidate sets yet have different source
+usage, traversal and operation counters. The test keeps the original method
+rows with all actual counts and sources rather than replacing them with
+guessed F20 candidate provenance. Equal/negative results are admissible.
+
+**Projection definition and safety**: For each real method's
+`OuterCandidateRegionIds`, calculate a *declaration-only known outer*: the
+union of publicly mapped current regions, then publicly mapped unit IDs.
+A missing/incomplete region or unit declaration produces explicit unresolved
+reasons and a partial/unavailable status, **never a safe empty outer**.
+This is not an authentic F20 candidate projection: method-specific candidate
+IDs, disposition and ancestry cannot be supplied by the other three methods.
+The declaration catalog is validated using F20 with **zero candidates**;
+the genuine M1-E candidates, produced once from the same receipt-gated
+comparison, independently pass F20 and must match the declaration-only
+current regions, units, unresolved reasons and public source IDs.
+This is a consistency check, not a synthetic extra inference run.
+
+Per historical method the output carries the actual historical region IDs,
+count, verification/traversal/source-group/step metrics, each declared
+historical→current→unit row, public transition/mapping source IDs and unknown
+reasons. Shared current units are deduplicated (many-to-one); multiple published
+units remain (one-to-many). The actual time each original became available
+is recorded separately. Synthetic truth is checked only after the method
+returns, for model-internal false exclusion, never fed to inference.
+Receipt duplicate/reordering, earlier cutoff, Device-only, shared ancestry,
+missing/partial/future publication and genuine F20 equivalence are regression
+tests. No modeled unit-count change represents measured rescue minutes, cost,
+real travel, successful rescue, or a generally superior algorithm.
+
+**Alternatives and limits**: juxtaposing #84 historical and #100 historical-unit
+tables with #116 M1-E-only present units would confound times and methods
+(rejected). Creating fake F20 candidate provenance for the other methods is
+also rejected. Unknown causal links/relations and 24-edge discovery remain
+unimplemented, neither disproved nor declared unnecessary. If F20 and
+declaration-only outputs disagree or receipt/cutoff/public validity cannot
+be preserved, this comparison must be held and the same issue revised and
+reviewed; tests are not weakened to produce a positive result.

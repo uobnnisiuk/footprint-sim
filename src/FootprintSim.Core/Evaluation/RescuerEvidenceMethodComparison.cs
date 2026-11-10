@@ -88,6 +88,40 @@ public sealed record RescuerReceivedPastProjectionReport
     public required PublicSearchProjectionResult Projection { get; init; }
 }
 
+// #124: the same genuinely received original evidence, four actual M1-E
+// method rows, and a single public query-time unit catalog. A declaration
+// projection is NOT a synthetic PastStateCandidate or an F20 candidate claim.
+public sealed record RescuerCurrentUnitHistoricalRegion(
+    string HistoricalRegionId,
+    IReadOnlyList<string> KnownCurrentRegionIds,
+    IReadOnlyList<string> KnownUnitIds,
+    IReadOnlyList<string> UnresolvedReasons,
+    IReadOnlyList<string> TransitionSourceIds,
+    IReadOnlyList<string> UnitMappingSourceIds);
+
+public sealed record RescuerCurrentUnitMethod(
+    RescuerEvidenceMethodRow HistoricalMethod,
+    string ProjectionStatus,
+    IReadOnlyList<RescuerCurrentUnitHistoricalRegion> HistoricalRegions,
+    IReadOnlyList<string>? KnownCurrentRegionIds,
+    IReadOnlyList<string>? KnownUnitIds,
+    IReadOnlyList<string>? UnresolvedHistoricalRegionIds);
+
+public sealed record RescuerCurrentUnitReceivedOriginal(
+    string OriginalRecordId,
+    string OriginalObservationId,
+    long FirstReceivedAtTick);
+
+public sealed record RescuerCurrentUnitMethodComparison(
+    long QueryTick,
+    long TargetTick,
+    InteractionTimeWindow HistoricalWindow,
+    IReadOnlyList<RescuerCurrentUnitReceivedOriginal> ReceivedOriginals,
+    IReadOnlyList<RescuerCurrentUnitMethod> Methods,
+    // Only M1-E has actual candidate IDs, dispositions and ancestry for F20.
+    PublicSearchProjectionResult ActualReconstructionF20Projection);
+
+
 // Only the separate evaluation call receives a synthetic truth region.
 public sealed record RescuerEvidenceMethodTruthRow(
     string Condition,
@@ -1682,6 +1716,144 @@ public static class RescuerEvidenceMethodComparison
             DistributedReconstructionMethod = method,
             Projection = projected
         };
+    }
+
+    /// <summary>
+    /// Compare four actual receipt-gated historical methods at the same
+    /// declared current tick. For methods other than M1-E, these are public
+    /// reachability outer sets, NOT F20 candidate projections or actual travel.
+    /// Published declarations are validated by F20 with an EMPTY candidate
+    /// list; no fake candidate identity, disposition or ancestry is created.
+    /// </summary>
+    public static RescuerCurrentUnitMethodComparison CompareReceivedCurrentUnits(
+        RescuerEvidenceInput received,
+        InteractionTimeWindow historicalWindow,
+        long targetTick,
+        IReadOnlyList<string> regionIds,
+        IReadOnlyList<string> searchUnitIds,
+        IReadOnlyList<PublicRegionProjection> regionProjections,
+        IReadOnlyList<PublicSearchUnitMapping> unitMappings,
+        IReadOnlyList<PublicActionFootprint> actions)
+    {
+        var (comparison, reconstruction) =
+            CompareWithReconstruction(received, historicalWindow, "actual");
+        var actual = comparison.Methods.Single(row =>
+            row.Method == "distributed-reconstruction");
+        var realRegions = reconstruction.Candidates.Select(candidate => candidate.RegionId)
+            .Distinct(StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal).ToArray();
+        if (!realRegions.SequenceEqual(actual.OuterCandidateRegionIds, StringComparer.Ordinal))
+        {
+            throw new InvalidDataException(
+                "Actual M1-E reconstruction differs from its published historical outer.");
+        }
+
+        // F20 checks every declaration row (including unused ones) and the
+        // authentic M1-E candidates. Never construct a fake PastStateCandidate.
+        var input = PublicPastStateProjectionAdapter.CreateInput(
+            reconstruction, targetTick, regionIds, searchUnitIds,
+            regionProjections, unitMappings, actions);
+        var realF20 = PublicSearchProjector.Project(input);
+        PublicSearchProjector.Project(input with { Candidates = [] });
+
+        static string[] OrderedIds(IEnumerable<string> ids) =>
+            ids.Distinct(StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal).ToArray();
+
+        var rows = comparison.Methods.Select(method =>
+        {
+            var historicalRegions = method.OuterCandidateRegionIds.Select(region =>
+            {
+                // These keys and reason codes deliberately match F20's
+                // published-declaration semantics, without candidate metadata.
+                var transition = input.RegionProjections.SingleOrDefault(row =>
+                    row.HistoricalRegionId == region &&
+                    row.StartTick == historicalWindow.StartTick &&
+                    row.EndTick == historicalWindow.EndTick &&
+                    row.TargetTick == targetTick);
+                string[] current = transition is null
+                    ? [] : OrderedIds(transition.CurrentRegionIds);
+                var reasons = new List<string>();
+                if (transition is null)
+                    reasons.Add("transition-unmapped");
+                else if (!transition.IsComplete)
+                    reasons.Add("transition-incomplete");
+
+                var knownUnits = new List<string>();
+                var unitSources = new List<string>();
+                foreach (var currentRegion in current)
+                {
+                    var mapping = input.UnitMappings.SingleOrDefault(row =>
+                        row.RegionId == currentRegion && row.TargetTick == targetTick);
+                    if (mapping is null)
+                    {
+                        reasons.Add("unit-mapping-unmapped");
+                        continue;
+                    }
+
+                    knownUnits.AddRange(mapping.UnitIds);
+                    unitSources.Add(mapping.SourceId);
+                    if (!mapping.IsComplete)
+                        reasons.Add("unit-mapping-incomplete");
+                }
+
+                return new RescuerCurrentUnitHistoricalRegion(
+                    region, current, OrderedIds(knownUnits), OrderedIds(reasons),
+                    transition is null ? [] : [transition.SourceId],
+                    OrderedIds(unitSources));
+            }).ToArray();
+
+            if (historicalRegions.Length == 0)
+                return new RescuerCurrentUnitMethod(method, "unavailable", historicalRegions,
+                    null, null, null);
+
+            var knownRegions = OrderedIds(historicalRegions.SelectMany(row =>
+                row.KnownCurrentRegionIds));
+            var units = OrderedIds(historicalRegions.SelectMany(row => row.KnownUnitIds));
+            var unresolved = OrderedIds(historicalRegions.Where(row =>
+                row.UnresolvedReasons.Count != 0).Select(row => row.HistoricalRegionId));
+            var status = units.Length == 0 ? "unavailable"
+                : unresolved.Length != 0 ? "partial" : "available";
+            return new RescuerCurrentUnitMethod(method, status, historicalRegions,
+                status == "unavailable" ? null : knownRegions,
+                status == "unavailable" ? null : units, unresolved);
+        }).ToArray();
+
+        // A source-free outer projection may coincide with F20's union of
+        // declared units, but must not claim F20's candidate-level support.
+        // Compare against the genuine F20 output for M1-E, including unknown.
+        var m1e = rows.Single(row =>
+            row.HistoricalMethod.Method == "distributed-reconstruction");
+        if (m1e.HistoricalRegions.Count != realF20.Candidates.Count)
+        {
+            throw new InvalidDataException("M1-E current-unit comparison is not F20-equivalent.");
+        }
+
+        foreach (var actualCandidate in realF20.Candidates)
+        {
+            var declared = m1e.HistoricalRegions.Single(row =>
+                row.HistoricalRegionId == actualCandidate.SourceCandidate.RegionId);
+            if (!declared.KnownCurrentRegionIds.SequenceEqual(
+                    actualCandidate.KnownCurrentRegionIds, StringComparer.Ordinal) ||
+                !declared.KnownUnitIds.SequenceEqual(
+                    actualCandidate.KnownUnitIds, StringComparer.Ordinal) ||
+                !declared.UnresolvedReasons.SequenceEqual(
+                    actualCandidate.UnresolvedReasons, StringComparer.Ordinal) ||
+                !declared.TransitionSourceIds.SequenceEqual(
+                    actualCandidate.TransitionSourceIds, StringComparer.Ordinal) ||
+                !declared.UnitMappingSourceIds.SequenceEqual(
+                    actualCandidate.UnitMappingSourceIds, StringComparer.Ordinal))
+            {
+                throw new InvalidDataException(
+                    "Published outer projection disagrees with genuine M1-E F20.");
+            }
+        }
+
+        var receipts = received.ReceivedRecords
+            .OrderBy(record => record.OriginalRecordId, StringComparer.Ordinal)
+            .Select(record => new RescuerCurrentUnitReceivedOriginal(
+                record.OriginalRecordId, record.OriginalObservationId,
+                record.FirstReceivedAtTick)).ToArray();
+        return new RescuerCurrentUnitMethodComparison(
+            comparison.QueryTick, targetTick, historicalWindow, receipts, rows, realF20);
     }
 
     /// <summary>
