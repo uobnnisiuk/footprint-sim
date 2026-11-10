@@ -2029,8 +2029,24 @@ same-information method comparisons remain in #84 and later research.
 | First only | A,B | D,E | U1,U2 | 0 |
 | Both | A,B | D,E | U1,U2 | 0 |
 
-The above are **pre-test predictions** (based on adversarial exploration),
-not independent xUnit or CI-verified results as of drafting. New direct
+The above were **pre-test predictions** based on adversarial exploration.
+On initial implementation head `3a85749ddb1177b79378ac319f2972f0876b5adb`, [normal CI
+#42772053405](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42772053405)
+and [F19 research CI
+#42772053738](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42772053738)
+both completed successfully. The normal CI built the project, passed the
+xUnit test step and format and evaluation checks; the assertions directly
+verified the predicted outer A,B,C to A,B, known regions D,E,F to D,E,
+known units U1,U2,U3 to U1,U2, and unresolved 1 to 0 in the fixed
+cutoff-7 contrast. The original four receipt cases' predicted
+Unavailable/Supported dispositions, source ancestry and candidate JSON
+equalities were also asserted in that successful test step. These are
+**CI-verified synthetic assertions on the named code-bearing head**, not
+an independent researcher reproduction or a real rescue effectiveness test.
+This documentation-only follow-up requires the new current-head
+CI and independent review before merge.
+
+New direct
 assertions inspect real receipt-built M1-E candidates projected by
 unchanged F20: disposition, source ancestry (first weft-a, not later
 weft-b as target-window generation), actual JSON changes, known units,
