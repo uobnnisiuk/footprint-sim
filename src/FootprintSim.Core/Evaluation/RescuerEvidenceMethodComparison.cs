@@ -1751,6 +1751,30 @@ public static class RescuerEvidenceMethodComparison
         };
     }
 
+    // Shared-ancestry membership is transitive, including when the middle
+    // observation joins two previously separate groups. Empty ancestry stays
+    // ungrouped with other sources and cannot establish a hard conflict.
+    private static int[][] GroupTransitiveSourceAncestry(
+        IReadOnlyList<IReadOnlyList<string>> ancestries)
+    {
+        var groups = new List<List<int>>();
+        for (var index = 0; index < ancestries.Count; index++)
+        {
+            var merged = new List<int> { index };
+            var overlapping = groups.Where(group =>
+                group.Any(member => ancestries[member]
+                    .Intersect(ancestries[index], StringComparer.Ordinal).Any()))
+                .ToArray();
+            foreach (var group in overlapping)
+            {
+                merged.AddRange(group);
+                groups.Remove(group);
+            }
+            groups.Add(merged.OrderBy(i => i).ToList());
+        }
+        return groups.Select(group => group.ToArray()).ToArray();
+    }
+
     /// <summary>
     /// Compare four actual receipt-gated historical methods at the same
     /// declared current tick. For methods other than M1-E, these are public
@@ -1816,25 +1840,8 @@ public static class RescuerEvidenceMethodComparison
             .OrderBy(c => c.ConstraintId, StringComparer.Ordinal)
             .ToArray();
 
-        // Group all target-tick alternatives by the transitive closure of
-        // shared source ancestry, not just direct pairwise intersections.
-        // A matching or unsupported alternative anywhere in one component
-        // prevents a hard contradiction from that same source component.
-        var observationSourceGroups = new List<List<int>>();
-        for (var index = 0; index < targetObservations.Length; index++)
-        {
-            var merged = new List<int> { index };
-            var overlapping = observationSourceGroups.Where(group =>
-                group.Any(member => targetObservations[member].SourceAncestryIds
-                    .Intersect(targetObservations[index].SourceAncestryIds,
-                        StringComparer.Ordinal).Any())).ToArray();
-            foreach (var group in overlapping)
-            {
-                merged.AddRange(group);
-                observationSourceGroups.Remove(group);
-            }
-            observationSourceGroups.Add(merged.OrderBy(i => i).ToList());
-        }
+        var observationSourceGroups = GroupTransitiveSourceAncestry(
+            targetObservations.Select(c => c.SourceAncestryIds).ToArray());
 
         var rows = comparison.Methods.Select(method =>
         {

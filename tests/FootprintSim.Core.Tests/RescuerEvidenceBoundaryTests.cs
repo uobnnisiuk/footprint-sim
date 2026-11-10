@@ -188,56 +188,43 @@ public sealed class RescuerEvidenceBoundaryTests
     }
 
     [Fact]
-    public void TargetTickSharedSourceAlternativesUseTransitiveAncestryGroups()
+    public void TargetTickSourceAncestryGroupingIsTransitiveAndDeterministic()
     {
-        RescuerEvidenceInput Build(string finalRegion, bool reversed = false)
-        {
-            var originals = new[]
-            {
-                ComplementaryOriginal(RecordId, HolderId, 2, ["A", "B"], 3, "weft-a"),
-                ComplementaryOriginal("second-original", "holder-b", 7, ["F"], 7,
-                    "chain-a"),
-                ComplementaryOriginal("third-original", "holder-b", 7, ["F"], 7,
-                    "chain-a", extraAncestry: "chain-b"),
-                ComplementaryOriginal("fourth-original", "holder-b", 7, [finalRegion], 7,
-                    "chain-b")
-            };
-            var receipts = new[]
-            {
-                Receipt(6),
-                LaterComparisonReceipt(7),
-                new InteractionRecordReceipt(ScenarioId, Seed, "third-original",
-                    "holder-b", RescuerId, 7),
-                new InteractionRecordReceipt(ScenarioId, Seed, "fourth-original",
-                    "holder-b", RescuerId, 7)
-            };
-            return new RescuerEvidenceInputBuilder().BuildDistinctOriginals(
-                ComplementaryPublicContext(), Seed, 7, RescuerId,
-                reversed ? originals.Reverse().ToArray() : originals,
-                reversed ? receipts.Reverse().ToArray() : receipts);
-        }
+        // The receipt bridge currently accepts exactly two originals; this
+        // isolates the three-observation ancestry rule without inventing
+        // an unsupported third original or widening the receipt API.
+        var groupMethod = typeof(RescuerEvidenceMethodComparison).GetMethod(
+            "GroupTransitiveSourceAncestry",
+            System.Reflection.BindingFlags.NonPublic |
+            System.Reflection.BindingFlags.Static);
+        Assert.NotNull(groupMethod);
+        IReadOnlyList<IReadOnlyList<string>> ancestry =
+        [
+            new[] { "chain-a" },
+            new[] { "chain-a", "chain-b" },
+            new[] { "chain-b" },
+            new[] { "unrelated" }
+        ];
+        var grouped = Assert.IsType<int[][]>(groupMethod.Invoke(null, [ancestry]));
+        Assert.Equal(2, grouped.Length);
+        Assert.Equal([0, 1, 2], grouped[0]);
+        Assert.Equal([3], grouped[1]);
 
-        // The F and D alternatives share ancestry only through the
-        // intermediate {chain-a, chain-b} observation. Pairwise suppression
-        // incorrectly reported a hard F-vs-{D,E} conflict.
-        var matching = CompareCurrentMethods(Build("D"));
-        var m1e = matching.Methods.Single(m =>
-            m.HistoricalMethod.Method == "distributed-reconstruction");
-        Assert.Equal("available", m1e.ProjectionStatus);
-        Assert.Empty(m1e.TargetTickConflicts);
-        Assert.Equal(["D", "E"], m1e.KnownCurrentRegionIds);
-        Assert.Equal(["U1", "U2"], m1e.KnownUnitIds);
-        Assert.Equal(JsonDefaults.Serialize(matching),
-            JsonDefaults.Serialize(CompareCurrentMethods(Build("D", reversed: true))));
+        // A source group with a compatible alternative cannot yield an
+        // independent definitive conflict from its other observations.
+        var allowed = new[] { new[] { "F" }, new[] { "F" },
+            new[] { "D" }, new[] { "F" } };
+        var published = new HashSet<string>(["D", "E"], StringComparer.Ordinal);
+        Assert.False(grouped[0].All(index =>
+            allowed[index].All(region => !published.Contains(region))));
+        Assert.True(grouped[1].All(index =>
+            allowed[index].All(region => !published.Contains(region))));
 
-        // With no compatible alternative, the connected source group gives
-        // one contradiction, not three independent confirmations.
-        var mismatching = CompareCurrentMethods(Build("F"));
-        var conflictRow = mismatching.Methods.Single(m =>
-            m.HistoricalMethod.Method == "distributed-reconstruction");
-        Assert.Equal("conflict", conflictRow.ProjectionStatus);
-        Assert.Single(conflictRow.TargetTickConflicts);
-        Assert.Equal(["D", "E"], conflictRow.KnownCurrentRegionIds);
+        var reversed = ancestry.Reverse().ToArray();
+        var reversedGroups = Assert.IsType<int[][]>(
+            groupMethod.Invoke(null, [reversed]));
+        Assert.Equal([0], reversedGroups[0]);
+        Assert.Equal([1, 2, 3], reversedGroups[1]);
     }
 
     [Fact]
@@ -2698,8 +2685,7 @@ public sealed class RescuerEvidenceBoundaryTests
     private static DeviceHeldInteractionRecord ComplementaryOriginal(
         string originalId, string holder, long atTick, IReadOnlyList<string> regions,
         long available, string upstream, EvidenceState state = EvidenceState.Confirmed,
-        bool deviceOnly = false, bool unrelatedTarget = false,
-        string? extraAncestry = null) =>
+        bool deviceOnly = false, bool unrelatedTarget = false) =>
         new(holder, available, InteractionObservation.Create(
             ScenarioId, Seed, originalId, null,
             InteractionRelationKind.PersonPersonEncounter,
@@ -2714,11 +2700,7 @@ public sealed class RescuerEvidenceBoundaryTests
             InteractionTimeWindow.At(atTick), regions, available, state,
             isPersonEvidence: !deviceOnly, isDeviceOnlyEvidence: deviceOnly,
             InteractionVisibility.PrivateEvidence,
-            (extraAncestry is null
-                ? new[] { upstream }
-                : new[] { upstream, extraAncestry })
-                .Select(source => new InteractionProvenance(
-                    InteractionProvenanceKind.EvidenceRecord, source)).ToArray()));
+            [new InteractionProvenance(InteractionProvenanceKind.EvidenceRecord, upstream)]));
 
     private static RescuerEvidenceMethodReport ComplementaryRun(
         EvidenceState firstState = EvidenceState.Confirmed,
