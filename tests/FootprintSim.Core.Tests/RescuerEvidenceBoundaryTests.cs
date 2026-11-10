@@ -817,7 +817,8 @@ public sealed class RescuerEvidenceBoundaryTests
         {
             chain.Add(Branch(source, destination) with
             {
-                MinimumTravelTicks = 0, MaximumTravelTicks = 0
+                MinimumTravelTicks = 0,
+                MaximumTravelTicks = 0
             });
             source = destination;
         }
