@@ -111,6 +111,22 @@ public sealed record RescuerCurrentUnitTargetObservationConflict(
     InteractionTimeWindow ObservationWindow,
     IReadOnlyList<string> AllowedRegionIds);
 
+// #130: A conditional search-unit suggestion only; never a replacement
+// for the published current outer, target conflict, or genuine F20 output.
+public sealed record RescuerConditionalCurrentUnitProposal(
+    string Status,
+    string ReasonCode,
+    IReadOnlyList<string>? RegionIds,
+    IReadOnlyList<string>? UnitIds,
+    int? UnitCountReduction,
+    IReadOnlyList<string> ObservationConstraintIds,
+    IReadOnlyList<string> ObservationDirectSourceIds,
+    IReadOnlyList<string> ObservationSourceAncestryIds,
+    IReadOnlyList<string> PublicTransitionSourceIds,
+    IReadOnlyList<string> PublicUnitMappingSourceIds,
+    int InspectedTargetObservationCount,
+    int InspectedAncestryGroupCount);
+
 public sealed record RescuerCurrentUnitMethod(
     RescuerEvidenceMethodRow HistoricalMethod,
     string ProjectionStatus,
@@ -121,6 +137,7 @@ public sealed record RescuerCurrentUnitMethod(
 {
     // Empty means no established contradiction, not proof of agreement.
     public IReadOnlyList<RescuerCurrentUnitTargetObservationConflict> TargetTickConflicts { get; init; } = [];
+    public RescuerConditionalCurrentUnitProposal? ConditionalTargetUnitProposal { get; init; }
 }
 
 public sealed record RescuerCurrentUnitReceivedOriginal(
@@ -1844,6 +1861,96 @@ public static class RescuerEvidenceMethodComparison
         var observationSourceGroups = GroupTransitiveSourceAncestry(
             targetObservations.Select(c => c.SourceAncestryIds).ToArray());
 
+        // #130: Keep the conditional proposal strictly outside all method
+        // candidate and F20 calculations. The #128 received/exact-tick filter
+        // and transitive ancestry groups are reused, not independently rebuilt.
+        RescuerConditionalCurrentUnitProposal ConditionalProposal(
+            string projectionStatus,
+            IReadOnlyList<RescuerCurrentUnitHistoricalRegion> historicalRegions,
+            IReadOnlyList<string>? knownRegions,
+            IReadOnlyList<string>? knownUnits)
+        {
+            RescuerConditionalCurrentUnitProposal Result(
+                string status, string reason, string[]? regions = null,
+                string[]? units = null, int? reduction = null,
+                string[]? mappingSources = null) => new(
+                    status, reason, regions, units, reduction,
+                    OrderedIds(targetObservations.Select(c => c.ConstraintId)),
+                    OrderedIds(targetObservations.Select(c => c.DirectSourceId)),
+                    OrderedIds(targetObservations.SelectMany(c => c.SourceAncestryIds)),
+                    OrderedIds(historicalRegions.SelectMany(h => h.TransitionSourceIds)),
+                    mappingSources ?? [],
+                    targetObservations.Length, observationSourceGroups.Length);
+
+            // Even a perfectly confirmed observation cannot close an
+            // incomplete published outer. A previously detected conflict is
+            // retained, not reinterpreted as an empty successful reduction.
+            if (projectionStatus != "available" || knownRegions is null ||
+                knownUnits is null)
+            {
+                return Result(projectionStatus,
+                    projectionStatus == "conflict"
+                        ? "received-observation-conflicts-with-declared-outer"
+                        : "public-current-outer-not-complete");
+            }
+            if (observationSourceGroups.Length == 0)
+                return Result("unavailable", "no-received-exact-target-person-observation");
+
+            // A shared-ancestry group contains alternatives, not independent
+            // votes. Any ambiguous/nonconfirmed source withholds its group.
+            // Never select a convenient confirmed member and discard its
+            // competing alternatives or unsupported provenance.
+            if (observationSourceGroups.Any(group => group.Any(index =>
+            {
+                var c = targetObservations[index];
+                return c.EvidenceBoundaryState != EvidenceState.Confirmed ||
+                    c.SourceAncestryIds.Count == 0 ||
+                    string.IsNullOrWhiteSpace(c.DirectSourceId) ||
+                    string.IsNullOrWhiteSpace(c.SourceObservationId);
+            })))
+            {
+                return Result("unavailable", "target-observation-not-fully-confirmed-or-sourced");
+            }
+
+            var alternativesByGroup = observationSourceGroups.Select(group =>
+                OrderedIds(group.SelectMany(index =>
+                    targetObservations[index].AllowedRegionIds))).ToArray();
+            // Within an ancestry group, keep the UNION of alternatives.
+            // Independent groups may constrain one another, but disagreeing
+            // groups cannot yield an empty search recommendation.
+            var conditionalSet = alternativesByGroup[0].ToHashSet(StringComparer.Ordinal);
+            foreach (var group in alternativesByGroup.Skip(1))
+                conditionalSet.IntersectWith(group);
+            if (conditionalSet.Count == 0)
+                return Result("conflict", "independent-target-observations-disagree");
+
+            var publishedSet = knownRegions.ToHashSet(StringComparer.Ordinal);
+            if (conditionalSet.Any(id => !publishedSet.Contains(id)))
+            {
+                return Result("partial",
+                    "observation-has-alternatives-outside-declared-outer");
+            }
+            var selectedRegions = OrderedIds(conditionalSet);
+            var selectedMappings = selectedRegions.Select(region =>
+                input.UnitMappings.SingleOrDefault(mapping =>
+                    mapping.RegionId == region && mapping.TargetTick == targetTick)).ToArray();
+            if (selectedMappings.Any(mapping =>
+                mapping is null || !mapping.IsComplete))
+            {
+                return Result("partial", "selected-region-unit-mapping-not-complete");
+            }
+            var selectedUnits = OrderedIds(selectedMappings.SelectMany(mapping =>
+                mapping!.UnitIds));
+            if (selectedUnits.Length == 0 ||
+                selectedUnits.Except(knownUnits, StringComparer.Ordinal).Any())
+            {
+                return Result("unavailable", "conditional-units-not-supported-by-public-outer");
+            }
+            return Result("available", "conditional-on-received-person-and-public-model",
+                selectedRegions, selectedUnits, knownUnits.Count - selectedUnits.Length,
+                OrderedIds(selectedMappings.Select(mapping => mapping!.SourceId)));
+        }
+
         var rows = comparison.Methods.Select(method =>
         {
             var historicalRegions = method.OuterCandidateRegionIds.Select(region =>
@@ -1889,7 +1996,11 @@ public static class RescuerEvidenceMethodComparison
 
             if (historicalRegions.Length == 0)
                 return new RescuerCurrentUnitMethod(method, "unavailable", historicalRegions,
-                    null, null, null);
+                    null, null, null)
+                {
+                    ConditionalTargetUnitProposal = ConditionalProposal(
+                        "unavailable", historicalRegions, null, null)
+                };
 
             var knownRegions = OrderedIds(historicalRegions.SelectMany(row =>
                 row.KnownCurrentRegionIds));
@@ -1931,7 +2042,9 @@ public static class RescuerEvidenceMethodComparison
                 status == "unavailable" ? null : knownRegions,
                 status == "unavailable" ? null : units, unresolved)
             {
-                TargetTickConflicts = contradictions
+                TargetTickConflicts = contradictions,
+                ConditionalTargetUnitProposal = ConditionalProposal(
+                    status, historicalRegions, knownRegions, units)
             };
         }).ToArray();
 

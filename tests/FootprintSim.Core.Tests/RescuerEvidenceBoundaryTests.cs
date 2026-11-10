@@ -362,6 +362,136 @@ public sealed class RescuerEvidenceBoundaryTests
             .TargetTickConflicts);
     }
 
+    // #130: precommitted comparison uses the same received originals and
+    // public world. B is NOT a true F20 candidate or a safe hard exclusion.
+    [Fact]
+    public void ConditionalTargetUnitsNarrowOnlyTheSeparateCompleteMethodProposal()
+    {
+        var received = TargetTickOriginalInput(7, ["D"]);
+        var original = JsonDefaults.Serialize(received);
+        var report = CompareCurrentMethods(received);
+        foreach (var name in new[]
+        {
+            "distributed-reconstruction", "distributed-reconstruction-local"
+        })
+        {
+            var row = report.Methods.Single(m => m.HistoricalMethod.Method == name);
+            var conditional = Assert.IsType<RescuerConditionalCurrentUnitProposal>(
+                row.ConditionalTargetUnitProposal);
+            Assert.Equal("available", row.ProjectionStatus);
+            Assert.Equal(["A", "B"], row.HistoricalMethod.OuterCandidateRegionIds);
+            Assert.Equal(["D", "E"], row.KnownCurrentRegionIds);
+            Assert.Equal(["U1", "U2"], row.KnownUnitIds);
+            Assert.Equal("available", conditional.Status);
+            Assert.Equal(["D"], conditional.RegionIds);
+            Assert.Equal(["U1"], conditional.UnitIds);
+            Assert.Equal(1, conditional.UnitCountReduction);
+            Assert.Contains("second-original", conditional.ObservationDirectSourceIds);
+            Assert.NotEmpty(conditional.ObservationConstraintIds);
+            Assert.NotEmpty(conditional.ObservationSourceAncestryIds);
+            Assert.Contains("published-A-current", conditional.PublicTransitionSourceIds);
+            Assert.Equal(["published-D-units"], conditional.PublicUnitMappingSourceIds);
+            Assert.Equal(1, conditional.InspectedTargetObservationCount);
+            Assert.Equal(1, conditional.InspectedAncestryGroupCount);
+            Assert.Empty(row.TargetTickConflicts);
+        }
+        foreach (var name in new[] { "public-prior", "known-relation-backward" })
+        {
+            var row = report.Methods.Single(m => m.HistoricalMethod.Method == name);
+            Assert.Equal("partial", row.ProjectionStatus);
+            Assert.Equal("partial", row.ConditionalTargetUnitProposal!.Status);
+            Assert.Null(row.ConditionalTargetUnitProposal.UnitIds);
+        }
+        Assert.Equal(["U1", "U2"], report.ActualReconstructionF20Projection.KnownUnitIds);
+        Assert.Equal(original, JsonDefaults.Serialize(received));
+    }
+
+    [Fact]
+    public void ConditionalTargetUnitsRetainZeroBenefitAndWithholdAmbiguousOrConflictingInputs()
+    {
+        var noGain = CompareCurrentMethods(TargetTickOriginalInput(7, ["D", "E"]));
+        var equal = noGain.Methods.Single(m =>
+            m.HistoricalMethod.Method == "distributed-reconstruction");
+        Assert.Equal("available", equal.ConditionalTargetUnitProposal!.Status);
+        Assert.Equal(["U1", "U2"], equal.ConditionalTargetUnitProposal.UnitIds);
+        Assert.Equal(0, equal.ConditionalTargetUnitProposal.UnitCountReduction);
+
+        var conflicted = CompareCurrentMethods(TargetTickOriginalInput(7, ["F"]));
+        var conflict = conflicted.Methods.Single(m =>
+            m.HistoricalMethod.Method == "distributed-reconstruction");
+        Assert.Equal("conflict", conflict.ProjectionStatus);
+        Assert.Single(conflict.TargetTickConflicts);
+        Assert.Equal("conflict", conflict.ConditionalTargetUnitProposal!.Status);
+        Assert.Null(conflict.ConditionalTargetUnitProposal.UnitIds);
+        Assert.Equal(["U1", "U2"], conflict.KnownUnitIds);
+
+        var mixed = CompareCurrentMethods(TargetTickOriginalInput(7, ["D", "F"]));
+        var mixedRow = mixed.Methods.Single(m =>
+            m.HistoricalMethod.Method == "distributed-reconstruction");
+        Assert.Empty(mixedRow.TargetTickConflicts);
+        Assert.Equal("partial", mixedRow.ConditionalTargetUnitProposal!.Status);
+        Assert.Null(mixedRow.ConditionalTargetUnitProposal.UnitIds);
+
+        var partialUnit = CompareCurrentMethods(TargetTickOriginalInput(7, ["D"]),
+            mappings: CurrentDeclaredUnits().Select(row => row.RegionId == "D"
+                ? row with { IsComplete = false } : row).ToArray());
+        Assert.Equal("partial", partialUnit.Methods.Single(m =>
+            m.HistoricalMethod.Method == "distributed-reconstruction")
+            .ConditionalTargetUnitProposal!.Status);
+
+        var incompleteTransition = CompareCurrentMethods(
+            TargetTickOriginalInput(7, ["D"]),
+            transitions: CurrentDeclaredTransitions().Select(row =>
+                row.HistoricalRegionId == "A" ? row with { IsComplete = false } : row)
+                .ToArray());
+        Assert.Equal("partial", incompleteTransition.Methods.Single(m =>
+            m.HistoricalMethod.Method == "distributed-reconstruction")
+            .ConditionalTargetUnitProposal!.Status);
+    }
+
+    [Fact]
+    public void ConditionalTargetUnitsDoNotPromoteUnreceivedOrNonexactOrUncertainPersonSources()
+    {
+        var ineligible = new[]
+        {
+            TargetTickOriginalInput(5, ["D"]),
+            TargetTickOriginalInput(7, ["F"],
+                observationWindow: new InteractionTimeWindow(5, 7)),
+            TargetTickOriginalInput(7, ["F"],
+                observationWindow: new InteractionTimeWindow(6, 7)),
+            TargetTickOriginalInput(7, ["D"], deviceOnly: true),
+            TargetTickOriginalInput(7, ["D"], unrelatedTarget: true),
+            TargetTickOriginalInput(7, ["D"], secondReceived: false),
+            TargetTickOriginalInput(7, ["D"], cutoff: 6),
+            TargetTickOriginalInput(7, ["D"],
+                secondState: EvidenceState.SupportedButUncertain),
+            TargetTickOriginalInput(7, ["D"],
+                secondState: EvidenceState.Conflicting)
+        };
+        foreach (var input in ineligible)
+        {
+            var report = CompareCurrentMethods(input);
+            var row = report.Methods.Single(m =>
+                m.HistoricalMethod.Method == "distributed-reconstruction");
+            Assert.Equal("unavailable", row.ConditionalTargetUnitProposal!.Status);
+            Assert.Null(row.ConditionalTargetUnitProposal.UnitIds);
+            Assert.Empty(row.TargetTickConflicts);
+        }
+
+        var forward = CompareCurrentMethods(TargetTickOriginalInput(7, ["D"],
+            duplicateReceipt: true));
+        var reverse = CompareCurrentMethods(TargetTickOriginalInput(7, ["D"],
+            reversed: true, duplicateReceipt: true));
+        Assert.Equal(JsonDefaults.Serialize(forward), JsonDefaults.Serialize(reverse));
+        var shared = CompareCurrentMethods(TargetTickOriginalInput(7, ["D"],
+            secondAncestry: "weft-a"));
+        var sharedMethod = shared.Methods.Single(m =>
+            m.HistoricalMethod.Method == "distributed-reconstruction");
+        Assert.Equal("available", sharedMethod.ConditionalTargetUnitProposal!.Status);
+        Assert.Equal(1, sharedMethod.ConditionalTargetUnitProposal.InspectedAncestryGroupCount);
+        Assert.Equal(["U1", "U2"], shared.ActualReconstructionF20Projection.KnownUnitIds);
+    }
+
     [Fact]
     public void FourReceivedMethodsShareActualEvidenceAndOneCurrentPublicCatalog()
     {

@@ -2342,3 +2342,93 @@ published completeness cannot be established, keep it unknown and revisit
 the same independently reviewed scope. CI and independent code review of
 this implementation are **pending**; the adversarial probe is a separate
 earlier check, not proof of the new code.
+
+
+## #130 — conditional unit proposal from exactly received target-tick Person evidence
+
+Work-Key: `FP-EXACT-TARGET-OBSERVATION-UNIT-DELTA-V1`;
+[fixed #130 scope and independent scope review](https://github.com/uobnnisiuk/footprint-sim/issues/130).
+This evaluates the initial missing-Person-history/weft idea beyond #124's
+four-method outer-only current-unit comparison and #128's sourced conflict
+diagnosis. It does not introduce a fifth inference method. Unknown relations
+and 24-edge exploration remain unimplemented and unassessed.
+
+**Fixed question and hypothesis (before this code's CI):** the same original
+`{A,B}@2` received at 6, another `D@7` received at 7, four actual historical
+methods, historical `At(2)`, public `A→{D,E}` (complete), `B→E`
+(complete), `C→F` (partial), public current `D→U1, E→U2`
+(complete) and `F→{U1,U3}` (partial), cutoff/query/target tick 7.
+Method A remains the *declared* current outer; B is a separate
+`ConditionalTargetUnitProposal` which means **only if the received
+confirmed observation AND public declarations are trusted**. This is
+a method-of-using-the-same-evidence contrast, not receipt quantity.
+Predeclared possible table, subject to CI:
+
+| Historical method | Declared A units | Conditional B at `D@7` | Claim |
+| --- | --- | --- | --- |
+| public-prior | U1,U2,U3 (partial) | withheld/partial | no closed-world exclusion |
+| known-relation-backward | U1,U2,U3 (partial) | withheld/partial | no closed-world exclusion |
+| distributed-reconstruction | U1,U2 | U1 (conditional; delta 1) | not a hard reduction |
+| distributed-reconstruction-local | U1,U2 | U1 (conditional; delta 1) | not a hard reduction |
+
+The diagnostic reuses #128's **actually received, exact target-tick,
+confirmed Person** filter and transitive source-ancestry grouping. Alternatives
+sharing ancestry are unioned rather than counted as independent votes.
+Different groups may intersect only when they agree; disagreements produce
+`conflict`, not a successful empty recommendation. `{D,E}@7` permits
+zero improvement, `{D,F}@7` is partial, and `F@7` conflicting
+with a fully declared D/E outer cannot erase legacy candidates.
+`F∈[5,7]` or `F∈[6,7]`, unsupported state, Device-only,
+unrelated Person, not-yet-received, or incomplete public transitions/unit
+mappings cannot generate a definite proposal. Every proposal carries
+observation/ancestry, published transition and selected unit-map source IDs,
+a status/reason, and inspected observation/group counts. All lists are ordered
+deterministically. Sources prove auditability, not independent correctness.
+
+**Safety and research limits:** legacy four method historical outer/preferred/
+conflict, current region/unit outer, `TargetTickConflicts`, genuine F20
+candidate/disposition/source/steps, and `ProjectionStatus` do not change.
+A conditional unit-count delta is only a model-set comparison, not measured
+site visits, false-exclusion rates, elapsed rescue time, cost, or survival.
+The observed target may be inaccurate. Keep hard-excluding candidates and
+calibrating reliability **deferred**, not rejected. A null conditional unit
+list indicates withheld/unknown/conflict, never zero safe candidates.
+If evidence support, source ancestry, completeness or genuine F20 isolation
+cannot be verified in this 3-file implementation, revise #130 and obtain
+new independent scope approval rather than silently relaxing the precommitment.
+**Executed result (initial PR #131 code head):** the fixed xUnit cases
+confirmed the conditional D@7 proposal: public-prior/backward still has
+partial U1/U2/U3 with no closed conditional result; M1-E and M1-E/local
+keep the declared U1/U2 outer and separately propose U1 (delta 1).
+{D,E}@7 yields delta 0. F@7 yields a sourced conflict without removing
+D/E or U1/U2; {D,F}@7 withholds the unit suggestion as partial.
+Nonexact time windows, unsupported, Device-only, unrelated, unreceived,
+cutoff-late and incomplete public declarations cannot create a definite
+conditional result. Duplicate/reordered receipts preserve deterministic
+output. No synthesized truth was supplied to the inference input.
+
+Initial-head [normal PR CI run 42911987286](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42911987286)
+completed successfully: environment, restore, build, **689 xUnit tests passed,
+0 failed/0 skipped**, format, sample S0/S1 and evaluation-harness checks
+were successful. [F19 research run 42911987273](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42911987273)
+also completed successfully, including its research steps and artifact safety.
+These are CI measurements of the initial code head; the documentation-only
+follow-up head still requires its own checks and independent code review.
+No local .NET 8 execution took place.
+
+**Adversarial follow-up:** the [AR-25 latent note](https://github.com/uobnnisiuk/footprint-sim/pull/129#issuecomment-6780444830)
+explains that future support for three or more distinct received originals
+could expose an interval/exact alternative in the same ancestry group.
+The current receipt API accepts exactly two originals, of which one is the
+historical At(2) record; this case is **currently unreachable** and was not
+fabricated as a passing test. The same exact-tick prefilter exists in #130's
+conditional proposal, so revisit its grouping semantics if that API
+changes. This is deferred, not dismissed or evidence that #130 is safe for
+expanded receipt cardinality.
+
+**Decision on this fixed synthetic evaluation:** retain the separate
+conditional-only suggestion and sourced unknown/conflict outcomes for
+independent code review. Do not adopt hard F20 candidate removal or
+translate one model unit saved into a saved physical search visit. Revise
+the same scope and independently re-review if provenance, temporal
+alternatives, or public declaration completeness cannot be preserved.
