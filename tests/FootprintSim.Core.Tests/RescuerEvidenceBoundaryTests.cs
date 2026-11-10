@@ -265,7 +265,7 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Throws<InvalidDataException>(() => ProjectReceivedCurrent(input,
             CurrentDeclaredTransitions().Select(row =>
                 row.HistoricalRegionId == "B" ? row with
-                    { IsComplete = true, CurrentRegionIds = [] } : row).ToArray()));
+                { IsComplete = true, CurrentRegionIds = [] } : row).ToArray()));
     }
 
     [Fact]
