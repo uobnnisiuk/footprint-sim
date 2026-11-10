@@ -2396,6 +2396,39 @@ list indicates withheld/unknown/conflict, never zero safe candidates.
 If evidence support, source ancestry, completeness or genuine F20 isolation
 cannot be verified in this 3-file implementation, revise #130 and obtain
 new independent scope approval rather than silently relaxing the precommitment.
-CI, independent code review and merging are **not yet established** at
-authoring time; the corresponding PR/Issue record must preserve actual
-measured results, counterexamples and a separate final decision.
+**Executed result (initial PR #131 code head):** the fixed xUnit cases
+confirmed the conditional D@7 proposal: public-prior/backward still has
+partial U1/U2/U3 with no closed conditional result; M1-E and M1-E/local
+keep the declared U1/U2 outer and separately propose U1 (delta 1).
+{D,E}@7 yields delta 0. F@7 yields a sourced conflict without removing
+D/E or U1/U2; {D,F}@7 withholds the unit suggestion as partial.
+Nonexact time windows, unsupported, Device-only, unrelated, unreceived,
+cutoff-late and incomplete public declarations cannot create a definite
+conditional result. Duplicate/reordered receipts preserve deterministic
+output. No synthesized truth was supplied to the inference input.
+
+Initial-head [normal PR CI run 42911987286](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42911987286)
+completed successfully: environment, restore, build, **689 xUnit tests passed,
+0 failed/0 skipped**, format, sample S0/S1 and evaluation-harness checks
+were successful. [F19 research run 42911987273](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42911987273)
+also completed successfully, including its research steps and artifact safety.
+These are CI measurements of the initial code head; the documentation-only
+follow-up head still requires its own checks and independent code review.
+No local .NET 8 execution took place.
+
+**Adversarial follow-up:** the [AR-25 latent note](https://github.com/uobnnisiuk/footprint-sim/pull/129#issuecomment-6780444830)
+explains that future support for three or more distinct received originals
+could expose an interval/exact alternative in the same ancestry group.
+The current receipt API accepts exactly two originals, of which one is the
+historical At(2) record; this case is **currently unreachable** and was not
+fabricated as a passing test. The same exact-tick prefilter exists in #130's
+conditional proposal, so revisit its grouping semantics if that API
+changes. This is deferred, not dismissed or evidence that #130 is safe for
+expanded receipt cardinality.
+
+**Decision on this fixed synthetic evaluation:** retain the separate
+conditional-only suggestion and sourced unknown/conflict outcomes for
+independent code review. Do not adopt hard F20 candidate removal or
+translate one model unit saved into a saved physical search visit. Revise
+the same scope and independently re-review if provenance, temporal
+alternatives, or public declaration completeness cannot be preserved.
