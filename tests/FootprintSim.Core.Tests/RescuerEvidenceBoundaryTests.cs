@@ -1063,7 +1063,8 @@ public sealed class RescuerEvidenceBoundaryTests
                     Branches = [.. world.PublicHazardEnvelope!.Branches,
                         Branch("B", "D") with
                         {
-                            ProvenanceId = "AR22-separate-public-BD"
+                            PublishedAtTick = 7,
+                        ProvenanceId = "AR22-separate-public-BD"
                         }]
                 }
             };
