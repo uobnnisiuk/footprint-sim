@@ -158,6 +158,210 @@ public sealed class RescuerEvidenceBoundaryTests
             mappings ?? CurrentDeclaredUnits(),
             [new PublicActionFootprint("inspect-U2", 7, ["U2"], "published-action", 0)]);
 
+    // #128 / AR-23: a second received Person original can directly observe
+    // the queried tick without being used to narrow the historical outer.
+    private static RescuerEvidenceInput TargetTickOriginalInput(
+        long observationTick, IReadOnlyList<string> regions,
+        long cutoff = 7, bool deviceOnly = false,
+        bool unrelatedTarget = false, bool secondReceived = true,
+        bool reversed = false, bool duplicateReceipt = false,
+        EvidenceState secondState = EvidenceState.Confirmed,
+        string secondAncestry = "weft-b",
+        InteractionTimeWindow? observationWindow = null)
+    {
+        var first = ComplementaryOriginal(
+            RecordId, HolderId, 2, ["A", "B"], 3, "weft-a");
+        var second = ComplementaryOriginal(
+            "second-original", "holder-b", observationTick, regions,
+            observationTick <= 5 ? 6 : 7, secondAncestry, secondState,
+            deviceOnly, unrelatedTarget, observationWindow);
+        var originals = reversed ? new[] { second, first } : new[] { first, second };
+        var receipts = new List<InteractionRecordReceipt> { Receipt(6) };
+        if (secondReceived)
+            receipts.Add(LaterComparisonReceipt(7));
+        if (duplicateReceipt)
+            receipts.Add(Receipt(6));
+        if (reversed)
+            receipts.Reverse();
+        return new RescuerEvidenceInputBuilder().BuildDistinctOriginals(
+            ComplementaryPublicContext(), Seed, cutoff, RescuerId,
+            originals, receipts);
+    }
+
+    [Fact]
+    public void TargetTickSourceAncestryGroupingIsTransitiveAndDeterministic()
+    {
+        // The receipt bridge currently accepts exactly two originals; this
+        // isolates the three-observation ancestry rule without inventing
+        // an unsupported third original or widening the receipt API.
+        var groupMethod = typeof(RescuerEvidenceMethodComparison).GetMethod(
+            "GroupTransitiveSourceAncestry",
+            System.Reflection.BindingFlags.NonPublic |
+            System.Reflection.BindingFlags.Static);
+        Assert.NotNull(groupMethod);
+        IReadOnlyList<IReadOnlyList<string>> ancestry =
+        [
+            new[] { "chain-a" },
+            new[] { "chain-a", "chain-b" },
+            new[] { "chain-b" },
+            new[] { "unrelated" }
+        ];
+        var grouped = Assert.IsType<int[][]>(groupMethod.Invoke(null, [ancestry]));
+        Assert.Equal(2, grouped.Length);
+        Assert.Equal([0, 1, 2], grouped[0]);
+        Assert.Equal([3], grouped[1]);
+
+        // A source group with a compatible alternative cannot yield an
+        // independent definitive conflict from its other observations.
+        var allowed = new[] { new[] { "F" }, new[] { "F" },
+            new[] { "D" }, new[] { "F" } };
+        var published = new HashSet<string>(["D", "E"], StringComparer.Ordinal);
+        Assert.False(grouped[0].All(index =>
+            allowed[index].All(region => !published.Contains(region))));
+        Assert.True(grouped[1].All(index =>
+            allowed[index].All(region => !published.Contains(region))));
+
+        var reversed = ancestry.Reverse().ToArray();
+        var reversedGroups = Assert.IsType<int[][]>(
+            groupMethod.Invoke(null, [reversed]));
+        Assert.Equal([0], reversedGroups[0]);
+        Assert.Equal([1, 2, 3], reversedGroups[1]);
+    }
+
+    [Fact]
+    public void TargetTickPersonConflictIsSourcedAndDoesNotRewriteMethodOutersOrF20()
+    {
+        var received = TargetTickOriginalInput(7, ["F"]);
+        var before = JsonDefaults.Serialize(received);
+        var result = CompareCurrentMethods(received);
+        Assert.Equal(4, result.Methods.Count);
+        foreach (var name in new[] {
+            "distributed-reconstruction", "distributed-reconstruction-local" })
+        {
+            var row = result.Methods.Single(m => m.HistoricalMethod.Method == name);
+            Assert.Equal(["A", "B"], row.HistoricalMethod.OuterCandidateRegionIds);
+            Assert.Equal(["D", "E"], row.KnownCurrentRegionIds);
+            Assert.Equal(["U1", "U2"], row.KnownUnitIds);
+            Assert.Empty(row.UnresolvedHistoricalRegionIds!);
+            Assert.Equal("conflict", row.ProjectionStatus);
+            var conflict = Assert.Single(row.TargetTickConflicts);
+            Assert.Equal(
+                "confirmed-target-observation-outside-complete-declaration",
+                conflict.ReasonCode);
+            Assert.Equal("second-original", conflict.DirectSourceId);
+            Assert.NotEmpty(conflict.ConstraintId);
+            Assert.NotEmpty(conflict.SourceObservationId);
+            Assert.Contains("weft-b", conflict.SourceAncestryIds);
+            Assert.Equal(7, conflict.ObservationWindow.StartTick);
+            Assert.Equal(7, conflict.ObservationWindow.EndTick);
+            Assert.Equal(["F"], conflict.AllowedRegionIds);
+        }
+        foreach (var name in new[] { "public-prior", "known-relation-backward" })
+        {
+            var row = result.Methods.Single(m => m.HistoricalMethod.Method == name);
+            Assert.Equal("partial", row.ProjectionStatus);
+            Assert.Equal(["D", "E", "F"], row.KnownCurrentRegionIds);
+            Assert.Empty(row.TargetTickConflicts);
+        }
+        var m1e = result.Methods.Single(m =>
+            m.HistoricalMethod.Method == "distributed-reconstruction");
+        Assert.Equal(m1e.KnownUnitIds,
+            result.ActualReconstructionF20Projection.KnownUnitIds);
+        Assert.Equal(m1e.KnownCurrentRegionIds,
+            result.ActualReconstructionF20Projection.KnownCurrentRegionIds);
+        Assert.Empty(result.ActualReconstructionF20Projection.UnresolvedCandidateIds);
+        Assert.Equal(before, JsonDefaults.Serialize(received));
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(CompareCurrentMethods(TargetTickOriginalInput(
+                7, ["F"], reversed: true, duplicateReceipt: true))));
+    }
+
+    // AR-24: a time-uncertain occurrence in [5,7] or [6,7] might
+    // have occurred before tick 7, even when the region is F.
+    [Fact]
+    public void TargetTickUncertainIntervalDoesNotProveDefiniteConflict()
+    {
+        foreach (var window in new[]
+        {
+            new InteractionTimeWindow(5, 7),
+            new InteractionTimeWindow(6, 7)
+        })
+        {
+            var input = TargetTickOriginalInput(
+                7, ["F"], observationWindow: window);
+            var result = CompareCurrentMethods(input);
+            foreach (var methodName in new[]
+            {
+                "distributed-reconstruction",
+                "distributed-reconstruction-local"
+            })
+            {
+                var row = result.Methods.Single(m => m.HistoricalMethod.Method == methodName);
+                Assert.Equal("available", row.ProjectionStatus);
+                Assert.Empty(row.TargetTickConflicts);
+                Assert.Equal(["D", "E"], row.KnownCurrentRegionIds);
+                Assert.Equal(["U1", "U2"], row.KnownUnitIds);
+            }
+        }
+
+        // Exact F@7 still conflicts; a less precise observation cannot
+        // establish a stronger finding than the precise F@5 alternative.
+        var exact = CompareCurrentMethods(TargetTickOriginalInput(7, ["F"]));
+        Assert.Equal("conflict", exact.Methods.Single(m =>
+            m.HistoricalMethod.Method == "distributed-reconstruction").ProjectionStatus);
+    }
+
+    [Fact]
+    public void TargetTickConflictRequiresCompletePublicAndConfirmedReceivedPersonEvidence()
+    {
+        var matching = CompareCurrentMethods(TargetTickOriginalInput(7, ["D"]));
+        var overlap = CompareCurrentMethods(TargetTickOriginalInput(7, ["D", "F"]));
+        var differentTick = CompareCurrentMethods(TargetTickOriginalInput(5, ["E"]));
+        foreach (var report in new[] { matching, overlap, differentTick })
+        {
+            Assert.All(report.Methods, m => Assert.Empty(m.TargetTickConflicts));
+            Assert.Equal("available", report.Methods.Single(m =>
+                m.HistoricalMethod.Method == "distributed-reconstruction")
+                .ProjectionStatus);
+            Assert.Equal(["U1", "U2"], report.Methods.Single(m =>
+                m.HistoricalMethod.Method == "distributed-reconstruction")
+                .KnownUnitIds); // Matching D does not shrink units to U1.
+        }
+        foreach (var input in new[]
+        {
+            TargetTickOriginalInput(7, ["F"], deviceOnly: true),
+            TargetTickOriginalInput(7, ["F"], unrelatedTarget: true),
+            TargetTickOriginalInput(7, ["F"], secondReceived: false),
+            TargetTickOriginalInput(7, ["F"], cutoff: 6),
+            TargetTickOriginalInput(7, ["F"],
+                secondState: EvidenceState.SupportedButUncertain)
+        })
+        {
+            Assert.All(CompareCurrentMethods(input).Methods,
+                m => Assert.Empty(m.TargetTickConflicts));
+        }
+
+        var partial = CompareCurrentMethods(TargetTickOriginalInput(7, ["F"]),
+            transitions: CurrentDeclaredTransitions().Select(row =>
+                row.HistoricalRegionId == "A"
+                    ? row with { IsComplete = false } : row).ToArray());
+        var unmapped = CompareCurrentMethods(TargetTickOriginalInput(7, ["F"]),
+            transitions: CurrentDeclaredTransitions().Where(row =>
+                row.HistoricalRegionId != "A").ToArray());
+        foreach (var report in new[] { partial, unmapped })
+        {
+            var m1e = report.Methods.Single(m =>
+                m.HistoricalMethod.Method == "distributed-reconstruction");
+            Assert.Equal("partial", m1e.ProjectionStatus);
+            Assert.Empty(m1e.TargetTickConflicts);
+        }
+        var sameAncestry = CompareCurrentMethods(TargetTickOriginalInput(
+            7, ["F"], secondAncestry: "weft-a"));
+        Assert.Single(sameAncestry.Methods.Single(m =>
+            m.HistoricalMethod.Method == "distributed-reconstruction")
+            .TargetTickConflicts);
+    }
+
     [Fact]
     public void FourReceivedMethodsShareActualEvidenceAndOneCurrentPublicCatalog()
     {
@@ -2517,7 +2721,8 @@ public sealed class RescuerEvidenceBoundaryTests
     private static DeviceHeldInteractionRecord ComplementaryOriginal(
         string originalId, string holder, long atTick, IReadOnlyList<string> regions,
         long available, string upstream, EvidenceState state = EvidenceState.Confirmed,
-        bool deviceOnly = false, bool unrelatedTarget = false) =>
+        bool deviceOnly = false, bool unrelatedTarget = false,
+        InteractionTimeWindow? observationWindow = null) =>
         new(holder, available, InteractionObservation.Create(
             ScenarioId, Seed, originalId, null,
             InteractionRelationKind.PersonPersonEncounter,
@@ -2529,7 +2734,7 @@ public sealed class RescuerEvidenceBoundaryTests
                 new InteractionParticipant("person-b", InteractionEntityKind.Person,
                     InteractionParticipantRole.EncounterParticipant)
             ],
-            InteractionTimeWindow.At(atTick), regions, available, state,
+            observationWindow ?? InteractionTimeWindow.At(atTick), regions, available, state,
             isPersonEvidence: !deviceOnly, isDeviceOnlyEvidence: deviceOnly,
             InteractionVisibility.PrivateEvidence,
             [new InteractionProvenance(InteractionProvenanceKind.EvidenceRecord, upstream)]));

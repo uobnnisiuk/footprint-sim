@@ -99,26 +99,42 @@ public sealed record RescuerCurrentUnitHistoricalRegion(
     IReadOnlyList<string> TransitionSourceIds,
     IReadOnlyList<string> UnitMappingSourceIds);
 
+// #128: One received, confirmed Person observation at the target tick can
+// contradict an otherwise complete *published* current-region declaration.
+// This is a diagnostic, never an additional hard candidate exclusion.
+public sealed record RescuerCurrentUnitTargetObservationConflict(
+    string ReasonCode,
+    string ConstraintId,
+    string DirectSourceId,
+    string SourceObservationId,
+    IReadOnlyList<string> SourceAncestryIds,
+    InteractionTimeWindow ObservationWindow,
+    IReadOnlyList<string> AllowedRegionIds);
+
 public sealed record RescuerCurrentUnitMethod(
     RescuerEvidenceMethodRow HistoricalMethod,
     string ProjectionStatus,
     IReadOnlyList<RescuerCurrentUnitHistoricalRegion> HistoricalRegions,
     IReadOnlyList<string>? KnownCurrentRegionIds,
     IReadOnlyList<string>? KnownUnitIds,
-    IReadOnlyList<string>? UnresolvedHistoricalRegionIds);
+    IReadOnlyList<string>? UnresolvedHistoricalRegionIds)
+{
+    // Empty means no established contradiction, not proof of agreement.
+    public IReadOnlyList<RescuerCurrentUnitTargetObservationConflict> TargetTickConflicts { get; init; } = [];
+}
 
 public sealed record RescuerCurrentUnitReceivedOriginal(
     string OriginalRecordId,
     string OriginalObservationId,
     long FirstReceivedAtTick);
 
+// Only M1-E has actual candidate IDs, dispositions and ancestry for F20.
 public sealed record RescuerCurrentUnitMethodComparison(
     long QueryTick,
     long TargetTick,
     InteractionTimeWindow HistoricalWindow,
     IReadOnlyList<RescuerCurrentUnitReceivedOriginal> ReceivedOriginals,
     IReadOnlyList<RescuerCurrentUnitMethod> Methods,
-    // Only M1-E has actual candidate IDs, dispositions and ancestry for F20.
     PublicSearchProjectionResult ActualReconstructionF20Projection);
 
 
@@ -473,12 +489,12 @@ public sealed record RescuerMissingDeclaredPathQuestion(
     bool IndependentSourceAncestry,
     string PersonTraversability);
 
+// Formal public explanations make a missing direct declaration non-essential;
+// they are not verified Person movements.
 public sealed record RescuerMissingDeclaredPathCandidate(
     string RegionId,
     string DeclaredPathStatus,
     IReadOnlyList<RescuerMissingDeclaredPathQuestion> Questions,
-    // Formal public explanations that make a missing direct declaration
-    // non-essential. These are not verified Person movements.
     IReadOnlyList<string> PublicAlternativeExplanations);
 
 public sealed record RescuerMissingDeclaredPathReport(
@@ -544,11 +560,11 @@ public sealed record RescuerRelationQuestionUtilityReport
 /* #114: public unit-level grouping of the #104 declared-path diagnostics.
  * A witness is a formal, sourced compatibility explanation, never proof of
  * Person travel, safety, or a warrant to remove outer candidates/units. */
+// #118: unwitnessed diagnostic labels, not negative evidence.
 public sealed record RescuerDeclaredWitnessUnitRegion(
     string RegionId,
     string CompatibilityStatus,
     IReadOnlyList<RescuerDeclaredPathWitness> DirectWitnesses,
-    // #118: diagnostic labels on unwitnessed candidates, not negative evidence.
     IReadOnlyList<string> UnwitnessedReasonCodes);
 
 public sealed record RescuerDeclaredWitnessUnit(
@@ -1735,6 +1751,30 @@ public static class RescuerEvidenceMethodComparison
         };
     }
 
+    // Shared-ancestry membership is transitive, including when the middle
+    // observation joins two previously separate groups. Empty ancestry stays
+    // ungrouped with other sources and cannot establish a hard conflict.
+    private static int[][] GroupTransitiveSourceAncestry(
+        IReadOnlyList<IReadOnlyList<string>> ancestries)
+    {
+        var groups = new List<List<int>>();
+        for (var index = 0; index < ancestries.Count; index++)
+        {
+            var merged = new List<int> { index };
+            var overlapping = groups.Where(group =>
+                group.Any(member => ancestries[member]
+                    .Intersect(ancestries[index], StringComparer.Ordinal).Any()))
+                .ToArray();
+            foreach (var group in overlapping)
+            {
+                merged.AddRange(group);
+                groups.Remove(group);
+            }
+            groups.Add(merged.OrderBy(i => i).ToList());
+        }
+        return groups.Select(group => group.ToArray()).ToArray();
+    }
+
     /// <summary>
     /// Compare four actual receipt-gated historical methods at the same
     /// declared current tick. For methods other than M1-E, these are public
@@ -1774,6 +1814,35 @@ public static class RescuerEvidenceMethodComparison
 
         static string[] OrderedIds(IEnumerable<string> ids) =>
             ids.Distinct(StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal).ToArray();
+
+        // #128: Only constraints actually available to this rescuer at the
+        // comparison cutoff may diagnose an observed target-tick mismatch.
+        // No later/hidden Person history, Device trace, or synthetic truth is
+        // allowed into the declaration-only projection.
+        var receivedIds = received.ReceivedRecords
+            .Where(record => record.FirstReceivedAtTick <= comparison.QueryTick)
+            .Select(record => record.OriginalRecordId)
+            .ToHashSet(StringComparer.Ordinal);
+        var targetObservations = (received.Input.AvailableCausalTracingConstraints?
+            .PubliclyAvailableAt(comparison.QueryTick).Constraints ?? [])
+            .Where(c => c.ScenarioId == received.Input.ScenarioId &&
+                c.Seed == received.Input.Seed &&
+                c.TargetEntityId == received.Input.PublicContext.TargetPersonId &&
+                c.Visibility == InteractionVisibility.PublicEvidence &&
+                c.AvailableAtTick <= comparison.QueryTick &&
+                receivedIds.Contains(c.DirectSourceId) &&
+                c.IsPersonEvidence && !c.IsDeviceOnlyEvidence &&
+                targetTick <= comparison.QueryTick &&
+                // Interval occurrence time is not proof of location at targetTick.
+                // Only an exact-tick Person observation can establish a hard mismatch.
+                c.ConstrainedTimeWindow.StartTick == targetTick &&
+                c.ConstrainedTimeWindow.EndTick == targetTick &&
+                c.AllowedRegionIds.Count > 0)
+            .OrderBy(c => c.ConstraintId, StringComparer.Ordinal)
+            .ToArray();
+
+        var observationSourceGroups = GroupTransitiveSourceAncestry(
+            targetObservations.Select(c => c.SourceAncestryIds).ToArray());
 
         var rows = comparison.Methods.Select(method =>
         {
@@ -1829,9 +1898,41 @@ public static class RescuerEvidenceMethodComparison
                 row.UnresolvedReasons.Count != 0).Select(row => row.HistoricalRegionId));
             var status = units.Length == 0 ? "unavailable"
                 : unresolved.Length != 0 ? "partial" : "available";
+
+            // Only a fully declared region outer can contradict an observation.
+            // A partial/unmapped outer is unknown outside the published subset,
+            // not a closed-world assertion. A multi-region observation conflicts
+            // only if NONE of its allowed regions overlaps the complete outer.
+            // Do not turn ambiguous or mutually alternative observations
+            // of a shared original into a definite, independent contradiction.
+            var knownSet = knownRegions.ToHashSet(StringComparer.Ordinal);
+            var contradictions = status == "available"
+                ? observationSourceGroups
+                    .Where(group => group.All(index =>
+                    {
+                        var c = targetObservations[index];
+                        return c.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                            c.SourceAncestryIds.Count > 0 &&
+                            !string.IsNullOrWhiteSpace(c.DirectSourceId) &&
+                            !string.IsNullOrWhiteSpace(c.SourceObservationId) &&
+                            c.AllowedRegionIds.All(id => !knownSet.Contains(id));
+                    }))
+                    .Select(group => targetObservations[group.Min()])
+                    .Select(c => new RescuerCurrentUnitTargetObservationConflict(
+                        "confirmed-target-observation-outside-complete-declaration",
+                        c.ConstraintId, c.DirectSourceId, c.SourceObservationId,
+                        OrderedIds(c.SourceAncestryIds),
+                        c.ConstrainedTimeWindow, OrderedIds(c.AllowedRegionIds)))
+                    .ToArray()
+                : [];
+            if (contradictions.Length > 0)
+                status = "conflict";
             return new RescuerCurrentUnitMethod(method, status, historicalRegions,
                 status == "unavailable" ? null : knownRegions,
-                status == "unavailable" ? null : units, unresolved);
+                status == "unavailable" ? null : units, unresolved)
+            {
+                TargetTickConflicts = contradictions
+            };
         }).ToArray();
 
         // A source-free outer projection may coincide with F20's union of

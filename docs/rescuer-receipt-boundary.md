@@ -2272,3 +2272,73 @@ rescue-time change or rescue outcome was measured.** This later documentation
 commit requires its **own head CI** and independent code review before any
 Ready/merge; neither is presumed. Local build, tests and format were not
 executed because the authoring environment lacks .NET 8.
+
+## #128 — received target-tick Person observation versus declared current units (AR-23)
+
+Work-Key: `FP-RECEIVED-TARGET-OBSERVATION-CONSISTENCY-V1`;
+[fixed scope and separate independent range review](https://github.com/uobnnisiuk/footprint-sim/issues/128);
+[adversarial probe AR-23](https://github.com/uobnnisiuk/footprint-sim/issues/124#issuecomment-6772346109).
+This is a diagnostic correction to #124, **not** a fifth inference method,
+new physical relation, or a rule for excluding candidates. It preserves the
+initial weft idea: a target Person's missing history can still be checked
+against actually received other-device evidence instead of relying only on
+published historical-to-current reachability. Unknown-relation discovery and
+24-edge exploration remain unimplemented and unassessed.
+
+**Precommitted synthetic comparisons** retain the #124 scenario/seed, early
+confirmed `{A,B}@2` original received at tick 6, the same four historical
+methods, historical `At(2)`, cutoff/target tick 7, complete public
+`A→{D,E}` and `B→E`, partial `C→F`, and current public units
+`D→U1, E→U2, F→{U1,U3}`. Only the separate second original changes:
+
+- Confirmed target-Person `F@7`, received 7: the complete declared `D,E`
+  outer of M1-E/local conflicts with the received allowed region `F`.
+  Output `ProjectionStatus=conflict` and a structured reason containing
+  the constraint, direct original, observation ID, ancestry, observation
+  window and allowed regions. Do not delete `D,E`, `U1,U2`, historical
+  outer, or the genuine F20 projection. Public-prior/backward remains
+  partial where C's published declaration is incomplete.
+- Confirmed `D@7` and multi-region `{D,F}@7`: no contradiction because
+  the allowed set intersects the complete declared outer. In this
+  evaluation-only comparison `D@7` does **not** narrow `U1,U2` to U1.
+  `E@5` does not diagnose the target tick, although such a historical
+  trace may serve other analyses.
+- An uncertain occurrence window containing tick 7, e.g. `F∈[5,7]` or
+  `F∈[6,7]`, does **not** establish `F@7`: it could have occurred at an
+  earlier tick. Only an exact `At(7)` Person window may trigger the
+  definitive target-tick conflict diagnostic. Uncertain intervals remain
+  unassessed by this particular diagnostic, not proved consistent; they can
+  still matter in other historical analyses. This addresses
+  [adversarial AR-24](https://github.com/uobnnisiuk/footprint-sim/pull/129#issuecomment-6776600396)
+  without shrinking public regions, units, or historical candidate outers.
+- Device-only, different Person, not yet received, cutoff-before-receipt,
+  non-confirmed/ambiguous Person support, and incomplete/unmapped public
+  declarations must not create a definitive conflict. Reordered or
+  repeated receipts are deterministic; shared ancestry cannot be cited as
+  multiple independent corroborations.
+
+Previously #124's bare `available` meant only that the **published
+declaration mapping** of the historical outer was complete. After this
+change it also means that no *qualifying, confirmed, received target-tick
+observation* contradicted that complete declared region set. The absence of
+`TargetTickConflicts` is **not evidence of universal agreement**: unknown,
+partial, private, future and unsupported observations remain unknown.
+A `conflict` is specifically disagreement between a published modeled
+outer and received evidence; it does not tell which is true or establish
+actual Person travel. Both published current regions/units and observational
+source ancestry remain visible. No count of conflicting observations is a
+claim of independent sources.
+
+**Choice and limits:** adopt the separate sourced mismatch flag instead of
+only clarifying `available` in prose (which leaves an unsafe presentation).
+Do not use these later observations to shrink the four historical methods,
+infer new relations, alter F20 or retroactively validate the #124 four-way
+comparison; that alternative requires its own scoped comparison and is
+**deferred**, not rejected. The frozen scenario is an executable safety
+assertion, not a measured field rescue outcome. Neither false-exclusion
+rates outside this synthetic model, visits, real rescue minutes/costs nor
+survival effects were calibrated. If source support, ancestry, window or
+published completeness cannot be established, keep it unknown and revisit
+the same independently reviewed scope. CI and independent code review of
+this implementation are **pending**; the adversarial probe is a separate
+earlier check, not proof of the new code.
