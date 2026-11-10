@@ -2151,14 +2151,24 @@ The declarations and query time are held identical for all four method rows.
 Compare four **methods** within each input; separately compare receipt-quantity
 ablations 0, 1 and 2 at the same cutoff. No adaptive case selection after results.
 
-**Hypotheses before running the new CI**: the public prior retains A/B/C and
-known units U1/U2/U3 with partial unknown C. The actual M1-E reconstruction
-with the informative early received source retains A/B, and its declared
-known units are U1/U2; with zero receipts its outer retains A/B/C.
-Other methods may tie, be worse, or be unavailable without disqualification.
-The test records their actual method counters and source usage, and deliberately
-does not assume a strict winner. Exact results are **pending new PR CI**;
-the above values are predictions from existing #120 examples, not new measurements.
+**Fixed expected row snapshot (same-world/tick, two received originals)**:
+the four names below are the *actual four M1-E method outputs*, with publicly
+declared current regions and units derived afterward. These are precommitted
+test expectations, **not yet confirmed against the new head CI**:
+
+| Method | Historical outer at tick 2 | Declared known region outer at tick 7 | Known public units at tick 7 | Public incompleteness |
+| --- | --- | --- | --- | --- |
+| public-prior | A,B,C | D,E,F | U1,U2,U3 | C partial |
+| known-relation-backward | A,B,C | D,E,F | U1,U2,U3 | C partial |
+| distributed-reconstruction | A,B | D,E | U1,U2 | none on A/B |
+| distributed-reconstruction-local | A,B | D,E | U1,U2 | none on A/B |
+
+With zero receipts the M1-E historical outer is A/B/C; the early informative
+receipt removes C from its historical outer in this *one* fixed model.
+The local method may tie M1-E in candidate sets yet have different source
+usage, traversal and operation counters. The test keeps the original method
+rows with all actual counts and sources rather than replacing them with
+guessed F20 candidate provenance. Equal/negative results are admissible.
 
 **Projection definition and safety**: For each real method's
 `OuterCandidateRegionIds`, calculate a *declaration-only known outer*: the
@@ -2173,7 +2183,7 @@ comparison, independently pass F20 and must match the declaration-only
 current regions, units, unresolved reasons and public source IDs.
 This is a consistency check, not a synthetic extra inference run.
 
-Per historical method the output carries original historical candidate IDs,
+Per historical method the output carries the actual historical region IDs,
 count, verification/traversal/source-group/step metrics, each declared
 historical→current→unit row, public transition/mapping source IDs and unknown
 reasons. Shared current units are deduplicated (many-to-one); multiple published

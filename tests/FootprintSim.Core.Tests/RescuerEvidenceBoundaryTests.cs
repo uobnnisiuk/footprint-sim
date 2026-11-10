@@ -174,6 +174,25 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Equal([6L, 7L],
             compared.ReceivedOriginals.Select(row => row.FirstReceivedAtTick));
         Assert.Equal(4, compared.Methods.Count);
+        // Frozen same-world/current-tick measurements, not four aliases for
+        // one algorithm. Known relation alone cannot use the early weft.
+        var expectedOuters = new Dictionary<string, string[]>(StringComparer.Ordinal)
+        {
+            ["public-prior"] = ["A", "B", "C"],
+            ["known-relation-backward"] = ["A", "B", "C"],
+            ["distributed-reconstruction"] = ["A", "B"],
+            ["distributed-reconstruction-local"] = ["A", "B"]
+        };
+        foreach (var method in compared.Methods)
+        {
+            Assert.Equal(expectedOuters[method.HistoricalMethod.Method],
+                method.HistoricalMethod.OuterCandidateRegionIds);
+            Assert.Equal(expectedOuters[method.HistoricalMethod.Method].Length == 3
+                    ? new[] { "U1", "U2", "U3" } : ["U1", "U2"],
+                method.KnownUnitIds);
+            Assert.Equal(expectedOuters[method.HistoricalMethod.Method].Length == 3
+                    ? "partial" : "available", method.ProjectionStatus);
+        }
         Assert.Equal(historical.Methods.Select(row => row.Method),
             compared.Methods.Select(row => row.HistoricalMethod.Method));
         foreach (var method in compared.Methods)
@@ -211,14 +230,10 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Equal(m1e.KnownCurrentRegionIds,
             compared.ActualReconstructionF20Projection.KnownCurrentRegionIds);
         Assert.Empty(compared.ActualReconstructionF20Projection.UnresolvedCandidateIds);
-        // Synthetic truth A is consulted AFTER the method rows are materialized.
+        // Synthetic truth A is checked only AFTER inference returned;
+        // this fixed scenario must not incorrectly exclude the truth.
         Assert.All(compared.Methods, row =>
-        {
-            var falseExclusion = !row.HistoricalMethod.OuterCandidateRegionIds.Contains(
-                "A", StringComparer.Ordinal);
-            Assert.Equal(falseExclusion,
-                !row.HistoricalRegions.Any(item => item.HistoricalRegionId == "A"));
-        });
+            Assert.Contains("A", row.HistoricalMethod.OuterCandidateRegionIds));
         Assert.Equal(original, JsonDefaults.Serialize(received));
     }
 
