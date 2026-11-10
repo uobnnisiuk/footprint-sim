@@ -2250,7 +2250,25 @@ edge is added; it does not prove global monotonicity, actual route
 availability, rescue speed/cost/survival improvement, unknown causal-link
 discovery or the 24-edge hypothesis. If fixed tests or CI disagree, retain
 the result and revisit #126's scope rather than changing the acceptance
-conditions. **Execution status at this documentation revision: implementation
-and frozen assertions are submitted for GitHub CI; no successful CI or
-independent code review is asserted here.** The authoring environment has
-no .NET 8 SDK for local build, tests or format.
+conditions. **Verification (2026-11-11 JST):** Initial code head `c92a159`
+[normal CI #42852593693](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42852593693)
+and [F19 #42852594109](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42852594109)
+failed on the newly added test fixture because the separately appended
+published B→D declaration inherited tick 0 rather than the existing #112
+contract tick 7; core build passed and 681 of 682 tests passed. This was a
+test-input construction error, **not a relaxed assertion**. One line in the
+fixture sets `PublishedAtTick = 7`; method and acceptance conditions are
+unchanged. On corrected code-and-test head `628c340`,
+[normal CI #42853211906](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42853211906)
+and [F19 research CI #42853211573](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42853211573)
+both completed successfully. The normal test job reports **682 passed,
+0 failed, 0 skipped**, plus successful restore, build, format, S0/S1 and
+evaluation harness. F19 fixed research execution and artifact steps succeeded.
+The TLH/TLH-noDirect/N11H assertions verify that an additional published
+direct edge preserves the formal positive route explanation; they also
+check unchanged questions, outer and public units, and that actual counted
+public branch inspections increase. **No absolute operation count, real
+rescue-time change or rescue outcome was measured.** This later documentation
+commit requires its **own head CI** and independent code review before any
+Ready/merge; neither is presumed. Local build, tests and format were not
+executed because the authoring environment lacks .NET 8.
