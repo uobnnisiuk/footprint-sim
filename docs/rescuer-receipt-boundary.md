@@ -2342,3 +2342,60 @@ published completeness cannot be established, keep it unknown and revisit
 the same independently reviewed scope. CI and independent code review of
 this implementation are **pending**; the adversarial probe is a separate
 earlier check, not proof of the new code.
+
+
+## #130 — conditional unit proposal from exactly received target-tick Person evidence
+
+Work-Key: `FP-EXACT-TARGET-OBSERVATION-UNIT-DELTA-V1`;
+[fixed #130 scope and independent scope review](https://github.com/uobnnisiuk/footprint-sim/issues/130).
+This evaluates the initial missing-Person-history/weft idea beyond #124's
+four-method outer-only current-unit comparison and #128's sourced conflict
+diagnosis. It does not introduce a fifth inference method. Unknown relations
+and 24-edge exploration remain unimplemented and unassessed.
+
+**Fixed question and hypothesis (before this code's CI):** the same original
+`{A,B}@2` received at 6, another `D@7` received at 7, four actual historical
+methods, historical `At(2)`, public `A→{D,E}` (complete), `B→E`
+(complete), `C→F` (partial), public current `D→U1, E→U2`
+(complete) and `F→{U1,U3}` (partial), cutoff/query/target tick 7.
+Method A remains the *declared* current outer; B is a separate
+`ConditionalTargetUnitProposal` which means **only if the received
+confirmed observation AND public declarations are trusted**. This is
+a method-of-using-the-same-evidence contrast, not receipt quantity.
+Predeclared possible table, subject to CI:
+
+| Historical method | Declared A units | Conditional B at `D@7` | Claim |
+| --- | --- | --- | --- |
+| public-prior | U1,U2,U3 (partial) | withheld/partial | no closed-world exclusion |
+| known-relation-backward | U1,U2,U3 (partial) | withheld/partial | no closed-world exclusion |
+| distributed-reconstruction | U1,U2 | U1 (conditional; delta 1) | not a hard reduction |
+| distributed-reconstruction-local | U1,U2 | U1 (conditional; delta 1) | not a hard reduction |
+
+The diagnostic reuses #128's **actually received, exact target-tick,
+confirmed Person** filter and transitive source-ancestry grouping. Alternatives
+sharing ancestry are unioned rather than counted as independent votes.
+Different groups may intersect only when they agree; disagreements produce
+`conflict`, not a successful empty recommendation. `{D,E}@7` permits
+zero improvement, `{D,F}@7` is partial, and `F@7` conflicting
+with a fully declared D/E outer cannot erase legacy candidates.
+`F∈[5,7]` or `F∈[6,7]`, unsupported state, Device-only,
+unrelated Person, not-yet-received, or incomplete public transitions/unit
+mappings cannot generate a definite proposal. Every proposal carries
+observation/ancestry, published transition and selected unit-map source IDs,
+a status/reason, and inspected observation/group counts. All lists are ordered
+deterministically. Sources prove auditability, not independent correctness.
+
+**Safety and research limits:** legacy four method historical outer/preferred/
+conflict, current region/unit outer, `TargetTickConflicts`, genuine F20
+candidate/disposition/source/steps, and `ProjectionStatus` do not change.
+A conditional unit-count delta is only a model-set comparison, not measured
+site visits, false-exclusion rates, elapsed rescue time, cost, or survival.
+The observed target may be inaccurate. Keep hard-excluding candidates and
+calibrating reliability **deferred**, not rejected. A null conditional unit
+list indicates withheld/unknown/conflict, never zero safe candidates.
+If evidence support, source ancestry, completeness or genuine F20 isolation
+cannot be verified in this 3-file implementation, revise #130 and obtain
+new independent scope approval rather than silently relaxing the precommitment.
+CI, independent code review and merging are **not yet established** at
+authoring time; the corresponding PR/Issue record must preserve actual
+measured results, counterexamples and a separate final decision.
