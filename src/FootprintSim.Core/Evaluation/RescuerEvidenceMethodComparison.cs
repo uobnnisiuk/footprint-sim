@@ -1833,9 +1833,10 @@ public static class RescuerEvidenceMethodComparison
                 receivedIds.Contains(c.DirectSourceId) &&
                 c.IsPersonEvidence && !c.IsDeviceOnlyEvidence &&
                 targetTick <= comparison.QueryTick &&
-                c.ConstrainedTimeWindow.StartTick <= targetTick &&
-                targetTick <= c.ConstrainedTimeWindow.EndTick &&
-                c.ConstrainedTimeWindow.StartTick <= comparison.QueryTick &&
+                // Interval occurrence time is not proof of location at targetTick.
+                // Only an exact-tick Person observation can establish a hard mismatch.
+                c.ConstrainedTimeWindow.StartTick == targetTick &&
+                c.ConstrainedTimeWindow.EndTick == targetTick &&
                 c.AllowedRegionIds.Count > 0)
             .OrderBy(c => c.ConstraintId, StringComparer.Ordinal)
             .ToArray();

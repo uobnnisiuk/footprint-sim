@@ -166,14 +166,15 @@ public sealed class RescuerEvidenceBoundaryTests
         bool unrelatedTarget = false, bool secondReceived = true,
         bool reversed = false, bool duplicateReceipt = false,
         EvidenceState secondState = EvidenceState.Confirmed,
-        string secondAncestry = "weft-b")
+        string secondAncestry = "weft-b",
+        InteractionTimeWindow? observationWindow = null)
     {
         var first = ComplementaryOriginal(
             RecordId, HolderId, 2, ["A", "B"], 3, "weft-a");
         var second = ComplementaryOriginal(
             "second-original", "holder-b", observationTick, regions,
             observationTick <= 5 ? 6 : 7, secondAncestry, secondState,
-            deviceOnly, unrelatedTarget);
+            deviceOnly, unrelatedTarget, observationWindow);
         var originals = reversed ? new[] { second, first } : new[] { first, second };
         var receipts = new List<InteractionRecordReceipt> { Receipt(6) };
         if (secondReceived)
@@ -273,6 +274,41 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Equal(JsonDefaults.Serialize(result),
             JsonDefaults.Serialize(CompareCurrentMethods(TargetTickOriginalInput(
                 7, ["F"], reversed: true, duplicateReceipt: true))));
+    }
+
+    // AR-24: a time-uncertain occurrence in [5,7] or [6,7] might
+    // have occurred before tick 7, even when the region is F.
+    [Fact]
+    public void TargetTickUncertainIntervalDoesNotProveDefiniteConflict()
+    {
+        foreach (var window in new[]
+        {
+            new InteractionTimeWindow(5, 7),
+            new InteractionTimeWindow(6, 7)
+        })
+        {
+            var input = TargetTickOriginalInput(
+                7, ["F"], observationWindow: window);
+            var result = CompareCurrentMethods(input);
+            foreach (var methodName in new[]
+            {
+                "distributed-reconstruction",
+                "distributed-reconstruction-local"
+            })
+            {
+                var row = result.Methods.Single(m => m.HistoricalMethod.Method == methodName);
+                Assert.Equal("available", row.ProjectionStatus);
+                Assert.Empty(row.TargetTickConflicts);
+                Assert.Equal(["D", "E"], row.KnownCurrentRegionIds);
+                Assert.Equal(["U1", "U2"], row.KnownUnitIds);
+            }
+        }
+
+        // Exact F@7 still conflicts; a less precise observation cannot
+        // establish a stronger finding than the precise F@5 alternative.
+        var exact = CompareCurrentMethods(TargetTickOriginalInput(7, ["F"]));
+        Assert.Equal("conflict", exact.Methods.Single(m =>
+            m.HistoricalMethod.Method == "distributed-reconstruction").ProjectionStatus);
     }
 
     [Fact]
@@ -2685,7 +2721,8 @@ public sealed class RescuerEvidenceBoundaryTests
     private static DeviceHeldInteractionRecord ComplementaryOriginal(
         string originalId, string holder, long atTick, IReadOnlyList<string> regions,
         long available, string upstream, EvidenceState state = EvidenceState.Confirmed,
-        bool deviceOnly = false, bool unrelatedTarget = false) =>
+        bool deviceOnly = false, bool unrelatedTarget = false,
+        InteractionTimeWindow? observationWindow = null) =>
         new(holder, available, InteractionObservation.Create(
             ScenarioId, Seed, originalId, null,
             InteractionRelationKind.PersonPersonEncounter,
@@ -2697,7 +2734,7 @@ public sealed class RescuerEvidenceBoundaryTests
                 new InteractionParticipant("person-b", InteractionEntityKind.Person,
                     InteractionParticipantRole.EncounterParticipant)
             ],
-            InteractionTimeWindow.At(atTick), regions, available, state,
+            observationWindow ?? InteractionTimeWindow.At(atTick), regions, available, state,
             isPersonEvidence: !deviceOnly, isDeviceOnlyEvidence: deviceOnly,
             InteractionVisibility.PrivateEvidence,
             [new InteractionProvenance(InteractionProvenanceKind.EvidenceRecord, upstream)]));

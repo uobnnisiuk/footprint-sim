@@ -2303,6 +2303,14 @@ methods, historical `At(2)`, cutoff/target tick 7, complete public
   evaluation-only comparison `D@7` does **not** narrow `U1,U2` to U1.
   `E@5` does not diagnose the target tick, although such a historical
   trace may serve other analyses.
+- An uncertain occurrence window containing tick 7, e.g. `F∈[5,7]` or
+  `F∈[6,7]`, does **not** establish `F@7`: it could have occurred at an
+  earlier tick. Only an exact `At(7)` Person window may trigger the
+  definitive target-tick conflict diagnostic. Uncertain intervals remain
+  unassessed by this particular diagnostic, not proved consistent; they can
+  still matter in other historical analyses. This addresses
+  [adversarial AR-24](https://github.com/uobnnisiuk/footprint-sim/pull/129#issuecomment-6776600396)
+  without shrinking public regions, units, or historical candidate outers.
 - Device-only, different Person, not yet received, cutoff-before-receipt,
   non-confirmed/ambiguous Person support, and incomplete/unmapped public
   declarations must not create a definitive conflict. Reordered or
