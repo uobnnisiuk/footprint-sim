@@ -99,13 +99,30 @@ public sealed record RescuerCurrentUnitHistoricalRegion(
     IReadOnlyList<string> TransitionSourceIds,
     IReadOnlyList<string> UnitMappingSourceIds);
 
+// #128: One received, confirmed Person observation at the target tick can
+// contradict an otherwise complete *published* current-region declaration.
+// This is a diagnostic, never an additional hard candidate exclusion.
+public sealed record RescuerCurrentUnitTargetObservationConflict(
+    string ReasonCode,
+    string ConstraintId,
+    string DirectSourceId,
+    string SourceObservationId,
+    IReadOnlyList<string> SourceAncestryIds,
+    InteractionTimeWindow ObservationWindow,
+    IReadOnlyList<string> AllowedRegionIds);
+
 public sealed record RescuerCurrentUnitMethod(
     RescuerEvidenceMethodRow HistoricalMethod,
     string ProjectionStatus,
     IReadOnlyList<RescuerCurrentUnitHistoricalRegion> HistoricalRegions,
     IReadOnlyList<string>? KnownCurrentRegionIds,
     IReadOnlyList<string>? KnownUnitIds,
-    IReadOnlyList<string>? UnresolvedHistoricalRegionIds);
+    IReadOnlyList<string>? UnresolvedHistoricalRegionIds)
+{
+    // Empty means no established contradiction, not proof of agreement.
+    public IReadOnlyList<RescuerCurrentUnitTargetObservationConflict>
+        TargetTickConflicts { get; init; } = [];
+}
 
 public sealed record RescuerCurrentUnitReceivedOriginal(
     string OriginalRecordId,
@@ -1775,6 +1792,31 @@ public static class RescuerEvidenceMethodComparison
         static string[] OrderedIds(IEnumerable<string> ids) =>
             ids.Distinct(StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal).ToArray();
 
+        // #128: Only constraints actually available to this rescuer at the
+        // comparison cutoff may diagnose an observed target-tick mismatch.
+        // No later/hidden Person history, Device trace, or synthetic truth is
+        // allowed into the declaration-only projection.
+        var receivedIds = received.ReceivedRecords
+            .Where(record => record.FirstReceivedAtTick <= comparison.QueryTick)
+            .Select(record => record.OriginalRecordId)
+            .ToHashSet(StringComparer.Ordinal);
+        var targetObservations = (received.Input.AvailableCausalTracingConstraints?
+            .PubliclyAvailableAt(comparison.QueryTick).Constraints ?? [])
+            .Where(c => c.ScenarioId == received.Input.ScenarioId &&
+                c.Seed == received.Input.Seed &&
+                c.TargetEntityId == received.Input.PublicContext.TargetPersonId &&
+                c.Visibility == InteractionVisibility.PublicEvidence &&
+                c.AvailableAtTick <= comparison.QueryTick &&
+                receivedIds.Contains(c.DirectSourceId) &&
+                c.IsPersonEvidence && !c.IsDeviceOnlyEvidence &&
+                targetTick <= comparison.QueryTick &&
+                c.ConstrainedTimeWindow.StartTick <= targetTick &&
+                targetTick <= c.ConstrainedTimeWindow.EndTick &&
+                c.ConstrainedTimeWindow.StartTick <= comparison.QueryTick &&
+                c.AllowedRegionIds.Count > 0)
+            .OrderBy(c => c.ConstraintId, StringComparer.Ordinal)
+            .ToArray();
+
         var rows = comparison.Methods.Select(method =>
         {
             var historicalRegions = method.OuterCandidateRegionIds.Select(region =>
@@ -1829,9 +1871,47 @@ public static class RescuerEvidenceMethodComparison
                 row.UnresolvedReasons.Count != 0).Select(row => row.HistoricalRegionId));
             var status = units.Length == 0 ? "unavailable"
                 : unresolved.Length != 0 ? "partial" : "available";
+
+            // Only a fully declared region outer can contradict an observation.
+            // A partial/unmapped outer is unknown outside the published subset,
+            // not a closed-world assertion. A multi-region observation conflicts
+            // only if NONE of its allowed regions overlaps the complete outer.
+            var knownSet = knownRegions.ToHashSet(StringComparer.Ordinal);
+            var contradictions = status == "available"
+                ? targetObservations.Where(c =>
+                    c.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                    c.SourceAncestryIds.Count > 0 &&
+                    !string.IsNullOrWhiteSpace(c.DirectSourceId) &&
+                    !string.IsNullOrWhiteSpace(c.SourceObservationId) &&
+                    c.AllowedRegionIds.All(id => !knownSet.Contains(id)) &&
+                    // Do not turn ambiguous or mutually alternative reports
+                    // from the same ancestry into a definite contradiction.
+                    !targetObservations.Any(other =>
+                        other.ConstraintId != c.ConstraintId &&
+                        other.SourceAncestryIds.Intersect(
+                            c.SourceAncestryIds, StringComparer.Ordinal).Any() &&
+                        (other.EvidenceBoundaryState != EvidenceState.Confirmed ||
+                            other.AllowedRegionIds.Any(knownSet.Contains))))
+                    // Shared-ancestry copies are one source of a diagnostic,
+                    // never independent confirmations.
+                    .GroupBy(c => string.Join("\u001f",
+                        OrderedIds(c.SourceAncestryIds)), StringComparer.Ordinal)
+                    .Select(group => group.First())
+                    .Select(c => new RescuerCurrentUnitTargetObservationConflict(
+                        "confirmed-target-observation-outside-complete-declaration",
+                        c.ConstraintId, c.DirectSourceId, c.SourceObservationId,
+                        OrderedIds(c.SourceAncestryIds),
+                        c.ConstrainedTimeWindow, OrderedIds(c.AllowedRegionIds)))
+                    .ToArray()
+                : [];
+            if (contradictions.Length > 0)
+                status = "conflict";
             return new RescuerCurrentUnitMethod(method, status, historicalRegions,
                 status == "unavailable" ? null : knownRegions,
-                status == "unavailable" ? null : units, unresolved);
+                status == "unavailable" ? null : units, unresolved)
+            {
+                TargetTickConflicts = contradictions
+            };
         }).ToArray();
 
         // A source-free outer projection may coincide with F20's union of
