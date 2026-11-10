@@ -2085,8 +2085,7 @@ and bounded-search-incomplete hints to #118's unknown candidate reasons.
 The #104 witnessed/conflict/unavailable status, four methods' safe outer,
 public search units, source ancestry and F20 remain unchanged.
 
-**Frozen synthetic expectations (not yet independently measured or CI-verified
-on this implementation head):**
+**Frozen synthetic cases and asserted expectations (fixed before execution):**
 
 | Case | Public candidate and same-cutoff input | Expected reasons on unknown candidate |
 |---|---|---|
@@ -2108,13 +2107,20 @@ timing label remains, now with the more precise public-dwell distinction.
 A same-cutoff validation rejects mismatched #104/#106 candidate windows,
 receipt IDs or statuses instead of silently presenting unrelated alternatives.
 
-**Verification state at authoring:** source and fixed tests prepared; .NET 8
-runtime/SDK is unavailable in the authoring environment. Build, test, format,
-sample scenarios and research evaluation are therefore *not locally run*.
-The resulting Draft PR needs actual current-head normal/F19 CI, independent
-code review and conventional merge conditions before any claims of successful
-verification. No physical false-exclusion, rescue visits, rescue time, costs
-or survival rates have been measured.
+**Verified implementation CI (2026-11-10; code head `f01f3f57503e72b27530220f19a0fba517124124`):**
+[normal CI #42800602406](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42800602406)
+and [F19 research CI #42800602386](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42800602386)
+were both `completed/success` on this exact code head. GitHub job/step results
+confirm normal environment, restore, build, test, format, S0/S1 and evaluation
+harness, and the research job's fixed execution and artifact handling all
+succeeded. The frozen ST/ST2/H2/N11/TL/route cases are covered by the tests;
+these are CI-tested *synthetic diagnostic assertions*, not independently
+reproduced adversarial scratch probes or measured field rescue outcomes.
+The local authoring environment has no .NET 8 SDK; tests, formatting, sample
+scenarios and research evaluation were **not run locally**. This docs-only
+follow-up is a later head and requires its own CI plus separate independent
+technical review before conventional merge. No physical false-exclusion,
+rescue visits, rescue time, costs or survival rates have been measured.
 
 **Research choice:** adopt reuse of existing bounded public explanations
 rather than duplicating route inference, manufacturing closed-world movement,
