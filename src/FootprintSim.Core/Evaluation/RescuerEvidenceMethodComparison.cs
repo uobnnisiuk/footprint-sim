@@ -120,8 +120,7 @@ public sealed record RescuerCurrentUnitMethod(
     IReadOnlyList<string>? UnresolvedHistoricalRegionIds)
 {
     // Empty means no established contradiction, not proof of agreement.
-    public IReadOnlyList<RescuerCurrentUnitTargetObservationConflict>
-        TargetTickConflicts { get; init; } = [];
+    public IReadOnlyList<RescuerCurrentUnitTargetObservationConflict> TargetTickConflicts { get; init; } = [];
 }
 
 public sealed record RescuerCurrentUnitReceivedOriginal(
@@ -129,13 +128,13 @@ public sealed record RescuerCurrentUnitReceivedOriginal(
     string OriginalObservationId,
     long FirstReceivedAtTick);
 
+// Only M1-E has actual candidate IDs, dispositions and ancestry for F20.
 public sealed record RescuerCurrentUnitMethodComparison(
     long QueryTick,
     long TargetTick,
     InteractionTimeWindow HistoricalWindow,
     IReadOnlyList<RescuerCurrentUnitReceivedOriginal> ReceivedOriginals,
     IReadOnlyList<RescuerCurrentUnitMethod> Methods,
-    // Only M1-E has actual candidate IDs, dispositions and ancestry for F20.
     PublicSearchProjectionResult ActualReconstructionF20Projection);
 
 
@@ -490,12 +489,12 @@ public sealed record RescuerMissingDeclaredPathQuestion(
     bool IndependentSourceAncestry,
     string PersonTraversability);
 
+// Formal public explanations make a missing direct declaration non-essential;
+// they are not verified Person movements.
 public sealed record RescuerMissingDeclaredPathCandidate(
     string RegionId,
     string DeclaredPathStatus,
     IReadOnlyList<RescuerMissingDeclaredPathQuestion> Questions,
-    // Formal public explanations that make a missing direct declaration
-    // non-essential. These are not verified Person movements.
     IReadOnlyList<string> PublicAlternativeExplanations);
 
 public sealed record RescuerMissingDeclaredPathReport(
@@ -561,11 +560,11 @@ public sealed record RescuerRelationQuestionUtilityReport
 /* #114: public unit-level grouping of the #104 declared-path diagnostics.
  * A witness is a formal, sourced compatibility explanation, never proof of
  * Person travel, safety, or a warrant to remove outer candidates/units. */
+// #118: unwitnessed diagnostic labels, not negative evidence.
 public sealed record RescuerDeclaredWitnessUnitRegion(
     string RegionId,
     string CompatibilityStatus,
     IReadOnlyList<RescuerDeclaredPathWitness> DirectWitnesses,
-    // #118: diagnostic labels on unwitnessed candidates, not negative evidence.
     IReadOnlyList<string> UnwitnessedReasonCodes);
 
 public sealed record RescuerDeclaredWitnessUnit(
@@ -1876,6 +1875,8 @@ public static class RescuerEvidenceMethodComparison
             // A partial/unmapped outer is unknown outside the published subset,
             // not a closed-world assertion. A multi-region observation conflicts
             // only if NONE of its allowed regions overlaps the complete outer.
+            // Do not turn ambiguous or mutually alternative observations
+            // of a shared original into a definite, independent contradiction.
             var knownSet = knownRegions.ToHashSet(StringComparer.Ordinal);
             var contradictions = status == "available"
                 ? targetObservations.Where(c =>
@@ -1884,16 +1885,12 @@ public static class RescuerEvidenceMethodComparison
                     !string.IsNullOrWhiteSpace(c.DirectSourceId) &&
                     !string.IsNullOrWhiteSpace(c.SourceObservationId) &&
                     c.AllowedRegionIds.All(id => !knownSet.Contains(id)) &&
-                    // Do not turn ambiguous or mutually alternative reports
-                    // from the same ancestry into a definite contradiction.
                     !targetObservations.Any(other =>
                         other.ConstraintId != c.ConstraintId &&
                         other.SourceAncestryIds.Intersect(
                             c.SourceAncestryIds, StringComparer.Ordinal).Any() &&
                         (other.EvidenceBoundaryState != EvidenceState.Confirmed ||
                             other.AllowedRegionIds.Any(knownSet.Contains))))
-                    // Shared-ancestry copies are one source of a diagnostic,
-                    // never independent confirmations.
                     .GroupBy(c => string.Join("\u001f",
                         OrderedIds(c.SourceAncestryIds)), StringComparer.Ordinal)
                     .Select(group => group.First())
