@@ -1043,6 +1043,195 @@ public sealed class RescuerEvidenceBoundaryTests
             r => Assert.Empty(r.UnwitnessedReasonCodes));
     }
 
+
+    // #126 / AR-22: an incompatible published direct edge describes that
+    // edge, not every possible published route. Adding public information
+    // must not erase an already valid formal multi-hop explanation.
+    [Fact]
+    public void PublishedDirectDoesNotHideCompatibleMultihopAlternatives()
+    {
+        var original = ComplementaryPublicContext();
+        var builder = new RescuerEvidenceInputBuilder();
+        (RescuerEvidenceInput U, RescuerEvidenceInput K) Inputs(
+            RescueContext world, long lateTick, bool reversed = false,
+            bool duplicate = false)
+        {
+            var kWorld = world with
+            {
+                PublicHazardEnvelope = world.PublicHazardEnvelope! with
+                {
+                    Branches = [.. world.PublicHazardEnvelope!.Branches,
+                        Branch("B", "D") with
+                        {
+                            ProvenanceId = "AR22-separate-public-BD"
+                        }]
+                }
+            };
+            var early = ComplementaryOriginal(RecordId, HolderId,
+                2, ["A", "B", "C"], 3, "weft-a");
+            var late = ComplementaryOriginal("second-original", "holder-b",
+                lateTick, ["D"], lateTick + 1, "weft-b");
+            DeviceHeldInteractionRecord[] originals = reversed
+                ? [late, early] : [early, late];
+            var receipts = new List<InteractionRecordReceipt>
+                { Receipt(6), LaterComparisonReceipt(7) };
+            if (duplicate)
+                receipts.Add(Receipt(6));
+            if (reversed)
+                receipts.Reverse();
+            return (
+                builder.BuildDistinctOriginals(world, Seed, 7, RescuerId,
+                    originals, receipts),
+                builder.BuildDistinctOriginals(kWorld, Seed, 7, RescuerId,
+                    originals, receipts));
+        }
+
+        static RescuerMissingDeclaredPathReport Questions(RescuerEvidenceInput input) =>
+            RescuerEvidenceMethodComparison.AnalyzeMissingDeclaredPathQuestions(
+                input, InteractionTimeWindow.At(2));
+        static RescuerMissingDeclaredPathCandidate Candidate(
+            RescuerMissingDeclaredPathReport report) =>
+            report.Candidates.Single(row => row.RegionId == "A");
+        static RescuerDeclaredWitnessUnitRegion UnitA(
+            RescuerDeclaredWitnessUnitReport report, string method) =>
+            report.Methods.Single(row => row.Method == method)
+                .WithoutDeclaration.Units.SelectMany(unit => unit.Regions)
+                .Single(region => region.RegionId == "A");
+
+        var tlhWorld = original with
+        {
+            PublicHazardEnvelope = original.PublicHazardEnvelope! with
+            {
+                Branches = [.. original.PublicHazardEnvelope!.Branches,
+                    Branch("A", "E") with
+                    {
+                        MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+                        ProvenanceId = "AR22-A-E"
+                    },
+                    Branch("E", "D") with
+                    {
+                        MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+                        ProvenanceId = "AR22-E-D"
+                    }]
+            }
+        };
+        var noDirectWorld = tlhWorld with
+        {
+            PublicHazardEnvelope = tlhWorld.PublicHazardEnvelope! with
+            {
+                Branches = tlhWorld.PublicHazardEnvelope!.Branches
+                    .Where(edge => !(edge.SourceRegionId == "A" &&
+                        edge.DestinationRegionId == "D")).ToArray()
+            }
+        };
+        var (tlhU, tlhK) = Inputs(tlhWorld, 4);
+        var (withoutU, withoutK) = Inputs(noDirectWorld, 4);
+        var tlh = Questions(tlhU);
+        var noDirect = Questions(withoutU);
+        var tlhA = Candidate(tlh);
+        var noDirectA = Candidate(noDirect);
+        Assert.Equal("available", tlh.Status);
+        Assert.Equal(["original-encounter-record", "second-original"],
+            tlh.ReceivedOriginalIds);
+        Assert.Empty(tlhA.Questions);
+        Assert.Empty(noDirectA.Questions);
+        Assert.Equal("unknown", tlhA.DeclaredPathStatus);
+        Assert.Equal("unknown", noDirectA.DeclaredPathStatus);
+        Assert.Contains("formal-two-hop:A>E>D",
+            tlhA.PublicAlternativeExplanations);
+        Assert.Contains("formal-two-hop:A>E>D",
+            noDirectA.PublicAlternativeExplanations);
+        Assert.Contains(tlhA.PublicAlternativeExplanations, explanation =>
+            explanation.StartsWith("direct-pair-published-too-long:A>D:",
+                StringComparison.Ordinal));
+        Assert.DoesNotContain(noDirectA.PublicAlternativeExplanations,
+            explanation => explanation.StartsWith("direct-pair-published-",
+                StringComparison.Ordinal));
+        // Direct-edge inspection is additional work, not free evidence.
+        Assert.True(tlh.PublicTraversalBranchesInspected >
+            noDirect.PublicTraversalBranchesInspected);
+
+        var tlhCompatibility = RescuerEvidenceMethodComparison
+            .AnalyzeDeclaredPathCompatibility(tlhU, InteractionTimeWindow.At(2));
+        var noDirectCompatibility = RescuerEvidenceMethodComparison
+            .AnalyzeDeclaredPathCompatibility(withoutU, InteractionTimeWindow.At(2));
+        Assert.Equal(tlhCompatibility.Candidates.Select(row =>
+            (row.RegionId, row.Status)), noDirectCompatibility.Candidates.Select(row =>
+            (row.RegionId, row.Status)));
+
+        var tlhUnits = DeclaredUnitCoverage(tlhU, tlhK);
+        var noDirectUnits = DeclaredUnitCoverage(withoutU, withoutK);
+        Assert.Equal(4, tlhUnits.Methods.Count);
+        Assert.Equal(4, noDirectUnits.Methods.Count);
+        foreach (var method in tlhUnits.Methods)
+        {
+            var other = noDirectUnits.Methods.Single(row => row.Method == method.Method);
+            Assert.Equal(method.WithoutDeclaration.PublicMethod.OuterCandidateRegionIds,
+                other.WithoutDeclaration.PublicMethod.OuterCandidateRegionIds);
+            Assert.Equal(method.WithoutDeclaration.UnitProjection.KnownUnitIds,
+                other.WithoutDeclaration.UnitProjection.KnownUnitIds);
+            Assert.Equal(method.WithoutDeclaration.PublicMethod.OuterCandidateRegionIds,
+                method.WithDeclaration.PublicMethod.OuterCandidateRegionIds);
+            var region = UnitA(tlhUnits, method.Method);
+            Assert.Equal("unknown", region.CompatibilityStatus);
+            Assert.Empty(region.DirectWitnesses);
+            Assert.Contains("formal-two-hop-public-alternative",
+                region.UnwitnessedReasonCodes);
+            Assert.Contains("published-pair-too-long",
+                region.UnwitnessedReasonCodes);
+            Assert.Contains("formal-two-hop-public-alternative",
+                UnitA(noDirectUnits, method.Method).UnwitnessedReasonCodes);
+        }
+        var (reversedU, reversedK) = Inputs(tlhWorld, 4,
+            reversed: true, duplicate: true);
+        Assert.Equal(JsonDefaults.Serialize(tlh),
+            JsonDefaults.Serialize(Questions(reversedU)));
+        Assert.Equal(JsonDefaults.Serialize(tlhUnits),
+            JsonDefaults.Serialize(DeclaredUnitCoverage(reversedU, reversedK)));
+
+        // N11H: the direct 3-tick branch arrives before D@6 (dwell
+        // unverified), while a published 2+2-tick route fits exactly.
+        var n11World = original with
+        {
+            PublicHazardEnvelope = original.PublicHazardEnvelope! with
+            {
+                Branches = [.. original.PublicHazardEnvelope!.Branches,
+                    Branch("A", "E") with
+                    {
+                        MinimumTravelTicks = 2, MaximumTravelTicks = 2,
+                        ProvenanceId = "AR22-N11-A-E"
+                    },
+                    Branch("E", "D") with
+                    {
+                        MinimumTravelTicks = 2, MaximumTravelTicks = 2,
+                        ProvenanceId = "AR22-N11-E-D"
+                    }]
+            }
+        };
+        var (n11U, n11K) = Inputs(n11World, 6);
+        var n11 = Candidate(Questions(n11U));
+        Assert.Empty(n11.Questions);
+        Assert.Contains("formal-two-hop:A>E>D",
+            n11.PublicAlternativeExplanations);
+        Assert.Contains(n11.PublicAlternativeExplanations, explanation =>
+            explanation.StartsWith(
+                "direct-pair-published-shorter-dwell-unverified:A>D:",
+                StringComparison.Ordinal));
+        var n11Units = DeclaredUnitCoverage(n11U, n11K);
+        Assert.All(n11Units.Methods, method =>
+        {
+            var region = UnitA(n11Units, method.Method);
+            Assert.Equal("unknown", region.CompatibilityStatus);
+            Assert.Empty(region.DirectWitnesses);
+            Assert.Contains("formal-two-hop-public-alternative",
+                region.UnwitnessedReasonCodes);
+            Assert.Contains("published-pair-shorter-dwell-unverified",
+                region.UnwitnessedReasonCodes);
+            Assert.Equal(method.WithoutDeclaration.PublicMethod.OuterCandidateRegionIds,
+                method.WithDeclaration.PublicMethod.OuterCandidateRegionIds);
+        });
+    }
+
     [Fact]
     public void DeclaredWitnessUnitsPreserveFuturePartialAndManyToManyMapping()
     {

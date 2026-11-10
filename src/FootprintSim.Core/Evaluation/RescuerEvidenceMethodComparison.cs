@@ -900,22 +900,34 @@ public static class RescuerEvidenceMethodComparison
                                                 region + ">" + destination + tag);
                                     }
                                     pairExplained = true;
-                                    continue;
+                                    // This label describes the direct edge only:
+                                    // a separately published multi-hop alternative
+                                    // may still fit the same observation window.
                                 }
                                 // This is a formal same-region explanation,
-                                // never evidence of a realized Person stay.
+                                // never evidence of a realized Person stay. Keep
+                                // the existing direct-pair semantics for self-pairs.
                                 if (region == destination)
                                 {
-                                    explanations.Add("formal-stay:" + region);
+                                    if (!directPublished)
+                                        explanations.Add("formal-stay:" + region);
                                     pairExplained = true;
                                     continue;
                                 }
                                 // Search only finite simple routes of already-
-                                // published branches. A positive interval overlap
-                                // needs no missing direct declaration; too-short
-                                // paths still need an untested dwell assumption.
+                                // published branches. Exclude the direct pair
+                                // already diagnosed above: only paths with two
+                                // or more published edges can be alternatives.
+                                // A positive interval overlap needs no missing
+                                // direct declaration; too-short paths still
+                                // need an untested dwell assumption.
+                                var routeBranches = directPublished
+                                    ? publishedBranches.Where(b =>
+                                        b.SourceRegionId != region ||
+                                        b.DestinationRegionId != destination).ToArray()
+                                    : publishedBranches;
                                 var paths = FindPublishedRoutes(region, destination,
-                                    minimum, maximum, publishedBranches);
+                                    minimum, maximum, routeBranches);
                                 traversedPublicBranches += paths.BranchesInspected;
                                 if (paths.Positive is not null)
                                 {
@@ -930,6 +942,11 @@ public static class RescuerEvidenceMethodComparison
                                     explanations.Add("public-path-search-incomplete:" +
                                         region + ">" + destination +
                                         ":depth=8:edge-budget=4096");
+                                // A known direct pair never generates an
+                                // unconfirmed-direct-edge question, even when
+                                // only alternative route timing is uncertain.
+                                if (directPublished)
+                                    continue;
                                 var questionId = "unconfirmed:" + region + ":" +
                                     destination + ":" + early.ConstraintId + ":" +
                                     later.ConstraintId + ":" + minimum + "-" + maximum;

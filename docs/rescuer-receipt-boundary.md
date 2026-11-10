@@ -2206,3 +2206,51 @@ unimplemented, neither disproved nor declared unnecessary. If F20 and
 declaration-only outputs disagree or receipt/cutoff/public validity cannot
 be preserved, this comparison must be held and the same issue revised and
 reviewed; tests are not weakened to produce a positive result.
+
+## #126 — published direct timing does not erase a compatible public detour (AR-22)
+
+Work-Key: `FP-PUBLISHED-DIRECT-MULTIHOP-EXPLANATION-V1`;
+[scope and independent range review](https://github.com/uobnnisiuk/footprint-sim/issues/126).
+This is a **diagnostic-only**, receipt-gated correction to #106's public route
+explanations (subsequently reused by #118/#122 unknown reason codes).
+It neither changes the historical candidates nor asserts where a Person
+actually travelled. A `direct-pair-published-too-long` code means **that
+particular published direct edge** cannot match the gap; it does not mean
+the candidate cannot reach the later region by *any* published path.
+Similarly, a shorter direct edge requires an unverified dwell assumption.
+
+**Fixed before implementation / CI — synthetic expectations:**
+
+| Case | Same received Person evidence and public change | Expected published explanations |
+| --- | --- | --- |
+| TLH | {A,B,C}@2, D@4, cutoff 7; direct A→D 3 ticks plus A→E→D 1+1 | direct too-long **and** `formal-two-hop:A>E>D` |
+| TLH-noDirect | exactly TLH without published direct A→D | `formal-two-hop:A>E>D` remains; no direct too-long |
+| N11H | {A,B,C}@2, D@6, cutoff 7; direct A→D 3 ticks plus A→E→D 2+2 | direct shorter/dwell unverified **and** `formal-two-hop:A>E>D` |
+
+All use the existing public world, genuine two-original `BuildDistinctOriginals`,
+ancestry and receipt times 6/7, historical `At(2)`, and identical present
+unit mappings. Keeping the direct edge must suppress *new direct questions*
+without suppressing compatible published multi-hop alternatives.
+The existing bounded `FindPublishedRoutes` is reused with the already
+evaluated direct endpoint edge excluded only from the alternative route
+search. This cannot manufacture an unknown physical relation. Its additional
+published branch inspections are counted rather than hidden. Previous
+ST/ST2/H2/N11/TL, partial/future declarations, depth/edge caps and incomplete
+diagnostics remain subject to existing regression tests.
+
+**Decision / limitation:** choose (a), displaying both independently
+declared formal explanations, instead of (b), documenting the loss of an
+otherwise known valid route. The positive `formal-two-hop` label is a
+*possible route on declared structure*, not witnessed Person motion.
+#104 witness/status, #106 question IDs/count, four-method safe outers,
+present public units, F20 exclusions, receipt cutoff, shared source ancestry
+and unknown/conflict are not intentionally modified. This tests only the
+local preservation of positive public-route explanations as a public direct
+edge is added; it does not prove global monotonicity, actual route
+availability, rescue speed/cost/survival improvement, unknown causal-link
+discovery or the 24-edge hypothesis. If fixed tests or CI disagree, retain
+the result and revisit #126's scope rather than changing the acceptance
+conditions. **Execution status at this documentation revision: implementation
+and frozen assertions are submitted for GitHub CI; no successful CI or
+independent code review is asserted here.** The authoring environment has
+no .NET 8 SDK for local build, tests or format.
