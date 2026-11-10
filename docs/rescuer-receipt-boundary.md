@@ -2153,8 +2153,11 @@ ablations 0, 1 and 2 at the same cutoff. No adaptive case selection after result
 
 **Fixed expected row snapshot (same-world/tick, two received originals)**:
 the four names below are the *actual four M1-E method outputs*, with publicly
-declared current regions and units derived afterward. These are precommitted
-test expectations, **not yet confirmed against the new head CI**:
+declared current regions and units derived afterward. These outcomes were frozen before execution and verified by the
+[normal CI on the code-and-test head](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42823292241)
+(successful build, tests, format and required scenario/evaluation steps on
+commit `c595f40`). The documentation-only confirmation creates a subsequent
+head whose CI must be checked independently:
 
 | Method | Historical outer at tick 2 | Declared known region outer at tick 7 | Known public units at tick 7 | Public incompleteness |
 | --- | --- | --- | --- | --- |
