@@ -98,10 +98,11 @@ public sealed class RescuerEvidenceBoundaryTests
         long cutoff, bool firstReceived, bool secondReceived,
         bool reversed = false, bool duplicate = false,
         string laterAncestry = "weft-b", bool deviceOnly = false,
-        EvidenceState firstState = EvidenceState.Confirmed)
+        EvidenceState firstState = EvidenceState.Confirmed,
+        IReadOnlyList<string>? firstRegions = null)
     {
         var first = ComplementaryOriginal(RecordId, HolderId, 2,
-            ["A", "B", "C"], 3, "weft-a", firstState, deviceOnly);
+            firstRegions ?? ["A", "B", "C"], 3, "weft-a", firstState, deviceOnly);
         var second = ComplementaryOriginal("second-original", "holder-b", 5,
             ["D"], 6, laterAncestry);
         var originals = reversed ? new[] { second, first } : new[] { first, second };
@@ -224,6 +225,42 @@ public sealed class RescuerEvidenceBoundaryTests
             Assert.True(condition.ReconstructionSteps >= 0);
         }
 
+        // AR-20: the original early observation equals the public prior.
+        // Later traversal evidence is not a tick-2 reconstruction source.
+        foreach (var (report, expectedDisposition, expectedGroups) in new[]
+                 {
+                     (zero, "Unavailable", 0),
+                     (first, "Supported", 1),
+                     (second, "Unavailable", 0),
+                     (both, "Supported", 1)
+                 })
+        {
+            Assert.Equal(expectedGroups,
+                report.DistributedReconstructionMethod.UsedSourceGroupCount);
+            Assert.All(report.Projection.Candidates, row =>
+            {
+                Assert.Equal(expectedDisposition, row.SourceCandidate.Disposition.ToString());
+                Assert.DoesNotContain("weft-b", row.SourceCandidate.SourceAncestryIds);
+                Assert.DoesNotContain("second-original", row.SourceCandidate.SourceAncestryIds);
+                if (expectedGroups == 0)
+                    Assert.DoesNotContain("weft-a", row.SourceCandidate.SourceAncestryIds);
+                else
+                    Assert.Contains("weft-a", row.SourceCandidate.SourceAncestryIds);
+            });
+        }
+        Assert.Equal(JsonDefaults.Serialize(zero.Projection.Candidates),
+            JsonDefaults.Serialize(second.Projection.Candidates));
+        Assert.Equal(JsonDefaults.Serialize(first.Projection.Candidates),
+            JsonDefaults.Serialize(both.Projection.Candidates));
+        var secondMethods = RescuerEvidenceMethodComparison.Compare(
+            PastToCurrentInput(7, false, true), InteractionTimeWindow.At(2)).Methods;
+        var bothMethods = RescuerEvidenceMethodComparison.Compare(
+            PastToCurrentInput(7, true, true), InteractionTimeWindow.At(2)).Methods;
+        Assert.Equal(1, secondMethods.Single(row =>
+            row.Method == "known-relation-backward").UsedSourceGroupCount);
+        Assert.Equal(2, bothMethods.Single(row =>
+            row.Method == "distributed-reconstruction-local").UsedSourceGroupCount);
+
         // Arrival at cutoff six is not a same-cutoff-seven ablation.
         var early = ProjectReceivedCurrent(PastToCurrentInput(6, true, true));
         Assert.Equal(6, early.QueryTick);
@@ -234,6 +271,61 @@ public sealed class RescuerEvidenceBoundaryTests
             7, true, true, reversed: true, duplicate: true));
         Assert.Equal(JsonDefaults.Serialize(both), JsonDefaults.Serialize(reordered));
         Assert.Equal(2, reordered.AvailableSourceGroupCount);
+    }
+
+    // AR-20: same public world, but a distinguishing received early observation.
+    [Fact]
+    public void ReceiptGatedCurrentProjectionDiscriminatesInformativeEarlyWeft()
+    {
+        var zero = ProjectReceivedCurrent(PastToCurrentInput(
+            7, false, false, firstRegions: ["A", "B"]));
+        var first = ProjectReceivedCurrent(PastToCurrentInput(
+            7, true, false, firstRegions: ["A", "B"]));
+        var both = ProjectReceivedCurrent(PastToCurrentInput(
+            7, true, true, firstRegions: ["A", "B"]));
+
+        Assert.Equal(["A", "B", "C"],
+            zero.DistributedReconstructionMethod.OuterCandidateRegionIds);
+        Assert.Equal(["A", "B", "C"],
+            zero.Projection.Candidates.Select(row => row.SourceCandidate.RegionId)
+                .OrderBy(id => id, StringComparer.Ordinal));
+        Assert.Equal(["D", "E", "F"], zero.Projection.KnownCurrentRegionIds);
+        Assert.Equal(["U1", "U2", "U3"], zero.Projection.KnownUnitIds);
+        Assert.Single(zero.Projection.UnresolvedCandidateIds);
+        Assert.Equal(0, zero.DistributedReconstructionMethod.UsedSourceGroupCount);
+        Assert.All(zero.Projection.Candidates, row =>
+            Assert.Equal("Unavailable", row.SourceCandidate.Disposition.ToString()));
+
+        foreach (var result in new[] { first, both })
+        {
+            Assert.Equal(["A", "B"],
+                result.DistributedReconstructionMethod.OuterCandidateRegionIds);
+            Assert.Equal(["A", "B"],
+                result.Projection.Candidates.Select(row => row.SourceCandidate.RegionId)
+                    .OrderBy(id => id, StringComparer.Ordinal));
+            Assert.Equal(["D", "E"], result.Projection.KnownCurrentRegionIds);
+            Assert.Equal(["U1", "U2"], result.Projection.KnownUnitIds);
+            Assert.Empty(result.Projection.UnresolvedCandidateIds);
+            Assert.Equal(1, result.DistributedReconstructionMethod.UsedSourceGroupCount);
+            Assert.All(result.Projection.Candidates, row =>
+            {
+                Assert.Equal("Supported", row.SourceCandidate.Disposition.ToString());
+                Assert.Contains("weft-a", row.SourceCandidate.SourceAncestryIds);
+                Assert.DoesNotContain("weft-b", row.SourceCandidate.SourceAncestryIds);
+                Assert.DoesNotContain("second-original", row.SourceCandidate.SourceAncestryIds);
+            });
+        }
+
+        Assert.NotEqual(JsonDefaults.Serialize(zero.Projection.Candidates),
+            JsonDefaults.Serialize(first.Projection.Candidates));
+        Assert.NotEqual(JsonDefaults.Serialize(zero.Projection.Candidates),
+            JsonDefaults.Serialize(both.Projection.Candidates));
+        Assert.Equal(JsonDefaults.Serialize(first.Projection.Candidates),
+            JsonDefaults.Serialize(both.Projection.Candidates));
+        var reordered = ProjectReceivedCurrent(PastToCurrentInput(
+            7, true, true, reversed: true, duplicate: true,
+            firstRegions: ["A", "B"]));
+        Assert.Equal(JsonDefaults.Serialize(both), JsonDefaults.Serialize(reordered));
     }
 
     [Fact]
