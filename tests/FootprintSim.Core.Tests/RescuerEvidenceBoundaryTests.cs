@@ -568,7 +568,8 @@ public sealed class RescuerEvidenceBoundaryTests
             Assert.Equal(["A", "C"],
                 n11.Methods.Single(m => m.Method == method).WithoutDeclaration.Units
                     .Single(u => u.UnitId == "U1").UnknownRegionIds);
-            Assert.Equal(["published-pair-timing-incompatible"],
+            Assert.Equal(["published-pair-shorter-dwell-unverified",
+                    "published-pair-timing-incompatible"],
                 Region(n11, method, "U1", "A").UnwitnessedReasonCodes);
             Assert.Equal(["early-person-not-supported"],
                 Region(n11, method, "U1", "C").UnwitnessedReasonCodes);
@@ -600,6 +601,249 @@ public sealed class RescuerEvidenceBoundaryTests
             .Where(r => r.CompatibilityStatus == "unknown"),
             r => Assert.Equal(["insufficient-public-evidence"],
                 r.UnwitnessedReasonCodes));
+    }
+
+    // #122 / AR-21: the same #106 receipt/cutoff candidates and public
+    // alternatives must explain #118's unknown labels, without promoting
+    // formal paths or stays to witnessed Person movement or hard exclusions.
+    [Fact]
+    public void DeclaredUnknownReasonsReusePublicStayPathsTimingAndIncompleteSearch()
+    {
+        var original = ComplementaryPublicContext();
+        var builder = new RescuerEvidenceInputBuilder();
+        (RescuerEvidenceInput U, RescuerEvidenceInput K) Inputs(
+            RescueContext world, long lateTick = 5,
+            IReadOnlyList<string>? lateRegions = null, bool reverse = false,
+            bool duplicate = false, bool receiveSecond = true)
+        {
+            var kWorld = world with
+            {
+                PublicHazardEnvelope = world.PublicHazardEnvelope! with
+                {
+                    Branches = [.. world.PublicHazardEnvelope!.Branches,
+                        Branch("B", "D") with
+                        {
+                            MinimumTravelTicks = 3, MaximumTravelTicks = 3,
+                            PublishedAtTick = 7,
+                            ProvenanceId = "separate-public-BD"
+                        }]
+                }
+            };
+            var first = ComplementaryOriginal(RecordId, HolderId, 2,
+                ["A", "B", "C"], 3, "weft-a");
+            var later = ComplementaryOriginal("second-original", "holder-b",
+                lateTick, lateRegions ?? ["D"], lateTick + 1, "weft-b");
+            var records = reverse ? new[] { later, first } : new[] { first, later };
+            var receipts = new List<InteractionRecordReceipt> { Receipt(6) };
+            if (receiveSecond)
+                receipts.Add(LaterComparisonReceipt(7));
+            if (duplicate)
+                receipts.Add(Receipt(6));
+            if (reverse)
+                receipts.Reverse();
+            return (
+                builder.BuildDistinctOriginals(world, Seed, 7, RescuerId,
+                    records, receipts),
+                builder.BuildDistinctOriginals(kWorld, Seed, 7, RescuerId,
+                    records, receipts));
+        }
+
+        static RescuerDeclaredWitnessUnitRegion Region(
+            RescuerDeclaredWitnessUnitReport report, string id)
+            => report.Methods.Single(m => m.Method == "public-prior")
+                .WithoutDeclaration.Units.SelectMany(u => u.Regions)
+                .Single(r => r.RegionId == id);
+
+        RescuerDeclaredWitnessUnitReport Verify(
+            (RescuerEvidenceInput U, RescuerEvidenceInput K) inputs)
+        {
+            var (u, k) = inputs;
+            var before = JsonDefaults.Serialize(u);
+            var diagnostics = RescuerEvidenceMethodComparison
+                .AnalyzeDeclaredPathCompatibility(u, InteractionTimeWindow.At(2));
+            var questions = RescuerEvidenceMethodComparison
+                .AnalyzeMissingDeclaredPathQuestions(u, InteractionTimeWindow.At(2));
+            var compared = RescuerEvidenceMethodComparison.Compare(
+                u, InteractionTimeWindow.At(2));
+            var result = DeclaredUnitCoverage(u, k);
+            Assert.Equal("available", result.Status);
+            Assert.Equal(4, result.Methods.Count);
+            Assert.Equal([RecordId, "second-original"],
+                result.ReceivedOriginalIds);
+            Assert.Equal(JsonDefaults.Serialize(u), before);
+            Assert.All(result.Methods, method =>
+            {
+                var reference = compared.Methods.Single(row =>
+                    row.Method == method.Method);
+                Assert.Equal(reference.OuterCandidateRegionIds,
+                    method.WithoutDeclaration.PublicMethod.OuterCandidateRegionIds);
+                Assert.Equal(method.WithoutDeclaration.PublicMethod.OuterCandidateRegionIds,
+                    method.WithDeclaration.PublicMethod.OuterCandidateRegionIds);
+                Assert.Equal(method.WithoutDeclaration.UnitProjection.KnownUnitIds,
+                    method.WithDeclaration.UnitProjection.KnownUnitIds);
+                Assert.All(method.WithoutDeclaration.Units.SelectMany(unit => unit.Regions),
+                    item =>
+                    {
+                        Assert.Equal(diagnostics.Candidates.Single(candidate =>
+                            candidate.RegionId == item.RegionId).Status,
+                            item.CompatibilityStatus);
+                        Assert.Equal(item.UnwitnessedReasonCodes.Distinct(
+                            StringComparer.Ordinal).OrderBy(code => code,
+                            StringComparer.Ordinal), item.UnwitnessedReasonCodes);
+                        if (item.CompatibilityStatus != "unknown")
+                            Assert.Empty(item.UnwitnessedReasonCodes);
+                    });
+            });
+            Assert.Equal(diagnostics.Candidates.Select(row => row.RegionId),
+                questions.Candidates.Select(row => row.RegionId));
+            return result;
+        }
+
+        var stayWorld = original with
+        {
+            PublicCausalTracingModel = new PublicCausalTracingModel
+            {
+                CandidateStates = [State(2, ["A", "B", "C"]),
+                    State(5, ["C", "D", "E", "F"])]
+            }
+        };
+        var stInputs = Inputs(stayWorld, lateRegions: ["C"]);
+        var st = Verify(stInputs);
+        Assert.Equal("unknown", Region(st, "C").CompatibilityStatus);
+        Assert.Equal(["formal-stay-public-alternative"],
+            Region(st, "C").UnwitnessedReasonCodes);
+        Assert.Empty(Region(st, "C").DirectWitnesses);
+        Assert.Contains("formal-stay:C", RescuerEvidenceMethodComparison
+            .AnalyzeMissingDeclaredPathQuestions(stInputs.U,
+                InteractionTimeWindow.At(2)).Candidates
+            .Single(row => row.RegionId == "C").PublicAlternativeExplanations);
+
+        var st2Inputs = Inputs(stayWorld, lateRegions: ["C", "D"]);
+        var st2 = Verify(st2Inputs);
+        Assert.Equal(["endpoint-pair-unpublished",
+                "formal-stay-public-alternative"],
+            Region(st2, "C").UnwitnessedReasonCodes);
+        Assert.Single(RescuerEvidenceMethodComparison.AnalyzeMissingDeclaredPathQuestions(
+            st2Inputs.U, InteractionTimeWindow.At(2)).Candidates
+            .Single(row => row.RegionId == "C").Questions);
+
+        var hopWorld = original with
+        {
+            PublicHazardEnvelope = original.PublicHazardEnvelope! with
+            {
+                Branches = [.. original.PublicHazardEnvelope!.Branches,
+                    Branch("C", "E") with
+                    {
+                        MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+                        ProvenanceId = "AR21-C-E"
+                    },
+                    Branch("E", "D") with
+                    {
+                        MinimumTravelTicks = 2, MaximumTravelTicks = 2,
+                        ProvenanceId = "AR21-E-D"
+                    }]
+            }
+        };
+        var h2Inputs = Inputs(hopWorld);
+        var h2 = Verify(h2Inputs);
+        Assert.Equal(["formal-two-hop-public-alternative"],
+            Region(h2, "C").UnwitnessedReasonCodes);
+        Assert.Empty(Region(h2, "C").DirectWitnesses);
+        Assert.Contains("formal-two-hop:C>E>D", RescuerEvidenceMethodComparison
+            .AnalyzeMissingDeclaredPathQuestions(h2Inputs.U,
+                InteractionTimeWindow.At(2)).Candidates
+            .Single(row => row.RegionId == "C").PublicAlternativeExplanations);
+        Assert.Equal(JsonDefaults.Serialize(h2),
+            JsonDefaults.Serialize(Verify(Inputs(hopWorld,
+                reverse: true, duplicate: true))));
+
+        var later6 = RelationUtilityInputs(firstRegions: ["A", "B"], laterTick: 6);
+        var n11 = DeclaredUnitCoverage(later6.U, later6.K);
+        Assert.Equal(["published-pair-shorter-dwell-unverified",
+                "published-pair-timing-incompatible"],
+            Region(n11, "A").UnwitnessedReasonCodes);
+        var later4 = Inputs(original, lateTick: 4);
+        var tooLong = Verify(later4);
+        Assert.Equal(["published-pair-timing-incompatible", "published-pair-too-long"],
+            Region(tooLong, "A").UnwitnessedReasonCodes);
+
+        var threeHopWorld = original with
+        {
+            PublicHazardEnvelope = original.PublicHazardEnvelope! with
+            {
+                Branches = [.. original.PublicHazardEnvelope!.Branches,
+                    Branch("C", "E") with
+                    {
+                        MinimumTravelTicks = 1, MaximumTravelTicks = 1
+                    },
+                    Branch("E", "F") with
+                    {
+                        MinimumTravelTicks = 1, MaximumTravelTicks = 1
+                    },
+                    Branch("F", "D") with
+                    {
+                        MinimumTravelTicks = 1, MaximumTravelTicks = 1
+                    }]
+            }
+        };
+        Assert.Contains("formal-multihop-public-alternative",
+            Region(Verify(Inputs(threeHopWorld)), "C").UnwitnessedReasonCodes);
+
+        var unpublishedHop = hopWorld with
+        {
+            PublicHazardEnvelope = hopWorld.PublicHazardEnvelope! with
+            {
+                Branches = hopWorld.PublicHazardEnvelope!.Branches.Select(branch =>
+                    branch.ProvenanceId.StartsWith("AR21-", StringComparison.Ordinal)
+                        ? branch with { PublishedAtTick = 8 } : branch).ToArray()
+            }
+        };
+        var futureInputs = Inputs(unpublishedHop);
+        // #112's four-method comparison rejects future-dated public branches;
+        // independently, #106 must not count them as published explanations.
+        Assert.Throws<ArgumentException>(() =>
+            DeclaredUnitCoverage(futureInputs.U, futureInputs.K));
+        var futureQuestions = RescuerEvidenceMethodComparison
+            .AnalyzeMissingDeclaredPathQuestions(futureInputs.U,
+                InteractionTimeWindow.At(2));
+        var futureC = futureQuestions.Candidates.Single(row => row.RegionId == "C");
+        Assert.Single(futureC.Questions);
+        Assert.Empty(futureC.PublicAlternativeExplanations);
+
+        var chainNames = Enumerable.Range(0, 9).Select(i => "T" + i).ToArray();
+        var chain = new List<PublicHazardBranch>();
+        var source = "C";
+        foreach (var destination in chainNames.Append("D"))
+        {
+            chain.Add(Branch(source, destination) with
+            {
+                MinimumTravelTicks = 0,
+                MaximumTravelTicks = 0
+            });
+            source = destination;
+        }
+        var deepWorld = original with
+        {
+            PublicRegions = [.. original.PublicRegions,
+                .. chainNames.Select((id, i) => new RegionDefinition
+                {
+                    Id = id, Type = RegionType.Outdoor,
+                    Center = new Position(40 + i, 0, 0, id)
+                })],
+            PublicHazardEnvelope = original.PublicHazardEnvelope! with
+            {
+                Branches = [.. original.PublicHazardEnvelope!.Branches, .. chain]
+            }
+        };
+        var deep = Verify(Inputs(deepWorld));
+        Assert.Contains("public-path-search-incomplete",
+            Region(deep, "C").UnwitnessedReasonCodes);
+
+        var beforeSecond = RelationUtilityInputs(receiveSecond: false);
+        Assert.All(DeclaredUnitCoverage(beforeSecond.U, beforeSecond.K)
+            .Methods.SelectMany(m => m.WithoutDeclaration.Units)
+            .SelectMany(u => u.Regions),
+            r => Assert.Empty(r.UnwitnessedReasonCodes));
     }
 
     [Fact]
