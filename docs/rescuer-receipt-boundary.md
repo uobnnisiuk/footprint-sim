@@ -1876,13 +1876,27 @@ covers only U2. U1/U2/U3 here are **current-tick-7** units, not
 | Second only | A,B,C | D,E,F | U1,U2,U3 | C: same |
 | Both | A,B,C | D,E,F | U1,U2,U3 | C: same |
 
-**Evidence status:** This table is the **pre-test fixed expectation**,
-not an executed result or a rescue benefit estimate. Four new direct
-tests assert these conditions with real `BuildDistinctOriginals`
-input and the actual M1-E result. Final-head normal and F19 CI must
-be checked before recording them as assertion-verified. If an expected
-candidate/standing differs, keep that failure rather than altering the
-fixture to engineer a favorable result.
+**Assertion-verified synthetic results, separated from the original
+pre-test expectation:** The four new `BuildDistinctOriginals`-origin
+direct tests executed against the actual M1-E reconstruction in
+[normal CI run #42737243251](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42737243251)
+at head `e92dde5b2cde0e841cedcb1eb71b2909c79039b1`.
+The run completed **Build** successfully, and its **Test** step
+passed all **675** tests (0 failed, 0 skipped). The four fixed
+0/1/2-original ablations returned safe historical outer {A,B,C},
+current known regions {D,E,F}, and distinct current units {U1,U2,U3};
+C retained two unresolved reasons (partial transition and mapping).
+The separate actual early cutoff 6 included only the first received
+original; repeated/reversed receipt ordering retained the deterministic
+report. The model returned the source candidates unchanged through
+the F20 projector, and declared U2 action support overlapped A/B but
+fully contained only B's **declared** known support.
+These are model-internal test assertions, not an independently measured
+CPU benchmark, rescue outcome or real location reduction. The same CI
+run's **Format** step failed on one indentation-only whitespace issue
+in a test, subsequently corrected on the same PR. The **final revised
+head** still requires its own full normal/F19 CI and independent review;
+passing the earlier test step is not a completed full-CI acceptance.
 
 The fixed candidate-level assertions also expect A→{D,E}/{U1,U2},
 B→{E}/{U2}, and C→{F}/{U1,U3} with explicit
