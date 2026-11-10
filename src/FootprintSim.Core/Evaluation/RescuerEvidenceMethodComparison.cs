@@ -2831,15 +2831,35 @@ public static class RescuerEvidenceMethodComparison
                 "Declared-path diagnostics do not match the receipt-gated comparison.");
         }
 
-        // #118: Preserve #104's classification, and explain a missing positive
-        // witness using only the same received, public Person observations and
-        // declared branches. Do not interpret absence of a branch as nonexistence.
+        // #118/#122: Keep #104's witness/status decision intact. For unknown
+        // candidates, reconcile the old direct-pair labels with #106's same
+        // receipt-gated public alternatives; neither implies Person travel nor
+        // changes safe outer candidates or public units.
         static Dictionary<string, string[]> UnwitnessedReasons(
             RescuerEvidenceInput received,
             RescuerDeclaredPathCompatibilityReport diagnostic)
         {
             var input = received.Input;
             var cutoff = diagnostic.QueryTick;
+            // #106 already has the bounded public route/stay/timing analysis;
+            // never implement a second path search inside the unit diagnostic.
+            var missing = AnalyzeMissingDeclaredPathQuestions(
+                received, diagnostic.TargetWindow);
+            if (missing.QueryTick != cutoff ||
+                missing.TargetWindow != diagnostic.TargetWindow ||
+                missing.Status != diagnostic.Status ||
+                !missing.ReceivedOriginalIds.SequenceEqual(
+                    diagnostic.ReceivedOriginalIds, StringComparer.Ordinal) ||
+                missing.Candidates.Count != diagnostic.Candidates.Count ||
+                missing.Candidates.Where((c, i) =>
+                    c.RegionId != diagnostic.Candidates[i].RegionId ||
+                    c.DeclaredPathStatus != diagnostic.Candidates[i].Status).Any())
+            {
+                throw new InvalidDataException(
+                    "Public alternatives do not match the same receipt/cutoff and declared-path candidates.");
+            }
+            var alternatives = missing.Candidates.ToDictionary(
+                candidate => candidate.RegionId, StringComparer.Ordinal);
             var originals = received.ReceivedRecords.Select(record =>
                 record.OriginalRecordId).ToHashSet(StringComparer.Ordinal);
             var constraints = (input.AvailableCausalTracingConstraints?
@@ -2914,6 +2934,52 @@ public static class RescuerEvidenceMethodComparison
                         }
                     }
                 }
+                // Alternative explanations are formal PUBLIC possibilities,
+                // not new received observations, witness status or proof that
+                // an unpublished relation is absent. A single candidate can
+                // also have a separate, still-unanswered destination (ST2).
+                var publicCandidate = alternatives[candidate.RegionId];
+                var formalAlternative = false;
+                foreach (var explanation in publicCandidate.PublicAlternativeExplanations)
+                {
+                    if (explanation.StartsWith("formal-stay:", StringComparison.Ordinal))
+                    {
+                        formalAlternative = true;
+                        flags.Add("formal-stay-public-alternative");
+                    }
+                    else if (explanation.StartsWith("formal-two-hop:", StringComparison.Ordinal))
+                    {
+                        formalAlternative = true;
+                        flags.Add("formal-two-hop-public-alternative");
+                    }
+                    else if (explanation.StartsWith("formal-multihop:", StringComparison.Ordinal))
+                    {
+                        formalAlternative = true;
+                        flags.Add("formal-multihop-public-alternative");
+                    }
+                    else if (explanation.StartsWith(
+                        "direct-pair-published-shorter-dwell-unverified:",
+                        StringComparison.Ordinal))
+                        flags.Add("published-pair-shorter-dwell-unverified");
+                    else if (explanation.StartsWith(
+                        "direct-pair-published-too-long:", StringComparison.Ordinal))
+                        flags.Add("published-pair-too-long");
+                    else if (explanation.StartsWith(
+                        "published-path-shorter-dwell-unverified:",
+                        StringComparison.Ordinal))
+                        flags.Add("published-path-shorter-dwell-unverified");
+                    else if (explanation.StartsWith(
+                        "published-path-too-long:", StringComparison.Ordinal))
+                        flags.Add("published-path-too-long");
+                    else if (explanation.StartsWith(
+                        "public-path-search-incomplete:", StringComparison.Ordinal))
+                        flags.Add("public-path-search-incomplete");
+                }
+                // #106 suppressed *all* questions only when a formal public
+                // alternative explains each applicable endpoint pair. For ST2
+                // its remaining D question preserves endpoint-pair-unpublished.
+                if (formalAlternative && publicCandidate.Questions.Count == 0)
+                    flags.Remove("endpoint-pair-unpublished");
                 if (flags.Count == 0)
                     flags.Add("insufficient-public-evidence");
                 reasons.Add(candidate.RegionId, flags.ToArray());

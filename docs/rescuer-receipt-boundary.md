@@ -2072,3 +2072,55 @@ a new broad method comparison. Preserve zero or negative results if
 observed. If current-head CI contradicts the predicted values, retain
 the failing evidence and return to independent scope review rather
 than weakening assertions or changing the scenario to force a gain.
+
+
+## #122 / AR-21: align unknown reasons with published stay and route alternatives
+
+Work-Key: `FP-RECEIPT-UNKNOWN-PUBLIC-ALTERNATIVES-V1`;
+[Issue #122](https://github.com/uobnnisiuk/footprint-sim/issues/122).
+This is a *diagnostic-only* repair: the same receipt-gated, public #106
+`AnalyzeMissingDeclaredPathQuestions` supplies formal stay, published
+two-/multi-hop paths, early-arrival/dwell uncertainty, too-long travel,
+and bounded-search-incomplete hints to #118's unknown candidate reasons.
+The #104 witnessed/conflict/unavailable status, four methods' safe outer,
+public search units, source ancestry and F20 remain unchanged.
+
+**Frozen synthetic expectations (not yet independently measured or CI-verified
+on this implementation head):**
+
+| Case | Public candidate and same-cutoff input | Expected reasons on unknown candidate |
+|---|---|---|
+| ST | C@2 and C@5 (both received), formally possible stay | `formal-stay-public-alternative` instead of insufficient evidence |
+| ST2 | C@2 and {C,D}@5 | `formal-stay-public-alternative` **and** `endpoint-pair-unpublished` (D still unanswered) |
+| H2 | C@2, D@5, published C→E→D at 1+2 ticks | `formal-two-hop-public-alternative` instead of treating missing direct C→D as the only explanation |
+| N11 | A@2, D@6, published A→D 3 ticks | `published-pair-shorter-dwell-unverified` alongside the original generic timing-mismatch label |
+| TL | A@2, D@4, published A→D 3 ticks | `published-pair-too-long` alongside the original timing-mismatch label |
+| Multi-hop / cap | published 3-hop C→E→F→D / over-depth search | formal published path explanation / `public-path-search-incomplete` without claiming absence |
+
+All are synthetic tests of the *interpretation of the same available evidence*,
+not experiments about physical Person motion or whether an unknown relation
+exists. #106's positive public alternatives never become new #104 direct
+witnesses, and an unanswered separate destination is retained alongside a
+formal stay or route. Shared ancestry, repeated receipts, future/private and
+Device-only evidence cannot be counted as new independent positive sightings.
+The original #118 V0/N10 distinctions are retained; N11's original general
+timing label remains, now with the more precise public-dwell distinction.
+A same-cutoff validation rejects mismatched #104/#106 candidate windows,
+receipt IDs or statuses instead of silently presenting unrelated alternatives.
+
+**Verification state at authoring:** source and fixed tests prepared; .NET 8
+runtime/SDK is unavailable in the authoring environment. Build, test, format,
+sample scenarios and research evaluation are therefore *not locally run*.
+The resulting Draft PR needs actual current-head normal/F19 CI, independent
+code review and conventional merge conditions before any claims of successful
+verification. No physical false-exclusion, rescue visits, rescue time, costs
+or survival rates have been measured.
+
+**Research choice:** adopt reuse of existing bounded public explanations
+rather than duplicating route inference, manufacturing closed-world movement,
+or merely documenting the misleading reason codes. Retain (not reject)
+unknown-relation discovery and the 24-edge exploration idea as unimplemented
+and untested. Revisit if same-world/cutoff validation, fixed synthetic tests,
+CI or independent review detect lost unanswered questions, changed safe outer
+or a false positive Person witness. Results of equivalence or regression must
+be reported without changing the frozen cases to manufacture improvement.
