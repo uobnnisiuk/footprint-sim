@@ -2631,7 +2631,15 @@ are unchanged; the public *catalog worlds* are not identical.
 | Outer at tick 5 | B,C | B,C |
 | Preferred at tick 5 (probe report) | B,C | B |
 | Tracing steps (probe report) | 3 | 5 |
-| Real transition traversal steps (probe report) | 0 | 2 |
+| Forward real-transition audit steps (probe report) | 0 | 2 |
+
+`RealTransitionTraversalOccurred` is set on audit steps from **both**
+forward and backward consistency passes. The reported `2` counts forward
+steps only, not all transition-bearing audit steps. The first PR-head CI
+exposed that distinction: the fixture produced 4 total transition-bearing
+steps, comprising 2 forward and 2 backward; the initial assertion wrongly
+expected a total of 2. These per-direction numbers are an explanation of
+this fixed diagnostic and still require a passing rerun of current-head CI.
 
 The reviewed current tracer expands a path only while
 `current.Depth < envelope.Branches.Count`. This means an unrelated branch

@@ -6588,7 +6588,14 @@ public sealed class RescuerEvidenceBoundaryTests
             Assert.Equal(3, p0.Steps.Count);
             Assert.Equal(5, p1.Steps.Count);
             Assert.Empty(p0.Steps.Where(step => step.RealTransitionTraversalOccurred));
+            // ApplyPublicConsistency audits both directions on each of two
+            // fixed-point passes. AR-31's forward count of 2 is not the
+            // count of all transition-bearing audit steps (which is 4).
             Assert.Equal(2, p1.Steps.Count(step =>
+                step.Direction == CausalTracingDirection.Forward &&
+                step.RealTransitionTraversalOccurred));
+            Assert.Equal(2, p1.Steps.Count(step =>
+                step.Direction == CausalTracingDirection.Backward &&
                 step.RealTransitionTraversalOccurred));
             Assert.Empty(p0.Steps.SelectMany(step => step.TransitionIds));
             Assert.Equal(3, p1.Steps.SelectMany(step => step.TransitionIds)
