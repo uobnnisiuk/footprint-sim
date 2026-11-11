@@ -6504,4 +6504,166 @@ public sealed class RescuerEvidenceBoundaryTests
             """;
         Assert.Equal(expected, measured);
     }
+
+    // #139 / AR-31: diagnostic of a catalog-wide depth bound, not a desired
+    // contract. A future tracer fix MAY eliminate the difference; this test
+    // deliberately does not require that known defect to persist.
+    [Fact]
+    public void DisconnectedPublishedBranchCanAlterCyclicTracerSupportWithoutHardExclusion()
+    {
+        var warps = PublicCandidateWarpFactory.Create(
+            ScenarioId, Seed, TargetId,
+            [State(0, ["A", "Z"]), State(5, ["B", "C"])],
+            CandidateWarpStanding.Preferred);
+        var upstream = CausalTracingConstraint.Create(
+            ScenarioId, Seed, "catalog-up-observation", "catalog-up-weft",
+            ["catalog-up-weft"], TargetId,
+            TracingConstraintSourceKind.CrossThreadObservation,
+            "catalog-received-person-encounter",
+            [
+                new InteractionParticipant(TargetId, InteractionEntityKind.Person,
+                    InteractionParticipantRole.EncounterParticipant),
+                new InteractionParticipant("catalog-witness", InteractionEntityKind.Person,
+                    InteractionParticipantRole.EncounterParticipant)
+            ],
+            TracingConstraintRole.Upstream, InteractionTimeWindow.At(0),
+            InteractionTimeWindow.At(0), ["A"], 0, EvidenceState.Confirmed,
+            true, false, InteractionVisibility.PublicEvidence,
+            "catalog-fixture-derivation",
+            [new InteractionProvenance(
+                InteractionProvenanceKind.ExternalSource, "catalog-up-weft")]);
+        var original = new PublicHazardEnvelope
+        {
+            HazardId = "catalog-depth-public",
+            SourceRegionId = "A",
+            PublishedAtTick = 0,
+            Regions = [],
+            Branches =
+            [
+                Branch("A", "Q") with {
+                    MinimumTravelTicks = 1, MaximumTravelTicks = 1 },
+                Branch("Q", "A") with {
+                    MinimumTravelTicks = 1, MaximumTravelTicks = 1 },
+                Branch("A", "B") with {
+                    MinimumTravelTicks = 1, MaximumTravelTicks = 1 }
+            ]
+        };
+        var expanded = original with
+        {
+            Branches = [.. original.Branches, Branch("X", "Y") with {
+                MinimumTravelTicks = 1, MaximumTravelTicks = 1 }]
+        };
+        var query = new CandidateWarpAccessContext
+        {
+            ScenarioId = ScenarioId,
+            Seed = Seed,
+            TargetEntityId = TargetId,
+            CurrentTick = 5,
+            QueryContextId = "catalog-depth-boundary"
+        };
+        CausalTracingResult Trace(PublicHazardEnvelope envelope) =>
+            new OperationalCausalTracer().Trace(warps, [upstream], query, envelope);
+        var p0 = Trace(original);
+        var p1 = Trace(expanded);
+
+        // X has no incoming published edge from the subject-side component.
+        Assert.DoesNotContain(original.Branches,
+            edge => edge.SourceRegionId is "X" or "Y");
+        Assert.Single(expanded.Branches.Where(edge => edge.SourceRegionId == "X"));
+        Assert.Equal(JsonDefaults.Serialize(original.Branches),
+            JsonDefaults.Serialize(expanded.Branches.Take(3).ToArray()));
+        Assert.Equal(["B", "C"], p0.CandidateWarps.OuterPlausibleRegionIdsAt(5));
+        Assert.Equal(["B", "C"], p1.CandidateWarps.OuterPlausibleRegionIdsAt(5));
+
+        // On the reviewed main, p0 preferred B,C while p1 preferred B:
+        // 3/5 steps and 0/2 real transition traversal steps, respectively.
+        // If a later correction removes the difference, accept it instead
+        // of pinning the catalog-size dependence as a normative behavior.
+        var samePreferred = p0.CandidateWarps.PreferredRegionIdsAt(5)
+            .SequenceEqual(p1.CandidateWarps.PreferredRegionIdsAt(5));
+        if (!samePreferred)
+        {
+            Assert.Equal(["B", "C"], p0.CandidateWarps.PreferredRegionIdsAt(5));
+            Assert.Equal(["B"], p1.CandidateWarps.PreferredRegionIdsAt(5));
+            Assert.Equal(3, p0.Steps.Count);
+            Assert.Equal(5, p1.Steps.Count);
+            Assert.Empty(p0.Steps.Where(step => step.RealTransitionTraversalOccurred));
+            Assert.Equal(2, p1.Steps.Count(step =>
+                step.RealTransitionTraversalOccurred));
+            Assert.Empty(p0.Steps.SelectMany(step => step.TransitionIds));
+            Assert.Equal(3, p1.Steps.SelectMany(step => step.TransitionIds)
+                .Distinct(StringComparer.Ordinal).Count());
+        }
+        else
+        {
+            Assert.Equal(p0.CandidateWarps.PreferredRegionIdsAt(5),
+                p1.CandidateWarps.PreferredRegionIdsAt(5));
+        }
+        Assert.Equal(JsonDefaults.Serialize(p1), JsonDefaults.Serialize(Trace(expanded)));
+    }
+
+    // #139 / AR-32: a separate one-hop control tests four genuinely
+    // receipt-gated method outputs, NOT the cyclic tracer case or all-edge
+    // enumeration cost. Unrelated declarations change the public catalog
+    // world but not the two received originals.
+    [Fact]
+    public void DisconnectedBranchOneHopControlPreservesReceivedFourMethodResults()
+    {
+        var p0 = ComplementaryPublicContext();
+        var p1 = p0 with
+        {
+            PublicRegions = [.. p0.PublicRegions,
+                new RegionDefinition {
+                    Id = "X", Type = RegionType.Outdoor,
+                    Center = new Position(6, 0, 0, "X") },
+                new RegionDefinition {
+                    Id = "Y", Type = RegionType.Outdoor,
+                    Center = new Position(7, 0, 0, "Y") }],
+            PublicHazardEnvelope = p0.PublicHazardEnvelope! with
+            {
+                Branches = [.. p0.PublicHazardEnvelope!.Branches,
+                    Branch("X", "Y") with {
+                        MinimumTravelTicks = 1, MaximumTravelTicks = 1 }]
+            }
+        };
+        var originals = new[]
+        {
+            ComplementaryOriginal(RecordId, HolderId, 2,
+                ["A", "B"], 3, "weft-a"),
+            ComplementaryOriginal("second-original", "holder-b", 5,
+                ["D"], 6, "weft-b")
+        };
+        var receipts = new[] { Receipt(6), LaterComparisonReceipt(7) };
+        var builder = new RescuerEvidenceInputBuilder();
+        var before = JsonDefaults.Serialize(originals);
+        var p0Input = builder.BuildDistinctOriginals(
+            p0, Seed, 7, RescuerId, originals, receipts);
+        var p1Input = builder.BuildDistinctOriginals(
+            p1, Seed, 7, RescuerId, originals, receipts);
+        Assert.Equal(before, JsonDefaults.Serialize(originals));
+        Assert.Equal(JsonDefaults.Serialize(p0Input.ReceivedRecords),
+            JsonDefaults.Serialize(p1Input.ReceivedRecords));
+        Assert.Equal(3, p0.PublicHazardEnvelope!.Branches.Count);
+        Assert.Equal(4, p1.PublicHazardEnvelope!.Branches.Count);
+        Assert.All(p0.PublicHazardEnvelope.Branches, edge =>
+            Assert.Contains(p1.PublicHazardEnvelope.Branches, other =>
+                other.SourceRegionId == edge.SourceRegionId &&
+                other.DestinationRegionId == edge.DestinationRegionId &&
+                other.ProvenanceId == edge.ProvenanceId));
+        Assert.DoesNotContain(p0.PublicHazardEnvelope.Branches,
+            edge => edge.SourceRegionId == "X" || edge.DestinationRegionId == "Y");
+
+        var baseline = CompareCurrentMethods(p0Input);
+        var expanded = CompareCurrentMethods(p1Input);
+        Assert.Equal(4, baseline.Methods.Count);
+        Assert.Equal([RecordId, "second-original"],
+            baseline.ReceivedOriginals.Select(row => row.OriginalRecordId));
+        Assert.Equal(JsonDefaults.Serialize(baseline.Methods),
+            JsonDefaults.Serialize(expanded.Methods));
+        Assert.Equal(JsonDefaults.Serialize(baseline.ActualReconstructionF20Projection),
+            JsonDefaults.Serialize(expanded.ActualReconstructionF20Projection));
+        // These existing step/inspected counters do NOT enumerate all
+        // branches or count F20 declaration validation work. No inference
+        // about wall time, total operations, or rescue efficiency follows.
+    }
 }
