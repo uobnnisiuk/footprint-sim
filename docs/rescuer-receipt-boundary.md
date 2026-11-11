@@ -2557,3 +2557,22 @@ Future public declarations passed at tick 7 with `AvailableTick=8` remain invali
 **Evaluation boundary:** This adds a labelled hypothetical comparison and discriminating assertions; no hard F20 candidate exclusion, scoring of real rescuer visits, travel-time saving, false-exclusion rate, survival probability, or operational promise. Processing counters in historical method rows stay distinct from model-side region/unit cardinalities. Unknown relationship discovery and 24-en remain unimplemented and unassessed, not rejected. #132 R2 is reused as the fixed baseline and not counted as a new discovery.
 
 **Decision prior to execution:** adopt the testable, source-checked evaluation-only label; reject promotion of the legacy hypothetical overlap to safe candidate removal; reserve probability/operational claims and 3+ original generalization for separately scoped review. Revisit if source ancestry cannot be checked from received public constraints, if the validator contract changes, if a three-file boundary cannot preserve F20, or if the independent code reviewer finds provenance misclassification. **CI execution results (2026-11-11):** The first Draft PR CI ran 695 xUnit tests successfully (failed 0, skipped 0), but normal CI and F19 stopped at `dotnet format --verify-no-changes`; the object initializer indentation and an existing in-lambda explanatory comment were corrected without changing the evaluation logic. The corrected code head `db16800e...` then passed [normal CI](https://github.com/uobnnisiuk/footprint-sim/actions/runs/43004191022) (695 tests, failed 0, skipped 0; build, format, scenarios and evaluation checks successful) and [F19 research CI](https://github.com/uobnnisiuk/footprint-sim/actions/runs/43004191044) (all jobs successful). These are model/software checks, not external validation of actual rescue or of the witness independence assumption. This result-only document revision must still receive its own latest-head CI and independent code review.
+
+
+**Ready-stage code review correction (Codex P2, 2026-11-11):**
+The previously completed synthetic tests did not establish eligibility
+when the **historical generating observation itself** was uncertain or
+conflicting. A complete published transition/unit map and separate source
+ancestry are not sufficient to confirm the historical premise. The
+evaluation-only eligibility gate now inspects receipt-gated, target-Person,
+historical-window generation constraints for their EvidenceBoundaryState,
+withholds unconfirmed evidence, and reports historical conflict without
+counting a reduction. Candidate-level historical conflict is also
+preserved; this does not change genuine reconstruction candidates or F20
+hard exclusions. A new controlled public B-only prior keeps the B-to-E
+published projection complete while varying only the historical
+observation state, so a missing unit reduction cannot be credited to a
+missing public declaration. The corrected head requires fresh CI and
+independent review: the previous 695-test success is not validation of
+this correction. The earlier result remains a limited conditional model
+comparison, not a validated reduction in actual rescue visits.

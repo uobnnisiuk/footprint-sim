@@ -169,10 +169,13 @@ public sealed class RescuerEvidenceBoundaryTests
         string secondAncestry = "weft-b",
         InteractionTimeWindow? observationWindow = null,
         IReadOnlyList<string>? firstRegions = null,
-        bool firstReceived = true)
+        bool firstReceived = true,
+        EvidenceState firstState = EvidenceState.Confirmed,
+        IReadOnlyList<string>? publicHistoricalRegions = null)
     {
         var first = ComplementaryOriginal(
-            RecordId, HolderId, 2, firstRegions ?? ["A", "B"], 3, "weft-a");
+            RecordId, HolderId, 2, firstRegions ?? ["A", "B"], 3, "weft-a",
+            firstState);
         var second = ComplementaryOriginal(
             "second-original", "holder-b", observationTick, regions,
             observationTick <= 5 ? 6 : 7, secondAncestry, secondState,
@@ -187,9 +190,23 @@ public sealed class RescuerEvidenceBoundaryTests
             receipts.Add(Receipt(6));
         if (reversed)
             receipts.Reverse();
+        var context = ComplementaryPublicContext();
+        if (publicHistoricalRegions is not null)
+        {
+            context = context with
+            {
+                PublicCausalTracingModel = new PublicCausalTracingModel
+                {
+                    CandidateStates =
+                    [
+                        State(2, publicHistoricalRegions),
+                        State(5, ["D", "E", "F"])
+                    ]
+                }
+            };
+        }
         return new RescuerEvidenceInputBuilder().BuildDistinctOriginals(
-            ComplementaryPublicContext(), Seed, cutoff, RescuerId,
-            originals, receipts);
+            context, Seed, cutoff, RescuerId, originals, receipts);
     }
 
     [Fact]
@@ -648,6 +665,59 @@ public sealed class RescuerEvidenceBoundaryTests
                 7, ["D", "E"], firstRegions: ["B"], secondAncestry: "weft-a",
                 reversed: true, duplicateReceipt: true))));
         Assert.Equal(["U2"], shared.ActualReconstructionF20Projection.KnownUnitIds);
+    }
+
+    // Ready-state Codex P2: a complete projection cannot make an uncertain
+    // or conflicting historical original into a confirmed independent source.
+    // The public prior is intentionally B-only here, so the B->E projection
+    // stays complete even when historical evidence is not confirmed.
+    [Fact]
+    public void ProvisionalOverlapDoesNotCountUncertainHistoricalGeneration()
+    {
+        RescuerCurrentUnitMethodComparison Run(EvidenceState firstState) =>
+            CompareCurrentMethods(TargetTickOriginalInput(
+                7, ["D", "E"], firstRegions: ["B"], firstState: firstState,
+                publicHistoricalRegions: ["B"]));
+
+        var confirmed = Run(EvidenceState.Confirmed);
+        foreach (var name in new[] {
+            "distributed-reconstruction", "distributed-reconstruction-local" })
+        {
+            var row = confirmed.Methods.Single(m =>
+                m.HistoricalMethod.Method == name);
+            Assert.Equal("available", row.ProjectionStatus);
+            Assert.Equal("eligible-unit-reduction",
+                row.ProvisionalOverlapAssessment!.Status);
+            Assert.Equal(1,
+                row.ProvisionalOverlapAssessment.UnitReductionFromDirect);
+        }
+
+        foreach (var state in new[] {
+            EvidenceState.SupportedButUncertain, EvidenceState.Conflicting })
+        {
+            var actual = Run(state);
+            Assert.Equal("available", actual.DirectTargetUnitBaseline!.Status);
+            foreach (var name in new[] {
+                "distributed-reconstruction", "distributed-reconstruction-local" })
+            {
+                var row = actual.Methods.Single(m =>
+                    m.HistoricalMethod.Method == name);
+                var assessment = row.ProvisionalOverlapAssessment!;
+                // Even a fully mapped public B->E is not proof that the
+                // conflicted or uncertain original constrains the past.
+                Assert.Equal("available", row.ProjectionStatus);
+                Assert.Contains(assessment.Status, new[] { "withheld", "conflict" });
+                Assert.StartsWith("historical-", assessment.ReasonCode);
+                Assert.Null(assessment.OverlapUnitIds);
+                Assert.Null(assessment.UnitReductionFromDirect);
+            }
+            Assert.Equal(JsonDefaults.Serialize(actual),
+                JsonDefaults.Serialize(CompareCurrentMethods(
+                    TargetTickOriginalInput(7, ["D", "E"],
+                        firstRegions: ["B"], firstState: state,
+                        publicHistoricalRegions: ["B"],
+                        reversed: true, duplicateReceipt: true))));
+        }
     }
 
     [Fact]

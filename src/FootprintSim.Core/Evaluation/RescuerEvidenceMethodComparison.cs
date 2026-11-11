@@ -2110,12 +2110,32 @@ public static class RescuerEvidenceMethodComparison
                     c.AvailableAtTick <= comparison.QueryTick &&
                     receivedIds.Contains(c.DirectSourceId))
                 .ToArray();
-            if (generationIds.Any(source => !publicConstraints.Any(c =>
+            // A fully published current-unit map is not confirmation of
+            // the historical evidence that generated these candidate regions.
+            // Inspect the actual received, Person-scoped generation constraints
+            // in the historical query window. Never count uncertain or
+            // conflicting historical support as an independent reduction.
+            var generationConstraints = publicConstraints
+                .Where(c => generationIds.Contains(c.DirectSourceId,
+                        StringComparer.Ordinal) &&
+                    c.TargetEntityId == received.Input.PublicContext.TargetPersonId &&
+                    c.IsPersonEvidence && !c.IsDeviceOnlyEvidence &&
+                    c.ConstrainedTimeWindow.StartTick <= historicalWindow.EndTick &&
+                    historicalWindow.StartTick <= c.ConstrainedTimeWindow.EndTick)
+                .ToArray();
+            if (historicalMethod.ConflictedCandidateRegionIds?.Count > 0)
+                return Result("conflict", "historical-candidate-conflict");
+            if (generationIds.Any(source => !generationConstraints.Any(c =>
                 c.DirectSourceId == source && c.SourceAncestryIds.Count > 0)))
                 return Result("withheld", "historical-generation-ancestry-unavailable");
+            if (generationConstraints.Any(c =>
+                c.EvidenceBoundaryState == EvidenceState.Conflicting))
+                return Result("conflict", "historical-generation-evidence-conflicting");
+            if (generationConstraints.Any(c =>
+                c.EvidenceBoundaryState != EvidenceState.Confirmed))
+                return Result("withheld", "historical-generation-evidence-not-confirmed");
 
-            var historicalAncestry = OrderedIds(publicConstraints
-                .Where(c => generationIds.Contains(c.DirectSourceId, StringComparer.Ordinal))
+            var historicalAncestry = OrderedIds(generationConstraints
                 .SelectMany(c => c.SourceAncestryIds));
             var directAncestry = OrderedIds(targetObservations
                 .SelectMany(c => c.SourceAncestryIds));
