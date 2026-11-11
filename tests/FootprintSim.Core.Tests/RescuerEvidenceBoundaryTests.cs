@@ -209,6 +209,262 @@ public sealed class RescuerEvidenceBoundaryTests
             context, Seed, cutoff, RescuerId, originals, receipts);
     }
 
+    // #136: every snapshot uses the SAME two original objects, public world,
+    // seed and declaration catalog. Only the second receipt tick changes.
+    private static (RescuerProvisionalUnitTimingReport Report,
+        RescuerEvidenceInput LateAt8) ProvisionalReceiptTiming(
+        string secondAncestry = "weft-b",
+        EvidenceState firstState = EvidenceState.Confirmed,
+        EvidenceState secondState = EvidenceState.Confirmed,
+        bool deviceOnly = false,
+        bool unrelatedTarget = false,
+        bool reversed = false,
+        bool duplicateReceipt = false,
+        IReadOnlyList<string>? secondRegions = null,
+        IReadOnlyList<PublicRegionProjection>? transitions = null,
+        IReadOnlyList<PublicSearchUnitMapping>? mappings = null)
+    {
+        var world = ComplementaryPublicContext();
+        var first = ComplementaryOriginal(RecordId, HolderId, 2,
+            ["B"], 3, "weft-a", firstState);
+        var second = ComplementaryOriginal("second-original", "holder-b", 7,
+            secondRegions ?? ["D", "E"], 7, secondAncestry, secondState,
+            deviceOnly, unrelatedTarget);
+        var originals = reversed ? new[] { second, first } : new[] { first, second };
+        var earlyLedger = new List<InteractionRecordReceipt>
+        {
+            Receipt(6), LaterComparisonReceipt(7)
+        };
+        var lateLedger = new List<InteractionRecordReceipt>
+        {
+            Receipt(6), LaterComparisonReceipt(8)
+        };
+        if (duplicateReceipt)
+        {
+            earlyLedger.Add(Receipt(6));
+            lateLedger.Add(LaterComparisonReceipt(8));
+        }
+        if (reversed)
+        {
+            earlyLedger.Reverse();
+            lateLedger.Reverse();
+        }
+        var originalBytes = JsonDefaults.Serialize(originals);
+        var publicBytes = JsonDefaults.Serialize(world);
+        var builder = new RescuerEvidenceInputBuilder();
+        var early7 = builder.BuildDistinctOriginals(
+            world, Seed, 7, RescuerId, originals, earlyLedger);
+        var early8 = builder.BuildDistinctOriginals(
+            world, Seed, 8, RescuerId, originals, earlyLedger);
+        var late7 = builder.BuildDistinctOriginals(
+            world, Seed, 7, RescuerId, originals, lateLedger);
+        var late8 = builder.BuildDistinctOriginals(
+            world, Seed, 8, RescuerId, originals, lateLedger);
+        Assert.Equal([RecordId, "second-original"],
+            early7.ReceivedRecords.Select(record => record.OriginalRecordId));
+        Assert.Equal([RecordId, "second-original"],
+            early8.ReceivedRecords.Select(record => record.OriginalRecordId));
+        Assert.Equal([RecordId],
+            late7.ReceivedRecords.Select(record => record.OriginalRecordId));
+        Assert.Equal([RecordId, "second-original"],
+            late8.ReceivedRecords.Select(record => record.OriginalRecordId));
+        Assert.Equal([6L, 7L],
+            early7.ReceivedRecords.Select(record => record.FirstReceivedAtTick));
+        Assert.Equal([6L, 8L],
+            late8.ReceivedRecords.Select(record => record.FirstReceivedAtTick));
+
+        var report =
+            RescuerEvidenceMethodComparison.AnalyzeRetrospectiveProvisionalUnitTiming(
+                world, Seed, RescuerId, originals, earlyLedger, lateLedger,
+                InteractionTimeWindow.At(2), 7,
+                ["A", "B", "C", "D", "E", "F"], ["U1", "U2", "U3"],
+                transitions ?? CurrentDeclaredTransitions(),
+                mappings ?? CurrentDeclaredUnits(),
+                [new PublicActionFootprint("inspect-U2", 7,
+                    ["U2"], "published-action", 0)]);
+        Assert.Equal(originalBytes, JsonDefaults.Serialize(originals));
+        Assert.Equal(publicBytes, JsonDefaults.Serialize(world));
+        return (report, late8);
+    }
+
+    [Fact]
+    public void ProvisionalReceiptTimingUsesRealForwardAndSeparateRetrospectivePaths()
+    {
+        var (report, late8) = ProvisionalReceiptTiming();
+        Assert.Equal(7, report.TargetTick);
+        Assert.Equal(2, report.HistoricalWindow.StartTick);
+        Assert.Equal(["early-second-receipt", "late-second-receipt"],
+            report.Series.Select(series => series.ReceiptCondition));
+        var early = report.Series[0];
+        var late = report.Series[1];
+        foreach (var series in report.Series)
+        {
+            Assert.Equal([7L, 8L], series.Timeline.Select(tick => tick.QueryTick));
+            Assert.Equal(["forward-f20", "retrospective-evaluation"],
+                series.Timeline.Select(tick => tick.ComparisonKind));
+            Assert.NotNull(series.Timeline[0].ForwardF20Projection);
+            Assert.Null(series.Timeline[1].ForwardF20Projection);
+            Assert.All(series.Timeline, tick =>
+                Assert.Equal(4, tick.Methods.Count));
+            Assert.Equal(["public-prior", "known-relation-backward",
+                "distributed-reconstruction", "distributed-reconstruction-local"],
+                series.Timeline[0].Methods.Select(row => row.HistoricalMethod.Method));
+        }
+        Assert.Equal([RecordId, "second-original"],
+            early.Timeline[0].ReceivedOriginals.Select(record => record.OriginalRecordId));
+        Assert.Equal([RecordId],
+            late.Timeline[0].ReceivedOriginals.Select(record => record.OriginalRecordId));
+        Assert.Equal([RecordId, "second-original"],
+            late.Timeline[1].ReceivedOriginals.Select(record => record.OriginalRecordId));
+        // AR-29: receiving the target sighting at tick 8 does not delay
+        // the actual tick-7 F20 unit set in this fixed synthetic world.
+        Assert.Equal(["U2"], early.Timeline[0].ForwardF20Projection!.KnownUnitIds);
+        Assert.Equal(["U2"], late.Timeline[0].ForwardF20Projection!.KnownUnitIds);
+        Assert.Equal(early.Timeline[0].ForwardF20Projection!.KnownUnitIds,
+            late.Timeline[0].ForwardF20Projection!.KnownUnitIds);
+        Assert.Empty(late.Timeline[0].ForwardF20Projection!.UnresolvedCandidateIds);
+        RescuerProvisionalOverlapAssessment Assessment(
+            RescuerProvisionalUnitTimingTick tick) =>
+            tick.Methods.Single(row =>
+                row.HistoricalMethod.Method == "distributed-reconstruction")
+                .ProvisionalOverlapAssessment!;
+        Assert.Equal("eligible-unit-reduction", Assessment(early.Timeline[0]).Status);
+        Assert.Equal("withheld", Assessment(late.Timeline[0]).Status);
+        Assert.Null(Assessment(late.Timeline[0]).UnitReductionFromDirect);
+        foreach (var series in report.Series)
+        {
+            var retrospective = Assessment(series.Timeline[1]);
+            Assert.Equal("eligible-unit-reduction", retrospective.Status);
+            Assert.Equal(["E"], retrospective.OverlapRegionIds);
+            Assert.Equal(["U2"], retrospective.OverlapUnitIds);
+            Assert.Equal(1, retrospective.RegionReductionFromDirect);
+            Assert.Equal(1, retrospective.UnitReductionFromDirect);
+        }
+        Assert.Equal(7, early.FirstObservedEligibleTicks.Single(first =>
+            first.Method == "distributed-reconstruction").FirstObservedEligibleTick);
+        Assert.Equal(8, late.FirstObservedEligibleTicks.Single(first =>
+            first.Method == "distributed-reconstruction").FirstObservedEligibleTick);
+
+        // Old F20 time protection remains: cutoff 8 cannot project target 7.
+        Assert.Throws<InvalidDataException>(() => CompareCurrentMethods(late8));
+        var trueForward = CompareCurrentMethods(TargetTickOriginalInput(
+            7, ["D", "E"], firstRegions: ["B"]));
+        Assert.Equal(JsonDefaults.Serialize(trueForward.Methods),
+            JsonDefaults.Serialize(CompareCurrentMethods(TargetTickOriginalInput(
+                7, ["D", "E"], firstRegions: ["B"])).Methods));
+        Assert.Equal(["U2"], trueForward.ActualReconstructionF20Projection.KnownUnitIds);
+    }
+
+    [Fact]
+    public void ProvisionalReceiptTimingKeepsAncestryAndUncertaintyGates()
+    {
+        var shared = ProvisionalReceiptTiming(secondAncestry: "weft-a").Report;
+        var sharedRow = shared.Series[1].Timeline[1].Methods.Single(row =>
+            row.HistoricalMethod.Method == "distributed-reconstruction");
+        Assert.Equal("withheld", sharedRow.ProvisionalOverlapAssessment!.Status);
+        Assert.Equal("shared-history-target-ancestry",
+            sharedRow.ProvisionalOverlapAssessment.ReasonCode);
+        Assert.Null(sharedRow.ProvisionalOverlapAssessment.UnitReductionFromDirect);
+
+        foreach (var firstState in new[] {
+            EvidenceState.SupportedButUncertain, EvidenceState.Conflicting })
+        {
+            var report = ProvisionalReceiptTiming(firstState: firstState).Report;
+            var assessment = report.Series[1].Timeline[1].Methods.Single(row =>
+                row.HistoricalMethod.Method == "distributed-reconstruction")
+                .ProvisionalOverlapAssessment!;
+            Assert.Contains(assessment.Status, new[] { "withheld", "conflict" });
+            Assert.Null(assessment.UnitReductionFromDirect);
+        }
+        foreach (var report in new[] {
+            ProvisionalReceiptTiming(secondState: EvidenceState.SupportedButUncertain).Report,
+            ProvisionalReceiptTiming(deviceOnly: true).Report,
+            ProvisionalReceiptTiming(unrelatedTarget: true).Report })
+        {
+            var assessment = report.Series[1].Timeline[1].Methods.Single(row =>
+                row.HistoricalMethod.Method == "distributed-reconstruction")
+                .ProvisionalOverlapAssessment!;
+            Assert.Equal("withheld", assessment.Status);
+            Assert.Null(assessment.UnitReductionFromDirect);
+        }
+        var conflict = ProvisionalReceiptTiming(secondRegions: ["D"]).Report;
+        Assert.Equal("conflict", conflict.Series[1].Timeline[1].Methods.Single(row =>
+            row.HistoricalMethod.Method == "distributed-reconstruction")
+            .ProvisionalOverlapAssessment!.Status);
+    }
+
+    [Fact]
+    public void ProvisionalReceiptTimingSeparatesUnitZeroFromUnknownAndFutureCatalog()
+    {
+        var manyToOne = ProvisionalReceiptTiming(mappings:
+            CurrentDeclaredUnits().Select(mapping => mapping.RegionId == "D"
+                ? mapping with { UnitIds = ["U2"] } : mapping).ToArray()).Report;
+        var onlyRegion = manyToOne.Series[1].Timeline[1].Methods.Single(row =>
+            row.HistoricalMethod.Method == "distributed-reconstruction")
+            .ProvisionalOverlapAssessment!;
+        Assert.Equal("region-only-change", onlyRegion.Status);
+        Assert.Equal(1, onlyRegion.RegionReductionFromDirect);
+        Assert.Equal(0, onlyRegion.UnitReductionFromDirect);
+        var incomplete = ProvisionalReceiptTiming(transitions:
+            CurrentDeclaredTransitions().Select(transition =>
+                transition.HistoricalRegionId == "B"
+                    ? transition with { IsComplete = false } : transition).ToArray()).Report;
+        var missing = incomplete.Series[1].Timeline[1].Methods.Single(row =>
+            row.HistoricalMethod.Method == "distributed-reconstruction")
+            .ProvisionalOverlapAssessment!;
+        Assert.Equal("withheld", missing.Status);
+        Assert.Null(missing.UnitReductionFromDirect);
+
+        Assert.Throws<InvalidDataException>(() => ProvisionalReceiptTiming(
+            transitions: CurrentDeclaredTransitions().Select(transition =>
+                transition with { AvailableTick = 8 }).ToArray()));
+        Assert.Throws<InvalidDataException>(() => ProvisionalReceiptTiming(
+            mappings: CurrentDeclaredUnits().Select(mapping =>
+                mapping with { AvailableTick = 8 }).ToArray()));
+        Assert.Equal(JsonDefaults.Serialize(ProvisionalReceiptTiming().Report),
+            JsonDefaults.Serialize(ProvisionalReceiptTiming(
+                reversed: true, duplicateReceipt: true).Report));
+    }
+
+    [Fact]
+    public void ProvisionalReceiptTimingRejectsReceiptAndPublicDomainDrift()
+    {
+        var world = ComplementaryPublicContext();
+        DeviceHeldInteractionRecord[] originals =
+        [
+            ComplementaryOriginal(RecordId, HolderId, 2, ["B"], 3, "weft-a"),
+            ComplementaryOriginal("second-original", "holder-b", 7,
+                ["D", "E"], 7, "weft-b")
+        ];
+        RescuerProvisionalUnitTimingReport Run(
+            IReadOnlyList<InteractionRecordReceipt> early,
+            IReadOnlyList<InteractionRecordReceipt> late) =>
+            RescuerEvidenceMethodComparison.AnalyzeRetrospectiveProvisionalUnitTiming(
+                world, Seed, RescuerId, originals, early, late,
+                InteractionTimeWindow.At(2), 7,
+                ["A", "B", "C", "D", "E", "F"], ["U1", "U2", "U3"],
+                CurrentDeclaredTransitions(), CurrentDeclaredUnits(),
+                [new PublicActionFootprint("inspect-U2", 7, ["U2"],
+                    "published-action", 0)]);
+        Assert.Throws<ArgumentException>(() => Run(
+            [Receipt(6), LaterComparisonReceipt(8)],
+            [Receipt(6), LaterComparisonReceipt(8)]));
+        Assert.Throws<ArgumentException>(() => Run(
+            [Receipt(6), LaterComparisonReceipt(7)],
+            [Receipt(6), LaterComparisonReceipt(7)]));
+        Assert.Throws<ArgumentException>(() => Run(
+            [Receipt(6), LaterComparisonReceipt(7)],
+            [Receipt(5), LaterComparisonReceipt(8)]));
+        Assert.Throws<ArgumentException>(() => Run(
+            [Receipt(6), LaterComparisonReceipt(7)],
+            [Receipt(6), LaterComparisonReceipt(8),
+                new InteractionRecordReceipt(ScenarioId, Seed, "third-original",
+                    HolderId, RescuerId, 8)]));
+        Assert.Throws<ArgumentException>(() => Run(
+            [Receipt(6), LaterComparisonReceipt(7)],
+            [Receipt(6), LaterComparisonReceipt(8), LaterComparisonReceipt(9)]));
+    }
+
     [Fact]
     public void TargetTickSourceAncestryGroupingIsTransitiveAndDeterministic()
     {
