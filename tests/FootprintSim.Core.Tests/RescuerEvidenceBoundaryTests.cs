@@ -586,6 +586,159 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Equal(["B"], method.HistoricalMethod.OuterCandidateRegionIds);
     }
 
+    // #134 / AR-28: sharing an upstream source between historical generation
+    // and direct target sighting must not be counted as independent reduction.
+    [Fact]
+    public void ProvisionalOverlapDistinguishesIndependentAndSharedAncestry()
+    {
+        var independentInput = TargetTickOriginalInput(
+            7, ["D", "E"], firstRegions: ["B"]);
+        var original = JsonDefaults.Serialize(independentInput);
+        var independent = CompareCurrentMethods(independentInput);
+        Assert.Equal(4, independent.Methods.Count);
+        foreach (var name in new[] { "distributed-reconstruction",
+            "distributed-reconstruction-local" })
+        {
+            var row = independent.Methods.Single(m => m.HistoricalMethod.Method == name);
+            var assessment = Assert.IsType<RescuerProvisionalOverlapAssessment>(
+                row.ProvisionalOverlapAssessment);
+            Assert.Equal("eligible-unit-reduction", assessment.Status);
+            Assert.Equal(["E"], assessment.OverlapRegionIds);
+            Assert.Equal(["U2"], assessment.OverlapUnitIds);
+            Assert.Equal(2, assessment.DirectRegionCount);
+            Assert.Equal(1, assessment.OverlapRegionCount);
+            Assert.Equal(1, assessment.RegionReductionFromDirect);
+            Assert.Equal(2, assessment.DirectUnitCount);
+            Assert.Equal(1, assessment.OverlapUnitCount);
+            Assert.Equal(1, assessment.UnitReductionFromDirect);
+            Assert.Contains(RecordId, assessment.HistoricalGenerationDirectSourceIds);
+            Assert.Contains("second-original", assessment.ObservationDirectSourceIds);
+            Assert.Empty(assessment.SharedSourceAncestryIds);
+            Assert.Null(row.ConditionalTargetUnitProposal!.UnitIds);
+            Assert.Equal(["U2"], row.DirectVsWeftAudit!.HypotheticalIntersectionUnitIds);
+        }
+        Assert.Equal(original, JsonDefaults.Serialize(independentInput));
+
+        var shared = CompareCurrentMethods(TargetTickOriginalInput(
+            7, ["D", "E"], firstRegions: ["B"], secondAncestry: "weft-a"));
+        foreach (var name in new[] { "distributed-reconstruction",
+            "distributed-reconstruction-local" })
+        {
+            var row = shared.Methods.Single(m => m.HistoricalMethod.Method == name);
+            var assessment = row.ProvisionalOverlapAssessment!;
+            Assert.Equal("withheld", assessment.Status);
+            Assert.Equal("shared-history-target-ancestry", assessment.ReasonCode);
+            Assert.Equal(["weft-a"], assessment.SharedSourceAncestryIds);
+            Assert.Null(assessment.OverlapRegionIds);
+            Assert.Null(assessment.OverlapUnitIds);
+            Assert.Null(assessment.UnitReductionFromDirect);
+            // The old unguarded #132 audit is unchanged, but not counted as
+            // an independent new contribution in the #134 assessment.
+            Assert.Equal(1, row.DirectVsWeftAudit!.HypotheticalUnitReductionFromDirect);
+        }
+        Assert.Equal(1, shared.Methods.Single(m =>
+            m.HistoricalMethod.Method == "distributed-reconstruction")
+            .HistoricalMethod.AvailableSourceGroupCount);
+        Assert.Equal(JsonDefaults.Serialize(independent),
+            JsonDefaults.Serialize(CompareCurrentMethods(TargetTickOriginalInput(
+                7, ["D", "E"], firstRegions: ["B"],
+                reversed: true, duplicateReceipt: true))));
+        Assert.Equal(JsonDefaults.Serialize(shared),
+            JsonDefaults.Serialize(CompareCurrentMethods(TargetTickOriginalInput(
+                7, ["D", "E"], firstRegions: ["B"], secondAncestry: "weft-a",
+                reversed: true, duplicateReceipt: true))));
+        Assert.Equal(["U2"], shared.ActualReconstructionF20Projection.KnownUnitIds);
+    }
+
+    [Fact]
+    public void ProvisionalOverlapSeparatesRegionFromUnitReductionAndWithholdsUnknown()
+    {
+        var baseInput = TargetTickOriginalInput(7, ["D", "E"], firstRegions: ["B"]);
+        var ordinary = CompareCurrentMethods(baseInput);
+        var manyToOne = CompareCurrentMethods(baseInput,
+            mappings: CurrentDeclaredUnits().Select(m => m.RegionId == "D"
+                ? m with { UnitIds = ["U2"] } : m).ToArray());
+        var one = manyToOne.Methods.Single(m =>
+            m.HistoricalMethod.Method == "distributed-reconstruction");
+        Assert.Equal(["U2"], manyToOne.DirectTargetUnitBaseline!.UnitIds);
+        Assert.Equal("region-only-change", one.ProvisionalOverlapAssessment!.Status);
+        Assert.Equal(["E"], one.ProvisionalOverlapAssessment.OverlapRegionIds);
+        Assert.Equal(["U2"], one.ProvisionalOverlapAssessment.OverlapUnitIds);
+        Assert.Equal(1, one.ProvisionalOverlapAssessment.RegionReductionFromDirect);
+        Assert.Equal(0, one.ProvisionalOverlapAssessment.UnitReductionFromDirect);
+        Assert.Equal(["U2"], manyToOne.ActualReconstructionF20Projection.KnownUnitIds);
+        Assert.Equal("eligible-unit-reduction", ordinary.Methods.Single(m =>
+            m.HistoricalMethod.Method == "distributed-reconstruction")
+            .ProvisionalOverlapAssessment!.Status);
+
+        var partialTransition = CompareCurrentMethods(baseInput,
+            transitions: CurrentDeclaredTransitions().Select(m =>
+                m.HistoricalRegionId == "B" ? m with { IsComplete = false } : m).ToArray());
+        var p = partialTransition.Methods.Single(m =>
+            m.HistoricalMethod.Method == "distributed-reconstruction")
+            .ProvisionalOverlapAssessment!;
+        Assert.Equal("withheld", p.Status);
+        Assert.Equal("transition-incomplete", p.ReasonCode);
+        Assert.Null(p.UnitReductionFromDirect);
+        var unmapped = CompareCurrentMethods(baseInput,
+            transitions: CurrentDeclaredTransitions().Where(m =>
+                m.HistoricalRegionId != "B").ToArray());
+        var u = unmapped.Methods.Single(m =>
+            m.HistoricalMethod.Method == "distributed-reconstruction")
+            .ProvisionalOverlapAssessment!;
+        Assert.Equal("withheld", u.Status);
+        Assert.Equal("transition-unmapped", u.ReasonCode);
+
+        var partialUnit = CompareCurrentMethods(baseInput,
+            mappings: CurrentDeclaredUnits().Select(m => m.RegionId == "E"
+                ? m with { IsComplete = false } : m).ToArray());
+        Assert.Equal("withheld", partialUnit.Methods.Single(m =>
+            m.HistoricalMethod.Method == "distributed-reconstruction")
+            .ProvisionalOverlapAssessment!.Status);
+        var missingUnit = CompareCurrentMethods(baseInput,
+            mappings: CurrentDeclaredUnits().Where(m => m.RegionId != "E").ToArray());
+        Assert.Equal("withheld", missingUnit.Methods.Single(m =>
+            m.HistoricalMethod.Method == "distributed-reconstruction")
+            .ProvisionalOverlapAssessment!.Status);
+
+        foreach (var input in new[] {
+            TargetTickOriginalInput(7, ["D", "E"], firstRegions: ["B"],
+                secondReceived: false),
+            TargetTickOriginalInput(7, ["D", "E"], firstRegions: ["B"],
+                secondState: EvidenceState.SupportedButUncertain),
+            TargetTickOriginalInput(7, ["D", "E"], firstRegions: ["B"],
+                observationWindow: new InteractionTimeWindow(6, 7)),
+            TargetTickOriginalInput(7, ["D", "E"], firstRegions: ["B"],
+                cutoff: 6) })
+        {
+            var result = CompareCurrentMethods(input);
+            var assessment = result.Methods.Single(m =>
+                m.HistoricalMethod.Method == "distributed-reconstruction")
+                .ProvisionalOverlapAssessment!;
+            Assert.Equal("withheld", assessment.Status);
+            Assert.Null(assessment.OverlapUnitIds);
+            Assert.Null(assessment.UnitReductionFromDirect);
+        }
+
+        var contradictory = CompareCurrentMethods(TargetTickOriginalInput(
+            7, ["D"], firstRegions: ["B"]));
+        Assert.Equal("conflict", contradictory.Methods.Single(m =>
+            m.HistoricalMethod.Method == "distributed-reconstruction")
+            .ProvisionalOverlapAssessment!.Status);
+
+        // Future declarations are rejected by the existing F20 validator.
+        // Removing them at the cutoff instead yields withheld/unknown.
+        Assert.Throws<InvalidDataException>(() => CompareCurrentMethods(baseInput,
+            CurrentDeclaredTransitions().Select(m => m with
+            { AvailableTick = 8 }).ToArray()));
+        Assert.Throws<InvalidDataException>(() => CompareCurrentMethods(baseInput,
+            mappings: CurrentDeclaredUnits().Select(m => m with
+            { AvailableTick = 8 }).ToArray()));
+        Assert.Equal(4, ordinary.Methods.Count);
+        Assert.Equal(["U2"], ordinary.ActualReconstructionF20Projection.KnownUnitIds);
+        Assert.All(ordinary.Methods, m => Assert.NotNull(m.ProvisionalOverlapAssessment));
+    }
+
     [Fact]
     public void DirectUnavailableDoesNotHideHistoricalOuterOrBecomeZeroReduction()
     {

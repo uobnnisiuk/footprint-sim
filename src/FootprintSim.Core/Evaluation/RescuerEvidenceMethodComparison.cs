@@ -153,6 +153,30 @@ public sealed record RescuerDirectWeftUnitAudit(
     IReadOnlyList<string>? HypotheticalIntersectionUnitIds,
     int? HypotheticalUnitReductionFromDirect);
 
+// #134: evaluation-only eligibility for a provisional overlap. Unlike the
+// #132 hypothetical audit, this explicitly checks source ancestry across
+// the historical generator and the latest received Person observation.
+public sealed record RescuerProvisionalOverlapAssessment
+{
+    public required string Status { get; init; }
+    public required string ReasonCode { get; init; }
+    public IReadOnlyList<string>? OverlapRegionIds { get; init; }
+    public IReadOnlyList<string>? OverlapUnitIds { get; init; }
+    public int? DirectRegionCount { get; init; }
+    public int? OverlapRegionCount { get; init; }
+    public int? RegionReductionFromDirect { get; init; }
+    public int? DirectUnitCount { get; init; }
+    public int? OverlapUnitCount { get; init; }
+    public int? UnitReductionFromDirect { get; init; }
+    public IReadOnlyList<string> HistoricalGenerationDirectSourceIds { get; init; } = [];
+    public IReadOnlyList<string> ObservationDirectSourceIds { get; init; } = [];
+    public IReadOnlyList<string> SharedSourceAncestryIds { get; init; } = [];
+    public IReadOnlyList<string> PublicTransitionSourceIds { get; init; } = [];
+    public IReadOnlyList<string> PublicUnitMappingSourceIds { get; init; } = [];
+    public required int InspectedHistoricalSourceCount { get; init; }
+    public required int InspectedTargetObservationCount { get; init; }
+}
+
 public sealed record RescuerCurrentUnitMethod(
     RescuerEvidenceMethodRow HistoricalMethod,
     string ProjectionStatus,
@@ -165,6 +189,7 @@ public sealed record RescuerCurrentUnitMethod(
     public IReadOnlyList<RescuerCurrentUnitTargetObservationConflict> TargetTickConflicts { get; init; } = [];
     public RescuerConditionalCurrentUnitProposal? ConditionalTargetUnitProposal { get; init; }
     public RescuerDirectWeftUnitAudit? DirectVsWeftAudit { get; init; }
+    public RescuerProvisionalOverlapAssessment? ProvisionalOverlapAssessment { get; init; }
 }
 
 public sealed record RescuerCurrentUnitReceivedOriginal(
@@ -2017,6 +2042,121 @@ public static class RescuerEvidenceMethodComparison
                 intersectionRegions, intersectionUnits, hypotheticalReduction);
         }
 
+        // #134 / AR-28: inspect only receipt-gated public ancestry already
+        // consumed by the historical method and exact Person observations.
+        // This is a comparison label, NEVER a fifth method or a hard filter.
+        // The earlier #132 hypothetical audit stays unchanged for continuity;
+        // only this independently sourced assessment can be counted as a
+        // provisional added contribution.
+        RescuerProvisionalOverlapAssessment AssessProvisionalOverlap(
+            RescuerEvidenceMethodRow historicalMethod,
+            string projectionStatus,
+            IReadOnlyList<RescuerCurrentUnitHistoricalRegion> historicalRegions,
+            IReadOnlyList<string>? knownRegions)
+        {
+            var generationIds = OrderedIds(historicalMethod.GenerationDirectSourceIds);
+            RescuerProvisionalOverlapAssessment Result(
+                string status, string reason, string[]? regions = null,
+                string[]? units = null, int? regionReduction = null,
+                int? unitReduction = null, string[]? sharedAncestry = null) => new()
+            {
+                Status = status,
+                ReasonCode = reason,
+                OverlapRegionIds = regions,
+                OverlapUnitIds = units,
+                DirectRegionCount = directBaseline.RegionIds?.Count,
+                OverlapRegionCount = regions?.Length,
+                RegionReductionFromDirect = regionReduction,
+                DirectUnitCount = directBaseline.UnitIds?.Count,
+                OverlapUnitCount = units?.Length,
+                UnitReductionFromDirect = unitReduction,
+                HistoricalGenerationDirectSourceIds = generationIds,
+                ObservationDirectSourceIds = OrderedIds(
+                    targetObservations.Select(c => c.DirectSourceId)),
+                SharedSourceAncestryIds = sharedAncestry ?? [],
+                PublicTransitionSourceIds = OrderedIds(
+                    historicalRegions.SelectMany(row => row.TransitionSourceIds)),
+                PublicUnitMappingSourceIds = OrderedIds(
+                    historicalRegions.SelectMany(row => row.UnitMappingSourceIds)),
+                InspectedHistoricalSourceCount = generationIds.Length,
+                InspectedTargetObservationCount = targetObservations.Length
+            };
+
+            if (directBaseline.Status == "conflict" || projectionStatus == "conflict")
+                return Result("conflict", directBaseline.Status == "conflict"
+                    ? directBaseline.ReasonCode
+                    : "received-observation-conflicts-with-declared-outer");
+            if (directBaseline.Status != "available")
+                return Result("withheld", directBaseline.ReasonCode);
+            if (projectionStatus != "available" || knownRegions is null)
+            {
+                var missing = OrderedIds(historicalRegions.SelectMany(row =>
+                    row.UnresolvedReasons));
+                return Result("withheld", missing.FirstOrDefault()
+                    ?? "public-current-outer-not-complete");
+            }
+            if (generationIds.Length == 0)
+                return Result("withheld", "historical-generation-has-no-received-source");
+
+            // The generating method's direct sources must be represented by
+            // received, public constraints. Source IDs alone are not evidence
+            // of independent witnesses. Missing ancestry cannot certify that
+            // the historical and direct observations are independent.
+            var publicConstraints = (received.Input.AvailableCausalTracingConstraints?
+                .PubliclyAvailableAt(comparison.QueryTick).Constraints ?? [])
+                .Where(c => c.ScenarioId == received.Input.ScenarioId &&
+                    c.Seed == received.Input.Seed &&
+                    c.Visibility == InteractionVisibility.PublicEvidence &&
+                    c.AvailableAtTick <= comparison.QueryTick &&
+                    receivedIds.Contains(c.DirectSourceId))
+                .ToArray();
+            if (generationIds.Any(source => !publicConstraints.Any(c =>
+                c.DirectSourceId == source && c.SourceAncestryIds.Count > 0)))
+                return Result("withheld", "historical-generation-ancestry-unavailable");
+
+            var historicalAncestry = OrderedIds(publicConstraints
+                .Where(c => generationIds.Contains(c.DirectSourceId, StringComparer.Ordinal))
+                .SelectMany(c => c.SourceAncestryIds));
+            var directAncestry = OrderedIds(targetObservations
+                .SelectMany(c => c.SourceAncestryIds));
+            var shared = OrderedIds(historicalAncestry.Intersect(
+                directAncestry, StringComparer.Ordinal));
+            if (shared.Length != 0 || generationIds.Intersect(
+                targetObservations.Select(c => c.DirectSourceId),
+                StringComparer.Ordinal).Any())
+                return Result("withheld", "shared-history-target-ancestry",
+                    sharedAncestry: shared);
+
+            var overlap = OrderedIds(directBaseline.RegionIds!.Intersect(
+                knownRegions, StringComparer.Ordinal));
+            if (overlap.Length == 0)
+                return Result("conflict", "no-supported-direct-historical-overlap");
+
+            // All directly observed regions have complete published unit
+            // mappings; the available historical outer has complete mappings
+            // as well. Re-check the specific overlap to avoid turning an
+            // unknown declaration into a numerical zero.
+            var overlapMappings = overlap.Select(region => input.UnitMappings
+                .SingleOrDefault(mapping => mapping.RegionId == region &&
+                    mapping.TargetTick == targetTick)).ToArray();
+            if (overlapMappings.Any(mapping => mapping is null || !mapping.IsComplete))
+                return Result("withheld", "overlap-unit-mapping-not-complete");
+            var overlapUnits = OrderedIds(overlapMappings
+                .SelectMany(mapping => mapping!.UnitIds));
+            if (overlapUnits.Length == 0)
+                return Result("withheld", "overlap-has-no-declared-unit");
+            var regionDelta = directBaseline.RegionIds!.Count - overlap.Length;
+            var unitDelta = directBaseline.UnitIds!.Count - overlapUnits.Length;
+            if (unitDelta < 0)
+                return Result("withheld", "overlap-unit-count-inconsistent");
+            return Result(unitDelta > 0 ? "eligible-unit-reduction" :
+                    regionDelta > 0 ? "region-only-change" : "no-region-change",
+                unitDelta > 0 ? "independent-sources-and-complete-declarations" :
+                    regionDelta > 0 ? "published-regions-share-current-unit" :
+                    "historical-outer-adds-no-region-constraint",
+                overlap, overlapUnits, regionDelta, unitDelta);
+        }
+
         // #130: Keep the conditional proposal strictly outside all method
         // candidate and F20 calculations. The #128 received/exact-tick filter
         // and transitive ancestry groups are reused, not independently rebuilt.
@@ -2133,7 +2273,9 @@ public static class RescuerEvidenceMethodComparison
                     ConditionalTargetUnitProposal = ConditionalProposal(
                         "unavailable", historicalRegions, null, null),
                     DirectVsWeftAudit = CompareDirectWithWeft("unavailable", null,
-                        ConditionalProposal("unavailable", historicalRegions, null, null))
+                        ConditionalProposal("unavailable", historicalRegions, null, null)),
+                    ProvisionalOverlapAssessment = AssessProvisionalOverlap(
+                        method, "unavailable", historicalRegions, null)
                 };
 
             var knownRegions = OrderedIds(historicalRegions.SelectMany(row =>
@@ -2180,7 +2322,9 @@ public static class RescuerEvidenceMethodComparison
             {
                 TargetTickConflicts = contradictions,
                 ConditionalTargetUnitProposal = proposal,
-                DirectVsWeftAudit = CompareDirectWithWeft(status, knownRegions, proposal)
+                DirectVsWeftAudit = CompareDirectWithWeft(status, knownRegions, proposal),
+                ProvisionalOverlapAssessment = AssessProvisionalOverlap(
+                    method, status, historicalRegions, knownRegions)
             };
         }).ToArray();
 

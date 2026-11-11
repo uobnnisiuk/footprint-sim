@@ -2541,3 +2541,19 @@ own checks and independent review. Local .NET execution was unavailable.
 The added tests validate synthetic evaluation categories and receipt
 bookkeeping, not the safety of adopting a historical intersection or a
 real-world rescue advantage.
+
+## Provisional overlap eligibility versus search-unit changes (Issue #134)
+
+Work-Key: `FP-WEFT-PROVISIONAL-OVERLAP-ELIGIBILITY-V1` / Scope-Revision 1.
+
+**Hypotheses fixed before CI:** with the same received observations, exact query/target tick 7, declared public transitions and unit map, a received historical `{B}@2` and an ambiguous received exact Person `{D,E}@7` have a hypothetical overlap `{E}`. Under separate upstream ancestry (`weft-a` and `weft-b`) the evaluation-only `ProvisionalOverlapAssessment` should expose region reduction 2 to 1 and unit reduction U1/U2 to U2 (2 to 1). The #132 historical conditional B remains partial; F20 receives no hypothetical filter. A shared historical/target ancestry must instead be `withheld` with no counted reduction, even if the legacy #132 explanatory `DirectVsWeftAudit` still shows its unguarded intersection (AR-28).
+
+A separate **public-model condition**, not another method or evidence difference, maps both D and E to U2. In that condition the same overlap reduces the number of regions (2 to 1) without reducing the count of public current search units (U2 to U2, zero). This demonstrates why region count is not a substitute for search-unit count or visits.
+
+The new evaluation-only statuses distinguish `eligible-unit-reduction`, `region-only-change`, `no-region-change`, `withheld` (incomplete declarations, no exact received Person evidence, uncertain boundary state, missing or shared upstream ancestry), and `conflict`. `null` numerical differences mean not determined and must never be reported as zero benefit. Only receipt-gated public constraints and historical generation sources are used for ancestry comparison; a historical method with no actual generation source is not counted as new independent weft support. This is not a reliability model for witnesses and does not assert independence in real life.
+
+Future public declarations passed at tick 7 with `AvailableTick=8` remain invalid input (`InvalidDataException` from the existing validator). If the unavailable declarations are omitted from the tick-7 public catalog, their missing mapping is instead withheld, not a valid empty recommendation. Raw received originals are limited to two. Device-only, unreceived, interval and uncertainty cases do not add exact target proof. Source copies do not count as independent votes. Input reorder and duplicate receipts must not change the result bytes.
+
+**Evaluation boundary:** This adds a labelled hypothetical comparison and discriminating assertions; no hard F20 candidate exclusion, scoring of real rescuer visits, travel-time saving, false-exclusion rate, survival probability, or operational promise. Processing counters in historical method rows stay distinct from model-side region/unit cardinalities. Unknown relationship discovery and 24-en remain unimplemented and unassessed, not rejected. #132 R2 is reused as the fixed baseline and not counted as a new discovery.
+
+**Decision prior to execution:** adopt the testable, source-checked evaluation-only label; reject promotion of the legacy hypothetical overlap to safe candidate removal; reserve probability/operational claims and 3+ original generalization for separately scoped review. Revisit if source ancestry cannot be checked from received public constraints, if the validator contract changes, if a three-file boundary cannot preserve F20, or if the independent code reviewer finds provenance misclassification. **CI result:** pending; no passing result is claimed by this text.
