@@ -210,6 +210,31 @@ public sealed record RescuerCurrentUnitMethodComparison(
 }
 
 
+// #136: two different query-time contracts. Retrospective assessments reuse
+// the #134 private eligibility rules, but have NO F20 projection at cutoff 8.
+public sealed record RescuerProvisionalUnitTimingTick(
+    long QueryTick,
+    string ComparisonKind,
+    IReadOnlyList<RescuerCurrentUnitReceivedOriginal> ReceivedOriginals,
+    IReadOnlyList<string> ReceivedSourceObservationIds,
+    int AvailableSourceGroupCount,
+    RescuerDirectTargetUnitBaseline DirectTargetUnitBaseline,
+    IReadOnlyList<RescuerCurrentUnitMethod> Methods,
+    PublicSearchProjectionResult? ForwardF20Projection);
+
+public sealed record RescuerProvisionalUnitFirstObserved(
+    string Method, long? FirstObservedEligibleTick);
+
+public sealed record RescuerProvisionalUnitTimingSeries(
+    string ReceiptCondition,
+    IReadOnlyList<RescuerProvisionalUnitTimingTick> Timeline,
+    IReadOnlyList<RescuerProvisionalUnitFirstObserved> FirstObservedEligibleTicks);
+
+public sealed record RescuerProvisionalUnitTimingReport(
+    long TargetTick,
+    InteractionTimeWindow HistoricalWindow,
+    IReadOnlyList<RescuerProvisionalUnitTimingSeries> Series);
+
 // Only the separate evaluation call receives a synthetic truth region.
 public sealed record RescuerEvidenceMethodTruthRow(
     string Condition,
@@ -1854,6 +1879,10 @@ public static class RescuerEvidenceMethodComparison
     /// Published declarations are validated by F20 with an EMPTY candidate
     /// list; no fake candidate identity, disposition or ancestry is created.
     /// </summary>
+    /// <summary>
+    /// Actual F20 remains the sole forward current-unit projection contract.
+    /// It is never invoked with a target tick earlier than the query cutoff.
+    /// </summary>
     public static RescuerCurrentUnitMethodComparison CompareReceivedCurrentUnits(
         RescuerEvidenceInput received,
         InteractionTimeWindow historicalWindow,
@@ -1863,6 +1892,36 @@ public static class RescuerEvidenceMethodComparison
         IReadOnlyList<PublicRegionProjection> regionProjections,
         IReadOnlyList<PublicSearchUnitMapping> unitMappings,
         IReadOnlyList<PublicActionFootprint> actions)
+    {
+        var evaluation = EvaluateCurrentUnits(
+            received, historicalWindow, targetTick, regionIds, searchUnitIds,
+            regionProjections, unitMappings, actions, retrospective: false);
+        return new RescuerCurrentUnitMethodComparison(
+            evaluation.Comparison.QueryTick, targetTick, historicalWindow,
+            evaluation.ReceivedOriginals, evaluation.Methods, evaluation.F20!)
+        {
+            DirectTargetUnitBaseline = evaluation.Baseline
+        };
+    }
+
+    // The same source/eligibility/projection diagnostic rules serve forward
+    // F20 and the separate retrospective evaluation. Retrospective uses only
+    // a public catalog already validated at the target tick by the caller.
+    // No fake PastStateCandidate or altered evidence cutoff is constructed.
+    private static (RescuerEvidenceMethodQueryRow Comparison,
+        RescuerCurrentUnitReceivedOriginal[] ReceivedOriginals,
+        RescuerCurrentUnitMethod[] Methods,
+        RescuerDirectTargetUnitBaseline Baseline,
+        PublicSearchProjectionResult? F20) EvaluateCurrentUnits(
+        RescuerEvidenceInput received,
+        InteractionTimeWindow historicalWindow,
+        long targetTick,
+        IReadOnlyList<string> regionIds,
+        IReadOnlyList<string> searchUnitIds,
+        IReadOnlyList<PublicRegionProjection> regionProjections,
+        IReadOnlyList<PublicSearchUnitMapping> unitMappings,
+        IReadOnlyList<PublicActionFootprint> actions,
+        bool retrospective)
     {
         var (comparison, reconstruction) =
             CompareWithReconstruction(received, historicalWindow, "actual");
@@ -1878,11 +1937,16 @@ public static class RescuerEvidenceMethodComparison
 
         // F20 checks every declaration row (including unused ones) and the
         // authentic M1-E candidates. Never construct a fake PastStateCandidate.
-        var input = PublicPastStateProjectionAdapter.CreateInput(
-            reconstruction, targetTick, regionIds, searchUnitIds,
-            regionProjections, unitMappings, actions);
-        var realF20 = PublicSearchProjector.Project(input);
-        PublicSearchProjector.Project(input with { Candidates = [] });
+        var projectionInput = retrospective ? null :
+            PublicPastStateProjectionAdapter.CreateInput(
+                reconstruction, targetTick, regionIds, searchUnitIds,
+                regionProjections, unitMappings, actions);
+        var realF20 = projectionInput is null ? null :
+            PublicSearchProjector.Project(projectionInput);
+        if (projectionInput is not null)
+            PublicSearchProjector.Project(projectionInput with { Candidates = [] });
+        var publishedRegions = projectionInput?.RegionProjections ?? regionProjections;
+        var publishedMappings = projectionInput?.UnitMappings ?? unitMappings;
 
         static string[] OrderedIds(IEnumerable<string> ids) =>
             ids.Distinct(StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal).ToArray();
@@ -1963,10 +2027,10 @@ public static class RescuerEvidenceMethodComparison
             if (targetEvidence.Status != "available")
                 return DirectResult(targetEvidence.Status, targetEvidence.Reason);
             var regions = targetEvidence.Regions!;
-            // input.UnitMappings has already been validated by the genuine
+            // unitMappings has already been validated by the genuine
             // F20 catalog validation, independently of historical candidates.
             var mappings = regions.Select(region =>
-                input.UnitMappings.SingleOrDefault(mapping =>
+                publishedMappings.SingleOrDefault(mapping =>
                     mapping.RegionId == region && mapping.TargetTick == targetTick)).ToArray();
             if (mappings.Any(mapping => mapping is null || !mapping.IsComplete))
                 return DirectResult("partial", "direct-unit-mapping-not-complete");
@@ -2024,7 +2088,7 @@ public static class RescuerEvidenceMethodComparison
                 {
                     // Explanatory counterfactual ONLY; do not pass these values
                     // to published candidate sets, F20, or method proposals.
-                    var mappings = overlap.Select(region => input.UnitMappings
+                    var mappings = overlap.Select(region => publishedMappings
                         .Single(mapping => mapping.RegionId == region &&
                             mapping.TargetTick == targetTick)).ToArray();
                     if (mappings.All(mapping => mapping.IsComplete))
@@ -2156,7 +2220,7 @@ public static class RescuerEvidenceMethodComparison
             // mappings; the available historical outer has complete mappings
             // as well. Re-check the specific overlap to avoid turning an
             // unknown declaration into a numerical zero.
-            var overlapMappings = overlap.Select(region => input.UnitMappings
+            var overlapMappings = overlap.Select(region => publishedMappings
                 .SingleOrDefault(mapping => mapping.RegionId == region &&
                     mapping.TargetTick == targetTick)).ToArray();
             if (overlapMappings.Any(mapping => mapping is null || !mapping.IsComplete))
@@ -2224,7 +2288,7 @@ public static class RescuerEvidenceMethodComparison
             }
             var selectedRegions = OrderedIds(conditionalSet);
             var selectedMappings = selectedRegions.Select(region =>
-                input.UnitMappings.SingleOrDefault(mapping =>
+                publishedMappings.SingleOrDefault(mapping =>
                     mapping.RegionId == region && mapping.TargetTick == targetTick)).ToArray();
             if (selectedMappings.Any(mapping =>
                 mapping is null || !mapping.IsComplete))
@@ -2249,7 +2313,7 @@ public static class RescuerEvidenceMethodComparison
             {
                 // These keys and reason codes deliberately match F20's
                 // published-declaration semantics, without candidate metadata.
-                var transition = input.RegionProjections.SingleOrDefault(row =>
+                var transition = publishedRegions.SingleOrDefault(row =>
                     row.HistoricalRegionId == region &&
                     row.StartTick == historicalWindow.StartTick &&
                     row.EndTick == historicalWindow.EndTick &&
@@ -2266,7 +2330,7 @@ public static class RescuerEvidenceMethodComparison
                 var unitSources = new List<string>();
                 foreach (var currentRegion in current)
                 {
-                    var mapping = input.UnitMappings.SingleOrDefault(row =>
+                    var mapping = publishedMappings.SingleOrDefault(row =>
                         row.RegionId == currentRegion && row.TargetTick == targetTick);
                     if (mapping is null)
                     {
@@ -2351,31 +2415,35 @@ public static class RescuerEvidenceMethodComparison
         // A source-free outer projection may coincide with F20's union of
         // declared units, but must not claim F20's candidate-level support.
         // Compare against the genuine F20 output for M1-E, including unknown.
-        var m1e = rows.Single(row =>
-            row.HistoricalMethod.Method == "distributed-reconstruction");
-        if (m1e.HistoricalRegions.Count != realF20.Candidates.Count)
+        if (realF20 is not null)
         {
-            throw new InvalidDataException("M1-E current-unit comparison is not F20-equivalent.");
-        }
-
-        foreach (var actualCandidate in realF20.Candidates)
-        {
-            var declared = m1e.HistoricalRegions.Single(row =>
-                row.HistoricalRegionId == actualCandidate.SourceCandidate.RegionId);
-            if (!declared.KnownCurrentRegionIds.SequenceEqual(
-                    actualCandidate.KnownCurrentRegionIds, StringComparer.Ordinal) ||
-                !declared.KnownUnitIds.SequenceEqual(
-                    actualCandidate.KnownUnitIds, StringComparer.Ordinal) ||
-                !declared.UnresolvedReasons.SequenceEqual(
-                    actualCandidate.UnresolvedReasons, StringComparer.Ordinal) ||
-                !declared.TransitionSourceIds.SequenceEqual(
-                    actualCandidate.TransitionSourceIds, StringComparer.Ordinal) ||
-                !declared.UnitMappingSourceIds.SequenceEqual(
-                    actualCandidate.UnitMappingSourceIds, StringComparer.Ordinal))
+            var m1e = rows.Single(row =>
+                row.HistoricalMethod.Method == "distributed-reconstruction");
+            if (m1e.HistoricalRegions.Count != realF20.Candidates.Count)
             {
-                throw new InvalidDataException(
-                    "Published outer projection disagrees with genuine M1-E F20.");
+                throw new InvalidDataException("M1-E current-unit comparison is not F20-equivalent.");
             }
+
+            foreach (var actualCandidate in realF20.Candidates)
+            {
+                var declared = m1e.HistoricalRegions.Single(row =>
+                    row.HistoricalRegionId == actualCandidate.SourceCandidate.RegionId);
+                if (!declared.KnownCurrentRegionIds.SequenceEqual(
+                        actualCandidate.KnownCurrentRegionIds, StringComparer.Ordinal) ||
+                    !declared.KnownUnitIds.SequenceEqual(
+                        actualCandidate.KnownUnitIds, StringComparer.Ordinal) ||
+                    !declared.UnresolvedReasons.SequenceEqual(
+                        actualCandidate.UnresolvedReasons, StringComparer.Ordinal) ||
+                    !declared.TransitionSourceIds.SequenceEqual(
+                        actualCandidate.TransitionSourceIds, StringComparer.Ordinal) ||
+                    !declared.UnitMappingSourceIds.SequenceEqual(
+                        actualCandidate.UnitMappingSourceIds, StringComparer.Ordinal))
+                {
+                    throw new InvalidDataException(
+                        "Published outer projection disagrees with genuine M1-E F20.");
+                }
+            }
+
         }
 
         var receipts = received.ReceivedRecords
@@ -2383,11 +2451,138 @@ public static class RescuerEvidenceMethodComparison
             .Select(record => new RescuerCurrentUnitReceivedOriginal(
                 record.OriginalRecordId, record.OriginalObservationId,
                 record.FirstReceivedAtTick)).ToArray();
-        return new RescuerCurrentUnitMethodComparison(
-            comparison.QueryTick, targetTick, historicalWindow, receipts, rows, realF20)
+        return (comparison, receipts, rows, directBaseline, realF20);
+    }
+
+    /// <summary>
+    /// Fixed two-original comparison for #136. Both receipt schedules are
+    /// applied to the exact SAME original objects and public world, using the
+    /// real BuildDistinctOriginals ledger at each query tick.
+    /// Tick 7 runs F20; tick 8 is evaluation-only for target tick 7.
+    /// </summary>
+    public static RescuerProvisionalUnitTimingReport AnalyzeRetrospectiveProvisionalUnitTiming(
+        RescueContext publicContext,
+        int seed,
+        string rescuerId,
+        IReadOnlyList<DeviceHeldInteractionRecord> originals,
+        IReadOnlyList<InteractionRecordReceipt> earlyReceipts,
+        IReadOnlyList<InteractionRecordReceipt> lateReceipts,
+        InteractionTimeWindow historicalWindow,
+        long targetTick,
+        IReadOnlyList<string> regionIds,
+        IReadOnlyList<string> searchUnitIds,
+        IReadOnlyList<PublicRegionProjection> regionProjections,
+        IReadOnlyList<PublicSearchUnitMapping> unitMappings,
+        IReadOnlyList<PublicActionFootprint> actions)
+    {
+        ArgumentNullException.ThrowIfNull(publicContext);
+        ArgumentNullException.ThrowIfNull(originals);
+        ArgumentNullException.ThrowIfNull(earlyReceipts);
+        ArgumentNullException.ThrowIfNull(lateReceipts);
+        ArgumentNullException.ThrowIfNull(historicalWindow);
+        // This is the approved fixed target-7/historical-2 comparison; it is
+        // not a general historical F20 API or a claim about missing ticks.
+        if (targetTick != 7 ||
+            historicalWindow.StartTick != 2 || historicalWindow.EndTick != 2 ||
+            originals.Count != 2 || originals.Any(original => original is null))
+            throw new ArgumentException("The fixed two-original tick-2/tick-7 scope is required.");
+
+        var historical = originals.SingleOrDefault(original =>
+            original.Observation.ObservedTimeWindow.StartTick == 2 &&
+            original.Observation.ObservedTimeWindow.EndTick == 2);
+        var target = originals.SingleOrDefault(original =>
+            original.Observation.ObservedTimeWindow.StartTick == 7 &&
+            original.Observation.ObservedTimeWindow.EndTick == 7);
+        if (historical is null || target is null ||
+            historical.OriginalRecordId == target.OriginalRecordId ||
+            historical.Observation.ObservationId == target.Observation.ObservationId)
+            throw new ArgumentException("One distinct exact original at each fixed time is required.");
+
+        void CheckLedger(IReadOnlyList<InteractionRecordReceipt> ledger,
+            long secondReceiptTick)
         {
-            DirectTargetUnitBaseline = directBaseline
-        };
+            if (ledger.Count == 0 || ledger.Any(receipt => receipt is null ||
+                receipt.ScenarioId != publicContext.ScenarioId || receipt.Seed != seed ||
+                receipt.RescuerId != rescuerId || !originals.Any(original =>
+                    receipt.OriginalRecordId == original.OriginalRecordId &&
+                    receipt.HolderDeviceId == original.HolderDeviceId)))
+                throw new ArgumentException("Receipt ledger contains an unrelated or invalid assertion.");
+            long[] Ticks(string id) => ledger.Where(receipt =>
+                    receipt.OriginalRecordId == id).Select(receipt => receipt.ReceivedAtTick)
+                .Distinct().OrderBy(tick => tick).ToArray();
+            if (!Ticks(historical.OriginalRecordId).SequenceEqual([6L]) ||
+                !Ticks(target.OriginalRecordId).SequenceEqual([secondReceiptTick]))
+                throw new ArgumentException("Only the second original receipt time may differ.");
+        }
+        CheckLedger(earlyReceipts, 7);
+        CheckLedger(lateReceipts, 8);
+
+        // Every input comes from real, distinct held originals. The *same*
+        // world and catalog references are used in every query. F20 at tick 7
+        // validates ALL declaration rows, including unused and available-tick
+        // fields, before evaluation-only tick 8 can inspect the same catalog.
+        RescuerEvidenceInput Snapshot(IReadOnlyList<InteractionRecordReceipt> receipts,
+            long cutoff) => new RescuerEvidenceInputBuilder().BuildDistinctOriginals(
+                publicContext, seed, cutoff, rescuerId, originals, receipts);
+        var early7 = Snapshot(earlyReceipts, 7);
+        var late7 = Snapshot(lateReceipts, 7);
+        var early8 = Snapshot(earlyReceipts, 8);
+        var late8 = Snapshot(lateReceipts, 8);
+
+        var firstForward = EvaluateCurrentUnits(early7, historicalWindow, targetTick,
+            regionIds, searchUnitIds, regionProjections, unitMappings, actions, false);
+        var secondForward = EvaluateCurrentUnits(late7, historicalWindow, targetTick,
+            regionIds, searchUnitIds, regionProjections, unitMappings, actions, false);
+        var firstRetrospective = EvaluateCurrentUnits(early8, historicalWindow, targetTick,
+            regionIds, searchUnitIds, regionProjections, unitMappings, actions, true);
+        var secondRetrospective = EvaluateCurrentUnits(late8, historicalWindow, targetTick,
+            regionIds, searchUnitIds, regionProjections, unitMappings, actions, true);
+
+        RescuerProvisionalUnitTimingTick Tick(
+            (RescuerEvidenceMethodQueryRow Comparison,
+                RescuerCurrentUnitReceivedOriginal[] ReceivedOriginals,
+                RescuerCurrentUnitMethod[] Methods,
+                RescuerDirectTargetUnitBaseline Baseline,
+                PublicSearchProjectionResult? F20) result,
+            string kind)
+        {
+            if (result.Methods.Length != 4 ||
+                !result.Methods.Select(method => method.HistoricalMethod.Method)
+                    .SequenceEqual(["public-prior", "known-relation-backward",
+                        "distributed-reconstruction", "distributed-reconstruction-local"]))
+                throw new InvalidDataException("The required historical method row is missing.");
+            return new RescuerProvisionalUnitTimingTick(
+                result.Comparison.QueryTick, kind, result.ReceivedOriginals,
+                result.Comparison.ReceivedSourceObservationIds,
+                result.Comparison.AvailableSourceGroupCount, result.Baseline,
+                result.Methods, kind == "forward-f20" ? result.F20 : null);
+        }
+
+        RescuerProvisionalUnitTimingSeries Series(
+            string name, RescuerProvisionalUnitTimingTick forward,
+            RescuerProvisionalUnitTimingTick retrospective)
+        {
+            var timeline = new[] { forward, retrospective };
+            var first = forward.Methods.Select(method =>
+            {
+                var methodName = method.HistoricalMethod.Method;
+                var observed = timeline.FirstOrDefault(tick => tick.Methods
+                    .Single(row => row.HistoricalMethod.Method == methodName)
+                    .ProvisionalOverlapAssessment?.Status == "eligible-unit-reduction");
+                return new RescuerProvisionalUnitFirstObserved(
+                    methodName, observed?.QueryTick);
+            }).ToArray();
+            return new RescuerProvisionalUnitTimingSeries(name, timeline, first);
+        }
+        return new RescuerProvisionalUnitTimingReport(targetTick, historicalWindow,
+        [
+            Series("early-second-receipt",
+                Tick(firstForward, "forward-f20"),
+                Tick(firstRetrospective, "retrospective-evaluation")),
+            Series("late-second-receipt",
+                Tick(secondForward, "forward-f20"),
+                Tick(secondRetrospective, "retrospective-evaluation"))
+        ]);
     }
 
     /// <summary>
