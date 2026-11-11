@@ -2460,6 +2460,9 @@ The fixed same-evidence cases distinguish **four different things**:
 | {A,B}@2 received 6; D@7 received 7 | U1 | U1 | U1,U2 | structural identity; historical outer delta is not added weft utility |
 | {A,B}@2; {D,E}@7 | U1,U2 | U1,U2 | U1,U2 | structural identity |
 | **{B}@2; {D,E}@7 (R2)** | **U1,U2** | **partial / withheld** | **E / U2** | hypothetical intersection E/U2 (one model unit), NOT a conditional B result or hard exclusion |
+| {A,B}@2; {D,F}@7 (R3) | partial (F mapping incomplete) | partial | U1,U2 | exact observed but direct incomplete; not "no exact sighting" |
+| **{B}@2; {E,F}@7 (R6)** | **partial (F mapping incomplete)** | **partial** | **E / U2** | **exact observed but direct incomplete; historical E/U2 remains separate** |
+| {A,B}@2; D@7 uncertain | unavailable (unconfirmed exact sighting) | unavailable | U1,U2 | exact observed but unconfirmed; preserve direct reason |
 | {A,B}@2; exact @7 not received or only [5,7] | unavailable | unavailable | U1,U2 | historical-outer-only information, NOT zero units or zero effect |
 
 Incomplete F mappings, {D,F}, conflicting F, other Person/Device,
@@ -2467,10 +2470,18 @@ uncertain source, future/unreceived source, overlapping ancestry and
 cutoff keep their earlier uncertainty boundaries. R2's explanatory
 intersection is only an evaluation counterfactual; no method outer,
 preferred/conflicted candidate, published region/unit result, genuine F20
-candidate, source ancestry, or search action is rewritten. Removing a
-past receipt is a **different evidence-quantity ablation**, not the
-same-evidence A-versus-B method comparison. Duplicate/reordered input
-must serialize deterministically.
+candidate, source ancestry, or search action is rewritten. The historical-receipt ablation explicitly removes @2 Receipt(6), keeps
+D@7 Receipt(7), and checks that two received originals become one while
+the direct U1 and its observation/mapping sources stay identical. It is a
+**different evidence-quantity ablation**, not the same-evidence A-versus-B
+method comparison. Duplicate/reordered input must serialize deterministically.
+For partial direct mappings (R3/R6), this audit deliberately does **not**
+calculate a hypothetical intersection: without a complete direct unit set
+there is no meaningful unit-count reduction from that baseline. A possible
+complete historical intersection is untested as an adopted method, and is
+never a hard exclusion or F20 change. The separate direct status/reason is
+retained in the audit whenever exact Person evidence exists but cannot
+establish a complete direct unit proposal.
 
 **Decision:** retain the directly observed baseline and separately
 reported historical outer; defer adoption of intersection-based hard

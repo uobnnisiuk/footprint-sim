@@ -1963,10 +1963,20 @@ public static class RescuerEvidenceMethodComparison
                 throw new InvalidDataException(
                     "Existing conditional gate unexpectedly changed direct observed units.");
 
+            // An exact sighting can exist while the direct baseline is
+            // uncertain, partial or conflicting. Never label those cases as
+            // having no received exact observation (AR-27).
+            var noExactSighting = directBaseline.ReasonCode ==
+                "no-received-exact-target-person-observation";
+            var unresolvedDirectWithHistoricalOuter =
+                directBaseline.Status != "available" &&
+                historicalStatus == "available" && !noExactSighting;
             string status = directBaseline.Status == "available" && proposal.Status == "available"
                 ? "both-available-identical-by-design"
                 : directBaseline.Status != "available" && historicalStatus == "available"
-                    ? "historical-outer-only"
+                    ? noExactSighting
+                        ? "historical-outer-only"
+                        : $"direct-{directBaseline.Status}-historical-outer-available"
                     : directBaseline.Status == "available"
                         ? "direct-available-conditional-withheld"
                         : "no-comparable-complete-proposal";
@@ -1974,7 +1984,9 @@ public static class RescuerEvidenceMethodComparison
                 ? "conditional-only-checks-membership-in-historical-outer"
                 : status == "historical-outer-only"
                     ? "no-direct-exact-observation-but-published-historical-outer-remains"
-                    : proposal.ReasonCode;
+                    : unresolvedDirectWithHistoricalOuter
+                        ? directBaseline.ReasonCode
+                        : proposal.ReasonCode;
             string[]? intersectionRegions = null;
             string[]? intersectionUnits = null;
             int? hypotheticalReduction = null;

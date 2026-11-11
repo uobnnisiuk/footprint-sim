@@ -168,7 +168,8 @@ public sealed class RescuerEvidenceBoundaryTests
         EvidenceState secondState = EvidenceState.Confirmed,
         string secondAncestry = "weft-b",
         InteractionTimeWindow? observationWindow = null,
-        IReadOnlyList<string>? firstRegions = null)
+        IReadOnlyList<string>? firstRegions = null,
+        bool firstReceived = true)
     {
         var first = ComplementaryOriginal(
             RecordId, HolderId, 2, firstRegions ?? ["A", "B"], 3, "weft-a");
@@ -177,10 +178,12 @@ public sealed class RescuerEvidenceBoundaryTests
             observationTick <= 5 ? 6 : 7, secondAncestry, secondState,
             deviceOnly, unrelatedTarget, observationWindow);
         var originals = reversed ? new[] { second, first } : new[] { first, second };
-        var receipts = new List<InteractionRecordReceipt> { Receipt(6) };
+        var receipts = new List<InteractionRecordReceipt>();
+        if (firstReceived)
+            receipts.Add(Receipt(6));
         if (secondReceived)
             receipts.Add(LaterComparisonReceipt(7));
-        if (duplicateReceipt)
+        if (duplicateReceipt && firstReceived)
             receipts.Add(Receipt(6));
         if (reversed)
             receipts.Reverse();
@@ -535,9 +538,21 @@ public sealed class RescuerEvidenceBoundaryTests
                     TargetTickOriginalInput(7, sighting,
                         reversed: true, duplicateReceipt: true))));
         }
+        // Evidence-quantity ablation, NOT a same-evidence method comparison:
+        // remove only the historical @2 receipt, retaining the same D@7.
+        var bothReceipts = CompareCurrentMethods(TargetTickOriginalInput(7, ["D"]));
         var onlyCurrent = CompareCurrentMethods(TargetTickOriginalInput(
-            7, ["D"], firstRegions: ["A", "B"]));
-        Assert.Equal(["U1"], onlyCurrent.DirectTargetUnitBaseline!.UnitIds);
+            7, ["D"], firstReceived: false));
+        Assert.Equal([RecordId, "second-original"],
+            bothReceipts.ReceivedOriginals.Select(r => r.OriginalRecordId));
+        Assert.Equal(["second-original"],
+            onlyCurrent.ReceivedOriginals.Select(r => r.OriginalRecordId));
+        Assert.Equal([7L],
+            onlyCurrent.ReceivedOriginals.Select(r => r.FirstReceivedAtTick));
+        Assert.Equal("available", onlyCurrent.DirectTargetUnitBaseline!.Status);
+        Assert.Equal(["U1"], onlyCurrent.DirectTargetUnitBaseline.UnitIds);
+        Assert.Equal(JsonDefaults.Serialize(bothReceipts.DirectTargetUnitBaseline),
+            JsonDefaults.Serialize(onlyCurrent.DirectTargetUnitBaseline));
     }
 
     // R2: a complete B->E historical outer could narrow an ambiguous
@@ -592,8 +607,25 @@ public sealed class RescuerEvidenceBoundaryTests
             if (method.ProjectionStatus == "available")
             {
                 Assert.Equal(["U1", "U2"], method.KnownUnitIds);
-                Assert.Equal("historical-outer-only", method.DirectVsWeftAudit!.Status);
-                Assert.Null(method.DirectVsWeftAudit.ConditionalUnitDeltaFromDirect);
+                var audit = Assert.IsType<RescuerDirectWeftUnitAudit>(
+                    method.DirectVsWeftAudit);
+                if (report.DirectTargetUnitBaseline.ReasonCode ==
+                    "no-received-exact-target-person-observation")
+                {
+                    Assert.Equal("historical-outer-only", audit.Status);
+                    Assert.Equal(
+                        "no-direct-exact-observation-but-published-historical-outer-remains",
+                        audit.ReasonCode);
+                }
+                else
+                {
+                    Assert.Equal(
+                        $"direct-{report.DirectTargetUnitBaseline.Status}-historical-outer-available",
+                        audit.Status);
+                    Assert.Equal(report.DirectTargetUnitBaseline.ReasonCode,
+                        audit.ReasonCode);
+                }
+                Assert.Null(audit.ConditionalUnitDeltaFromDirect);
             }
             Assert.Null(method.DirectVsWeftAudit!.HypotheticalIntersectionUnitIds);
         }
@@ -606,6 +638,42 @@ public sealed class RescuerEvidenceBoundaryTests
         var mixed = CompareCurrentMethods(TargetTickOriginalInput(7, ["D", "F"]));
         Assert.Equal("partial", mixed.DirectTargetUnitBaseline!.Status);
         Assert.Null(mixed.DirectTargetUnitBaseline.UnitIds);
+    }
+
+    // AR-27: an exact sighting is present but incomplete/uncertain. Its
+    // historical outer is not evidence that no exact sighting was received.
+    [Fact]
+    public void ExactUnresolvedSightingIsNotMisclassifiedAsMissing()
+    {
+        foreach (var (input, expectedStatus, expectedReason, expectedOuter) in new[]
+        {
+            (TargetTickOriginalInput(7, ["D", "F"]), "partial",
+                "direct-unit-mapping-not-complete", new[] { "U1", "U2" }),
+            (TargetTickOriginalInput(7, ["E", "F"], firstRegions: ["B"]), "partial",
+                "direct-unit-mapping-not-complete", new[] { "U2" }),
+            (TargetTickOriginalInput(7, ["D"],
+                secondState: EvidenceState.SupportedButUncertain), "unavailable",
+                "target-observation-not-fully-confirmed-or-sourced", new[] { "U1", "U2" })
+        })
+        {
+            var result = CompareCurrentMethods(input);
+            var direct = Assert.IsType<RescuerDirectTargetUnitBaseline>(
+                result.DirectTargetUnitBaseline);
+            Assert.Equal(expectedStatus, direct.Status);
+            Assert.Equal(expectedReason, direct.ReasonCode);
+            Assert.Contains("second-original", direct.ObservationDirectSourceIds);
+            var method = result.Methods.Single(row =>
+                row.HistoricalMethod.Method == "distributed-reconstruction");
+            Assert.Equal("available", method.ProjectionStatus);
+            Assert.Equal(expectedOuter, method.KnownUnitIds);
+            Assert.Equal(expectedOuter, result.ActualReconstructionF20Projection.KnownUnitIds);
+            var audit = Assert.IsType<RescuerDirectWeftUnitAudit>(
+                method.DirectVsWeftAudit);
+            Assert.Equal($"direct-{expectedStatus}-historical-outer-available", audit.Status);
+            Assert.Equal(expectedReason, audit.ReasonCode);
+            Assert.Null(audit.ConditionalUnitDeltaFromDirect);
+            Assert.Null(audit.HypotheticalIntersectionUnitIds);
+        }
     }
 
     [Fact]
