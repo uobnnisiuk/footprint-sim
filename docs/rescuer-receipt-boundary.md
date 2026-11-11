@@ -2432,3 +2432,112 @@ independent code review. Do not adopt hard F20 candidate removal or
 translate one model unit saved into a saved physical search visit. Revise
 the same scope and independently re-review if provenance, temporal
 alternatives, or public declaration completeness cannot be preserved.
+
+
+## #132 — direct latest received Person sighting versus historical weft contribution
+
+Work-Key: `FP-DIRECT-TARGET-OBSERVATION-VS-WEFT-UTILITY-V1`;
+[Scope-Revision 1 / independent review](https://github.com/uobnnisiuk/footprint-sim/issues/132#issuecomment-6784539453).
+This corrects the interpretation of #130's **U1/U2 versus conditional U1**
+difference: it is a difference from a *published historical outer*, not
+evidence that history adds a unit beyond a directly received exact sighting.
+
+**Predeclared reasoning (not an experimental negative result):** existing
+#130 conditional B takes the exact Person observation's region alternatives
+and checks whether they are contained in the historical published outer;
+it does not intersect them with that outer. Consequently when direct A and
+conditional B both return an available completed unit set, they must be
+identical. The evaluation now asserts this invariant and records unit delta
+zero as `both-available-identical-by-design`, never as proof that weft is
+unhelpful. A uses exactly the same receipt, cutoff, Person-only, exact-tick,
+confirmation and transitive shared-ancestry boundary as B, but no historical
+method, historical outer, F20 candidate or B result as an input.
+
+The fixed same-evidence cases distinguish **four different things**:
+
+| Evidence | Direct latest A | Existing conditional B for M1-E | Historical published outer | Separate audit |
+| --- | --- | --- | --- | --- |
+| {A,B}@2 received 6; D@7 received 7 | U1 | U1 | U1,U2 | structural identity; historical outer delta is not added weft utility |
+| {A,B}@2; {D,E}@7 | U1,U2 | U1,U2 | U1,U2 | structural identity |
+| **{B}@2; {D,E}@7 (R2)** | **U1,U2** | **partial / withheld** | **E / U2** | hypothetical intersection E/U2 (one model unit), NOT a conditional B result or hard exclusion |
+| {A,B}@2; {D,F}@7 (R3) | partial (F mapping incomplete) | partial | U1,U2 | exact observed but direct incomplete; not "no exact sighting" |
+| **{B}@2; {E,F}@7 (R6)** | **partial (F mapping incomplete)** | **partial** | **E / U2** | **exact observed but direct incomplete; historical E/U2 remains separate** |
+| {A,B}@2; D@7 uncertain | unavailable (unconfirmed exact sighting) | unavailable | U1,U2 | exact observed but unconfirmed; preserve direct reason |
+| {A,B}@2; exact @7 not received or only [5,7] | unavailable | unavailable | U1,U2 | historical-outer-only information, NOT zero units or zero effect |
+
+Incomplete F mappings, {D,F}, conflicting F, other Person/Device,
+uncertain source, future/unreceived source, overlapping ancestry and
+cutoff keep their earlier uncertainty boundaries. R2's explanatory
+intersection is only an evaluation counterfactual; no method outer,
+preferred/conflicted candidate, published region/unit result, genuine F20
+candidate, source ancestry, or search action is rewritten. The historical-receipt ablation explicitly removes @2 Receipt(6), keeps
+D@7 Receipt(7), and checks that two received originals become one while
+the direct U1 and its observation/mapping sources stay identical. It is a
+**different evidence-quantity ablation**, not the same-evidence A-versus-B
+method comparison. Duplicate/reordered input must serialize deterministically.
+For partial direct mappings (R3/R6), this audit deliberately does **not**
+calculate a hypothetical intersection: without a complete direct unit set
+there is no meaningful unit-count reduction from that baseline. A possible
+complete historical intersection is untested as an adopted method, and is
+never a hard exclusion or F20 change. The separate direct status/reason is
+retained in the audit whenever exact Person evidence exists but cannot
+establish a complete direct unit proposal.
+
+**Decision:** retain the directly observed baseline and separately
+reported historical outer; defer adoption of intersection-based hard
+exclusions until declaration reliability, false exclusions and conflict
+semantics have separate scope review. Unknown-relation discovery, 24-edge
+exploration, more than two original records (AR-25), observed rescue visits,
+time, cost and survival are unimplemented/unassessed; synthetic model
+unit counts are not calibrated real-world benefits. A result of equality,
+partial, conflict or unavailability does not reject the initial missing-
+history/weft hypothesis. Revisit if either result's provenance, complete
+mapping, exact time, ancestry or truth isolation fails.
+
+**Executed results — initial code head on PR #133:** [ordinary CI
+42945218825](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42945218825)
+and [F19 research CI
+42945218798](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42945218798)
+both succeeded on the same code head. The ordinary workflow completed
+environment/restore/build, **692 xUnit passed (0 failed, 0 skipped)**,
+format verification, S0/S1 scenarios and evaluation harness. The new
+R0/R1 fixed assertions confirmed direct U1 and U1/U2 respectively,
+equal existing conditional sets for the available M1-E/local proposals
+and design-invariant delta 0; this is NOT an experimental negative
+finding about all weft methods. The AR-26 R2 test confirmed direct
+U1/U2, existing conditional partial, complete historical E/U2 and
+evaluation-only hypothetical E/U2, without changing genuine F20.
+No-exact/interval/Device/unreceived/cutoff/uncertain tests withheld
+direct certainty while retaining a separately available historical outer
+when supported. Deterministic reversed/duplicated receipts and original
+legacy tests passed. These are bounded synthetic model findings, not
+verified real-world locations, safe hard exclusions or rescue outcomes.
+No local .NET 8 execution took place. This later documentation-only
+commit must itself pass head-specific CI; its status is recorded on the
+PR rather than retroactively attributing its checks to the initial head.
+
+**Independent review correction — PR #133 code head 2fa2649234a3ef6b87e3f5c781bf54ebe4bf6852:** The separate reviewer found two genuine acceptance gaps on the
+previous head: a supposed historical-receipt ablation had not actually
+removed Receipt(6), and the audit mislabeled partial or unconfirmed exact
+Person evidence as if no exact observation had been received (also AR-27).
+Both were fixed within the same three approved files. The new xUnit
+assertions explicitly compare received-original counts 2 versus 1 while
+holding the direct U1 and its source fields fixed; R3 {D,F}, R6 {E,F}
+with historical {B}, and unconfirmed D retain separate direct status
+and reason when a historical published outer is available. Truly missing
+exact observations still use `historical-outer-only`. The alternative
+hypothetical intersection for direct-partial inputs remains uncomputed;
+neither historical-outer-only nor an explanatory overlap is a new hard
+candidate exclusion.
+
+**Executed head-specific verification for that corrected code head:**
+[ordinary CI 42958845056](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42958845056)
+completed successfully with **693 tests passed, 0 failed, 0 skipped**,
+build, format, S0/S1 and evaluation checks successful. [F19 research CI
+42958844935](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42958844935)
+also completed successfully on that same head. Neither run is evidence
+about a later documentation-only head; any later head must obtain its
+own checks and independent review. Local .NET execution was unavailable.
+The added tests validate synthetic evaluation categories and receipt
+bookkeeping, not the safety of adopting a historical intersection or a
+real-world rescue advantage.

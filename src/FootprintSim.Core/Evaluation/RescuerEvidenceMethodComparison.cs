@@ -127,6 +127,32 @@ public sealed record RescuerConditionalCurrentUnitProposal(
     int InspectedTargetObservationCount,
     int InspectedAncestryGroupCount);
 
+// #132: evaluation-only latest received Person sighting, independent of all
+// historical method results and the conditional historical gate.
+public sealed record RescuerDirectTargetUnitBaseline(
+    string Status,
+    string ReasonCode,
+    IReadOnlyList<string>? RegionIds,
+    IReadOnlyList<string>? UnitIds,
+    IReadOnlyList<string> ObservationConstraintIds,
+    IReadOnlyList<string> ObservationDirectSourceIds,
+    IReadOnlyList<string> ObservationSourceObservationIds,
+    IReadOnlyList<string> ObservationSourceAncestryIds,
+    IReadOnlyList<string> PublicUnitMappingSourceIds,
+    int InspectedTargetObservationCount,
+    int InspectedAncestryGroupCount);
+
+// Neither a hard exclusion nor a working fifth inference method: contrasts
+// directly observed units, the existing conditional gate, and historical
+// published outer. A hypothetical intersection is explicitly NOT adopted.
+public sealed record RescuerDirectWeftUnitAudit(
+    string Status,
+    string ReasonCode,
+    int? ConditionalUnitDeltaFromDirect,
+    IReadOnlyList<string>? HypotheticalIntersectionRegionIds,
+    IReadOnlyList<string>? HypotheticalIntersectionUnitIds,
+    int? HypotheticalUnitReductionFromDirect);
+
 public sealed record RescuerCurrentUnitMethod(
     RescuerEvidenceMethodRow HistoricalMethod,
     string ProjectionStatus,
@@ -138,6 +164,7 @@ public sealed record RescuerCurrentUnitMethod(
     // Empty means no established contradiction, not proof of agreement.
     public IReadOnlyList<RescuerCurrentUnitTargetObservationConflict> TargetTickConflicts { get; init; } = [];
     public RescuerConditionalCurrentUnitProposal? ConditionalTargetUnitProposal { get; init; }
+    public RescuerDirectWeftUnitAudit? DirectVsWeftAudit { get; init; }
 }
 
 public sealed record RescuerCurrentUnitReceivedOriginal(
@@ -152,7 +179,10 @@ public sealed record RescuerCurrentUnitMethodComparison(
     InteractionTimeWindow HistoricalWindow,
     IReadOnlyList<RescuerCurrentUnitReceivedOriginal> ReceivedOriginals,
     IReadOnlyList<RescuerCurrentUnitMethod> Methods,
-    PublicSearchProjectionResult ActualReconstructionF20Projection);
+    PublicSearchProjectionResult ActualReconstructionF20Projection)
+{
+    public RescuerDirectTargetUnitBaseline? DirectTargetUnitBaseline { get; init; }
+}
 
 
 // Only the separate evaluation call receives a synthetic truth region.
@@ -1861,6 +1891,132 @@ public static class RescuerEvidenceMethodComparison
         var observationSourceGroups = GroupTransitiveSourceAncestry(
             targetObservations.Select(c => c.SourceAncestryIds).ToArray());
 
+        // #132: One shared eligibility/ancestry evaluation, before any
+        // historical-method result exists. Neither historical outer nor the
+        // conditional proposal can influence this received-observation set.
+        (string Status, string Reason, string[]? Regions) TargetEvidenceRegions()
+        {
+            if (observationSourceGroups.Length == 0)
+                return ("unavailable", "no-received-exact-target-person-observation", null);
+            if (observationSourceGroups.Any(group => group.Any(index =>
+            {
+                var c = targetObservations[index];
+                return c.EvidenceBoundaryState != EvidenceState.Confirmed ||
+                    c.SourceAncestryIds.Count == 0 ||
+                    string.IsNullOrWhiteSpace(c.DirectSourceId) ||
+                    string.IsNullOrWhiteSpace(c.SourceObservationId);
+            })))
+                return ("unavailable", "target-observation-not-fully-confirmed-or-sourced", null);
+
+            // A shared source group is a union of alternatives, NOT votes.
+            // Independent incompatible groups withhold an empty recommendation.
+            var alternatives = observationSourceGroups.Select(group =>
+                OrderedIds(group.SelectMany(index =>
+                    targetObservations[index].AllowedRegionIds))).ToArray();
+            var selected = alternatives[0].ToHashSet(StringComparer.Ordinal);
+            foreach (var group in alternatives.Skip(1))
+                selected.IntersectWith(group);
+            return selected.Count == 0
+                ? ("conflict", "independent-target-observations-disagree", null)
+                : ("available", "received-exact-person-observation", OrderedIds(selected));
+        }
+
+        var targetEvidence = TargetEvidenceRegions();
+        RescuerDirectTargetUnitBaseline DirectResult(
+            string status, string reason, string[]? regions = null,
+            string[]? units = null, string[]? mappingSources = null) => new(
+                status, reason, regions, units,
+                OrderedIds(targetObservations.Select(c => c.ConstraintId)),
+                OrderedIds(targetObservations.Select(c => c.DirectSourceId)),
+                OrderedIds(targetObservations.Select(c => c.SourceObservationId)),
+                OrderedIds(targetObservations.SelectMany(c => c.SourceAncestryIds)),
+                mappingSources ?? [],
+                targetObservations.Length, observationSourceGroups.Length);
+
+        RescuerDirectTargetUnitBaseline BuildDirectBaseline()
+        {
+            if (targetEvidence.Status != "available")
+                return DirectResult(targetEvidence.Status, targetEvidence.Reason);
+            var regions = targetEvidence.Regions!;
+            // input.UnitMappings has already been validated by the genuine
+            // F20 catalog validation, independently of historical candidates.
+            var mappings = regions.Select(region =>
+                input.UnitMappings.SingleOrDefault(mapping =>
+                    mapping.RegionId == region && mapping.TargetTick == targetTick)).ToArray();
+            if (mappings.Any(mapping => mapping is null || !mapping.IsComplete))
+                return DirectResult("partial", "direct-unit-mapping-not-complete");
+            var units = OrderedIds(mappings.SelectMany(mapping => mapping!.UnitIds));
+            if (units.Length == 0)
+                return DirectResult("unavailable", "direct-unit-mapping-has-no-units");
+            return DirectResult("available", "direct-received-person-and-published-unit",
+                regions, units, OrderedIds(mappings.Select(mapping => mapping!.SourceId)));
+        }
+
+        var directBaseline = BuildDirectBaseline();
+
+        RescuerDirectWeftUnitAudit CompareDirectWithWeft(
+            string historicalStatus, IReadOnlyList<string>? historicalRegions,
+            RescuerConditionalCurrentUnitProposal proposal)
+        {
+            if (directBaseline.Status == "available" && proposal.Status == "available" &&
+                !directBaseline.UnitIds!.SequenceEqual(proposal.UnitIds!, StringComparer.Ordinal))
+                throw new InvalidDataException(
+                    "Existing conditional gate unexpectedly changed direct observed units.");
+
+            // An exact sighting can exist while the direct baseline is
+            // uncertain, partial or conflicting. Never label those cases as
+            // having no received exact observation (AR-27).
+            var noExactSighting = directBaseline.ReasonCode ==
+                "no-received-exact-target-person-observation";
+            var unresolvedDirectWithHistoricalOuter =
+                directBaseline.Status != "available" &&
+                historicalStatus == "available" && !noExactSighting;
+            string status = directBaseline.Status == "available" && proposal.Status == "available"
+                ? "both-available-identical-by-design"
+                : directBaseline.Status != "available" && historicalStatus == "available"
+                    ? noExactSighting
+                        ? "historical-outer-only"
+                        : $"direct-{directBaseline.Status}-historical-outer-available"
+                    : directBaseline.Status == "available"
+                        ? "direct-available-conditional-withheld"
+                        : "no-comparable-complete-proposal";
+            var reason = status == "both-available-identical-by-design"
+                ? "conditional-only-checks-membership-in-historical-outer"
+                : status == "historical-outer-only"
+                    ? "no-direct-exact-observation-but-published-historical-outer-remains"
+                    : unresolvedDirectWithHistoricalOuter
+                        ? directBaseline.ReasonCode
+                        : proposal.ReasonCode;
+            string[]? intersectionRegions = null;
+            string[]? intersectionUnits = null;
+            int? hypotheticalReduction = null;
+            if (directBaseline.Status == "available" && historicalStatus == "available" &&
+                historicalRegions is not null)
+            {
+                var overlap = OrderedIds(directBaseline.RegionIds!
+                    .Intersect(historicalRegions, StringComparer.Ordinal));
+                if (overlap.Length > 0 && overlap.Length < directBaseline.RegionIds!.Count)
+                {
+                    // Explanatory counterfactual ONLY; do not pass these values
+                    // to published candidate sets, F20, or method proposals.
+                    var mappings = overlap.Select(region => input.UnitMappings
+                        .Single(mapping => mapping.RegionId == region &&
+                            mapping.TargetTick == targetTick)).ToArray();
+                    if (mappings.All(mapping => mapping.IsComplete))
+                    {
+                        intersectionRegions = overlap;
+                        intersectionUnits = OrderedIds(mappings.SelectMany(mapping => mapping.UnitIds));
+                        hypotheticalReduction =
+                            directBaseline.UnitIds!.Count - intersectionUnits.Length;
+                    }
+                }
+            }
+            return new RescuerDirectWeftUnitAudit(
+                status, reason,
+                status == "both-available-identical-by-design" ? 0 : null,
+                intersectionRegions, intersectionUnits, hypotheticalReduction);
+        }
+
         // #130: Keep the conditional proposal strictly outside all method
         // candidate and F20 calculations. The #128 received/exact-tick filter
         // and transitive ancestry groups are reused, not independently rebuilt.
@@ -1893,36 +2049,12 @@ public static class RescuerEvidenceMethodComparison
                         ? "received-observation-conflicts-with-declared-outer"
                         : "public-current-outer-not-complete");
             }
-            if (observationSourceGroups.Length == 0)
-                return Result("unavailable", "no-received-exact-target-person-observation");
+            if (targetEvidence.Status != "available")
+                return Result(targetEvidence.Status, targetEvidence.Reason);
 
-            // A shared-ancestry group contains alternatives, not independent
-            // votes. Any ambiguous/nonconfirmed source withholds its group.
-            // Never select a convenient confirmed member and discard its
-            // competing alternatives or unsupported provenance.
-            if (observationSourceGroups.Any(group => group.Any(index =>
-            {
-                var c = targetObservations[index];
-                return c.EvidenceBoundaryState != EvidenceState.Confirmed ||
-                    c.SourceAncestryIds.Count == 0 ||
-                    string.IsNullOrWhiteSpace(c.DirectSourceId) ||
-                    string.IsNullOrWhiteSpace(c.SourceObservationId);
-            })))
-            {
-                return Result("unavailable", "target-observation-not-fully-confirmed-or-sourced");
-            }
-
-            var alternativesByGroup = observationSourceGroups.Select(group =>
-                OrderedIds(group.SelectMany(index =>
-                    targetObservations[index].AllowedRegionIds))).ToArray();
-            // Within an ancestry group, keep the UNION of alternatives.
-            // Independent groups may constrain one another, but disagreeing
-            // groups cannot yield an empty search recommendation.
-            var conditionalSet = alternativesByGroup[0].ToHashSet(StringComparer.Ordinal);
-            foreach (var group in alternativesByGroup.Skip(1))
-                conditionalSet.IntersectWith(group);
-            if (conditionalSet.Count == 0)
-                return Result("conflict", "independent-target-observations-disagree");
+            // Identical received evidence/ancestry eligibility to direct A;
+            // historical knowledge is used only as the original B gate.
+            var conditionalSet = targetEvidence.Regions!.ToHashSet(StringComparer.Ordinal);
 
             var publishedSet = knownRegions.ToHashSet(StringComparer.Ordinal);
             if (conditionalSet.Any(id => !publishedSet.Contains(id)))
@@ -1999,7 +2131,9 @@ public static class RescuerEvidenceMethodComparison
                     null, null, null)
                 {
                     ConditionalTargetUnitProposal = ConditionalProposal(
-                        "unavailable", historicalRegions, null, null)
+                        "unavailable", historicalRegions, null, null),
+                    DirectVsWeftAudit = CompareDirectWithWeft("unavailable", null,
+                        ConditionalProposal("unavailable", historicalRegions, null, null))
                 };
 
             var knownRegions = OrderedIds(historicalRegions.SelectMany(row =>
@@ -2038,13 +2172,15 @@ public static class RescuerEvidenceMethodComparison
                 : [];
             if (contradictions.Length > 0)
                 status = "conflict";
+            var proposal = ConditionalProposal(
+                status, historicalRegions, knownRegions, units);
             return new RescuerCurrentUnitMethod(method, status, historicalRegions,
                 status == "unavailable" ? null : knownRegions,
                 status == "unavailable" ? null : units, unresolved)
             {
                 TargetTickConflicts = contradictions,
-                ConditionalTargetUnitProposal = ConditionalProposal(
-                    status, historicalRegions, knownRegions, units)
+                ConditionalTargetUnitProposal = proposal,
+                DirectVsWeftAudit = CompareDirectWithWeft(status, knownRegions, proposal)
             };
         }).ToArray();
 
@@ -2084,7 +2220,10 @@ public static class RescuerEvidenceMethodComparison
                 record.OriginalRecordId, record.OriginalObservationId,
                 record.FirstReceivedAtTick)).ToArray();
         return new RescuerCurrentUnitMethodComparison(
-            comparison.QueryTick, targetTick, historicalWindow, receipts, rows, realF20);
+            comparison.QueryTick, targetTick, historicalWindow, receipts, rows, realF20)
+        {
+            DirectTargetUnitBaseline = directBaseline
+        };
     }
 
     /// <summary>
