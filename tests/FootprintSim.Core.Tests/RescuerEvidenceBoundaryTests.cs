@@ -316,6 +316,13 @@ public sealed class RescuerEvidenceBoundaryTests
             late.Timeline[0].ReceivedOriginals.Select(record => record.OriginalRecordId));
         Assert.Equal([RecordId, "second-original"],
             late.Timeline[1].ReceivedOriginals.Select(record => record.OriginalRecordId));
+        // AR-29: receiving the target sighting at tick 8 does not delay
+        // the actual tick-7 F20 unit set in this fixed synthetic world.
+        Assert.Equal(["U2"], early.Timeline[0].ForwardF20Projection!.KnownUnitIds);
+        Assert.Equal(["U2"], late.Timeline[0].ForwardF20Projection!.KnownUnitIds);
+        Assert.Equal(early.Timeline[0].ForwardF20Projection!.KnownUnitIds,
+            late.Timeline[0].ForwardF20Projection!.KnownUnitIds);
+        Assert.Empty(late.Timeline[0].ForwardF20Projection!.UnresolvedCandidateIds);
         RescuerProvisionalOverlapAssessment Assessment(
             RescuerProvisionalUnitTimingTick tick) =>
             tick.Methods.Single(row =>
