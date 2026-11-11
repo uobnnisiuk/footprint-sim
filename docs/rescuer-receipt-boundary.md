@@ -2515,3 +2515,29 @@ verified real-world locations, safe hard exclusions or rescue outcomes.
 No local .NET 8 execution took place. This later documentation-only
 commit must itself pass head-specific CI; its status is recorded on the
 PR rather than retroactively attributing its checks to the initial head.
+
+**Independent review correction — PR #133 code head 2fa2649234a3ef6b87e3f5c781bf54ebe4bf6852:** The separate reviewer found two genuine acceptance gaps on the
+previous head: a supposed historical-receipt ablation had not actually
+removed Receipt(6), and the audit mislabeled partial or unconfirmed exact
+Person evidence as if no exact observation had been received (also AR-27).
+Both were fixed within the same three approved files. The new xUnit
+assertions explicitly compare received-original counts 2 versus 1 while
+holding the direct U1 and its source fields fixed; R3 {D,F}, R6 {E,F}
+with historical {B}, and unconfirmed D retain separate direct status
+and reason when a historical published outer is available. Truly missing
+exact observations still use `historical-outer-only`. The alternative
+hypothetical intersection for direct-partial inputs remains uncomputed;
+neither historical-outer-only nor an explanatory overlap is a new hard
+candidate exclusion.
+
+**Executed head-specific verification for that corrected code head:**
+[ordinary CI 42958845056](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42958845056)
+completed successfully with **693 tests passed, 0 failed, 0 skipped**,
+build, format, S0/S1 and evaluation checks successful. [F19 research CI
+42958844935](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42958844935)
+also completed successfully on that same head. Neither run is evidence
+about a later documentation-only head; any later head must obtain its
+own checks and independent review. Local .NET execution was unavailable.
+The added tests validate synthetic evaluation categories and receipt
+bookkeeping, not the safety of adopting a historical intersection or a
+real-world rescue advantage.
