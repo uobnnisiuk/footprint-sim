@@ -1895,6 +1895,8 @@ public static class RescuerEvidenceMethodComparison
             .Where(record => record.FirstReceivedAtTick <= comparison.QueryTick)
             .Select(record => record.OriginalRecordId)
             .ToHashSet(StringComparer.Ordinal);
+        // Interval occurrence time is not proof of target-tick presence:
+        // only an exact-tick Person observation can establish a hard mismatch.
         var targetObservations = (received.Input.AvailableCausalTracingConstraints?
             .PubliclyAvailableAt(comparison.QueryTick).Constraints ?? [])
             .Where(c => c.ScenarioId == received.Input.ScenarioId &&
@@ -1905,8 +1907,6 @@ public static class RescuerEvidenceMethodComparison
                 receivedIds.Contains(c.DirectSourceId) &&
                 c.IsPersonEvidence && !c.IsDeviceOnlyEvidence &&
                 targetTick <= comparison.QueryTick &&
-                // Interval occurrence time is not proof of location at targetTick.
-                // Only an exact-tick Person observation can establish a hard mismatch.
                 c.ConstrainedTimeWindow.StartTick == targetTick &&
                 c.ConstrainedTimeWindow.EndTick == targetTick &&
                 c.AllowedRegionIds.Count > 0)
@@ -2059,28 +2059,28 @@ public static class RescuerEvidenceMethodComparison
                 string status, string reason, string[]? regions = null,
                 string[]? units = null, int? regionReduction = null,
                 int? unitReduction = null, string[]? sharedAncestry = null) => new()
-            {
-                Status = status,
-                ReasonCode = reason,
-                OverlapRegionIds = regions,
-                OverlapUnitIds = units,
-                DirectRegionCount = directBaseline.RegionIds?.Count,
-                OverlapRegionCount = regions?.Length,
-                RegionReductionFromDirect = regionReduction,
-                DirectUnitCount = directBaseline.UnitIds?.Count,
-                OverlapUnitCount = units?.Length,
-                UnitReductionFromDirect = unitReduction,
-                HistoricalGenerationDirectSourceIds = generationIds,
-                ObservationDirectSourceIds = OrderedIds(
-                    targetObservations.Select(c => c.DirectSourceId)),
-                SharedSourceAncestryIds = sharedAncestry ?? [],
-                PublicTransitionSourceIds = OrderedIds(
-                    historicalRegions.SelectMany(row => row.TransitionSourceIds)),
-                PublicUnitMappingSourceIds = OrderedIds(
-                    historicalRegions.SelectMany(row => row.UnitMappingSourceIds)),
-                InspectedHistoricalSourceCount = generationIds.Length,
-                InspectedTargetObservationCount = targetObservations.Length
-            };
+                {
+                    Status = status,
+                    ReasonCode = reason,
+                    OverlapRegionIds = regions,
+                    OverlapUnitIds = units,
+                    DirectRegionCount = directBaseline.RegionIds?.Count,
+                    OverlapRegionCount = regions?.Length,
+                    RegionReductionFromDirect = regionReduction,
+                    DirectUnitCount = directBaseline.UnitIds?.Count,
+                    OverlapUnitCount = units?.Length,
+                    UnitReductionFromDirect = unitReduction,
+                    HistoricalGenerationDirectSourceIds = generationIds,
+                    ObservationDirectSourceIds = OrderedIds(
+                        targetObservations.Select(c => c.DirectSourceId)),
+                    SharedSourceAncestryIds = sharedAncestry ?? [],
+                    PublicTransitionSourceIds = OrderedIds(
+                        historicalRegions.SelectMany(row => row.TransitionSourceIds)),
+                    PublicUnitMappingSourceIds = OrderedIds(
+                        historicalRegions.SelectMany(row => row.UnitMappingSourceIds)),
+                    InspectedHistoricalSourceCount = generationIds.Length,
+                    InspectedTargetObservationCount = targetObservations.Length
+                };
 
             if (directBaseline.Status == "conflict" || projectionStatus == "conflict")
                 return Result("conflict", directBaseline.Status == "conflict"
