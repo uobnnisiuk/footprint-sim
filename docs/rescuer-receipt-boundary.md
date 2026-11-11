@@ -2483,7 +2483,24 @@ partial, conflict or unavailability does not reject the initial missing-
 history/weft hypothesis. Revisit if either result's provenance, complete
 mapping, exact time, ancestry or truth isolation fails.
 
-**Implementation verification:** the added fixed synthetic assertions
-and mainline tests require PR-head CI. This section states design and
-expected comparisons; a passing workflow must be observed separately
-before these are treated as executed results.
+**Executed results — initial code head on PR #133:** [ordinary CI
+42945218825](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42945218825)
+and [F19 research CI
+42945218798](https://github.com/uobnnisiuk/footprint-sim/actions/runs/42945218798)
+both succeeded on the same code head. The ordinary workflow completed
+environment/restore/build, **692 xUnit passed (0 failed, 0 skipped)**,
+format verification, S0/S1 scenarios and evaluation harness. The new
+R0/R1 fixed assertions confirmed direct U1 and U1/U2 respectively,
+equal existing conditional sets for the available M1-E/local proposals
+and design-invariant delta 0; this is NOT an experimental negative
+finding about all weft methods. The AR-26 R2 test confirmed direct
+U1/U2, existing conditional partial, complete historical E/U2 and
+evaluation-only hypothetical E/U2, without changing genuine F20.
+No-exact/interval/Device/unreceived/cutoff/uncertain tests withheld
+direct certainty while retaining a separately available historical outer
+when supported. Deterministic reversed/duplicated receipts and original
+legacy tests passed. These are bounded synthetic model findings, not
+verified real-world locations, safe hard exclusions or rescue outcomes.
+No local .NET 8 execution took place. This later documentation-only
+commit must itself pass head-specific CI; its status is recorded on the
+PR rather than retroactively attributing its checks to the initial head.
