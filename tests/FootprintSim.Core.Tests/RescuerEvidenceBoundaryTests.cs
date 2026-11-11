@@ -6569,7 +6569,7 @@ public sealed class RescuerEvidenceBoundaryTests
         // X has no incoming published edge from the subject-side component.
         Assert.DoesNotContain(original.Branches,
             edge => edge.SourceRegionId is "X" or "Y");
-        Assert.Single(expanded.Branches.Where(edge => edge.SourceRegionId == "X"));
+        Assert.Single(expanded.Branches, edge => edge.SourceRegionId == "X");
         Assert.Equal(JsonDefaults.Serialize(original.Branches),
             JsonDefaults.Serialize(expanded.Branches.Take(3).ToArray()));
         Assert.Equal(["B", "C"], p0.CandidateWarps.OuterPlausibleRegionIdsAt(5));
@@ -6587,7 +6587,7 @@ public sealed class RescuerEvidenceBoundaryTests
             Assert.Equal(["B"], p1.CandidateWarps.PreferredRegionIdsAt(5));
             Assert.Equal(3, p0.Steps.Count);
             Assert.Equal(5, p1.Steps.Count);
-            Assert.Empty(p0.Steps.Where(step => step.RealTransitionTraversalOccurred));
+            Assert.DoesNotContain(p0.Steps, step => step.RealTransitionTraversalOccurred);
             // ApplyPublicConsistency audits both directions on each of two
             // fixed-point passes. AR-31's forward count of 2 is not the
             // count of all transition-bearing audit steps (which is 4).
