@@ -7102,4 +7102,147 @@ public sealed class RescuerEvidenceBoundaryTests
                 .CandidateWarps.OuterPlausibleRegionIdsAt(5));
     }
 
+
+    // #148 / AR-37. This is a small mathematical reference, NOT a Joint runtime.
+    // Unary region constraints on a Markov chain are sufficient when both
+    // forward reachability and backward continuability are considered.
+    [Fact]
+    public void UnaryMarkovReferenceMatchesFiniteHistoryEnumeration()
+    {
+        var moves = new (string From, string To)[]
+        {
+            ("a", "b"), ("a", "d"), ("c", "d"), ("b", "e"), ("d", "f")
+        };
+        var histories = (
+            from first in new[] { "a", "c" }
+            from middle in new[] { "b", "d" }
+            from last in new[] { "e", "f" }
+            where moves.Contains((first, middle)) && moves.Contains((middle, last))
+            select (First: first, Middle: middle, Last: last)).ToArray();
+
+        var admitted = histories.Where(history =>
+            history.First == "a" && history.Last == "e").ToArray();
+        var exactMiddle = admitted.Select(history => history.Middle)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(region => region, StringComparer.Ordinal).ToArray();
+
+        string[] Forward(IEnumerable<string> regions) => moves
+            .Where(move => regions.Contains(move.From, StringComparer.Ordinal))
+            .Select(move => move.To)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(region => region, StringComparer.Ordinal).ToArray();
+        string[] Backward(IEnumerable<string> regions) => moves
+            .Where(move => regions.Contains(move.To, StringComparer.Ordinal))
+            .Select(move => move.From)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(region => region, StringComparer.Ordinal).ToArray();
+
+        var forwardMiddle = Forward(["a"]);
+        var backwardMiddle = Backward(["e"]);
+        var filteredMiddle = forwardMiddle.Intersect(
+            backwardMiddle, StringComparer.Ordinal)
+            .OrderBy(region => region, StringComparer.Ordinal).ToArray();
+        Assert.Equal(["b"], exactMiddle);
+        Assert.Equal(exactMiddle, filteredMiddle);
+        Assert.Equal(["b", "d"], forwardMiddle);
+        Assert.Equal(["b"], backwardMiddle);
+        Assert.Equal(["U1"], filteredMiddle.Select(region =>
+            region == "b" ? "U1" : "U2"));
+    }
+
+    // #148. The same Q history must satisfy BOTH distinct co-location
+    // propositions; using a different Q history at each tick is a relaxation.
+    // The co-location JointRequirement is assumed in this reference ONLY.
+    [Fact]
+    public void SharedOtherPersonHistoryHasAReferenceOnlyJointGap()
+    {
+        var qHistories = new[]
+        {
+            (First: "a", Second: "b"),
+            (First: "c", Second: "d")
+        };
+        // Public P movement admits all four pairs; its own first-tick
+        // received sighting restricts P to a.
+        var pHistories = new[]
+        {
+            (First: "a", Second: "b"),
+            (First: "a", Second: "d"),
+            (First: "c", Second: "b"),
+            (First: "c", Second: "d")
+        };
+        string[] Sorted(IEnumerable<string> regions) => regions
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(region => region, StringComparer.Ordinal).ToArray();
+
+        var exactJoint = Sorted(
+            from p in pHistories
+            from q in qHistories
+            where p.First == "a" && p.First == q.First &&
+                p.Second == q.Second
+            select p.Second);
+        // Relaxation: the witness for the first and second encounters
+        // may be chosen from DIFFERENT candidate histories of Q.
+        var unaryMarginals = Sorted(pHistories
+            .Where(p => p.First == "a" &&
+                qHistories.Any(q => q.First == p.First) &&
+                qHistories.Any(q => q.Second == p.Second))
+            .Select(p => p.Second));
+
+        Assert.Equal(["b"], exactJoint);
+        Assert.Equal(["b", "d"], unaryMarginals);
+        string[] Units(IEnumerable<string> regions) =>
+            Sorted(regions.Select(region => region == "b" ? "U1" : "U2"));
+        Assert.Equal(["U1"], Units(exactJoint));
+        Assert.Equal(["U1", "U2"], Units(unaryMarginals));
+        Assert.Contains("b", exactJoint); // synthetic truth; evaluation only
+        Assert.DoesNotContain("d", exactJoint);
+        // No call to a production Joint solver was made by this test.
+    }
+
+    // #148. This exercises the real receipt-to-CrossThreadConstraint
+    // contract. It is unary in target/time/region, not a representation
+    // of a latent history choice shared between P and Q.
+    [Fact]
+    public void ReceivedEncounterConstraintRemainsCutoffGatedUnaryPersonEvidence()
+    {
+        var original = Record();
+        var before = Build(original, [], currentTick: 4);
+        Assert.Empty(before.Input.AvailableCrossThreadConstraints!.Constraints);
+
+        var received = Build(original, [Receipt(5)], currentTick: 5);
+        var constraint = Assert.Single(
+            received.Input.AvailableCrossThreadConstraints!.Constraints);
+        Assert.Equal(TargetId, constraint.TargetEntityId);
+        Assert.Equal(InteractionRelationKind.PersonPersonEncounter,
+            constraint.SourceRelationKind);
+        Assert.Equal(["A"], constraint.AllowedRegionIds);
+        Assert.Equal(2, constraint.ConstrainedTimeWindow.StartTick);
+        Assert.Equal(2, constraint.ConstrainedTimeWindow.EndTick);
+        Assert.Equal(5, constraint.AvailableAtTick);
+        Assert.True(constraint.IsPersonEvidence);
+        Assert.False(constraint.IsDeviceOnlyEvidence);
+        Assert.Equal(EvidenceState.Confirmed, constraint.EvidenceBoundaryState);
+        Assert.Contains(constraint.SourceParticipants, participant =>
+            participant.EntityId == "person-b" &&
+            participant.EntityKind == InteractionEntityKind.Person);
+        Assert.Empty(received.Input.AvailableCrossThreadConstraints
+            .PubliclyAvailableAt(4).Constraints);
+
+        var duplicate = Build(original, [Receipt(5), Receipt(5)], currentTick: 5);
+        Assert.Equal(
+            received.Input.AvailableCrossThreadConstraints.Constraints
+                .Select(item => item.ConstraintId),
+            duplicate.Input.AvailableCrossThreadConstraints!.Constraints
+                .Select(item => item.ConstraintId));
+        var alternative = Build(
+            Record(state: EvidenceState.SupportedButUncertain), [Receipt(5)]);
+        Assert.Equal(EvidenceState.SupportedButUncertain,
+            Assert.Single(alternative.Input.AvailableCrossThreadConstraints!
+                .Constraints).EvidenceBoundaryState);
+        var device = Build(Record(deviceOnly: true), [Receipt(5)]);
+        Assert.Empty(device.Input.AvailableCrossThreadConstraints!.Constraints);
+        // This API has not received a two-tick shared-Q-history variable;
+        // therefore neither this test nor the reference above may hard-drop U2.
+    }
+
 }
