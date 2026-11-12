@@ -2741,3 +2741,48 @@ outer-safe retention are not reinterpreted. `PublicCandidateWarpPropagator.Trave
 (AR-33) still has a separate catalog-size dependency, and AR-32 complete
 operation counts, effects on all four methods, unknown-relation discovery,
 24-edge hypotheses and real-world rescue outcomes remain unmeasured.
+
+
+## #145 — public tracer path-explosion boundary (AR-36)
+
+Issue [#145](https://github.com/uobnnisiuk/footprint-sim/issues/145), Scope-Revision 1.
+The #141 path-local visited-region rule remains necessary: equal region and
+arrival time do **not** justify merging states from different cyclic paths.
+It prevents an unobserved cycle from becoming positive time-filling evidence,
+but it can enumerate exponentially many simple paths on a branching DAG.
+
+**Adopted correction.** Each query builds a cutoff-filtered public graph and
+first checks reverse reachability. Only the source-to-destination relevant
+subgraph is examined for acyclicity. On a DAG it propagates *exact* (minimum,
+maximum) arrival intervals in topological order, merging identical intervals
+at the same region while keeping a deterministic real transition-ID witness.
+It does **not** merge disjoint intervals into their convex hull. Where the
+relevant graph has a cycle, visited regions remain path-local; reverse
+reachability and nonnegative shortest-minimum-time bounds remove only
+provably unhelpful searches. This is not a general polynomial-time
+algorithm for cyclic graphs, nor a guarantee that arbitrary large grids
+finish quickly.
+
+**Fixed synthetic acceptance.** For two provenance-distinct published branches
+per layer in a merging DAG, L=10/14/18, the targets are T at tick L
+(positive), disconnected U (no public support), and T at tick L+1
+(time-incompatible, no public support). Each query's private diagnostic
+C counts search-state removals and examined public branches, including
+indexing, reverse searches, topological work and shortest-path
+preprocessing: C must be at most 32L², and the late negative control at
+L=18 must use at most 8 times the L=10 work (minimum denominator 1).
+Separate controls reject a fabricated arrival at tick 1 from paths arriving
+only at ticks 0 and 2, preserve a real witness, and exercise a cyclic 4×4
+grid and a public zero-tick cycle. These finite tests do not prove asymptotic
+bounds. Branch inspection and memory costs outside this tracer query
+(including AR-32), and the distinct propagator AR-33, remain unmeasured.
+
+**Safety and interpretation.** Absence of a *positive simple public path*
+does not assert that a Person cannot be there: the outer/unknown candidates,
+unreceived/private/future evidence rules, source ancestry, Person/Device and
+conflict handling remain unchanged. An actual revisit may be physically
+possible but is not a positive witnessed transition under #141. The
+adversarial single-run time and allocation reports are not remeasured here.
+No rescue time, visit cost, or survival effect can be inferred from C.
+The approved scope and PR-head CI/independent review determine whether this
+change may be merged; a test proposal is not an accepted result.

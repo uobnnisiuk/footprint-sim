@@ -537,74 +537,289 @@ public sealed class OperationalCausalTracer
         InteractionTimeWindow destinationWindow,
         PublicHazardEnvelope envelope,
         long currentTick,
-        out IReadOnlyList<string> transitionIds)
+        out IReadOnlyList<string> transitionIds) =>
+        TryFindPath(sourceRegion, sourceWindow, destinationRegion, destinationWindow,
+            envelope, currentTick, out transitionIds, out _);
+
+    // Private diagnostic overload: each removed search state and every examined
+    // published branch count as work, including precomputation. The count is
+    // deliberately not a public rescue/performance metric or an AR-32 total.
+    private static bool TryFindPath(
+        string sourceRegion,
+        InteractionTimeWindow sourceWindow,
+        string destinationRegion,
+        InteractionTimeWindow destinationWindow,
+        PublicHazardEnvelope envelope,
+        long currentTick,
+        out IReadOnlyList<string> transitionIds,
+        out long workCount)
     {
+        transitionIds = [];
+        long work = 0;
         if (string.Equals(sourceRegion, destinationRegion, StringComparison.Ordinal))
         {
-            transitionIds = [];
+            workCount = work;
             return sourceWindow.StartTick <= destinationWindow.EndTick;
         }
 
-        // A published cycle is a valid declaration, but an unobserved
-        // return to an earlier region cannot certify a positive time-filling
-        // path. Keep the visited regions per path: two paths arriving at the
-        // same region/tick can have different legal continuations.
-        var queue = new Queue<(string Region, long MinimumTick, long MaximumTick,
-            IReadOnlyList<string> Path, HashSet<string> VisitedRegions)>();
-        queue.Enqueue((sourceRegion, sourceWindow.StartTick, sourceWindow.EndTick,
-            [], new HashSet<string>(StringComparer.Ordinal) { sourceRegion }));
-        while (queue.Count > 0)
+        // Read the received public catalog only. Order independent of its input
+        // enumeration; a new disconnected edge cannot change chosen witnesses.
+        var visible = new List<PublicHazardBranch>();
+        foreach (var branch in envelope.Branches)
         {
-            var current = queue.Dequeue();
-            foreach (var branch in envelope.Branches
-                .Where(item => item.PublishedAtTick <= currentTick)
-                .Where(item => string.Equals(item.SourceRegionId, current.Region, StringComparison.Ordinal))
-                .OrderBy(item => item.DestinationRegionId, StringComparer.Ordinal)
-                .ThenBy(item => item.ProvenanceId, StringComparer.Ordinal))
+            work++;
+            if (branch.PublishedAtTick <= currentTick)
+                visible.Add(branch);
+        }
+
+        work += 2L * visible.Count; // outgoing and incoming index construction
+        var outgoing = visible
+            .GroupBy(branch => branch.SourceRegionId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group
+                .OrderBy(branch => branch.DestinationRegionId, StringComparer.Ordinal)
+                .ThenBy(branch => branch.ProvenanceId, StringComparer.Ordinal)
+                .ThenBy(branch => branch.MinimumTravelTicks)
+                .ThenBy(branch => branch.MaximumTravelTicks)
+                .ThenBy(branch => branch.TransportType)
+                .ToArray(), StringComparer.Ordinal);
+        var incoming = visible
+            .GroupBy(branch => branch.DestinationRegionId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.ToArray(),
+                StringComparer.Ordinal);
+
+        var canReachDestination = new HashSet<string>(StringComparer.Ordinal)
+        {
+            destinationRegion
+        };
+        var reverseQueue = new Queue<string>();
+        reverseQueue.Enqueue(destinationRegion);
+        while (reverseQueue.Count > 0)
+        {
+            work++;
+            var region = reverseQueue.Dequeue();
+            if (!incoming.TryGetValue(region, out var predecessors))
+                continue;
+            foreach (var branch in predecessors)
             {
-                if (current.VisitedRegions.Contains(branch.DestinationRegionId))
-                {
-                    // Not evidence of impossibility: only withhold positive
-                    // tracer support from this unobserved repeated-region walk.
-                    continue;
-                }
+                work++;
+                if (canReachDestination.Add(branch.SourceRegionId))
+                    reverseQueue.Enqueue(branch.SourceRegionId);
+            }
+        }
+        if (!canReachDestination.Contains(sourceRegion))
+        {
+            workCount = work;
+            return false;
+        }
 
-                var minimum = checked(current.MinimumTick + branch.MinimumTravelTicks);
-                var maximum = checked(current.MaximumTick + branch.MaximumTravelTicks);
-                if (minimum > destinationWindow.EndTick)
-                {
-                    continue;
-                }
-
-                var transitionId = InteractionStableIdentifier.Create(
-                    "ptr",
-                    branch.SourceRegionId,
-                    branch.DestinationRegionId,
-                    InteractionStableIdentifier.Tick(branch.MinimumTravelTicks),
-                    InteractionStableIdentifier.Tick(branch.MaximumTravelTicks),
-                    branch.TransportType.ToString(),
-                    branch.ProvenanceId,
-                    InteractionStableIdentifier.Tick(branch.PublishedAtTick));
-                var path = current.Path.Append(transitionId).ToArray();
-                if (string.Equals(branch.DestinationRegionId, destinationRegion, StringComparison.Ordinal) &&
-                    destinationWindow.StartTick <= maximum)
-                {
-                    transitionIds = path;
-                    return true;
-                }
-
-                var visitedOnPath = new HashSet<string>(current.VisitedRegions, StringComparer.Ordinal)
-                {
-                    branch.DestinationRegionId
-                };
-                queue.Enqueue((branch.DestinationRegionId, minimum, maximum, path, visitedOnPath));
+        // Drop vertices not on any source -> destination walk. A disconnected
+        // cycle must not disable exact DAG state coalescing.
+        var relevant = new HashSet<string>(StringComparer.Ordinal) { sourceRegion };
+        var forwardQueue = new Queue<string>();
+        forwardQueue.Enqueue(sourceRegion);
+        while (forwardQueue.Count > 0)
+        {
+            work++;
+            var region = forwardQueue.Dequeue();
+            if (!outgoing.TryGetValue(region, out var branches))
+                continue;
+            foreach (var branch in branches)
+            {
+                work++;
+                if (canReachDestination.Contains(branch.DestinationRegionId) &&
+                    relevant.Add(branch.DestinationRegionId))
+                    forwardQueue.Enqueue(branch.DestinationRegionId);
             }
         }
 
-        transitionIds = [];
-        return false;
-    }
+        var inDegree = relevant.ToDictionary(region => region, _ => 0,
+            StringComparer.Ordinal);
+        foreach (var region in relevant)
+        {
+            if (!outgoing.TryGetValue(region, out var branches))
+                continue;
+            foreach (var branch in branches)
+            {
+                work++;
+                if (relevant.Contains(branch.DestinationRegionId))
+                    inDegree[branch.DestinationRegionId]++;
+            }
+        }
+        var ready = new SortedSet<string>(
+            inDegree.Where(pair => pair.Value == 0).Select(pair => pair.Key),
+            StringComparer.Ordinal);
+        var topoOrder = new List<string>();
+        while (ready.Count > 0)
+        {
+            work++;
+            var region = ready.Min!;
+            ready.Remove(region);
+            topoOrder.Add(region);
+            if (!outgoing.TryGetValue(region, out var branches))
+                continue;
+            foreach (var branch in branches)
+            {
+                work++;
+                if (!relevant.Contains(branch.DestinationRegionId))
+                    continue;
+                if (--inDegree[branch.DestinationRegionId] == 0)
+                    ready.Add(branch.DestinationRegionId);
+            }
+        }
 
+        static string TransitionId(PublicHazardBranch branch) =>
+            InteractionStableIdentifier.Create(
+                "ptr",
+                branch.SourceRegionId,
+                branch.DestinationRegionId,
+                InteractionStableIdentifier.Tick(branch.MinimumTravelTicks),
+                InteractionStableIdentifier.Tick(branch.MaximumTravelTicks),
+                branch.TransportType.ToString(),
+                branch.ProvenanceId,
+                InteractionStableIdentifier.Tick(branch.PublishedAtTick));
+
+        if (topoOrder.Count == relevant.Count)
+        {
+            // DAG: a path cannot revisit a region. Only identical exact arrival
+            // intervals may share a state; never fill holes via a convex hull.
+            // Retain the first real witness in deterministic traversal order.
+            var arrivals = new Dictionary<string,
+                List<(long Minimum, long Maximum, IReadOnlyList<string> Path)>>(
+                    StringComparer.Ordinal);
+            var exactIntervals = relevant.ToDictionary(region => region,
+                _ => new HashSet<(long Minimum, long Maximum)>(),
+                StringComparer.Ordinal);
+            arrivals[sourceRegion] =
+            [
+                (sourceWindow.StartTick, sourceWindow.EndTick, Array.Empty<string>())
+            ];
+            exactIntervals[sourceRegion].Add(
+                (sourceWindow.StartTick, sourceWindow.EndTick));
+            foreach (var region in topoOrder)
+            {
+                if (!arrivals.TryGetValue(region, out var states) ||
+                    !outgoing.TryGetValue(region, out var branches))
+                    continue;
+                foreach (var state in states)
+                {
+                    work++;
+                    foreach (var branch in branches)
+                    {
+                        work++;
+                        if (!relevant.Contains(branch.DestinationRegionId))
+                            continue;
+                        var minimum = checked(state.Minimum + branch.MinimumTravelTicks);
+                        var maximum = checked(state.Maximum + branch.MaximumTravelTicks);
+                        if (minimum > destinationWindow.EndTick)
+                            continue;
+                        if (branch.DestinationRegionId == destinationRegion)
+                        {
+                            if (maximum >= destinationWindow.StartTick)
+                            {
+                                transitionIds = state.Path.Append(TransitionId(branch)).ToArray();
+                                workCount = work;
+                                return true;
+                            }
+                            continue;
+                        }
+                        if (!exactIntervals[branch.DestinationRegionId]
+                            .Add((minimum, maximum)))
+                            continue;
+                        if (!arrivals.TryGetValue(branch.DestinationRegionId,
+                            out var nextStates))
+                        {
+                            nextStates = [];
+                            arrivals.Add(branch.DestinationRegionId, nextStates);
+                        }
+                        nextStates.Add((minimum, maximum,
+                            state.Path.Append(TransitionId(branch)).ToArray()));
+                    }
+                }
+            }
+            workCount = work;
+            return false;
+        }
+
+        // In cyclic structure, two equal time/region states can have different
+        // legal continuations. Keep visited regions path-local, as in #141.
+        // Conservative reverse shortest-time bounds only remove paths which
+        // could not possibly arrive before the destination window closes.
+        var minimumRemaining = new Dictionary<string, long>(StringComparer.Ordinal);
+        if (visible.All(branch => branch.MinimumTravelTicks >= 0))
+        {
+            work += visible.Count;
+            var pending = new PriorityQueue<string, long>();
+            pending.Enqueue(destinationRegion, 0);
+            minimumRemaining[destinationRegion] = 0;
+            while (pending.TryDequeue(out var region, out var distance))
+            {
+                work++;
+                if (minimumRemaining[region] != distance ||
+                    !incoming.TryGetValue(region, out var predecessors))
+                    continue;
+                foreach (var branch in predecessors)
+                {
+                    work++;
+                    if (!relevant.Contains(branch.SourceRegionId) ||
+                        distance > long.MaxValue - branch.MinimumTravelTicks)
+                        continue;
+                    var next = distance + branch.MinimumTravelTicks;
+                    if (!minimumRemaining.TryGetValue(branch.SourceRegionId, out var known) ||
+                        next < known)
+                    {
+                        minimumRemaining[branch.SourceRegionId] = next;
+                        pending.Enqueue(branch.SourceRegionId, next);
+                    }
+                }
+            }
+        }
+
+        var pathOnStack = new List<string>();
+        var visitedOnStack = new HashSet<string>(StringComparer.Ordinal)
+        {
+            sourceRegion
+        };
+        bool FindSimplePath(string region, long minimumTick, long maximumTick)
+        {
+            work++;
+            if (!outgoing.TryGetValue(region, out var branches))
+                return false;
+            foreach (var branch in branches)
+            {
+                work++;
+                var nextRegion = branch.DestinationRegionId;
+                if (!relevant.Contains(nextRegion) || visitedOnStack.Contains(nextRegion))
+                    continue;
+                var minimum = checked(minimumTick + branch.MinimumTravelTicks);
+                var maximum = checked(maximumTick + branch.MaximumTravelTicks);
+                if (minimum > destinationWindow.EndTick)
+                    continue;
+                if (minimumRemaining.TryGetValue(nextRegion, out var remaining) &&
+                    (decimal)minimum + remaining > destinationWindow.EndTick)
+                    continue;
+                if (nextRegion == destinationRegion &&
+                    maximum < destinationWindow.StartTick)
+                    continue;
+
+                pathOnStack.Add(TransitionId(branch));
+                if (nextRegion == destinationRegion)
+                    return true;
+                visitedOnStack.Add(nextRegion);
+                if (FindSimplePath(nextRegion, minimum, maximum))
+                    return true;
+                visitedOnStack.Remove(nextRegion);
+                pathOnStack.RemoveAt(pathOnStack.Count - 1);
+            }
+            return false;
+        }
+
+        var found = FindSimplePath(sourceRegion, sourceWindow.StartTick,
+            sourceWindow.EndTick);
+        if (found)
+            transitionIds = pathOnStack.ToArray();
+        workCount = work;
+        return found;
+    }
 
     // A constraint supports an individual region only when that region is
     // allowed at the matching historical state, or a published positive path
