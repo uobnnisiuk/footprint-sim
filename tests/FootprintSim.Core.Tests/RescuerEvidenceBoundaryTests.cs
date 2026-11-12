@@ -7150,6 +7150,147 @@ public sealed class RescuerEvidenceBoundaryTests
             region == "b" ? "U1" : "U2"));
     }
 
+    // #148 reviewer requirement: compare the *real* historical applicator
+    // to a finite unary reference at the same receipt cutoff and target tick.
+    // The reference also identifies b as the exact intermediate region at
+    // tick 1; this runtime API's CurrentTick is the query cutoff/target tick,
+    // so the two receipts at tick 2 cannot be retroactively used at tick 1.
+    [Fact]
+    public void ReceivedUnaryMarkovConstraintsExerciseActualApplicatorAgainstReference()
+    {
+        var edges = new (string From, string To)[]
+        {
+            ("a", "b"), ("a", "d"), ("c", "d"), ("b", "e"), ("d", "f")
+        };
+        var world = MultiHolderContext() with
+        {
+            PublicRegions = new[] { "a", "b", "c", "d", "e", "f" }
+                .Select((id, index) => new RegionDefinition
+                {
+                    Id = id,
+                    Type = RegionType.Outdoor,
+                    Center = new Position(index, 0, 0, id)
+                }).ToArray(),
+            PublicCausalTracingModel = new PublicCausalTracingModel
+            {
+                CandidateStates =
+                [
+                    State(0, ["a", "c"]),
+                    State(1, ["b", "d"]),
+                    State(2, ["e", "f"])
+                ]
+            },
+            PublicHazardEnvelope = new PublicHazardEnvelope
+            {
+                HazardId = "unary-markov-public",
+                SourceRegionId = "a",
+                PublishedAtTick = 0,
+                Regions = [],
+                Branches = edges.Select(edge => Branch(edge.From, edge.To) with
+                {
+                    MinimumTravelTicks = 1,
+                    MaximumTravelTicks = 1
+                }).ToArray()
+            }
+        };
+
+        DeviceHeldInteractionRecord Original(
+            string originalId, string holder, long observedTick, string region) =>
+            new(holder, observedTick, InteractionObservation.Create(
+                ScenarioId, Seed, originalId, null,
+                InteractionRelationKind.PersonPersonEncounter,
+                [
+                    new InteractionParticipant(TargetId, InteractionEntityKind.Person,
+                        InteractionParticipantRole.EncounterParticipant),
+                    new InteractionParticipant("person-q", InteractionEntityKind.Person,
+                        InteractionParticipantRole.EncounterParticipant)
+                ],
+                InteractionTimeWindow.At(observedTick), [region],
+                observedTick, EvidenceState.Confirmed,
+                isPersonEvidence: true, isDeviceOnlyEvidence: false,
+                InteractionVisibility.PrivateEvidence,
+                [new InteractionProvenance(
+                    InteractionProvenanceKind.EvidenceRecord, originalId)]));
+        var originals = new[]
+        {
+            Original("unary-at-zero", HolderId, 0, "a"),
+            Original("unary-at-two", "holder-b", 2, "e")
+        };
+        var receipts = new[]
+        {
+            new InteractionRecordReceipt(ScenarioId, Seed,
+                "unary-at-zero", HolderId, RescuerId, 2),
+            new InteractionRecordReceipt(ScenarioId, Seed,
+                "unary-at-two", "holder-b", RescuerId, 2)
+        };
+        var builder = new RescuerEvidenceInputBuilder();
+        var firstOnly = builder.BuildDistinctOriginals(
+            world, Seed, 2, RescuerId, originals, receipts.Take(1));
+        var received = builder.BuildDistinctOriginals(
+            world, Seed, 2, RescuerId, originals, receipts);
+        Assert.Single(firstOnly.Input.AvailableCrossThreadConstraints!.Constraints);
+        var accepted = received.Input.AvailableCrossThreadConstraints!.Constraints;
+        Assert.Equal(2, accepted.Count);
+        Assert.Equal([0L, 2L], accepted
+            .Select(c => c.ConstrainedTimeWindow.StartTick).Order().ToArray());
+        Assert.All(accepted, c =>
+        {
+            Assert.Equal(2, c.AvailableAtTick);
+            Assert.Equal(EvidenceState.Confirmed, c.EvidenceBoundaryState);
+            Assert.True(c.IsPersonEvidence);
+            Assert.Equal(TargetId, c.TargetEntityId);
+        });
+
+        var historical = PublicCandidateWarpFactory.Create(
+            ScenarioId, Seed, TargetId,
+            world.PublicCausalTracingModel!.CandidateStates,
+            CandidateWarpStanding.Preferred);
+        var query = new CandidateWarpAccessContext
+        {
+            ScenarioId = ScenarioId,
+            Seed = Seed,
+            TargetEntityId = TargetId,
+            CurrentTick = 2,
+            QueryContextId = "ar37-unary-runtime-check"
+        };
+        var applicator = new CrossThreadConstraintApplicator();
+        var onlyFirst = applicator.Apply(historical,
+            firstOnly.Input.AvailableCrossThreadConstraints.Constraints,
+            query, world.PublicHazardEnvelope);
+        var actual = applicator.Apply(historical,
+            accepted, query, world.PublicHazardEnvelope);
+
+        var finitePaths = (
+            from first in new[] { "a", "c" }
+            from middle in new[] { "b", "d" }
+            from last in new[] { "e", "f" }
+            where edges.Contains((first, middle)) && edges.Contains((middle, last))
+            select (First: first, Middle: middle, Last: last)).ToArray();
+        var exact = finitePaths.Where(path =>
+            path.First == "a" && path.Last == "e").ToArray();
+        Assert.Equal(["b"], exact.Select(path => path.Middle).Distinct().ToArray());
+        var exactLast = exact.Select(path => path.Last).Distinct().ToArray();
+        Assert.Equal(["e"], exactLast);
+
+        // Real runtime output at t=2 under the *same* received unary E,
+        // not an invented backward pass or a simulated joint-history API.
+        Assert.Equal(["e", "f"], onlyFirst.CandidateWarps.PreferredRegionIdsAt(2));
+        Assert.Equal(exactLast, actual.CandidateWarps.PreferredRegionIdsAt(2));
+        Assert.Equal(["e"], actual.CandidateWarps.OuterPlausibleRegionIdsAt(2));
+        Assert.DoesNotContain(actual.Audits, audit => audit.ConflictDetected);
+        Assert.Contains(actual.Audits, audit =>
+            audit.ConstrainedTimeWindow.StartTick == 0 &&
+            audit.Disposition == ConstraintApplicationDisposition.Narrow);
+        Assert.Contains(actual.Audits, audit =>
+            audit.ConstrainedTimeWindow.StartTick == 2 &&
+            audit.Disposition == ConstraintApplicationDisposition.Narrow);
+        Assert.Equal(JsonDefaults.Serialize(actual),
+            JsonDefaults.Serialize(applicator.Apply(
+                historical, accepted.Reverse(), query, world.PublicHazardEnvelope)));
+        // Region e has no b/d public unit mapping in this fixed example.
+        // No confirmation unit at t=2 is invented for an unmapped region.
+    }
+
     // #148. The same Q history must satisfy BOTH distinct co-location
     // propositions; using a different Q history at each tick is a relaxation.
     // The co-location JointRequirement is assumed in this reference ONLY.
