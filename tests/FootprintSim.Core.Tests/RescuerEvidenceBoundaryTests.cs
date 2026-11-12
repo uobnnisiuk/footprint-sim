@@ -6886,6 +6886,129 @@ public sealed class RescuerEvidenceBoundaryTests
     }
 
     [Fact]
+    public void SingleBackEdgeDoesNotRestoreExponentialLatePathEnumeration()
+    {
+        long? lateWorkAt10 = null;
+        foreach (var layers in new[] { 10, 14, 18 })
+        {
+            var dag = LayeredMergeCatalog(layers);
+            var cyclic = dag with
+            {
+                Branches = [.. dag.Branches,
+                    Branch("T", "S") with {
+                        MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+                        ProvenanceId = "ar38-return" }]
+            };
+            var cutoff = layers + 1;
+            var positive = ProbePublicTracer(cyclic, "S", "T", layers, cutoff);
+            var unreachable = ProbePublicTracer(cyclic, "S", "U", layers, cutoff);
+            var late = ProbePublicTracer(cyclic, "S", "T", layers + 1, cutoff);
+            Assert.True(positive.Supported);
+            Assert.Equal(layers, positive.Witness.Count);
+            Assert.False(unreachable.Supported);
+            Assert.Empty(unreachable.Witness);
+            Assert.False(late.Supported);
+            Assert.Empty(late.Witness);
+            foreach (var current in new[] { positive.Work, unreachable.Work, late.Work })
+                Assert.InRange(current, 1L, 32L * layers * layers);
+            if (layers == 10)
+                lateWorkAt10 = late.Work;
+            if (layers == 18)
+                Assert.True(late.Work <= 8L * Math.Max(1L, lateWorkAt10!.Value),
+                    $"AR-38 cyclic timing work: C10={lateWorkAt10}, C18={late.Work}");
+        }
+    }
+
+    [Fact]
+    public void DirectPublicWitnessInCyclicLayeredCatalogIsFoundWithoutDeepFailures()
+    {
+        foreach (var layers in new[] { 10, 14, 18, 30 })
+        {
+            var dag = LayeredMergeCatalog(layers);
+            var cyclic = dag with
+            {
+                Branches = [.. dag.Branches,
+                    Branch("T", "S") with {
+                        MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+                        ProvenanceId = "ar38-return" },
+                    Branch("S", "T") with {
+                        MinimumTravelTicks = layers + 1,
+                        MaximumTravelTicks = layers + 1,
+                        ProvenanceId = "p1-direct-witness" }]
+            };
+            var original = ProbePublicTracer(cyclic, "S", "T",
+                layers + 1, layers + 1);
+            var shuffled = ProbePublicTracer(cyclic with
+            {
+                Branches = cyclic.Branches.Reverse().ToArray()
+            }, "S", "T", layers + 1, layers + 1);
+            Assert.True(original.Supported);
+            Assert.Single(original.Witness);
+            Assert.Equal(original.Witness, shuffled.Witness);
+            Assert.True(shuffled.Supported);
+            Assert.InRange(original.Work, 1L, 64L * layers * layers);
+            Assert.InRange(shuffled.Work, 1L, 64L * layers * layers);
+        }
+    }
+
+    private static PublicHazardEnvelope BidirectionalGridCatalog(
+        int side, int minimumTick, int maximumTick)
+    {
+        var branches = new List<PublicHazardBranch>();
+        for (var row = 0; row < side; row++)
+        {
+            for (var col = 0; col < side; col++)
+            {
+                var here = $"R{row}{col}";
+                if (col + 1 < side)
+                {
+                    var right = $"R{row}{col + 1}";
+                    branches.Add(Branch(here, right) with
+                    { MinimumTravelTicks = minimumTick, MaximumTravelTicks = maximumTick });
+                    branches.Add(Branch(right, here) with
+                    { MinimumTravelTicks = minimumTick, MaximumTravelTicks = maximumTick });
+                }
+                if (row + 1 < side)
+                {
+                    var down = $"R{row + 1}{col}";
+                    branches.Add(Branch(here, down) with
+                    { MinimumTravelTicks = minimumTick, MaximumTravelTicks = maximumTick });
+                    branches.Add(Branch(down, here) with
+                    { MinimumTravelTicks = minimumTick, MaximumTravelTicks = maximumTick });
+                }
+            }
+        }
+        return new PublicHazardEnvelope
+        {
+            HazardId = "ar38-grid-public",
+            SourceRegionId = "R00",
+            PublishedAtTick = 0,
+            Regions = [],
+            Branches = branches
+        };
+    }
+
+    [Fact]
+    public void CyclicGridParityAndSimplePathTimeCeilingDoNotInventSupport()
+    {
+        var parityGrid = BidirectionalGridCatalog(6, 1, 1);
+        var parity = ProbePublicTracer(parityGrid, "R00", "R55", 21);
+        Assert.False(parity.Supported);
+        Assert.Empty(parity.Witness);
+        Assert.InRange(parity.Work, 1L, 4096L * 36);
+
+        foreach (var (side, tick) in new[] { (5, 51L), (6, 73L) })
+        {
+            var grid = BidirectionalGridCatalog(side, 1, 2);
+            var target = $"R{side - 1}{side - 1}";
+            var result = ProbePublicTracer(grid, "R00", target, tick);
+            Assert.False(result.Supported);
+            Assert.Empty(result.Witness);
+            Assert.InRange(result.Work, 1L, 4096L * side * side);
+        }
+    }
+
+    [Fact]
     public void DiscreteArrivalHoleIsNotPromotedByDagStateCoalescing()
     {
         var world = new PublicHazardEnvelope
