@@ -2600,3 +2600,90 @@ The assessment cannot replace unknown, incomplete public declarations, uncertain
 At tick7, both early and delayed schedules' **genuine F20** return `KnownUnitIds=[U2]`; the delayed series has zero unresolved candidate IDs. The difference in the rescuer-facing unit sets due to the *delayed target sighting* is therefore **0 units in this fixed fixture**, even though the delayed direct-baseline comparison is withheld. The later `UnitReductionFromDirect=1` compares the historical `{B}@2` weft's projected `U2` against the direct sighting baseline `[U1,U2]`; it does **not** mean that receiving the second sighting earlier removed one additional unit from the rescuer's actual F20 set. At tick8 the reported result is retrospective evaluation only, not a new F20 search-unit result. These fixed-model counts are neither a demonstrated reduction in visits nor an estimate of rescue time.
 
 The historical weft `{B}@2` is held at receipt tick6 in **both** schedules: its own receipt delay and its effect on the first genuinely smaller rescuer-facing unit set have **not been evaluated** here. The central idea of reconstructing a missing personal history from independent traces remains open, neither verified nor rejected by this gate check. This correction preserves the fixed inputs, all original assertions and F20 boundaries. The new same-fixture xUnit comparisons must pass latest-head CI before these unit-set values are treated as confirmed by this PR's test suite; the previous CI pertains to the previous head.
+
+
+## #139 — disconnected public catalog diagnostic (Scope-Revision 1)
+
+Work-Key: `FP-IRRELEVANT-PUBLIC-CATALOG-WORK-V1`.
+[Fixed scope and independent scope review](https://github.com/uobnnisiuk/footprint-sim/issues/139#issuecomment-6808477704);
+[adversarial AR-31/AR-32](https://github.com/uobnnisiuk/footprint-sim/issues/139#issuecomment-6808092081).
+
+**Question and relation to the original idea.** When the missing Person history is
+constrained by a genuinely received other-person source, a searcher must distinguish
+publicly *known* connections from absent/unknown connections. Does adding
+a public branch disconnected from the subject change what the existing tracer
+supports? This is a diagnostic of the existing known-relation traversal, not an
+algorithm for finding unknown relations or the 24-edge proposal. The previous
+single-catalog four-method comparison (#124) and receipt timing (#136) did not
+establish whole-catalog complexity or general noninterference.
+
+**Frozen synthetic inputs, not a claim about a real place.** A directly received,
+confirmed Person upstream constraint `A@0`, public prior at `t0={A,Z}` and
+`t5={B,C}`, fixed query cutoff 5, and the same subject/ancestry are used
+in two distinct published model conditions. P0 contains the three one-tick
+branches `A→Q`, `Q→A`, `A→B`. P1 adds only `X→Y`, with no connection
+from the subject-side graph. The source evidence and reachable declarations
+are unchanged; the public *catalog worlds* are not identical.
+
+| Diagnostic, based on AR-31's original probe (recheck by CI test) | P0 | P1 |
+| --- | --- | --- |
+| Published branch count (input size) | 3 | 4 |
+| Outer at tick 5 | B,C | B,C |
+| Preferred at tick 5 (probe report) | B,C | B |
+| Tracing steps (probe report) | 3 | 5 |
+| Forward real-transition audit steps (probe report) | 0 | 2 |
+
+`RealTransitionTraversalOccurred` is set on audit steps from **both**
+forward and backward consistency passes. The reported `2` counts forward
+steps only, not all transition-bearing audit steps. The first PR-head CI
+exposed that distinction: the fixture produced 4 total transition-bearing
+steps, comprising 2 forward and 2 backward; the initial assertion wrongly
+expected a total of 2. These per-direction numbers are an explanation of
+this fixed diagnostic and still require a passing rerun of current-head CI.
+
+The reviewed current tracer expands a path only while
+`current.Depth < envelope.Branches.Count`. This means an unrelated branch
+can change the depth budget and expose an existing time-compatible cyclic
+path. The test retains the actual candidate outer in both conditions and
+checks the known difference if it occurs; it deliberately **does not require
+the known defect to persist** after a future tracer correction. Its result is
+a regression diagnostic, not proof of physical movement or a hard exclusion.
+
+A **separate one-hop control** uses the existing two independent originals
+`weft-a` and `weft-b`, receipt ticks 6 and 7, historical `At(2)`, query
+and target tick 7, public `A/B/C→D/E/F` and `U1/U2/U3` declarations.
+The comparator calls the genuine `BuildDistinctOriginals`,
+`CompareReceivedCurrentUnits`, all four existing methods and actual F20
+projection. P1 adds an isolated `X→Y` public branch and its public regions
+without changing the received originals or the declared current units.
+Method rows (including available work counters, source IDs, outer/preferred,
+conflict and unknown) and actual F20 output must remain identical **for this
+one-hop fixture only**. This does *not* establish that the cyclic case can
+be expressed in the four-method/F20 API: that propagation is still
+`not-evaluated` pending an independently scoped concrete input, not a
+fabricated measurement.
+
+**Measurement boundaries.** Published branch/region/unit declaration counts
+are *input sizes*. Existing generation/verification/forward/backward steps,
+`EvidenceRecordsInspected`, and `PublicRelationsInspected` are counts of
+the particular modeled activities defined by the current methods. They
+are **not** total examined catalog branches: the tracer's node-by-node full
+branch enumeration and F20's full declaration validation, actual CPU time,
+memory, rescue visits, and survival outcomes remain **unmeasured**.
+A 0 difference in existing counters must never be interpreted as 0 extra
+computational work or a performance result.
+
+**Status and alternatives.** The above P0/P1 tracer values are the earlier
+adversarial probe's reported observations, not an independent performance
+measurement. Local .NET SDK is unavailable in this execution environment;
+the changed test and documentation require current PR-head CI and an
+independent code review before they can count as verified here.
+This freezes an independently inspectable counterexample/limited control,
+not a new scientific discovery. A safer path-bound rule based on the
+reachable component, an explicit incomplete/unknown at budget exhaustion,
+or documenting the current limitation are alternatives for a future scope.
+No tracer, F20, security setting, or receipt rule is changed here.
+Unknown-relation discovery, 24-edge exploration, and field rescue impact
+remain deferred, **not rejected**. If either counterexample cannot be
+reproduced without changing the approved contracts, the same issue must
+return for scope review rather than changing expected results to pass.
