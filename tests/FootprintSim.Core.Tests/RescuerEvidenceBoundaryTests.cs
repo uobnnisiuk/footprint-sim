@@ -6827,13 +6827,13 @@ public sealed class RescuerEvidenceBoundaryTests
         for (var i = 1; i < layers - 1; i++)
         {
             foreach (var from in new[] { "a", "b" })
-            foreach (var to in new[] { "a", "b" })
-                branches.Add(Branch($"L{i}{from}", $"L{i + 1}{to}") with
-                {
-                    MinimumTravelTicks = 1,
-                    MaximumTravelTicks = 1,
-                    ProvenanceId = $"layer-{i}-{from}-{to}"
-                });
+                foreach (var to in new[] { "a", "b" })
+                    branches.Add(Branch($"L{i}{from}", $"L{i + 1}{to}") with
+                    {
+                        MinimumTravelTicks = 1,
+                        MaximumTravelTicks = 1,
+                        ProvenanceId = $"layer-{i}-{from}-{to}"
+                    });
         }
         foreach (var side in new[] { "a", "b" })
             branches.Add(Branch($"L{layers - 1}{side}", "T") with
