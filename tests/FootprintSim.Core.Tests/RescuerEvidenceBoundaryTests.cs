@@ -7298,7 +7298,7 @@ public sealed class RescuerEvidenceBoundaryTests
         var middleReceipt = new InteractionRecordReceipt(
             ScenarioId, Seed, "unary-at-one-d", "holder-b", RescuerId, 2);
         var middleOnlyEvidence = builder.BuildDistinctOriginals(
-            world, Seed, 2, RescuerId, [middleD], [middleReceipt]);
+            world, Seed, 2, RescuerId, [originals[0], middleD], [middleReceipt]);
         var bothPastEvidence = builder.BuildDistinctOriginals(
             world, Seed, 2, RescuerId,
             [originals[0], middleD], [receipts[0], middleReceipt]);
