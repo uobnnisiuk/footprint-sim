@@ -6792,7 +6792,7 @@ public sealed class RescuerEvidenceBoundaryTests
     // measures preprocessing too, without extending any inference API.
     private static (bool Supported, long Work, IReadOnlyList<string> Witness)
         ProbePublicTracer(PublicHazardEnvelope envelope, string origin,
-            string destination, long targetTick)
+            string destination, long targetTick, long? cutoffTick = null)
     {
         var probe = typeof(OperationalCausalTracer)
             .GetMethods(System.Reflection.BindingFlags.NonPublic |
@@ -6802,7 +6802,7 @@ public sealed class RescuerEvidenceBoundaryTests
         object?[] args =
         [
             origin, InteractionTimeWindow.At(0), destination,
-            InteractionTimeWindow.At(targetTick), envelope, targetTick,
+            InteractionTimeWindow.At(targetTick), envelope, cutoffTick ?? targetTick,
             null, null
         ];
         var supported = (bool)probe.Invoke(null, args)!;
@@ -6811,23 +6811,41 @@ public sealed class RescuerEvidenceBoundaryTests
 
     private static PublicHazardEnvelope LayeredMergeCatalog(int layers)
     {
-        // Two differently sourced parallel declarations at each layer
-        // produce 2^L distinct transition-ID paths, all arriving at tick L.
+        // AR-36: every intermediate layer has two DISTINCT regions; complete
+        // cross-links form 2^(L-1) simple S-to-T paths of exactly L ticks.
+        // Parallel branches with identical endpoints do not test this case.
+        if (layers < 2)
+            throw new ArgumentOutOfRangeException(nameof(layers));
         var branches = new List<PublicHazardBranch>();
-        for (var i = 0; i < layers; i++)
+        foreach (var side in new[] { "a", "b" })
+            branches.Add(Branch("S", $"L1{side}") with
+            {
+                MinimumTravelTicks = 1,
+                MaximumTravelTicks = 1,
+                ProvenanceId = $"layer-0-{side}"
+            });
+        for (var i = 1; i < layers - 1; i++)
         {
-            foreach (var side in new[] { "a", "b" })
-                branches.Add(Branch($"N{i}", $"N{i + 1}") with
+            foreach (var from in new[] { "a", "b" })
+            foreach (var to in new[] { "a", "b" })
+                branches.Add(Branch($"L{i}{from}", $"L{i + 1}{to}") with
                 {
                     MinimumTravelTicks = 1,
                     MaximumTravelTicks = 1,
-                    ProvenanceId = $"layer-{i}-{side}"
+                    ProvenanceId = $"layer-{i}-{from}-{to}"
                 });
         }
+        foreach (var side in new[] { "a", "b" })
+            branches.Add(Branch($"L{layers - 1}{side}", "T") with
+            {
+                MinimumTravelTicks = 1,
+                MaximumTravelTicks = 1,
+                ProvenanceId = $"layer-{layers - 1}-{side}-end"
+            });
         return new PublicHazardEnvelope
         {
             HazardId = "ar36-layered-public",
-            SourceRegionId = "N0",
+            SourceRegionId = "S",
             PublishedAtTick = 0,
             Regions = [],
             Branches = branches
@@ -6841,13 +6859,15 @@ public sealed class RescuerEvidenceBoundaryTests
         foreach (var layers in new[] { 10, 14, 18 })
         {
             var world = LayeredMergeCatalog(layers);
-            var positive = ProbePublicTracer(world, "N0", $"N{layers}", layers);
-            var unreachable = ProbePublicTracer(world, "N0", "U", layers);
-            var late = ProbePublicTracer(world, "N0", $"N{layers}", layers + 1);
+            // Compare the three questions under one received-evidence cutoff.
+            var cutoffTick = layers + 1;
+            var positive = ProbePublicTracer(world, "S", "T", layers, cutoffTick);
+            var unreachable = ProbePublicTracer(world, "S", "U", layers, cutoffTick);
+            var late = ProbePublicTracer(world, "S", "T", layers + 1, cutoffTick);
             Assert.True(positive.Supported);
             Assert.Equal(layers, positive.Witness.Count);
             Assert.Equal(positive.Witness,
-                ProbePublicTracer(world, "N0", $"N{layers}", layers).Witness);
+                ProbePublicTracer(world, "S", "T", layers, cutoffTick).Witness);
             Assert.False(unreachable.Supported);
             Assert.Empty(unreachable.Witness);
             Assert.False(late.Supported);
