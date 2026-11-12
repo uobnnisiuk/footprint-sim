@@ -7324,6 +7324,12 @@ public sealed class RescuerEvidenceBoundaryTests
             // the confirmed tick-1 observation is recorded as a NoOp.
             // Do not treat this characterization as correctness approval.
             Assert.Equal(["e", "f"], observedBothPast);
+            // A nonempty outer-only branch does not repair the loss of the
+            // received intermediate-tick constraint or prove outer safety.
+            Assert.NotEmpty(bothPastResult.CandidateWarps
+                .OuterPlausibleRegionIdsAt(2));
+            Assert.DoesNotContain(bothPastResult.Audits, audit =>
+                audit.ConflictDetected);
             Assert.Contains(bothPastResult.Audits, audit =>
                 audit.ConstrainedTimeWindow.StartTick == 1 &&
                 audit.Disposition == ConstraintApplicationDisposition.NoOp &&
