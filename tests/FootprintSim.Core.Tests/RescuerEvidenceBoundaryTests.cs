@@ -6952,7 +6952,7 @@ public sealed class RescuerEvidenceBoundaryTests
     }
 
     private static PublicHazardEnvelope BidirectionalGridCatalog(
-        int side, long minimumTick, long maximumTick)
+        int side, int minimumTick, int maximumTick)
     {
         var branches = new List<PublicHazardBranch>();
         for (var row = 0; row < side; row++)
