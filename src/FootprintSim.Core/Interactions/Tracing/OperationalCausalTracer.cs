@@ -545,25 +545,37 @@ public sealed class OperationalCausalTracer
             return sourceWindow.StartTick <= destinationWindow.EndTick;
         }
 
-        var queue = new Queue<(string Region, long MinimumTick, long MaximumTick, int Depth, IReadOnlyList<string> Path)>();
-        queue.Enqueue((sourceRegion, sourceWindow.StartTick, sourceWindow.EndTick, 0, []));
-        var visited = new HashSet<string>(StringComparer.Ordinal);
+        // A published cycle is a valid declaration, but an unobserved
+        // return to an earlier region cannot certify a positive time-filling
+        // path. Keep the visited regions per path: two paths arriving at the
+        // same region/tick can have different legal continuations.
+        var queue = new Queue<(string Region, long MinimumTick, long MaximumTick,
+            IReadOnlyList<string> Path, HashSet<string> VisitedRegions)>();
+        queue.Enqueue((sourceRegion, sourceWindow.StartTick, sourceWindow.EndTick,
+            [], new HashSet<string>(StringComparer.Ordinal) { sourceRegion }));
         while (queue.Count > 0)
         {
             var current = queue.Dequeue();
-            if (!visited.Add($"{current.Region}:{current.MinimumTick}:{current.MaximumTick}"))
-            {
-                continue;
-            }
-
             foreach (var branch in envelope.Branches
                 .Where(item => item.PublishedAtTick <= currentTick)
                 .Where(item => string.Equals(item.SourceRegionId, current.Region, StringComparison.Ordinal))
                 .OrderBy(item => item.DestinationRegionId, StringComparer.Ordinal)
                 .ThenBy(item => item.ProvenanceId, StringComparer.Ordinal))
             {
+                if (current.VisitedRegions.Contains(branch.DestinationRegionId))
+                {
+                    // Not evidence of impossibility: only withhold positive
+                    // tracer support from this unobserved repeated-region walk.
+                    continue;
+                }
+
                 var minimum = checked(current.MinimumTick + branch.MinimumTravelTicks);
                 var maximum = checked(current.MaximumTick + branch.MaximumTravelTicks);
+                if (minimum > destinationWindow.EndTick)
+                {
+                    continue;
+                }
+
                 var transitionId = InteractionStableIdentifier.Create(
                     "ptr",
                     branch.SourceRegionId,
@@ -575,16 +587,17 @@ public sealed class OperationalCausalTracer
                     InteractionStableIdentifier.Tick(branch.PublishedAtTick));
                 var path = current.Path.Append(transitionId).ToArray();
                 if (string.Equals(branch.DestinationRegionId, destinationRegion, StringComparison.Ordinal) &&
-                    minimum <= destinationWindow.EndTick && destinationWindow.StartTick <= maximum)
+                    destinationWindow.StartTick <= maximum)
                 {
                     transitionIds = path;
                     return true;
                 }
 
-                if (current.Depth < envelope.Branches.Count && minimum <= destinationWindow.EndTick)
+                var visitedOnPath = new HashSet<string>(current.VisitedRegions, StringComparer.Ordinal)
                 {
-                    queue.Enqueue((branch.DestinationRegionId, minimum, maximum, current.Depth + 1, path));
-                }
+                    branch.DestinationRegionId
+                };
+                queue.Enqueue((branch.DestinationRegionId, minimum, maximum, path, visitedOnPath));
             }
         }
 

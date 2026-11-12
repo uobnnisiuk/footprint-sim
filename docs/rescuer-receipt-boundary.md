@@ -2687,3 +2687,57 @@ Unknown-relation discovery, 24-edge exploration, and field rescue impact
 remain deferred, **not rejected**. If either counterexample cannot be
 reproduced without changing the approved contracts, the same issue must
 return for scope review rather than changing expected results to pass.
+
+
+## #141 — path-local bounded public tracer support (Scope-Revision 2)
+
+Work-Key: `FP-PUBLIC-TRACER-CATALOG-BOUNDARY-CORRECTION-V1`;
+[scope / adversarial basis](https://github.com/uobnnisiuk/footprint-sim/issues/141).
+This correction narrows **positive known-public-path support only**; it does
+not change what the rescuer has received or assert that a Person took a path.
+
+**Rule and justification.** `OperationalCausalTracer.TryFindPath` no longer
+uses the count of all published branches as its path-depth budget. A search
+state retains the visited **region sequence as a set for that particular
+path**; no branch returning to a region already visited on that path is
+expanded as positive support. Different paths reaching the same region and
+tick interval are retained if their prior visited regions differ. This
+prevents `S→A→X` from suppressing the valid `S→B→X→A→T` path solely
+because both reach `X@2`. The predecessor step and published transition IDs
+remain attached to the actually selected simple path.
+
+For a finite set of regions `V`, every expanded *positive-support* path
+has at most `|V|-1` edges, even when a received catalog contains cycles
+with minimum travel time 0. This is a finite-search argument **conditional
+on the simple-region-path support rule**. It is not a completeness proof
+for arbitrary physically possible walking histories: a real Person may
+revisit regions. Such unobserved revisits are neither proof of impossible
+movement nor positive proof of a timed arrival; missing support must not
+remove outer candidates or establish missing-relation nonexistence.
+The number of enumerated simple paths can still be large; full CPU,
+allocation and branch-inspection costs have not been benchmarked.
+
+**Fixed synthetic contrasts (not field measurements).** At `A@0`,
+the `A↔Q[1,1], A→B[1,1]` catalog and the same catalog with isolated
+`X→Y` must agree at `B@5`, and must not invent a positive path from
+repeated `A↔Q` travel. Adding `A→C[2,2]`, both tick 5 and tick 6
+must keep unknown/outer candidates without a new parity-dependent positive
+endorsement. `A↔Q[0,1]` is a valid received declaration but cannot by
+itself fill the gap to `B@5`; the direct `A→B` path supports `B@1`.
+A separate state-sensitive positive control reaches `T@4` using
+`S→B→X→A→T`, whereas the apparent alternative `S→A→X→A→T`
+revisits `A` and cannot be promoted. These are **test expectations for
+the new PR**; actual head-CI and independent code review must confirm
+the implementation before they are reported as tested results.
+
+**Bounds and alternatives.** Mere audit labels for the old cyclic
+time-filling witness leave its preferred/source-group bias intact (rejected
+alternative a). Inventing destination dwell changes the model and is outside
+this scope (rejected c). Path-local non-revisit support (adopted b) is a
+conservative choice, not a proof that cycles or unknown relations do not
+exist. The existing direct same-region rule, cutoff/private/future
+separation, Person/Device distinction, source ancestry, conflicts and
+outer-safe retention are not reinterpreted. `PublicCandidateWarpPropagator.Traverse`
+(AR-33) still has a separate catalog-size dependency, and AR-32 complete
+operation counts, effects on all four methods, unknown-relation discovery,
+24-edge hypotheses and real-world rescue outcomes remain unmeasured.
