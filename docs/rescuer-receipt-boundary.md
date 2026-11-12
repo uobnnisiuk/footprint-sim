@@ -2786,3 +2786,49 @@ adversarial single-run time and allocation reports are not remeasured here.
 No rescue time, visit cost, or survival effect can be inferred from C.
 The approved scope and PR-head CI/independent review determine whether this
 change may be merged; a test proposal is not an accepted result.
+
+## #145 Revision 2 — cyclic public path work boundary (AR-38 / P1)
+
+This follow-up keeps the merged Revision 1 DAG behavior and the #141
+path-local visited-region rule. A single public back edge can turn the
+source/destination-relevant catalog cyclic, causing the prior DFS to expand
+an exponential number of distinct but time-incompatible simple paths.
+A short direct positive branch may also be ordered after many failed
+branches. These are algorithmic risks, not evidence of false exclusion.
+
+**Scoped correction (proposed PR; results require current-head CI/review).**
+For cyclic catalogs, a matching *direct published transition* is checked
+before deep simple-path search and provides a genuine deterministic
+one-edge witness. A simple-region-path has at most `|V|-1` edges, so with
+nonnegative published travel durations, a target later than the source
+window plus this edge bound times the largest relevant declared maximum
+cannot have a simple-path witness. For small discrete time horizons (at
+most 256 ticks), a time-expanded *walk* reachability search gives another
+**necessary**, not sufficient, condition: if no nonnegative public walk
+can reach the destination at the query tick, no compatible simple path
+exists. Time-expanded states are distinct exact ticks, not merged into a
+convex hull. Even when a compatible walk exists, the tracer still requires
+a real path-local non-revisiting witness for positive support. This is
+crucial when an unrestricted walk revisits a region. For longer horizons
+the optional walk check is skipped, **not** treated as a negative result.
+No inference timeout, unexplored-path hard exclusion, or public API is added.
+
+The approved finite checks cover a 10/14/18-layer two-region-per-layer
+DAG with one `T→S[1,1]` back edge: exact-time T at L, inaccessible U
+and time-incompatible T at L+1. Each private work count includes public
+catalog/index inspection, graph preprocessing, actual expanded states,
+edge checks and discrete successors; the limit is `32L²` and the L18/L10
+negative work ratio at most 8. Adding a direct `S→T[L+1,L+1]` requires
+a genuine one-edge witness under both original and shuffled public-edge
+order for L=10/14/18/30, with `64L²` maximum work. A bidirectional 6×6
+unit-tick grid has no matching diagonal witness at odd tick 21; 5×5 and
+6×6 grids with [1,2] ticks per branch cannot supply simple paths at
+ticks 51 and 73, respectively. Those grid negatives use the finite
+`4096 × region_count` work cap. Earlier arrival-hole, 0-tick cycle,
+visited-history, evidence-cutoff, outer/unknown and ancestry tests remain.
+
+This is not a polynomial bound for all cyclic graphs, a full accounting
+of four-method/AR-32 work, or a physical movement/rescue-time claim.
+AR-33 concerns a separate propagator; AR-37 remains for a distinct
+method-comparison design. No evidence source or previously merged
+mathematical note is altered.

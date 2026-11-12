@@ -740,6 +740,55 @@ public sealed class OperationalCausalTracer
             return false;
         }
 
+        // A public direct edge is a complete simple-path witness even when
+        // a larger cyclic catalog would otherwise enumerate failed paths first.
+        if (outgoing.TryGetValue(sourceRegion, out var directBranches))
+        {
+            foreach (var branch in directBranches)
+            {
+                work++;
+                if (branch.DestinationRegionId != destinationRegion ||
+                    (decimal)sourceWindow.StartTick + branch.MinimumTravelTicks >
+                    destinationWindow.EndTick ||
+                    (decimal)sourceWindow.EndTick + branch.MaximumTravelTicks <
+                    destinationWindow.StartTick)
+                    continue;
+                transitionIds = [TransitionId(branch)];
+                workCount = work;
+                return true;
+            }
+        }
+
+        // A simple path uses at most |V|-1 published edges. This upper
+        // arrival bound is safe only for nonnegative travel durations.
+        // Count every inspected relevant branch as preprocessing work.
+        var nonnegativeRelevantDurations = true;
+        long maximumRelevantDuration = 0;
+        foreach (var region in relevant)
+        {
+            if (!outgoing.TryGetValue(region, out var branches))
+                continue;
+            foreach (var branch in branches)
+            {
+                work++;
+                if (!relevant.Contains(branch.DestinationRegionId))
+                    continue;
+                if (branch.MinimumTravelTicks < 0 ||
+                    branch.MaximumTravelTicks < 0)
+                    nonnegativeRelevantDurations = false;
+                maximumRelevantDuration = Math.Max(maximumRelevantDuration,
+                    branch.MaximumTravelTicks);
+            }
+        }
+        if (nonnegativeRelevantDurations &&
+            (decimal)sourceWindow.EndTick +
+            (decimal)(relevant.Count - 1) * maximumRelevantDuration <
+            destinationWindow.StartTick)
+        {
+            workCount = work;
+            return false;
+        }
+
         // In cyclic structure, two equal time/region states can have different
         // legal continuations. Keep visited regions path-local, as in #141.
         // Conservative reverse shortest-time bounds only remove paths which
@@ -771,6 +820,71 @@ public sealed class OperationalCausalTracer
                         pending.Enqueue(branch.SourceRegionId, next);
                     }
                 }
+            }
+        }
+
+        // For a small discrete horizon, time-expanded *walk* reachability is
+        // a necessary condition for a simple path, never positive evidence.
+        // This safely rejects parity and time-gap negatives without inferring
+        // that a repeated-region walk is a valid witnessed simple path.
+        // Larger horizons skip this optimization and use the exact fallback;
+        // the local bound is never a search timeout or a proof of absence.
+        const int maximumWalkHorizon = 256;
+        var walkHorizon = (decimal)destinationWindow.EndTick -
+            sourceWindow.StartTick;
+        if (nonnegativeRelevantDurations && walkHorizon >= 0 &&
+            walkHorizon <= maximumWalkHorizon)
+        {
+            var seenWalkStates = new HashSet<(string Region, long Tick)>();
+            var pendingWalkStates = new Queue<(string Region, long Tick)>();
+            var lastSourceTick = Math.Min(sourceWindow.EndTick,
+                destinationWindow.EndTick);
+            var sourceSpan = (long)((decimal)lastSourceTick -
+                sourceWindow.StartTick);
+            for (long delta = 0; delta <= sourceSpan; delta++)
+            {
+                var state = (sourceRegion, sourceWindow.StartTick + delta);
+                if (seenWalkStates.Add(state))
+                    pendingWalkStates.Enqueue(state);
+            }
+
+            var compatibleWalkExists = false;
+            while (pendingWalkStates.Count > 0)
+            {
+                var (region, tick) = pendingWalkStates.Dequeue();
+                work++;
+                if (region == destinationRegion &&
+                    tick >= destinationWindow.StartTick)
+                {
+                    compatibleWalkExists = true;
+                    break;
+                }
+                if (!outgoing.TryGetValue(region, out var branches))
+                    continue;
+                foreach (var branch in branches)
+                {
+                    work++;
+                    if (!relevant.Contains(branch.DestinationRegionId))
+                        continue;
+                    var lastDuration = (long)Math.Min(
+                        (decimal)branch.MaximumTravelTicks,
+                        (decimal)destinationWindow.EndTick - tick);
+                    for (long duration = branch.MinimumTravelTicks;
+                         duration <= lastDuration; duration++)
+                    {
+                        // Each examined discrete successor is counted as work,
+                        // in addition to dequeues and public edge inspections.
+                        work++;
+                        var next = (branch.DestinationRegionId, tick + duration);
+                        if (seenWalkStates.Add(next))
+                            pendingWalkStates.Enqueue(next);
+                    }
+                }
+            }
+            if (!compatibleWalkExists)
+            {
+                workCount = work;
+                return false;
             }
         }
 
