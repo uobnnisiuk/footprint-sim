@@ -7276,7 +7276,9 @@ public sealed class RescuerEvidenceBoundaryTests
         // not an invented backward pass or a simulated joint-history API.
         Assert.Equal(["e", "f"], onlyFirst.CandidateWarps.PreferredRegionIdsAt(2));
         Assert.Equal(exactLast, actual.CandidateWarps.PreferredRegionIdsAt(2));
-        Assert.Equal(["e"], actual.CandidateWarps.OuterPlausibleRegionIdsAt(2));
+        // The API's outer-only bucket is empty; the admitted e is Preferred.
+        // An empty outer-only bucket is NOT evidence that P cannot be at e.
+        Assert.Empty(actual.CandidateWarps.OuterPlausibleRegionIdsAt(2));
         Assert.DoesNotContain(actual.Audits, audit => audit.ConflictDetected);
         Assert.Contains(actual.Audits, audit =>
             audit.ConstrainedTimeWindow.StartTick == 0 &&
