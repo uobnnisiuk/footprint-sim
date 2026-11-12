@@ -6575,38 +6575,153 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Equal(["B", "C"], p0.CandidateWarps.OuterPlausibleRegionIdsAt(5));
         Assert.Equal(["B", "C"], p1.CandidateWarps.OuterPlausibleRegionIdsAt(5));
 
-        // On the reviewed main, p0 preferred B,C while p1 preferred B:
-        // 3/5 steps and 0/2 real transition traversal steps, respectively.
-        // If a later correction removes the difference, accept it instead
-        // of pinning the catalog-size dependence as a normative behavior.
-        var samePreferred = p0.CandidateWarps.PreferredRegionIdsAt(5)
-            .SequenceEqual(p1.CandidateWarps.PreferredRegionIdsAt(5));
-        if (!samePreferred)
-        {
-            Assert.Equal(["B", "C"], p0.CandidateWarps.PreferredRegionIdsAt(5));
-            Assert.Equal(["B"], p1.CandidateWarps.PreferredRegionIdsAt(5));
-            Assert.Equal(3, p0.Steps.Count);
-            Assert.Equal(5, p1.Steps.Count);
-            Assert.DoesNotContain(p0.Steps, step => step.RealTransitionTraversalOccurred);
-            // ApplyPublicConsistency audits both directions on each of two
-            // fixed-point passes. AR-31's forward count of 2 is not the
-            // count of all transition-bearing audit steps (which is 4).
-            Assert.Equal(2, p1.Steps.Count(step =>
-                step.Direction == CausalTracingDirection.Forward &&
-                step.RealTransitionTraversalOccurred));
-            Assert.Equal(2, p1.Steps.Count(step =>
-                step.Direction == CausalTracingDirection.Backward &&
-                step.RealTransitionTraversalOccurred));
-            Assert.Empty(p0.Steps.SelectMany(step => step.TransitionIds));
-            Assert.Equal(3, p1.Steps.SelectMany(step => step.TransitionIds)
-                .Distinct(StringComparer.Ordinal).Count());
-        }
-        else
-        {
-            Assert.Equal(p0.CandidateWarps.PreferredRegionIdsAt(5),
-                p1.CandidateWarps.PreferredRegionIdsAt(5));
-        }
+        // The disconnected branch must never change tracer support,
+        // preferred, audits or path IDs. No hard outer exclusion is added.
+        Assert.Equal(["B", "C"], p0.CandidateWarps.PreferredRegionIdsAt(5));
+        Assert.Equal(p0.CandidateWarps.PreferredRegionIdsAt(5),
+            p1.CandidateWarps.PreferredRegionIdsAt(5));
+        Assert.Equal(JsonDefaults.Serialize(p0), JsonDefaults.Serialize(p1));
+        Assert.DoesNotContain(p0.Steps, step => step.RealTransitionTraversalOccurred);
         Assert.Equal(JsonDefaults.Serialize(p1), JsonDefaults.Serialize(Trace(expanded)));
+    }
+
+    // #141 / AR-35: one timed, received public Person constraint. This helper
+    // uses the real tracer, not a duplicate path-search implementation.
+    private static CausalTracingResult TraceCyclicCatalog(
+        PublicHazardEnvelope envelope, long targetTick,
+        string sourceRegion, IReadOnlyList<string> destinationRegions)
+    {
+        var warps = PublicCandidateWarpFactory.Create(
+            ScenarioId, Seed, TargetId,
+            [State(0, [sourceRegion, "Z"]), State(targetTick, destinationRegions)],
+            CandidateWarpStanding.Preferred);
+        var constraint = CausalTracingConstraint.Create(
+            ScenarioId, Seed, "cycle-up-observation", "cycle-up-weft",
+            ["cycle-up-weft"], TargetId,
+            TracingConstraintSourceKind.CrossThreadObservation,
+            "cycle-received-person-encounter",
+            [
+                new InteractionParticipant(TargetId, InteractionEntityKind.Person,
+                    InteractionParticipantRole.EncounterParticipant),
+                new InteractionParticipant("cycle-witness", InteractionEntityKind.Person,
+                    InteractionParticipantRole.EncounterParticipant)
+            ],
+            TracingConstraintRole.Upstream, InteractionTimeWindow.At(0),
+            InteractionTimeWindow.At(0), [sourceRegion], 0, EvidenceState.Confirmed,
+            true, false, InteractionVisibility.PublicEvidence,
+            "cycle-fixture-derivation",
+            [new InteractionProvenance(
+                InteractionProvenanceKind.ExternalSource, "cycle-up-weft")]);
+        var query = new CandidateWarpAccessContext
+        {
+            ScenarioId = ScenarioId,
+            Seed = Seed,
+            TargetEntityId = TargetId,
+            CurrentTick = targetTick,
+            QueryContextId = "cycle-scope-boundary"
+        };
+        return new OperationalCausalTracer().Trace(warps, [constraint], query, envelope);
+    }
+
+    [Theory]
+    [InlineData(5L)]
+    [InlineData(6L)]
+    public void UnobservedCyclicTimeFillingCannotPromotePreferredAtEitherParity(long tick)
+    {
+        var baseModel = new PublicHazardEnvelope
+        {
+            HazardId = "cycle-parity-public",
+            SourceRegionId = "A",
+            PublishedAtTick = 0,
+            Regions = [],
+            Branches =
+            [
+                Branch("A", "Q") with { MinimumTravelTicks = 1, MaximumTravelTicks = 1 },
+                Branch("Q", "A") with { MinimumTravelTicks = 1, MaximumTravelTicks = 1 },
+                Branch("A", "B") with { MinimumTravelTicks = 1, MaximumTravelTicks = 1 },
+                Branch("A", "C") with { MinimumTravelTicks = 2, MaximumTravelTicks = 2 }
+            ]
+        };
+        var unrelated = baseModel with
+        {
+            Branches = [.. baseModel.Branches,
+                Branch("X", "Y") with { MinimumTravelTicks = 1, MaximumTravelTicks = 1 }]
+        };
+        var noCycle = baseModel with
+        {
+            Branches = baseModel.Branches.Skip(2).ToArray()
+        };
+        var initial = TraceCyclicCatalog(baseModel, tick, "A", ["B", "C"]);
+        var expanded = TraceCyclicCatalog(unrelated, tick, "A", ["B", "C"]);
+        var acyclic = TraceCyclicCatalog(noCycle, tick, "A", ["B", "C"]);
+        Assert.Equal(["B", "C"], initial.CandidateWarps.OuterPlausibleRegionIdsAt(tick));
+        Assert.Equal(["B", "C"], initial.CandidateWarps.PreferredRegionIdsAt(tick));
+        Assert.Equal(JsonDefaults.Serialize(initial), JsonDefaults.Serialize(expanded));
+        Assert.Equal(initial.CandidateWarps.PreferredRegionIdsAt(tick),
+            acyclic.CandidateWarps.PreferredRegionIdsAt(tick));
+        Assert.DoesNotContain(initial.Steps, step => step.RealTransitionTraversalOccurred);
+    }
+
+    [Fact]
+    public void ZeroMinimumCycleTerminatesWithoutInventingArrivalAtFive()
+    {
+        var publicModel = new PublicHazardEnvelope
+        {
+            HazardId = "cycle-zero-public",
+            SourceRegionId = "A",
+            PublishedAtTick = 0,
+            Regions = [],
+            Branches =
+            [
+                Branch("A", "Q") with { MinimumTravelTicks = 0, MaximumTravelTicks = 1 },
+                Branch("Q", "A") with { MinimumTravelTicks = 0, MaximumTravelTicks = 1 },
+                Branch("A", "B") with { MinimumTravelTicks = 1, MaximumTravelTicks = 1 }
+            ]
+        };
+        var unsupported = TraceCyclicCatalog(publicModel, 5, "A", ["B", "C"]);
+        Assert.Equal(["B", "C"], unsupported.CandidateWarps.OuterPlausibleRegionIdsAt(5));
+        Assert.Equal(["B", "C"], unsupported.CandidateWarps.PreferredRegionIdsAt(5));
+        Assert.DoesNotContain(unsupported.Steps, step => step.RealTransitionTraversalOccurred);
+        var direct = TraceCyclicCatalog(publicModel, 1, "A", ["B", "C"]);
+        Assert.Equal(["B"], direct.CandidateWarps.PreferredRegionIdsAt(1));
+        Assert.Contains(direct.Steps, step => step.RealTransitionTraversalOccurred &&
+            step.TransitionIds.Count > 0);
+    }
+
+    [Fact]
+    public void TwoPathsToSameTimedRegionRetainDifferentVisitedHistory()
+    {
+        // S-A-X arrives at X@2 first but has already used A. The only legal
+        // simple path to T@4 is S-B-X-A-T, with four published transitions.
+        var publicModel = new PublicHazardEnvelope
+        {
+            HazardId = "cycle-path-state-public",
+            SourceRegionId = "S",
+            PublishedAtTick = 0,
+            Regions = [],
+            Branches =
+            [
+                Branch("S", "A") with { MinimumTravelTicks = 1, MaximumTravelTicks = 1 },
+                Branch("A", "X") with { MinimumTravelTicks = 1, MaximumTravelTicks = 1 },
+                Branch("S", "B") with { MinimumTravelTicks = 1, MaximumTravelTicks = 1 },
+                Branch("B", "X") with { MinimumTravelTicks = 1, MaximumTravelTicks = 1 },
+                Branch("X", "A") with { MinimumTravelTicks = 1, MaximumTravelTicks = 1 },
+                Branch("A", "T") with { MinimumTravelTicks = 1, MaximumTravelTicks = 1 }
+            ]
+        };
+        var positive = TraceCyclicCatalog(publicModel, 4, "S", ["T", "U"]);
+        Assert.Equal(["T", "U"], positive.CandidateWarps.OuterPlausibleRegionIdsAt(4));
+        Assert.Equal(["T"], positive.CandidateWarps.PreferredRegionIdsAt(4));
+        Assert.Contains(positive.Steps, step => step.RealTransitionTraversalOccurred &&
+            step.TransitionIds.Count >= 4);
+        var negative = publicModel with
+        {
+            Branches = publicModel.Branches.Where(edge =>
+                !(edge.SourceRegionId == "B" && edge.DestinationRegionId == "X")).ToArray()
+        };
+        var missing = TraceCyclicCatalog(negative, 4, "S", ["T", "U"]);
+        Assert.Equal(["T", "U"], missing.CandidateWarps.OuterPlausibleRegionIdsAt(4));
+        Assert.Equal(["T", "U"], missing.CandidateWarps.PreferredRegionIdsAt(4));
     }
 
     // #139 / AR-32: a separate one-hop control tests four genuinely
