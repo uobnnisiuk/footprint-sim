@@ -6788,4 +6788,175 @@ public sealed class RescuerEvidenceBoundaryTests
         // branches or count F20 declaration validation work. No inference
         // about wall time, total operations, or rescue efficiency follows.
     }
+    // #145 / AR-36: reflection calls the private per-query work counter. It
+    // measures preprocessing too, without extending any inference API.
+    private static (bool Supported, long Work, IReadOnlyList<string> Witness)
+        ProbePublicTracer(PublicHazardEnvelope envelope, string origin,
+            string destination, long targetTick)
+    {
+        var probe = typeof(OperationalCausalTracer)
+            .GetMethods(System.Reflection.BindingFlags.NonPublic |
+                System.Reflection.BindingFlags.Static)
+            .Single(method => method.Name == "TryFindPath" &&
+                method.GetParameters().Length == 8);
+        object?[] args =
+        [
+            origin, InteractionTimeWindow.At(0), destination,
+            InteractionTimeWindow.At(targetTick), envelope, targetTick,
+            null, null
+        ];
+        var supported = (bool)probe.Invoke(null, args)!;
+        return (supported, (long)args[7]!, (IReadOnlyList<string>)args[6]!);
+    }
+
+    private static PublicHazardEnvelope LayeredMergeCatalog(int layers)
+    {
+        // Two differently sourced parallel declarations at each layer
+        // produce 2^L distinct transition-ID paths, all arriving at tick L.
+        var branches = new List<PublicHazardBranch>();
+        for (var i = 0; i < layers; i++)
+        {
+            foreach (var side in new[] { "a", "b" })
+                branches.Add(Branch($"N{i}", $"N{i + 1}") with
+                {
+                    MinimumTravelTicks = 1,
+                    MaximumTravelTicks = 1,
+                    ProvenanceId = $"layer-{i}-{side}"
+                });
+        }
+        return new PublicHazardEnvelope
+        {
+            HazardId = "ar36-layered-public",
+            SourceRegionId = "N0",
+            PublishedAtTick = 0,
+            Regions = [],
+            Branches = branches
+        };
+    }
+
+    [Fact]
+    public void LayeredDagHasExactPositiveAndTwoDistinctNegativeControlsWithBoundedWork()
+    {
+        long? timingWorkAt10 = null;
+        foreach (var layers in new[] { 10, 14, 18 })
+        {
+            var world = LayeredMergeCatalog(layers);
+            var positive = ProbePublicTracer(world, "N0", $"N{layers}", layers);
+            var unreachable = ProbePublicTracer(world, "N0", "U", layers);
+            var late = ProbePublicTracer(world, "N0", $"N{layers}", layers + 1);
+            Assert.True(positive.Supported);
+            Assert.Equal(layers, positive.Witness.Count);
+            Assert.Equal(positive.Witness,
+                ProbePublicTracer(world, "N0", $"N{layers}", layers).Witness);
+            Assert.False(unreachable.Supported);
+            Assert.Empty(unreachable.Witness);
+            Assert.False(late.Supported);
+            Assert.Empty(late.Witness);
+            foreach (var work in new[] { positive.Work, unreachable.Work, late.Work })
+            {
+                Assert.InRange(work, 1L, 32L * layers * layers);
+            }
+            // The negative time control must not grow as a 2^L path list.
+            if (layers == 10)
+                timingWorkAt10 = late.Work;
+            if (layers == 18)
+                Assert.True(late.Work <= 8L * Math.Max(1L, timingWorkAt10!.Value),
+                    $"Time-incompatible layer growth: C10={timingWorkAt10}, C18={late.Work}");
+        }
+    }
+
+    [Fact]
+    public void DiscreteArrivalHoleIsNotPromotedByDagStateCoalescing()
+    {
+        var world = new PublicHazardEnvelope
+        {
+            HazardId = "ar36-arrival-hole-public",
+            SourceRegionId = "S",
+            PublishedAtTick = 0,
+            Regions = [],
+            Branches =
+            [
+                Branch("S", "T") with { MinimumTravelTicks = 0,
+                    MaximumTravelTicks = 0 },
+                Branch("S", "A") with { MinimumTravelTicks = 1,
+                    MaximumTravelTicks = 1 },
+                Branch("A", "T") with { MinimumTravelTicks = 1,
+                    MaximumTravelTicks = 1 }
+            ]
+        };
+        Assert.True(ProbePublicTracer(world, "S", "T", 0).Supported);
+        Assert.False(ProbePublicTracer(world, "S", "T", 1).Supported);
+        Assert.True(ProbePublicTracer(world, "S", "T", 2).Supported);
+        Assert.Equal(2, ProbePublicTracer(world, "S", "T", 2).Witness.Count);
+    }
+
+    [Fact]
+    public void FourByFourCyclicGridHasFinitePositiveAndUnreachableControls()
+    {
+        var branches = new List<PublicHazardBranch>();
+        for (var row = 0; row < 4; row++)
+        {
+            for (var col = 0; col < 4; col++)
+            {
+                var here = $"R{row}{col}";
+                if (col < 3)
+                {
+                    var right = $"R{row}{col + 1}";
+                    branches.Add(Branch(here, right) with
+                    { MinimumTravelTicks = 1, MaximumTravelTicks = 2 });
+                    branches.Add(Branch(right, here) with
+                    { MinimumTravelTicks = 1, MaximumTravelTicks = 2 });
+                }
+                if (row < 3)
+                {
+                    var down = $"R{row + 1}{col}";
+                    branches.Add(Branch(here, down) with
+                    { MinimumTravelTicks = 1, MaximumTravelTicks = 2 });
+                    branches.Add(Branch(down, here) with
+                    { MinimumTravelTicks = 1, MaximumTravelTicks = 2 });
+                }
+            }
+        }
+        var grid = new PublicHazardEnvelope
+        {
+            HazardId = "ar36-grid-public",
+            SourceRegionId = "R00",
+            PublishedAtTick = 0,
+            Regions = [],
+            Branches = branches
+        };
+        foreach (var tick in new long[] { 10, 20 })
+        {
+            var positive = ProbePublicTracer(grid, "R00", "R33", tick);
+            var negative = ProbePublicTracer(grid, "R00", "U", tick);
+            Assert.True(positive.Supported);
+            Assert.NotEmpty(positive.Witness);
+            Assert.False(negative.Supported);
+            Assert.Empty(negative.Witness);
+            Assert.True(positive.Work > 0 && negative.Work > 0);
+        }
+
+        var zeroCycle = new PublicHazardEnvelope
+        {
+            HazardId = "ar36-zero-cycle-public",
+            SourceRegionId = "A",
+            PublishedAtTick = 0,
+            Regions = [],
+            Branches =
+            [
+                Branch("A", "Q") with { MinimumTravelTicks = 0,
+                    MaximumTravelTicks = 1 },
+                Branch("Q", "A") with { MinimumTravelTicks = 0,
+                    MaximumTravelTicks = 1 },
+                Branch("A", "B") with { MinimumTravelTicks = 1,
+                    MaximumTravelTicks = 1 }
+            ]
+        };
+        Assert.False(ProbePublicTracer(zeroCycle, "A", "B", 5).Supported);
+        Assert.True(ProbePublicTracer(zeroCycle, "A", "B", 1).Supported);
+        Assert.Equal(["B", "C"],
+            TraceCyclicCatalog(zeroCycle, 5, "A", ["B", "C"])
+                .CandidateWarps.OuterPlausibleRegionIdsAt(5));
+    }
+
 }
