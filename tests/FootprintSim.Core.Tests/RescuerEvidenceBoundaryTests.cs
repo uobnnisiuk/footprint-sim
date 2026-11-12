@@ -7289,6 +7289,47 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Equal(JsonDefaults.Serialize(actual),
             JsonDefaults.Serialize(applicator.Apply(
                 historical, accepted.Reverse(), query, world.PublicHazardEnvelope)));
+
+        // AR-40 characterization only (known defect, not an accepted safety
+        // contract). A second received historical constraint can lose its
+        // intermediate state when an earlier one has already propagated.
+        // This branch also permits a future fix that matches the reference.
+        var middleD = Original("unary-at-one-d", "holder-b", 1, "d");
+        var middleReceipt = new InteractionRecordReceipt(
+            ScenarioId, Seed, "unary-at-one-d", "holder-b", RescuerId, 2);
+        var middleOnlyEvidence = builder.BuildDistinctOriginals(
+            world, Seed, 2, RescuerId, [middleD], [middleReceipt]);
+        var bothPastEvidence = builder.BuildDistinctOriginals(
+            world, Seed, 2, RescuerId,
+            [originals[0], middleD], [receipts[0], middleReceipt]);
+        var middleOnlyResult = applicator.Apply(
+            historical, middleOnlyEvidence.Input.AvailableCrossThreadConstraints!.Constraints,
+            query, world.PublicHazardEnvelope);
+        var bothPastResult = applicator.Apply(
+            historical, bothPastEvidence.Input.AvailableCrossThreadConstraints!.Constraints,
+            query, world.PublicHazardEnvelope);
+        var expectedFromBothPastReceipts = finitePaths
+            .Where(path => path.First == "a" && path.Middle == "d")
+            .Select(path => path.Last)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(region => region, StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(["f"], expectedFromBothPastReceipts);
+        Assert.Equal(expectedFromBothPastReceipts,
+            middleOnlyResult.CandidateWarps.PreferredRegionIdsAt(2));
+        var observedBothPast = bothPastResult.CandidateWarps.PreferredRegionIdsAt(2);
+        if (!observedBothPast.SequenceEqual(expectedFromBothPastReceipts))
+        {
+            // Baseline defect: {e,f} rather than the reference {f}, and
+            // the confirmed tick-1 observation is recorded as a NoOp.
+            // Do not treat this characterization as correctness approval.
+            Assert.Equal(["e", "f"], observedBothPast);
+            Assert.Contains(bothPastResult.Audits, audit =>
+                audit.ConstrainedTimeWindow.StartTick == 1 &&
+                audit.Disposition == ConstraintApplicationDisposition.NoOp &&
+                audit.Reason == ConstraintApplicationReason.NoTemporalOverlap);
+        }
+
         // Region e has no b/d public unit mapping in this fixed example.
         // No confirmation unit at t=2 is invented for an unmapped region.
     }
