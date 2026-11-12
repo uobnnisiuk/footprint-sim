@@ -6963,22 +6963,18 @@ public sealed class RescuerEvidenceBoundaryTests
                 if (col + 1 < side)
                 {
                     var right = $"R{row}{col + 1}";
-                    branches.Add(Branch(here, right) with {
-                        MinimumTravelTicks = minimumTick,
-                        MaximumTravelTicks = maximumTick });
-                    branches.Add(Branch(right, here) with {
-                        MinimumTravelTicks = minimumTick,
-                        MaximumTravelTicks = maximumTick });
+                    branches.Add(Branch(here, right) with
+                    { MinimumTravelTicks = minimumTick, MaximumTravelTicks = maximumTick });
+                    branches.Add(Branch(right, here) with
+                    { MinimumTravelTicks = minimumTick, MaximumTravelTicks = maximumTick });
                 }
                 if (row + 1 < side)
                 {
                     var down = $"R{row + 1}{col}";
-                    branches.Add(Branch(here, down) with {
-                        MinimumTravelTicks = minimumTick,
-                        MaximumTravelTicks = maximumTick });
-                    branches.Add(Branch(down, here) with {
-                        MinimumTravelTicks = minimumTick,
-                        MaximumTravelTicks = maximumTick });
+                    branches.Add(Branch(here, down) with
+                    { MinimumTravelTicks = minimumTick, MaximumTravelTicks = maximumTick });
+                    branches.Add(Branch(down, here) with
+                    { MinimumTravelTicks = minimumTick, MaximumTravelTicks = maximumTick });
                 }
             }
         }
