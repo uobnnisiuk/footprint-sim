@@ -320,7 +320,8 @@ public sealed class CandidateWarpTests
         var envelope = new PublicHazardEnvelope
         {
             HazardId = "ar50-time-bounded",
-            SourceRegionId = "a", PublishedAtTick = 0,
+            SourceRegionId = "a",
+            PublishedAtTick = 0,
             Branches =
             [
                 new PublicHazardBranch
@@ -367,7 +368,8 @@ public sealed class CandidateWarpTests
         var irrelevant = new PublicHazardEnvelope
         {
             HazardId = "ar47-irrelevant-public",
-            SourceRegionId = "x", PublishedAtTick = 0,
+            SourceRegionId = "x",
+            PublishedAtTick = 0,
             Branches =
             [
                 new PublicHazardBranch
@@ -409,7 +411,8 @@ public sealed class CandidateWarpTests
         var envelope = new PublicHazardEnvelope
         {
             HazardId = "ar48-unpublished-c-b",
-            SourceRegionId = "c", PublishedAtTick = 0,
+            SourceRegionId = "c",
+            PublishedAtTick = 0,
             Branches =
             [
                 new PublicHazardBranch
@@ -456,10 +459,13 @@ public sealed class CandidateWarpTests
         var branches = Enumerable.Range(0, n)
             .Select(tick => new PublicHazardBranch
             {
-                SourceRegionId = G(tick), DestinationRegionId = G(tick + 1),
-                MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+                SourceRegionId = G(tick),
+                DestinationRegionId = G(tick + 1),
+                MinimumTravelTicks = 1,
+                MaximumTravelTicks = 1,
                 TransportType = HazardTransportType.HazardDriven,
-                ProvenanceId = $"ar46-{tick}", PublishedAtTick = 0
+                ProvenanceId = $"ar46-{tick}",
+                PublishedAtTick = 0
             }).ToArray();
         var envelope = new PublicHazardEnvelope
         {
