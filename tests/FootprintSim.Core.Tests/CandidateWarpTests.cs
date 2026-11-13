@@ -15,6 +15,98 @@ namespace FootprintSim.Core.Tests;
 
 public sealed class CandidateWarpTests
 {
+    // Codex P2 / AR-58: an inclusive receipt synthesized in a historical
+    // gap must not be mistaken for its own predecessor. Published edges are
+    // needed to promote an independent later region into preferred.
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void GapReceiptCannotVerifyItsOwnUnpublishedTransition(
+        bool hasEnvelope, bool inclusive)
+    {
+        var initial = Warp(new InteractionTimeWindow(0, 1),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b"]);
+        var first = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 5, "ar58-first");
+        var later = Constraint(EvidenceState.Confirmed,
+            inclusive ? new InteractionTimeWindow(2, 3) :
+                InteractionTimeWindow.At(2), ["x"], 5, "ar58-later");
+        PublicHazardEnvelope? envelope = hasEnvelope
+            ? new PublicHazardEnvelope
+            {
+                HazardId = "ar58-no-path-to-x",
+                SourceRegionId = "a",
+                PublishedAtTick = 0,
+                Branches =
+                [
+                    new PublicHazardBranch
+                    {
+                        SourceRegionId = "a",
+                        DestinationRegionId = "b",
+                        MinimumTravelTicks = 1,
+                        MaximumTravelTicks = 1,
+                        TransportType = HazardTransportType.HazardDriven,
+                        ProvenanceId = "ar58-a-b",
+                        PublishedAtTick = 0
+                    }
+                ]
+            }
+            : null;
+        var result = Apply(initial, [first, later], 5, envelope);
+        Assert.DoesNotContain("x", result.CandidateWarps.PreferredRegionIdsAt(5));
+        Assert.Contains("x", result.CandidateWarps.CandidateRegionIdsAt(5));
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(Apply(initial, [later, first], 5, envelope)));
+    }
+
+    // AR-57: an uncertain, possibly wrong interval encounter must not
+    // convert a later independent Confirmed fact into a global conflict.
+    // The exact-tick form must not silently ignore the later receipt either.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void WeakGapCannotConflictWithLaterIndependentConfirmed(bool inclusive)
+    {
+        var initial = Warp(new InteractionTimeWindow(0, 1),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b"]);
+        PublicHazardBranch Edge(string from, string to) => new()
+        {
+            SourceRegionId = from,
+            DestinationRegionId = to,
+            MinimumTravelTicks = 1,
+            MaximumTravelTicks = 1,
+            TransportType = HazardTransportType.HazardDriven,
+            ProvenanceId = $"ar57-{from}-{to}",
+            PublishedAtTick = 0
+        };
+        var envelope = new PublicHazardEnvelope
+        {
+            HazardId = "ar57-published-path",
+            SourceRegionId = "a",
+            PublishedAtTick = 0,
+            Branches = [Edge("a", "b"), Edge("b", "c"), Edge("c", "d")]
+        };
+        var first = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 5, "ar57-first");
+        var weak = Constraint(EvidenceState.SupportedButUncertain,
+            inclusive ? new InteractionTimeWindow(2, 4) :
+                InteractionTimeWindow.At(2), ["y"], 5, "ar57-weak");
+        var last = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(3), ["d"], 5, "ar57-last");
+        var result = Apply(initial, [first, weak, last], 5, envelope);
+        Assert.Contains("d", result.CandidateWarps.CandidateRegionIdsAt(3));
+        Assert.Contains("d", result.CandidateWarps.CandidateRegionIdsAt(5));
+        Assert.Contains(result.CandidateWarps.Warps, warp =>
+            warp.Standing == CandidateWarpStanding.OuterPlausible &&
+            warp.CandidateRegionIdsAt(3).Contains("d", StringComparer.Ordinal));
+        Assert.DoesNotContain(result.Audits, audit =>
+            audit.ConstraintId == last.ConstraintId && audit.ConflictDetected);
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(Apply(initial, [last, weak, first], 5, envelope)));
+    }
+
     // #150 / AR-40/42: both receipt-tick order and a single historical
     // StateInterval must retain the later evidence's tick and its outer.
     [Fact]

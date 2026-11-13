@@ -366,6 +366,26 @@ public sealed class CrossThreadConstraintApplicator
                         conflictDetected: checkedGap.Audit.ConflictDetected));
             }
 
+            // A weak historical sighting can be false. When a later
+            // independently confirmed receipt falls into the remaining
+            // outer-only history gap, retain that new location as an outer
+            // possibility rather than silently discarding the receipt.
+            var earlierWeakReceipt = warp.States.Any(state =>
+                state.Provenance.Any(source =>
+                    source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
+                    source.EvidenceBoundaryState == EvidenceState.SupportedButUncertain &&
+                    source.SourceTimeWindow is { } weakWindow &&
+                    weakWindow.StartTick < constraint.ConstrainedTimeWindow.StartTick));
+            if (warp.Standing == CandidateWarpStanding.OuterPlausible &&
+                !hasHistoricalCoverage && constraint.IsPersonEvidence &&
+                !constraint.IsDeviceOnlyEvidence &&
+                constraint.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                earlierWeakReceipt)
+            {
+                return RetainConfirmedAfterWeakGap(
+                    warp, constraint, accessContext, publicHazardEnvelope, beforeCount);
+            }
+
             return NoOp(
                 warp,
                 constraint,
@@ -429,6 +449,34 @@ public sealed class CrossThreadConstraintApplicator
         {
             if (constraint.EvidenceBoundaryState == EvidenceState.Confirmed)
             {
+                // The union of outer alternatives can contain only a
+                // potentially false weak encounter at this tick. It is not
+                // sound to turn that possible weak location into a mandatory
+                // contradiction of a later independent Confirmed receipt.
+                // Do not apply this exception to two disjoint Confirmed facts.
+                var weakOnlyOverlap = warp.Standing ==
+                    CandidateWarpStanding.OuterPlausible &&
+                    overlappingStates.All(state =>
+                        state.Provenance.Any(source =>
+                            source.SourceKind ==
+                                CandidateWarpSourceKind.CrossThreadObservation &&
+                            source.EvidenceBoundaryState ==
+                                EvidenceState.SupportedButUncertain &&
+                            source.SourceTimeWindow is { } weakWindow &&
+                            Overlaps(weakWindow, constraint.ConstrainedTimeWindow)) &&
+                        !state.Provenance.Any(source =>
+                            source.SourceKind ==
+                                CandidateWarpSourceKind.CrossThreadObservation &&
+                            source.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                            source.SourceTimeWindow is { } strongWindow &&
+                            Overlaps(strongWindow, constraint.ConstrainedTimeWindow)));
+                if (weakOnlyOverlap)
+                {
+                    return RetainConfirmedAfterWeakGap(
+                        warp, constraint, accessContext, publicHazardEnvelope,
+                        beforeCount);
+                }
+
                 var conflicted = CandidateWarpNormalization.CreateWarp(
                     warp.ScenarioId,
                     warp.Seed,
@@ -496,6 +544,12 @@ public sealed class CrossThreadConstraintApplicator
                     source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
                     source.EvidenceBoundaryState is
                         EvidenceState.Confirmed or EvidenceState.SupportedButUncertain &&
+                    // A provisional received-gap state has this receipt's
+                    // own source ID. It must never verify itself as an earlier
+                    // published movement, for either exact or interval input.
+                    !string.Equals(
+                        source.SourceObservationId ?? source.SourceIdentifier,
+                        constraint.SourceObservationId, StringComparison.Ordinal) &&
                     source.SourceTimeWindow is { } sourceWindow &&
                     sourceWindow.StartTick < constraint.ConstrainedTimeWindow.EndTick &&
                     Overlaps(state.TimeWindow, sourceWindow))
@@ -863,6 +917,52 @@ public sealed class CrossThreadConstraintApplicator
                 afterCount,
                 alternativesRetained: true,
                 conflictDetected: false));
+    }
+
+    // An outer branch which has only a weak or absent history at this tick
+    // must not reject a later independently received Confirmed observation.
+    // Keep the new observation and its public/unknown forward possibilities
+    // outer-only; this does not certify any link from the weak alternative.
+    private static WarpApplication RetainConfirmedAfterWeakGap(
+        CandidateWarp warp,
+        CrossThreadConstraint constraint,
+        CandidateWarpAccessContext accessContext,
+        PublicHazardEnvelope? publicHazardEnvelope,
+        int beforeCount)
+    {
+        var observedWindow = new InteractionTimeWindow(
+            constraint.ConstrainedTimeWindow.StartTick,
+            Math.Min(constraint.ConstrainedTimeWindow.EndTick,
+                accessContext.CurrentTick));
+        var confirmedState = CandidateWarpNormalization.CreateState(
+            warp.ScenarioId, warp.Seed, warp.TargetEntityId, observedWindow,
+            observedWindow.StartTick == observedWindow.EndTick
+                ? CandidateWarpTemporalKind.EventPoint
+                : CandidateWarpTemporalKind.StateInterval,
+            constraint.AllowedRegionIds, EvidenceState.Confirmed,
+            [CreateCrossThreadProvenance(constraint)]);
+        var history = warp.States.Append(confirmedState).ToList();
+        if (observedWindow.EndTick < accessContext.CurrentTick)
+        {
+            history.Add(PublicCandidateWarpPropagator.Propagate(
+                warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                [confirmedState], accessContext.CurrentTick,
+                publicHazardEnvelope, retainUndeclaredStay: true,
+                publicationCutoffTick: accessContext.CurrentTick));
+        }
+
+        var retained = CandidateWarpNormalization.CreateWarp(
+            warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+            CandidateWarpStanding.OuterPlausible, warp.WarpId, history,
+            $"confirmed-after-weak-unknown:{constraint.ConstraintId}");
+        return new WarpApplication(
+            [retained],
+            CreateAudit(
+                warp.WarpId, constraint, accessContext,
+                ConstraintApplicationDisposition.RetainAlternative,
+                ConstraintApplicationReason.Applied, beforeCount,
+                constraint.AllowedRegionIds.Count,
+                alternativesRetained: true, conflictDetected: false));
     }
 
     private static CandidateWarp BuildAppliedWarp(
