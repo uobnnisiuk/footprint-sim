@@ -657,6 +657,96 @@ public sealed class CandidateWarpTests
                 envelope)));
     }
 
+    // Ready-stage Codex: an inclusive middle encounter represents alternatives,
+    // not a mandatory choice of its last historical state. b@1 can reach d@3
+    // even when c@2 (the other middle possibility) has no published route to d.
+    [Fact]
+    public void InclusivePreviousEncounterChecksAllTimeLocationAlternatives()
+    {
+        var source = CandidateWarpProvenance.Create(
+            CandidateWarpSourceKind.VoluntaryReachability,
+            "ar52-public-states", 0, false, false,
+            EvidenceState.SupportedButUncertain, ["a", "b", "c", "d"]);
+        var historical = PublicCandidateWarpFactory.Create(
+            ScenarioId, Seed, TargetPersonId,
+            Enumerable.Range(0, 4)
+                .Select((tick) => new PublicCandidateWarpStateDefinition
+                {
+                    TimeWindow = InteractionTimeWindow.At(tick),
+                    TemporalKind = CandidateWarpTemporalKind.EventPoint,
+                    RegionIds = [tick switch
+                    {
+                        0 => "a", 1 => "b", 2 => "c", _ => "d"
+                    }],
+                    EvidenceBoundaryState = EvidenceState.SupportedButUncertain,
+                    Provenance = [source]
+                }));
+        var envelope = new PublicHazardEnvelope
+        {
+            HazardId = "ar52-public-alternatives",
+            SourceRegionId = "a",
+            PublishedAtTick = 0,
+            Branches =
+            [
+                new PublicHazardBranch
+                {
+                    SourceRegionId = "a", DestinationRegionId = "b",
+                    MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+                    TransportType = HazardTransportType.HazardDriven,
+                    ProvenanceId = "ar52-a-b", PublishedAtTick = 0
+                },
+                new PublicHazardBranch
+                {
+                    SourceRegionId = "a", DestinationRegionId = "c",
+                    MinimumTravelTicks = 2, MaximumTravelTicks = 2,
+                    TransportType = HazardTransportType.HazardDriven,
+                    ProvenanceId = "ar52-a-c", PublishedAtTick = 0
+                },
+                new PublicHazardBranch
+                {
+                    SourceRegionId = "b", DestinationRegionId = "d",
+                    MinimumTravelTicks = 2, MaximumTravelTicks = 2,
+                    TransportType = HazardTransportType.HazardDriven,
+                    ProvenanceId = "ar52-b-d", PublishedAtTick = 0
+                }
+            ]
+        };
+        var first = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 4, "ar52-first");
+        var middle = Constraint(EvidenceState.Confirmed,
+            new InteractionTimeWindow(1, 2), ["b", "c"], 4, "ar52-middle");
+        var last = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(3), ["d"], 4, "ar52-last");
+        var result = Apply(historical, [first, middle, last], 4, envelope);
+        Assert.Contains("d", result.CandidateWarps.PreferredRegionIdsAt(4));
+        Assert.Contains("d", result.CandidateWarps.CandidateRegionIdsAt(4));
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(Apply(historical,
+                [last, middle, first], 4, envelope)));
+    }
+
+    // Ready-stage Codex: a new direct current anchor is independently
+    // confirmed, but it must not erase one already received historical fact.
+    [Fact]
+    public void DirectCurrentAnchorRetainsSingleHistoricalConfirmedOuter()
+    {
+        var historical = Warp(new InteractionTimeWindow(0, 2),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b"]);
+        var earlier = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 2, "ar53-earlier");
+        var uncertain = Constraint(EvidenceState.SupportedButUncertain,
+            InteractionTimeWindow.At(1), ["b"], 2, "ar53-uncertain");
+        var current = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(2), ["b"], 2, "ar53-current");
+        var result = Apply(historical, [earlier, uncertain, current], 2);
+        Assert.Contains("b", result.CandidateWarps.PreferredRegionIdsAt(2));
+        Assert.DoesNotContain("a", result.CandidateWarps.PreferredRegionIdsAt(0));
+        Assert.Contains("a", result.CandidateWarps.OuterPlausibleRegionIdsAt(0));
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(Apply(historical,
+                [current, uncertain, earlier], 2)));
+    }
+
     [Fact]
     public void ConfirmedExactTickNarrowsHistoricalStateThenUsesPublicForwardPropagation()
     {

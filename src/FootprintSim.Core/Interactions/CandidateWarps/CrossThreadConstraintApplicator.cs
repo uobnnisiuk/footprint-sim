@@ -369,22 +369,41 @@ public sealed class CrossThreadConstraintApplicator
                     conflictDetected: false));
         }
 
-        // The immediately preceding preferred encounter may be Confirmed
-        // OR a SupportedButUncertain hypothesis. Skipping a narrowed weak
-        // encounter can silently join two Confirmed sightings through a
-        // route that the intervening hypothesis cannot publicly traverse.
-        // Unknown travel remains outer-only; this does not make weak evidence
-        // a hard exclusion or prove that the encounter happened.
-        var previous = warp.States
+        // The preceding encounter can have several time/location states.
+        // Choosing its latest state would mistake one possible encounter
+        // alternative for a mandatory waypoint. Group its states by original
+        // observation identity, not by the last state alone.
+        var precedingObservations = warp.States
             .Where(state => state.TimeWindow.EndTick <
-                constraint.ConstrainedTimeWindow.StartTick &&
-                state.Provenance.Any(source =>
+                constraint.ConstrainedTimeWindow.StartTick)
+            .SelectMany(state => state.Provenance
+                .Where(source =>
                     source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
                     source.EvidenceBoundaryState is
-                        EvidenceState.Confirmed or EvidenceState.SupportedButUncertain))
-            .OrderByDescending(state => state.TimeWindow.EndTick)
-            .ThenBy(state => state.StateId, StringComparer.Ordinal)
+                        EvidenceState.Confirmed or EvidenceState.SupportedButUncertain)
+                .Select(source => new
+                {
+                    State = state,
+                    SourceId = source.SourceObservationId ?? source.SourceIdentifier,
+                    SourceEndTick = source.SourceTimeWindow?.EndTick ??
+                        state.TimeWindow.EndTick
+                }))
+            .ToArray();
+        var latestEncounter = precedingObservations
+            .OrderByDescending(item => item.SourceEndTick)
+            .ThenByDescending(item => item.State.TimeWindow.EndTick)
+            .ThenBy(item => item.SourceId, StringComparer.Ordinal)
             .FirstOrDefault();
+        var previousStates = latestEncounter is null
+            ? Array.Empty<CandidateWarpState>()
+            : precedingObservations
+                .Where(item => string.Equals(
+                    item.SourceId, latestEncounter.SourceId, StringComparison.Ordinal))
+                .Select(item => item.State)
+                .DistinctBy(state => state.StateId, StringComparer.Ordinal)
+                .OrderBy(state => state.TimeWindow.StartTick)
+                .ThenBy(state => state.StateId, StringComparer.Ordinal)
+                .ToArray();
 
         // A directly received, confirmed exact observation at the query
         // tick stands on its own. It need not prove an earlier public path.
@@ -400,7 +419,7 @@ public sealed class CrossThreadConstraintApplicator
         var verifiedStartTicks = new Dictionary<string, long>(StringComparer.Ordinal);
         if (constraint.EvidenceBoundaryState is
             EvidenceState.Confirmed or EvidenceState.SupportedButUncertain &&
-            previous is not null && !directCurrentConfirmation)
+            previousStates.Length > 0 && !directCurrentConfirmation)
         {
             // A verified region also needs a verified encounter TIME.
             // Reaching a region at the END of an inclusive observation
@@ -412,7 +431,7 @@ public sealed class CrossThreadConstraintApplicator
                 // as a preferred *model assumption*, not a fact established
                 // by an ambiguous encounter. Other pedestrian moves without
                 // published edges remain outer-only, never hard-excluded.
-                verifiedRegionIds.IntersectWith(previous.RegionIds);
+                verifiedRegionIds.IntersectWith(previousStates.SelectMany(state => state.RegionIds));
             }
             else
             {
@@ -423,7 +442,7 @@ public sealed class CrossThreadConstraintApplicator
                 {
                     var reachedAtEnd = PublicCandidateWarpPropagator.Propagate(
                         warp.ScenarioId, warp.Seed, warp.TargetEntityId,
-                        [previous], lastEncounterTick,
+                        previousStates, lastEncounterTick,
                         publicHazardEnvelope, retainUndeclaredStay: true);
                     if (!reachedAtEnd.RegionIds.Contains(regionId, StringComparer.Ordinal))
                     {
@@ -441,7 +460,7 @@ public sealed class CrossThreadConstraintApplicator
                         var mid = first + (last - first) / 2;
                         var reached = PublicCandidateWarpPropagator.Propagate(
                             warp.ScenarioId, warp.Seed, warp.TargetEntityId,
-                            [previous], mid,
+                            previousStates, mid,
                             publicHazardEnvelope, retainUndeclaredStay: true);
                         if (reached.RegionIds.Contains(regionId, StringComparer.Ordinal))
                         {
@@ -514,7 +533,7 @@ public sealed class CrossThreadConstraintApplicator
         // applies to every tick, so the new preferred anchor has no past.
         if (directCurrentConfirmation &&
             warp.Standing == CandidateWarpStanding.OuterPlausible &&
-            previous is not null)
+            previousStates.Length > 0)
         {
             var currentState = CandidateWarpNormalization.CreateState(
                 warp.ScenarioId, warp.Seed, warp.TargetEntityId,
@@ -526,11 +545,9 @@ public sealed class CrossThreadConstraintApplicator
                 warp.ScenarioId, warp.Seed, warp.TargetEntityId,
                 CandidateWarpStanding.Preferred, parentWarpId: null,
                 [currentState], $"direct-current:{constraint.ConstraintId}");
-            // A direct current confirmation resolves an optional prior
-            // stop, without creating a redundant outer-only current region.
-            // Keep a separate outer trajectory only when it contains at
-            // least two distinct earlier confirmed encounters whose link
-            // has not been certified by this direct current observation.
+            // Current confirmation cannot erase an earlier received fact.
+            // Keep its past trajectory outer-only even with just one earlier
+            // confirmed original; the preferred current anchor remains past-free.
             var distinctPastReceipts = warp.States
                 .Where(state => state.TimeWindow.EndTick < accessContext.CurrentTick)
                 .SelectMany(state => state.Provenance)
@@ -541,7 +558,7 @@ public sealed class CrossThreadConstraintApplicator
                 .Distinct(StringComparer.Ordinal)
                 .Take(2)
                 .Count();
-            var retainPastOuter = distinctPastReceipts >= 2;
+            var retainPastOuter = distinctPastReceipts >= 1;
             var anchoredWarps = new List<CandidateWarp> { currentAnchor };
             if (retainPastOuter)
             {
@@ -566,7 +583,7 @@ public sealed class CrossThreadConstraintApplicator
 
         // A previous outer-only or conflicted alternative must not become
         // preferred merely because another observation arrived.
-        var standing = previous is not null &&
+        var standing = previousStates.Length > 0 &&
             warp.Standing != CandidateWarpStanding.Preferred &&
             !directCurrentConfirmation
             ? warp.Standing
