@@ -36,7 +36,8 @@ public sealed class CandidateWarpTests
         var envelope = new PublicHazardEnvelope
         {
             HazardId = "ar59-public",
-            SourceRegionId = "a", PublishedAtTick = 0,
+            SourceRegionId = "a",
+            PublishedAtTick = 0,
             Branches =
             [
                 Edge("a", "b"), Edge("b", "c"), Edge("b", "y"),
