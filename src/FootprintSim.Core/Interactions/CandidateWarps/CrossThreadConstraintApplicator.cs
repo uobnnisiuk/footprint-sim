@@ -373,21 +373,45 @@ public sealed class CrossThreadConstraintApplicator
         // Choosing its latest state would mistake one possible encounter
         // alternative for a mandatory waypoint. Group its states by original
         // observation identity, not by the last state alone.
+        // An earlier receipt may overlap this inclusive encounter. It can
+        // precede a later-time alternative even if its end equals the new
+        // window's start. Read the ORIGINAL observed window; a projected
+        // state carrying its provenance is not a second past encounter.
         var precedingObservations = warp.States
-            .Where(state => state.TimeWindow.EndTick <
-                constraint.ConstrainedTimeWindow.StartTick)
             .SelectMany(state => state.Provenance
                 .Where(source =>
                     source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
                     source.EvidenceBoundaryState is
-                        EvidenceState.Confirmed or EvidenceState.SupportedButUncertain)
+                        EvidenceState.Confirmed or EvidenceState.SupportedButUncertain &&
+                    source.SourceTimeWindow is { } sourceWindow &&
+                    sourceWindow.StartTick < constraint.ConstrainedTimeWindow.EndTick &&
+                    Overlaps(state.TimeWindow, sourceWindow))
                 .Select(source => new
                 {
                     State = state,
                     SourceId = source.SourceObservationId ?? source.SourceIdentifier,
-                    SourceEndTick = source.SourceTimeWindow?.EndTick ??
-                        state.TimeWindow.EndTick
+                    SourceWindow = source.SourceTimeWindow!
                 }))
+            .Where(item => item.State.TimeWindow.StartTick <
+                constraint.ConstrainedTimeWindow.EndTick)
+            .Select(item =>
+            {
+                var startTick = Math.Max(item.State.TimeWindow.StartTick,
+                    item.SourceWindow.StartTick);
+                var endTick = Math.Min(
+                    Math.Min(item.State.TimeWindow.EndTick, item.SourceWindow.EndTick),
+                    constraint.ConstrainedTimeWindow.EndTick - 1);
+                return new
+                {
+                    State = CandidateWarpNormalization.CreateState(
+                        warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                        new InteractionTimeWindow(startTick, endTick),
+                        item.State.TemporalKind, item.State.RegionIds,
+                        item.State.EvidenceBoundaryState, item.State.Provenance),
+                    item.SourceId,
+                    SourceEndTick = item.SourceWindow.EndTick
+                };
+            })
             .ToArray();
         var latestEncounter = precedingObservations
             .OrderByDescending(item => item.SourceEndTick)
@@ -791,6 +815,41 @@ public sealed class CrossThreadConstraintApplicator
                 : state.RegionIds;
             if (regions.Count == 0)
             {
+                // A later-time option inside an overlapping encounter must
+                // not erase a distinct earlier Confirmed receipt. The same
+                // tick cannot satisfy two disjoint exact confirmations;
+                // those are conflicts, handled by the overlap check above.
+                if (narrowRegions)
+                {
+                    foreach (var source in state.Provenance.Where(item =>
+                        item.SourceKind ==
+                            CandidateWarpSourceKind.CrossThreadObservation &&
+                        item.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                        !string.Equals(item.SourceObservationId,
+                            constraint.SourceObservationId, StringComparison.Ordinal) &&
+                        item.SourceTimeWindow is { } priorWindow &&
+                        priorWindow.StartTick < constraint.ConstrainedTimeWindow.EndTick))
+                    {
+                        if (source.SourceTimeWindow is not { } observed ||
+                            !TryIntersect(state.TimeWindow, observed, out var pastWindow))
+                        {
+                            continue;
+                        }
+
+                        var lastPastTick = Math.Min(pastWindow.EndTick,
+                            constraint.ConstrainedTimeWindow.EndTick - 1);
+                        if (pastWindow.StartTick <= lastPastTick)
+                        {
+                            history.Add(CandidateWarpNormalization.CreateState(
+                                warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                                new InteractionTimeWindow(
+                                    pastWindow.StartTick, lastPastTick),
+                                state.TemporalKind, state.RegionIds,
+                                state.EvidenceBoundaryState, state.Provenance));
+                        }
+                    }
+                }
+
                 continue;
             }
 

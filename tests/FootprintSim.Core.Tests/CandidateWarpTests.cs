@@ -775,6 +775,81 @@ public sealed class CandidateWarpTests
                 envelope)));
     }
 
+    // Ready-stage Codex P2: two distinct confirmed encounters can overlap
+    // in time without certifying any unpublished transition between them.
+    [Fact]
+    public void OverlappingConfirmedWindowKeepsEarlierReceiptAndUnknownLinkOuter()
+    {
+        var historical = Warp(new InteractionTimeWindow(0, 1),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b"]);
+        var earlier = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 2, "overlap-earlier-a");
+        var inclusive = Constraint(EvidenceState.Confirmed,
+            new InteractionTimeWindow(0, 1), ["b"], 2, "overlap-later-b");
+        var result = Apply(historical, [earlier, inclusive], 2);
+        Assert.Contains("a", result.CandidateWarps.OuterPlausibleRegionIdsAt(0));
+        Assert.Contains("b", result.CandidateWarps.OuterPlausibleRegionIdsAt(2));
+        Assert.DoesNotContain("b", result.CandidateWarps.PreferredRegionIdsAt(2));
+        Assert.Contains(result.Audits, audit =>
+            audit.SourceObservationId == inclusive.SourceObservationId &&
+            audit.Disposition == ConstraintApplicationDisposition.RetainAlternative);
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(Apply(historical, [inclusive, earlier], 2)));
+        var duplicate = Apply(historical, [earlier, earlier, inclusive], 2);
+        Assert.Equal(result.CandidateWarps.CandidateRegionIdsAt(2),
+            duplicate.CandidateWarps.CandidateRegionIdsAt(2));
+    }
+
+    [Fact]
+    public void OverlappingConfirmedWindowAllowsPublishedOneTickLink()
+    {
+        var historical = Warp(new InteractionTimeWindow(0, 1),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b"]);
+        var envelope = new PublicHazardEnvelope
+        {
+            HazardId = "overlap-public-one-tick",
+            SourceRegionId = "a",
+            PublishedAtTick = 0,
+            Branches =
+            [
+                new PublicHazardBranch
+                {
+                    SourceRegionId = "a", DestinationRegionId = "b",
+                    MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+                    TransportType = HazardTransportType.HazardDriven,
+                    ProvenanceId = "overlap-public-a-b", PublishedAtTick = 0
+                }
+            ]
+        };
+        var earlier = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 1, "overlap-public-earlier");
+        var inclusive = Constraint(EvidenceState.Confirmed,
+            new InteractionTimeWindow(0, 1), ["b"], 1, "overlap-public-later");
+        var result = Apply(historical, [earlier, inclusive], 1, envelope);
+        Assert.Contains("a", result.CandidateWarps.PreferredRegionIdsAt(0));
+        Assert.Contains("b", result.CandidateWarps.PreferredRegionIdsAt(1));
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(Apply(historical, [inclusive, earlier], 1,
+                envelope)));
+    }
+
+    [Fact]
+    public void SameTickDisjointConfirmedReceiptsRemainConflicted()
+    {
+        var historical = Warp(InteractionTimeWindow.At(0),
+            CandidateWarpTemporalKind.EventPoint, ["a", "b"]);
+        var first = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 1, "same-tick-a");
+        var other = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["b"], 1, "same-tick-b");
+        var result = Apply(historical, [first, other], 1);
+        Assert.Contains(result.CandidateWarps.Warps, warp =>
+            warp.Standing == CandidateWarpStanding.Conflicted);
+        Assert.Contains(result.Audits, audit => audit.ConflictDetected);
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(Apply(historical, [other, first], 1)));
+    }
+
     // Ready-stage Codex: an inclusive middle encounter represents alternatives,
     // not a mandatory choice of its last historical state. b@1 can reach d@3
     // even when c@2 (the other middle possibility) has no published route to d.
