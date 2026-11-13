@@ -352,15 +352,20 @@ public sealed class CrossThreadConstraintApplicator
         if (constraint.EvidenceBoundaryState == EvidenceState.Confirmed &&
             previous is not null)
         {
-            unverifiedPublicLink = publicHazardEnvelope is null ||
-                previous.TimeWindow.StartTick != previous.TimeWindow.EndTick ||
-                constraint.ConstrainedTimeWindow.StartTick !=
-                    constraint.ConstrainedTimeWindow.EndTick;
+            unverifiedPublicLink = publicHazardEnvelope is null;
             if (!unverifiedPublicLink)
             {
+                // An inclusive encounter window denotes possible observation
+                // times, not a claim of occupancy at every tick. Check public
+                // reachability through its final eligible tick: with an
+                // undeclared stop retained, a path at any earlier tick can
+                // remain possible at that final tick. This also handles a
+                // previous confirmed StateInterval without assuming stasis.
                 var publicReachable = PublicCandidateWarpPropagator.Propagate(
                     warp.ScenarioId, warp.Seed, warp.TargetEntityId,
-                    [previous], constraint.ConstrainedTimeWindow.StartTick,
+                    [previous],
+                    Math.Min(constraint.ConstrainedTimeWindow.EndTick,
+                        accessContext.CurrentTick),
                     publicHazardEnvelope, retainUndeclaredStay: true);
                 unverifiedPublicLink = !publicReachable.RegionIds
                     .Intersect(allowed, StringComparer.Ordinal).Any();
@@ -381,7 +386,9 @@ public sealed class CrossThreadConstraintApplicator
                 CreateAudit(
                     warp.WarpId, constraint, accessContext,
                     ConstraintApplicationDisposition.RetainAlternative,
-                    ConstraintApplicationReason.NoRegionOverlap,
+                    // The regions overlap; only the *public path* is
+                    // unverified. NoRegionOverlap would misreport the evidence.
+                    ConstraintApplicationReason.Applied,
                     beforeCount, afterCount,
                     alternativesRetained: true, conflictDetected: false));
         }
@@ -391,9 +398,13 @@ public sealed class CrossThreadConstraintApplicator
         // A received exact observation at the query tick directly establishes
         // its region, regardless of earlier outer-only historical alternatives.
         // Historical observations must not promote an unverified sequence.
+        var directCurrentConfirmation =
+            constraint.EvidenceBoundaryState == EvidenceState.Confirmed &&
+            constraint.ConstrainedTimeWindow.StartTick == accessContext.CurrentTick &&
+            constraint.ConstrainedTimeWindow.EndTick == accessContext.CurrentTick;
         var standing = previous is not null &&
             warp.Standing != CandidateWarpStanding.Preferred &&
-            constraint.ConstrainedTimeWindow.EndTick < accessContext.CurrentTick
+            !directCurrentConfirmation
             ? warp.Standing
             : CandidateWarpStanding.Preferred;
         var constrainedWarp = BuildAppliedWarp(
