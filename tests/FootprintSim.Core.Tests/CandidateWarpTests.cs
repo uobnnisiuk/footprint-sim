@@ -718,6 +718,70 @@ public sealed class CandidateWarpTests
         Assert.Contains("b", withEarlier.CandidateWarps.OuterPlausibleRegionIdsAt(2));
     }
 
+    // Ready-stage Codex P1: a raw post-encounter StateInterval cannot
+    // carry regions with no public arrival into preferred historical ticks.
+    // The original interval must remain outer-only for later receipts.
+    [Fact]
+    public void UnverifiedHistoricalTailStaysOuterUntilPubliclyReachable()
+    {
+        var historical = Warp(new InteractionTimeWindow(0, 2),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b", "d"]);
+        var first = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 3, "tail-first");
+        var envelope = new PublicHazardEnvelope
+        {
+            HazardId = "tail-limited-public",
+            SourceRegionId = "a",
+            PublishedAtTick = 0,
+            Branches =
+            [
+                new PublicHazardBranch
+                {
+                    SourceRegionId = "a",
+                    DestinationRegionId = "b",
+                    MinimumTravelTicks = 1,
+                    MaximumTravelTicks = 1,
+                    TransportType = HazardTransportType.HazardDriven,
+                    ProvenanceId = "tail-a-b",
+                    PublishedAtTick = 0
+                }
+            ]
+        };
+
+        var result = Apply(historical, [first], 3, envelope);
+        Assert.Contains("b", result.CandidateWarps.PreferredRegionIdsAt(1));
+        Assert.DoesNotContain("d", result.CandidateWarps.PreferredRegionIdsAt(1));
+        Assert.DoesNotContain("d", result.CandidateWarps.PreferredRegionIdsAt(2));
+        Assert.Contains("d", result.CandidateWarps.OuterPlausibleRegionIdsAt(1));
+        Assert.Contains("d", result.CandidateWarps.OuterPlausibleRegionIdsAt(2));
+        Assert.Contains("b", result.CandidateWarps.PreferredRegionIdsAt(3));
+
+        // A second valid receipt must still be able to use the verified
+        // historical b@1 candidate, not lose it while demoting the raw tail.
+        var second = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(1), ["b"], 3, "tail-second");
+        var combined = Apply(historical, [first, second], 3, envelope);
+        Assert.Contains("b", combined.CandidateWarps.PreferredRegionIdsAt(1));
+        Assert.DoesNotContain("d", combined.CandidateWarps.PreferredRegionIdsAt(1));
+        Assert.Contains("d", combined.CandidateWarps.OuterPlausibleRegionIdsAt(1));
+        Assert.Equal(JsonDefaults.Serialize(combined),
+            JsonDefaults.Serialize(Apply(historical, [second, first], 3, envelope)));
+    }
+
+    [Fact]
+    public void NoPublishedHistoricalMoveCannotBecomePreferredTail()
+    {
+        var historical = Warp(new InteractionTimeWindow(0, 2),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b", "d"]);
+        var first = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 3, "tail-no-public");
+        var result = Apply(historical, [first], 3);
+        Assert.DoesNotContain("d", result.CandidateWarps.PreferredRegionIdsAt(1));
+        Assert.DoesNotContain("b", result.CandidateWarps.PreferredRegionIdsAt(2));
+        Assert.Contains("d", result.CandidateWarps.OuterPlausibleRegionIdsAt(2));
+        Assert.Contains("a", result.CandidateWarps.PreferredRegionIdsAt(1));
+    }
+
     // AR-46: both a single public chain and a chain with an unverified
     // alternative must remain polynomial in observations, not 2^n warps.
     [Theory]
