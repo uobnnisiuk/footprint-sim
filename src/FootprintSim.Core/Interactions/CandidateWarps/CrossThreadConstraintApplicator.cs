@@ -585,11 +585,16 @@ public sealed class CrossThreadConstraintApplicator
             {
                 var tailEnd = Math.Min(state.TimeWindow.EndTick,
                     accessContext.CurrentTick - 1);
-                history.Add(CandidateWarpNormalization.CreateState(
-                    warp.ScenarioId, warp.Seed, warp.TargetEntityId,
-                    new InteractionTimeWindow(intersection.EndTick + 1, tailEnd),
-                    state.TemporalKind, state.RegionIds,
-                    state.EvidenceBoundaryState, state.Provenance));
+                // The query tick is represented by the recomputed projection,
+                // not a historical tail with start > end.
+                if (intersection.EndTick + 1 <= tailEnd)
+                {
+                    history.Add(CandidateWarpNormalization.CreateState(
+                        warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                        new InteractionTimeWindow(intersection.EndTick + 1, tailEnd),
+                        state.TemporalKind, state.RegionIds,
+                        state.EvidenceBoundaryState, state.Provenance));
+                }
             }
         }
 
