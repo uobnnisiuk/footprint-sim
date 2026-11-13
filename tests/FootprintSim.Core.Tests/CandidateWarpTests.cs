@@ -190,6 +190,68 @@ public sealed class CandidateWarpTests
     }
 
 
+    // The query's public-information cutoff is not the historical tick being
+    // reconstructed. A path published after an encounter can retrospectively
+    // verify that encounter, but a path published after the query cannot.
+    [Fact]
+    public void HistoricalPublishedRouteUsesReceiptCutoffForVerificationAndTails()
+    {
+        PublicHazardEnvelope PublicAt(long publishedAtTick) => new()
+        {
+            HazardId = "historical-publication-cutoff",
+            SourceRegionId = "a",
+            PublishedAtTick = 0,
+            Branches =
+            [
+                new PublicHazardBranch
+                {
+                    SourceRegionId = "a",
+                    DestinationRegionId = "b",
+                    MinimumTravelTicks = 1,
+                    MaximumTravelTicks = 1,
+                    TransportType = HazardTransportType.HazardDriven,
+                    ProvenanceId = "later-published-a-b",
+                    PublishedAtTick = publishedAtTick
+                }
+            ]
+        };
+
+        var historical = Warp(new InteractionTimeWindow(0, 1),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b"]);
+        var first = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 3, "late-public-first");
+        var second = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(1), ["b"], 3, "late-public-second");
+
+        // Physically traversable by tick 1, published at tick 2, and known
+        // to the rescuer by cutoff 3. Do not use the encounter tick as cutoff.
+        var available = Apply(historical, [first, second], 3, PublicAt(2));
+        Assert.Contains("b", available.CandidateWarps.PreferredRegionIdsAt(1));
+        Assert.Contains("b", available.CandidateWarps.PreferredRegionIdsAt(3));
+        Assert.Equal(JsonDefaults.Serialize(available),
+            JsonDefaults.Serialize(Apply(historical,
+                [second, first], 3, PublicAt(2))));
+
+        // The same physical route is not available to a cutoff-3 query if
+        // it is published only at tick 4. The encounter remains outer-only.
+        var futurePublication = Apply(historical,
+            [first, second], 3, PublicAt(4));
+        Assert.DoesNotContain("b",
+            futurePublication.CandidateWarps.PreferredRegionIdsAt(1));
+        Assert.Contains("b",
+            futurePublication.CandidateWarps.OuterPlausibleRegionIdsAt(1));
+
+        // The raw historical StateInterval tail must use the same evidence
+        // cutoff: otherwise it remains an unknown outer possibility.
+        var tailVerified = Apply(historical, [first], 3, PublicAt(2));
+        var tailUnknown = Apply(historical, [first], 3, PublicAt(4));
+        Assert.Contains("b", tailVerified.CandidateWarps.PreferredRegionIdsAt(1));
+        Assert.DoesNotContain("b",
+            tailUnknown.CandidateWarps.PreferredRegionIdsAt(1));
+        Assert.Contains("b",
+            tailUnknown.CandidateWarps.OuterPlausibleRegionIdsAt(1));
+    }
+
     // Ready-stage Codex review: a public route to b cannot promote an
     // unverified d, even when both are allowed by one confirmed encounter.
     [Fact]
