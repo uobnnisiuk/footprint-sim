@@ -128,6 +128,14 @@ public sealed class CandidateWarpTests
             audit.CandidateCountAfter > 0);
 
         // AR-44 also reproduces with distinct EventPoint layers.
+        var publicFixtureProvenance = CandidateWarpProvenance.Create(
+            CandidateWarpSourceKind.VoluntaryReachability,
+            "ar44-public-model",
+            availableAtTick: 0,
+            isPersonEvidence: false,
+            isDeviceOnlyEvidence: false,
+            EvidenceState.SupportedButUncertain,
+            ["a", "b", "c", "d", "e", "f"]);
         var eventPoints = PublicCandidateWarpFactory.Create(
             ScenarioId, Seed, TargetPersonId,
             [
@@ -136,21 +144,24 @@ public sealed class CandidateWarpTests
                     TimeWindow = InteractionTimeWindow.At(0),
                     TemporalKind = CandidateWarpTemporalKind.EventPoint,
                     RegionIds = ["a", "c"],
-                    EvidenceBoundaryState = EvidenceState.SupportedButUncertain
+                    EvidenceBoundaryState = EvidenceState.SupportedButUncertain,
+                    Provenance = [publicFixtureProvenance]
                 },
                 new PublicCandidateWarpStateDefinition
                 {
                     TimeWindow = InteractionTimeWindow.At(1),
                     TemporalKind = CandidateWarpTemporalKind.EventPoint,
                     RegionIds = ["b", "d"],
-                    EvidenceBoundaryState = EvidenceState.SupportedButUncertain
+                    EvidenceBoundaryState = EvidenceState.SupportedButUncertain,
+                    Provenance = [publicFixtureProvenance]
                 },
                 new PublicCandidateWarpStateDefinition
                 {
                     TimeWindow = InteractionTimeWindow.At(2),
                     TemporalKind = CandidateWarpTemporalKind.EventPoint,
                     RegionIds = ["e", "f"],
-                    EvidenceBoundaryState = EvidenceState.SupportedButUncertain
+                    EvidenceBoundaryState = EvidenceState.SupportedButUncertain,
+                    Provenance = [publicFixtureProvenance]
                 }
             ]);
         var layeredInterval = Apply(eventPoints,
