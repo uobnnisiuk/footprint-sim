@@ -704,11 +704,16 @@ public sealed class CrossThreadConstraintApplicator
 
         if (verifiedRegionIds.Count == 0)
         {
-            // An unpublished link is unknown rather than impossible.
+            // An unpublished link is unknown rather than impossible, but
+            // unknown reachability cannot resolve an earlier hard conflict.
+            // Preserve the standing on BOTH weak/unknown alternatives.
+            var retainedStanding = warp.Standing == CandidateWarpStanding.Conflicted
+                ? CandidateWarpStanding.Conflicted
+                : CandidateWarpStanding.OuterPlausible;
             var unknown = BuildAppliedWarp(
                 warp, constraint, accessContext, publicHazardEnvelope,
                 narrowRegions: true,
-                CandidateWarpStanding.OuterPlausible,
+                retainedStanding,
                 "unverified-public-link", retainUndeclaredStay: true,
                 constrainedRegions: unverifiedRegionIds);
             var branches = new List<CandidateWarp> { unknown };
@@ -722,7 +727,7 @@ public sealed class CrossThreadConstraintApplicator
                 branches.Add(BuildAppliedWarp(
                     warp, constraint, accessContext, publicHazardEnvelope,
                     narrowRegions: false,
-                    CandidateWarpStanding.OuterPlausible,
+                    retainedStanding,
                     "outer-alternative", retainUndeclaredStay: true));
             }
 
@@ -735,7 +740,8 @@ public sealed class CrossThreadConstraintApplicator
                         : ConstraintApplicationDisposition.RetainAlternative,
                     ConstraintApplicationReason.Applied,
                     beforeCount, afterCount,
-                    alternativesRetained: true, conflictDetected: false));
+                    alternativesRetained: true,
+                    conflictDetected: warp.Standing == CandidateWarpStanding.Conflicted));
         }
 
         // A directly confirmed current location can be preferred WITHOUT

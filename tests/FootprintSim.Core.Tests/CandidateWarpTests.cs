@@ -1250,6 +1250,37 @@ public sealed class CandidateWarpTests
             JsonDefaults.Serialize(Apply(historical, [other, first], 1)));
     }
 
+    // Ready-after-independent Codex P2: an unverified later transition must
+    // not turn two contradictory Confirmed receipts into an outer-safe route.
+    // The existing conflict remains visible even when the last receipt is weak.
+    [Theory]
+    [InlineData(EvidenceState.Confirmed)]
+    [InlineData(EvidenceState.SupportedButUncertain)]
+    public void UnverifiedLaterLinkCannotClearEarlierConfirmedConflict(
+        EvidenceState laterEvidence)
+    {
+        var historical = Warp(new InteractionTimeWindow(0, 2),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b", "c"]);
+        var first = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 2, "sticky-conflict-a");
+        var incompatible = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["b"], 2, "sticky-conflict-b");
+        var later = Constraint(laterEvidence,
+            InteractionTimeWindow.At(1), ["c"], 2, "sticky-conflict-c");
+
+        var initialConflict = Apply(historical, [first, incompatible], 2);
+        Assert.Contains(initialConflict.CandidateWarps.Warps,
+            warp => warp.Standing == CandidateWarpStanding.Conflicted);
+
+        var result = Apply(historical, [first, incompatible, later], 2);
+        Assert.All(result.CandidateWarps.Warps,
+            warp => Assert.Equal(CandidateWarpStanding.Conflicted, warp.Standing));
+        Assert.Contains(result.Audits, audit =>
+            audit.ConstraintId == later.ConstraintId && audit.ConflictDetected);
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(Apply(historical, [later, incompatible, first], 2)));
+    }
+
     // Ready-stage Codex: an inclusive middle encounter represents alternatives,
     // not a mandatory choice of its last historical state. b@1 can reach d@3
     // even when c@2 (the other middle possibility) has no published route to d.
