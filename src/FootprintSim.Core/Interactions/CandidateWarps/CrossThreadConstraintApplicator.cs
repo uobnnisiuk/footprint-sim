@@ -457,6 +457,36 @@ public sealed class CrossThreadConstraintApplicator
                 }
             }
 
+            // A region and a public arrival time must coincide in the SAME
+            // historical state within the inclusive receipt window. A b@1
+            // state does not certify b@[1,2] when the public route first
+            // reaches b at tick 2. Keep such alternatives outer-only.
+            foreach (var (regionId, firstTick) in verifiedStartTicks.ToArray())
+            {
+                var hasTimeConsistentState = overlappingStates.Any(state =>
+                {
+                    if (!state.RegionIds.Contains(regionId, StringComparer.Ordinal))
+                    {
+                        return false;
+                    }
+
+                    var firstPossibleTick = Math.Max(
+                        Math.Max(state.TimeWindow.StartTick,
+                            constraint.ConstrainedTimeWindow.StartTick),
+                        firstTick);
+                    var lastPossibleTick = Math.Min(
+                        Math.Min(state.TimeWindow.EndTick,
+                            constraint.ConstrainedTimeWindow.EndTick),
+                        accessContext.CurrentTick);
+                    return firstPossibleTick <= lastPossibleTick;
+                });
+                if (!hasTimeConsistentState)
+                {
+                    verifiedRegionIds.Remove(regionId);
+                    verifiedStartTicks.Remove(regionId);
+                }
+            }
+
             unverifiedRegionIds.ExceptWith(verifiedRegionIds);
         }
 
