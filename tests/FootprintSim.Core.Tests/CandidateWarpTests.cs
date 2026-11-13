@@ -763,7 +763,9 @@ public sealed class CandidateWarpTests
         var combined = Apply(historical, [first, second], 3, envelope);
         Assert.Contains("b", combined.CandidateWarps.PreferredRegionIdsAt(1));
         Assert.DoesNotContain("d", combined.CandidateWarps.PreferredRegionIdsAt(1));
-        Assert.Contains("d", combined.CandidateWarps.OuterPlausibleRegionIdsAt(1));
+        // The second Confirmed b@1 excludes d at that exact tick. This
+        // is not a hard exclusion from the *first* receipt alone.
+        Assert.DoesNotContain("d", combined.CandidateWarps.CandidateRegionIdsAt(1));
         Assert.Equal(JsonDefaults.Serialize(combined),
             JsonDefaults.Serialize(Apply(historical, [second, first], 3, envelope)));
     }
