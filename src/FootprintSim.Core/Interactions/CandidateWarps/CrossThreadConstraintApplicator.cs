@@ -682,11 +682,18 @@ public sealed class CrossThreadConstraintApplicator
                     StringComparer.Ordinal)
                 .Any();
             var resultWarps = new List<CandidateWarp> { constrainedWarp };
+            // Raw later intervals are required for future receipts, but
+            // cannot be presented as preferred history. Retain them on the
+            // outer-only branch even if query-time region counts are equal.
+            var hasRawHistoricalTail = warp.States.Any(state =>
+                state.TimeWindow.EndTick > constraint.ConstrainedTimeWindow.EndTick &&
+                state.TimeWindow.StartTick < accessContext.CurrentTick);
             // The unverified EARLIER part of a received interval remains
             // possible even if the same regions are reachable at its end.
             var hasUnverifiedEncounterTime = verifiedStartTicks.Any(item =>
                 item.Value > constraint.ConstrainedTimeWindow.StartTick);
-            if (hasExtraOuterRegion || hasUnverifiedEncounterTime)
+            if (hasExtraOuterRegion || hasUnverifiedEncounterTime ||
+                hasRawHistoricalTail)
             {
                 resultWarps.Add(withUnobservedStay);
             }
@@ -754,6 +761,10 @@ public sealed class CrossThreadConstraintApplicator
     {
         var history = new List<CandidateWarpState>();
         var propagationSources = new List<CandidateWarpState>();
+        // A raw retained interval is an outer possibility, not a preferred
+        // historical position. Verify each region and its earliest public
+        // arrival tick before including it in a preferred warp.
+        var unverifiedTails = new List<CandidateWarpState>();
         var crossThreadProvenance = CreateCrossThreadProvenance(constraint);
         foreach (var state in warp.States)
         {
@@ -774,18 +785,24 @@ public sealed class CrossThreadConstraintApplicator
                     // but never leave its query-tick tail beside a new projection.
                     var lastHistoricalTick = Math.Min(
                         state.TimeWindow.EndTick, accessContext.CurrentTick - 1);
-                    if (state.TimeWindow.EndTick <= lastHistoricalTick)
+                    if (state.TimeWindow.StartTick <= lastHistoricalTick)
                     {
-                        history.Add(state);
-                    }
-                    else if (state.TimeWindow.StartTick <= lastHistoricalTick)
-                    {
-                        history.Add(CandidateWarpNormalization.CreateState(
-                            warp.ScenarioId, warp.Seed, warp.TargetEntityId,
-                            new InteractionTimeWindow(
-                                state.TimeWindow.StartTick, lastHistoricalTick),
-                            state.TemporalKind, state.RegionIds,
-                            state.EvidenceBoundaryState, state.Provenance));
+                        var tail = state.TimeWindow.EndTick <= lastHistoricalTick
+                            ? state
+                            : CandidateWarpNormalization.CreateState(
+                                warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                                new InteractionTimeWindow(
+                                    state.TimeWindow.StartTick, lastHistoricalTick),
+                                state.TemporalKind, state.RegionIds,
+                                state.EvidenceBoundaryState, state.Provenance);
+                        if (standing == CandidateWarpStanding.Preferred && narrowRegions)
+                        {
+                            unverifiedTails.Add(tail);
+                        }
+                        else
+                        {
+                            history.Add(tail);
+                        }
                     }
                 }
 
@@ -897,11 +914,84 @@ public sealed class CrossThreadConstraintApplicator
                 // not a historical tail with start > end.
                 if (intersection.EndTick + 1 <= tailEnd)
                 {
-                    history.Add(CandidateWarpNormalization.CreateState(
+                    var tail = CandidateWarpNormalization.CreateState(
                         warp.ScenarioId, warp.Seed, warp.TargetEntityId,
                         new InteractionTimeWindow(intersection.EndTick + 1, tailEnd),
                         state.TemporalKind, state.RegionIds,
-                        state.EvidenceBoundaryState, state.Provenance));
+                        state.EvidenceBoundaryState, state.Provenance);
+                    if (standing == CandidateWarpStanding.Preferred && narrowRegions)
+                    {
+                        unverifiedTails.Add(tail);
+                    }
+                    else
+                    {
+                        history.Add(tail);
+                    }
+                }
+            }
+        }
+
+        // Prefer only the portion of the raw historical tail reachable from
+        // this received constraint using the *public* model. The unfiltered
+        // tail is retained on a separate outer warp by ApplyToWarp. Do not
+        // treat the same raw StateInterval as a confirmed stay at every tick.
+        if (unverifiedTails.Count > 0 && propagationSources.Count > 0)
+        {
+            var reachableByTick = new Dictionary<long, HashSet<string>>();
+            var earliestSourceTick = propagationSources.Min(state => state.TimeWindow.StartTick);
+
+            HashSet<string> ReachableAt(long tick)
+            {
+                if (!reachableByTick.TryGetValue(tick, out var regions))
+                {
+                    regions = PublicCandidateWarpPropagator.Propagate(
+                        warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                        propagationSources, tick, publicHazardEnvelope,
+                        retainUndeclaredStay: true).RegionIds
+                        .ToHashSet(StringComparer.Ordinal);
+                    reachableByTick.Add(tick, regions);
+                }
+
+                return regions;
+            }
+
+            foreach (var tail in unverifiedTails)
+            {
+                if (tail.TimeWindow.EndTick < earliestSourceTick)
+                {
+                    continue;
+                }
+
+                var tailStart = Math.Max(tail.TimeWindow.StartTick, earliestSourceTick);
+                foreach (var regionId in tail.RegionIds)
+                {
+                    if (!ReachableAt(tail.TimeWindow.EndTick).Contains(regionId))
+                    {
+                        continue;
+                    }
+
+                    // Retaining undeclared stay makes public reachability
+                    // monotone for this bounded query window.
+                    var first = tailStart;
+                    var last = tail.TimeWindow.EndTick;
+                    while (first < last)
+                    {
+                        var middle = first + (last - first) / 2;
+                        if (ReachableAt(middle).Contains(regionId))
+                        {
+                            last = middle;
+                        }
+                        else
+                        {
+                            first = middle + 1;
+                        }
+                    }
+
+                    history.Add(CandidateWarpNormalization.CreateState(
+                        warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                        new InteractionTimeWindow(first, tail.TimeWindow.EndTick),
+                        tail.TemporalKind, [regionId], tail.EvidenceBoundaryState,
+                        tail.Provenance));
                 }
             }
         }
