@@ -25,10 +25,13 @@ public sealed class CandidateWarpTests
     {
         PublicHazardBranch Edge(string from, string to) => new()
         {
-            SourceRegionId = from, DestinationRegionId = to,
-            MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+            SourceRegionId = from,
+            DestinationRegionId = to,
+            MinimumTravelTicks = 1,
+            MaximumTravelTicks = 1,
             TransportType = HazardTransportType.HazardDriven,
-            ProvenanceId = $"ar59-{from}-{to}", PublishedAtTick = 0
+            ProvenanceId = $"ar59-{from}-{to}",
+            PublishedAtTick = 0
         };
         var envelope = new PublicHazardEnvelope
         {
