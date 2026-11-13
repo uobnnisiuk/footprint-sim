@@ -490,20 +490,42 @@ public sealed class CrossThreadConstraintApplicator
                 warp.ScenarioId, warp.Seed, warp.TargetEntityId,
                 CandidateWarpStanding.Preferred, parentWarpId: null,
                 [currentState], $"direct-current:{constraint.ConstraintId}");
-            var unknownHistory = BuildAppliedWarp(
-                warp, constraint, accessContext, publicHazardEnvelope,
-                narrowRegions: true, CandidateWarpStanding.OuterPlausible,
-                "direct-current-unverified-history",
-                retainUndeclaredStay: true,
-                constrainedRegions: verifiedRegionIds);
+            // A direct current confirmation resolves an optional prior
+            // stop, without creating a redundant outer-only current region.
+            // Keep a separate outer trajectory only when it contains at
+            // least two distinct earlier confirmed encounters whose link
+            // has not been certified by this direct current observation.
+            var distinctPastReceipts = warp.States
+                .Where(state => state.TimeWindow.EndTick < accessContext.CurrentTick)
+                .SelectMany(state => state.Provenance)
+                .Where(source =>
+                    source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
+                    source.EvidenceBoundaryState == EvidenceState.Confirmed)
+                .Select(source => source.SourceObservationId ?? source.SourceIdentifier)
+                .Distinct(StringComparer.Ordinal)
+                .Take(2)
+                .Count();
+            var retainPastOuter = distinctPastReceipts >= 2;
+            var anchoredWarps = new List<CandidateWarp> { currentAnchor };
+            if (retainPastOuter)
+            {
+                anchoredWarps.Add(BuildAppliedWarp(
+                    warp, constraint, accessContext, publicHazardEnvelope,
+                    narrowRegions: true, CandidateWarpStanding.OuterPlausible,
+                    "direct-current-unverified-history",
+                    retainUndeclaredStay: true,
+                    constrainedRegions: verifiedRegionIds));
+            }
+
             return new WarpApplication(
-                [currentAnchor, unknownHistory],
+                anchoredWarps,
                 CreateAudit(
                     warp.WarpId, constraint, accessContext,
                     ConstraintApplicationDisposition.Narrow,
                     ConstraintApplicationReason.Applied,
                     beforeCount, afterCount,
-                    alternativesRetained: true, conflictDetected: false));
+                    alternativesRetained: retainPastOuter,
+                    conflictDetected: false));
         }
 
         // A previous outer-only or conflicted alternative must not become
