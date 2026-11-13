@@ -15,6 +15,73 @@ namespace FootprintSim.Core.Tests;
 
 public sealed class CandidateWarpTests
 {
+    // #150 / AR-40/42: both receipt-tick order and a single historical
+    // StateInterval must retain the later evidence's tick and its outer.
+    [Fact]
+    public void MultiPastConfirmedIntervalRetainsLaterTickAndUnknownPublicLinks()
+    {
+        PublicHazardBranch Edge(string from, string to) => new()
+        {
+            SourceRegionId = from,
+            DestinationRegionId = to,
+            MinimumTravelTicks = 1,
+            MaximumTravelTicks = 1,
+            TransportType = HazardTransportType.HazardDriven,
+            ProvenanceId = $"public-{from}-{to}",
+            PublishedAtTick = 0
+        };
+        var envelope = new PublicHazardEnvelope
+        {
+            HazardId = "ar40-public",
+            SourceRegionId = "a",
+            PublishedAtTick = 0,
+            Branches =
+            [
+                Edge("a", "b"), Edge("a", "d"), Edge("c", "d"),
+                Edge("b", "e"), Edge("d", "f")
+            ]
+        };
+        var historical = Warp(new InteractionTimeWindow(0, 1),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b", "c", "d"]);
+        var first = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 2, "ar40-observation-zero");
+        var second = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(1), ["d"], 2, "ar40-observation-one");
+        var combined = Apply(historical, [first, second], 2, envelope);
+        var reversed = Apply(historical, [second, first], 2, envelope);
+        Assert.Equal(["f"], combined.CandidateWarps.PreferredRegionIdsAt(2));
+        Assert.Contains("f", combined.CandidateWarps.CandidateRegionIdsAt(2));
+        Assert.DoesNotContain(combined.Audits, audit =>
+            audit.ConstrainedTimeWindow.StartTick == 1 &&
+            audit.Reason == ConstraintApplicationReason.NoTemporalOverlap);
+        Assert.Contains(combined.Audits, audit =>
+            audit.ConstrainedTimeWindow.StartTick == 1 &&
+            audit.Disposition == ConstraintApplicationDisposition.Narrow);
+        Assert.Equal(JsonDefaults.Serialize(combined), JsonDefaults.Serialize(reversed));
+
+        var duplicated = Apply(historical, [first, first, second], 2, envelope);
+        Assert.Equal(combined.CandidateWarps.PreferredRegionIdsAt(2),
+            duplicated.CandidateWarps.PreferredRegionIdsAt(2));
+        Assert.Contains(duplicated.Audits, audit =>
+            audit.Reason == ConstraintApplicationReason.DuplicateSourceObservation);
+
+        // c->b is not published. The later *received* P@1=b is still
+        // possible through an unpublished relation; it cannot be promoted
+        // to a confirmed public path, or silently eliminated from outer.
+        var partial = Apply(historical,
+        [
+            Constraint(EvidenceState.Confirmed, InteractionTimeWindow.At(0),
+                ["c"], 2, "ar40-partial-zero"),
+            Constraint(EvidenceState.Confirmed, InteractionTimeWindow.At(1),
+                ["b"], 2, "ar40-partial-one")
+        ], 2, envelope);
+        Assert.Contains("e", partial.CandidateWarps.OuterPlausibleRegionIdsAt(2));
+        Assert.DoesNotContain("e", partial.CandidateWarps.PreferredRegionIdsAt(2));
+        Assert.Contains(partial.Audits, audit =>
+            audit.ConstrainedTimeWindow.StartTick == 1 &&
+            audit.Disposition == ConstraintApplicationDisposition.RetainAlternative);
+    }
+
     [Fact]
     public void ConfirmedExactTickNarrowsHistoricalStateThenUsesPublicForwardPropagation()
     {

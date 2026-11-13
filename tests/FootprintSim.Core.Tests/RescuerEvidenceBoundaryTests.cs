@@ -7318,23 +7318,58 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Equal(expectedFromBothPastReceipts,
             middleOnlyResult.CandidateWarps.PreferredRegionIdsAt(2));
         var observedBothPast = bothPastResult.CandidateWarps.PreferredRegionIdsAt(2);
-        if (!observedBothPast.SequenceEqual(expectedFromBothPastReceipts))
+        Assert.Equal(expectedFromBothPastReceipts, observedBothPast);
+        Assert.DoesNotContain(bothPastResult.Audits, audit =>
+            audit.ConstrainedTimeWindow.StartTick == 1 &&
+            audit.Reason == ConstraintApplicationReason.NoTemporalOverlap);
+
+        // The production S3 path makes *one* historical StateInterval, not
+        // the three separate EventPoint layers used by the reference above.
+        // Supply own public evidence solely for this strategy prerequisite;
+        // the cross-thread facts still come from the real receipt builder.
+        var intervalWorld = world with
         {
-            // Baseline defect: {e,f} rather than the reference {f}, and
-            // the confirmed tick-1 observation is recorded as a NoOp.
-            // Do not treat this characterization as correctness approval.
-            Assert.Equal(["e", "f"], observedBothPast);
-            // A nonempty outer-only branch does not repair the loss of the
-            // received intermediate-tick constraint or prove outer safety.
-            Assert.NotEmpty(bothPastResult.CandidateWarps
-                .OuterPlausibleRegionIdsAt(2));
-            Assert.DoesNotContain(bothPastResult.Audits, audit =>
-                audit.ConflictDetected);
-            Assert.Contains(bothPastResult.Audits, audit =>
-                audit.ConstrainedTimeWindow.StartTick == 1 &&
-                audit.Disposition == ConstraintApplicationDisposition.NoOp &&
-                audit.Reason == ConstraintApplicationReason.NoTemporalOverlap);
-        }
+            PublicCandidateWarp = new PublicCandidateWarpDefinition
+            {
+                HistoricalTimeWindow = new InteractionTimeWindow(0, 1),
+                AvailableAtTick = 0,
+                HistoricalCandidateRegionIds = ["a", "b", "c", "d"]
+            }
+        };
+        var intervalReceived = builder.BuildDistinctOriginals(
+            intervalWorld, Seed, 2, RescuerId,
+            [originals[0], middleD], [receipts[0], middleReceipt]);
+        var intervalInput = intervalReceived.Input with
+        {
+            AvailableEvidence = new ObservationSet
+            {
+                ScenarioId = ScenarioId,
+                Seed = Seed,
+                Observations =
+                [
+                    new ObservationRecord
+                    {
+                        ObservationId = "public-own-anchor-ar40",
+                        ObservedTick = 0,
+                        AvailableTick = 0,
+                        EvidenceType = "person-location",
+                        SubjectIds = [TargetId],
+                        ReportedRegionId = "a",
+                        State = EvidenceState.Confirmed
+                    }
+                ]
+            }
+        };
+        var production = new CrossThreadConstrainedStrategy().Evaluate(intervalInput);
+        Assert.Equal(expectedFromBothPastReceipts,
+            production.PreferredCandidateRegionIds);
+        Assert.Contains("f", production.OuterPlausibleCandidateRegionIds);
+        Assert.Contains(production.CrossThreadConstraintAudits, audit =>
+            audit.ConstrainedTimeWindow.StartTick == 1 &&
+            audit.Disposition == ConstraintApplicationDisposition.Narrow);
+        Assert.DoesNotContain(production.CrossThreadConstraintAudits, audit =>
+            audit.ConstrainedTimeWindow.StartTick == 1 &&
+            audit.Reason == ConstraintApplicationReason.NoTemporalOverlap);
 
         // Region e has no b/d public unit mapping in this fixed example.
         // No confirmation unit at t=2 is invented for an unmapped region.

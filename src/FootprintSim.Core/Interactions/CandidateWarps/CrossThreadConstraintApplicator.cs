@@ -127,9 +127,11 @@ public sealed class CrossThreadConstraintApplicator
                     StringComparison.Ordinal) &&
                 constraint.Visibility == InteractionVisibility.PublicEvidence &&
                 constraint.AvailableAtTick <= accessContext.CurrentTick)
-            .OrderBy(constraint => constraint.AvailableAtTick)
-            .ThenBy(constraint => constraint.ConstrainedTimeWindow.StartTick)
+            // At a fixed receipt cutoff, observation chronology rather than
+            // delivery order determines how historical constraints compose.
+            .OrderBy(constraint => constraint.ConstrainedTimeWindow.StartTick)
             .ThenBy(constraint => constraint.ConstrainedTimeWindow.EndTick)
+            .ThenBy(constraint => constraint.AvailableAtTick)
             .ThenBy(constraint => constraint.SourceObservationId, StringComparer.Ordinal)
             .ThenBy(constraint => constraint.ConstraintId, StringComparer.Ordinal)
             .ToArray();
@@ -138,8 +140,8 @@ public sealed class CrossThreadConstraintApplicator
         var audits = new List<ConstraintApplicationAudit>();
         foreach (var sourceGroup in eligible
             .GroupBy(constraint => constraint.SourceObservationId, StringComparer.Ordinal)
-            .OrderBy(group => group.Min(item => item.AvailableAtTick))
-            .ThenBy(group => group.Min(item => item.ConstrainedTimeWindow.StartTick))
+            .OrderBy(group => group.Min(item => item.ConstrainedTimeWindow.StartTick))
+            .ThenBy(group => group.Min(item => item.ConstrainedTimeWindow.EndTick))
             .ThenBy(group => group.Key, StringComparer.Ordinal))
         {
             var orderedSourceConstraints = sourceGroup
@@ -333,13 +335,70 @@ public sealed class CrossThreadConstraintApplicator
                     conflictDetected: false));
         }
 
+        // An earlier confirmed observation can only support a preferred
+        // *sequence* if a public transition actually connects it to this
+        // observation. An unpublished relation is unknown, not impossible:
+        // keep the later received fact in outer without asserting a path.
+        var previous = warp.States
+            .Where(state => state.TimeWindow.EndTick <
+                constraint.ConstrainedTimeWindow.StartTick &&
+                state.Provenance.Any(source =>
+                    source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
+                    source.EvidenceBoundaryState == EvidenceState.Confirmed))
+            .OrderByDescending(state => state.TimeWindow.EndTick)
+            .ThenBy(state => state.StateId, StringComparer.Ordinal)
+            .FirstOrDefault();
+        var unverifiedPublicLink = false;
+        if (constraint.EvidenceBoundaryState == EvidenceState.Confirmed &&
+            previous is not null)
+        {
+            unverifiedPublicLink = publicHazardEnvelope is null ||
+                previous.TimeWindow.StartTick != previous.TimeWindow.EndTick ||
+                constraint.ConstrainedTimeWindow.StartTick !=
+                    constraint.ConstrainedTimeWindow.EndTick;
+            if (!unverifiedPublicLink)
+            {
+                var publicReachable = PublicCandidateWarpPropagator.Propagate(
+                    warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                    [previous], constraint.ConstrainedTimeWindow.StartTick,
+                    publicHazardEnvelope, retainUndeclaredStay: true);
+                unverifiedPublicLink = !publicReachable.RegionIds
+                    .Intersect(allowed, StringComparer.Ordinal).Any();
+            }
+        }
+
+        if (unverifiedPublicLink)
+        {
+            // No published route is not proof of absence. A received later
+            // observation remains usable as an explicitly outer-only branch.
+            var unknown = BuildAppliedWarp(
+                warp, constraint, accessContext, publicHazardEnvelope,
+                narrowRegions: true,
+                CandidateWarpStanding.OuterPlausible,
+                "unverified-public-link", retainUndeclaredStay: true);
+            return new WarpApplication(
+                [unknown],
+                CreateAudit(
+                    warp.WarpId, constraint, accessContext,
+                    ConstraintApplicationDisposition.RetainAlternative,
+                    ConstraintApplicationReason.NoRegionOverlap,
+                    beforeCount, afterCount,
+                    alternativesRetained: true, conflictDetected: false));
+        }
+
+        // A previous outer-only or conflicted alternative must not become
+        // preferred merely because another observation arrived.
+        var standing = previous is not null &&
+            warp.Standing != CandidateWarpStanding.Preferred
+            ? warp.Standing
+            : CandidateWarpStanding.Preferred;
         var constrainedWarp = BuildAppliedWarp(
             warp,
             constraint,
             accessContext,
             publicHazardEnvelope,
             narrowRegions: true,
-            CandidateWarpStanding.Preferred,
+            standing,
             "constraint-applied");
         if (constraint.EvidenceBoundaryState == EvidenceState.Confirmed)
         {
@@ -420,8 +479,13 @@ public sealed class CrossThreadConstraintApplicator
                 constraint.ConstrainedTimeWindow,
                 out var intersection))
             {
-                if (state.TimeWindow.EndTick < constraint.ConstrainedTimeWindow.StartTick)
+                if (state.TimeWindow.EndTick < constraint.ConstrainedTimeWindow.StartTick ||
+                    (state.TimeWindow.StartTick > constraint.ConstrainedTimeWindow.EndTick &&
+                     state.TimeWindow.StartTick < accessContext.CurrentTick))
                 {
+                    // Intermediate future states may contain the next received
+                    // historical observation. Only the stale current projection
+                    // is recomputed from the latest constrained state.
                     history.Add(state);
                 }
 
@@ -470,6 +534,22 @@ public sealed class CrossThreadConstraintApplicator
                 provenance);
             history.Add(constrainedState);
             propagationSources.Add(constrainedState);
+
+            // A StateInterval is a set of possible regions at each tick,
+            // not a declaration that a person remained in one region.
+            // Retain the unconstrained *later* portion for the next receipt;
+            // never carry a stale current-tick projection forward.
+            if (intersection.EndTick < state.TimeWindow.EndTick &&
+                intersection.EndTick < accessContext.CurrentTick)
+            {
+                var tailEnd = Math.Min(state.TimeWindow.EndTick,
+                    accessContext.CurrentTick - 1);
+                history.Add(CandidateWarpNormalization.CreateState(
+                    warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                    new InteractionTimeWindow(intersection.EndTick + 1, tailEnd),
+                    state.TemporalKind, state.RegionIds,
+                    state.EvidenceBoundaryState, state.Provenance));
+            }
         }
 
         if (accessContext.CurrentTick > propagationSources.Max(state => state.TimeWindow.EndTick))
