@@ -577,6 +577,124 @@ public sealed class CandidateWarpTests
                 [last, middleWeak, first], 3, envelope)));
     }
 
+    // AR-51: a weak encounter at an unpublished location can be wrong.
+    // Its unverified path must keep the original outer possibility, rather
+    // than describing an alternative in the audit and actually discarding it.
+    [Fact]
+    public void WeakUnverifiedEncounterRetainsUnconstrainedOuterHistory()
+    {
+        var historical = Warp(new InteractionTimeWindow(0, 2),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b", "c"]);
+        var first = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["b"], 2, "ar51-first");
+        var weak = Constraint(EvidenceState.SupportedButUncertain,
+            InteractionTimeWindow.At(1), ["c"], 2, "ar51-weak");
+        var result = Apply(historical, [first, weak], 2);
+
+        Assert.Contains("b", result.CandidateWarps.OuterPlausibleRegionIdsAt(1));
+        Assert.Contains("b", result.CandidateWarps.OuterPlausibleRegionIdsAt(2));
+        Assert.Contains(result.Audits, audit =>
+            audit.ConstraintId == weak.ConstraintId &&
+            audit.Disposition == ConstraintApplicationDisposition.Branch &&
+            audit.AlternativesRetained);
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(Apply(historical, [weak, first], 2)));
+    }
+
+    // AR-51: after branching on an erroneous weak encounter, a later
+    // independent Confirmed receipt must still find the genuine public path.
+    [Fact]
+    public void WrongWeakEncounterDoesNotRemoveSubsequentConfirmedPublicPath()
+    {
+        var historical = Warp(new InteractionTimeWindow(0, 2),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b", "c"]);
+        var envelope = new PublicHazardEnvelope
+        {
+            HazardId = "ar51-published-b-a",
+            SourceRegionId = "b",
+            PublishedAtTick = 0,
+            Branches =
+            [
+                new PublicHazardBranch
+                {
+                    SourceRegionId = "b",
+                    DestinationRegionId = "a",
+                    MinimumTravelTicks = 1,
+                    MaximumTravelTicks = 1,
+                    TransportType = HazardTransportType.HazardDriven,
+                    ProvenanceId = "ar51-b-a",
+                    PublishedAtTick = 0
+                }
+            ]
+        };
+        var first = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["b"], 2, "ar51-first");
+        var weak = Constraint(EvidenceState.SupportedButUncertain,
+            InteractionTimeWindow.At(1), ["c"], 2, "ar51-a-weak");
+        var later = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(1), ["a"], 2, "ar51-z-confirmed");
+        var result = Apply(historical, [first, weak, later], 2, envelope);
+
+        Assert.Contains("a", result.CandidateWarps.CandidateRegionIdsAt(1));
+        Assert.Contains("a", result.CandidateWarps.CandidateRegionIdsAt(2));
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(Apply(historical, [later, weak, first], 2,
+                envelope)));
+    }
+
+    // AR-52: an uncertain interval overlapping the query tick still has an
+    // earlier portion. Direct current confirmation must not erase the older
+    // independently received Confirmed location from history.
+    [Fact]
+    public void CurrentAnchorPreservesConfirmedBeforeWeakIntervalEndingAtQuery()
+    {
+        var historical = Warp(new InteractionTimeWindow(0, 3),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b", "c", "d"]);
+        var envelope = new PublicHazardEnvelope
+        {
+            HazardId = "ar52-incomplete-public-path",
+            SourceRegionId = "a",
+            PublishedAtTick = 0,
+            Branches =
+            [
+                new PublicHazardBranch
+                {
+                    SourceRegionId = "a",
+                    DestinationRegionId = "b",
+                    MinimumTravelTicks = 1,
+                    MaximumTravelTicks = 1,
+                    TransportType = HazardTransportType.HazardDriven,
+                    ProvenanceId = "ar52-a-b",
+                    PublishedAtTick = 0
+                },
+                new PublicHazardBranch
+                {
+                    SourceRegionId = "b",
+                    DestinationRegionId = "c",
+                    MinimumTravelTicks = 1,
+                    MaximumTravelTicks = 1,
+                    TransportType = HazardTransportType.HazardDriven,
+                    ProvenanceId = "ar52-b-c",
+                    PublishedAtTick = 0
+                }
+            ]
+        };
+        var early = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["c"], 3, "ar52-early");
+        var weak = Constraint(EvidenceState.SupportedButUncertain,
+            new InteractionTimeWindow(2, 3), ["a", "b"], 3, "ar52-weak");
+        var current = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(3), ["b"], 3, "ar52-current");
+        var result = Apply(historical, [early, weak, current], 3, envelope);
+
+        Assert.Contains("c", result.CandidateWarps.CandidateRegionIdsAt(0));
+        Assert.DoesNotContain("c", result.CandidateWarps.PreferredRegionIdsAt(0));
+        Assert.Contains("b", result.CandidateWarps.CandidateRegionIdsAt(3));
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(Apply(historical, [current, weak, early],
+                3, envelope)));
+    }
+
     // AR-50: stay-at-the-last-confirmed-region is a preferred modelling
     // assumption, not new location evidence. Unpublished walking remains
     // possible in outer, so this preference must not become a hard exclusion.
