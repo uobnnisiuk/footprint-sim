@@ -190,9 +190,121 @@ public sealed class CandidateWarpTests
     }
 
 
+    // AR-55: a received encounter outside the original history window must
+    // be checked against a public path, rather than discarded as a generic gap.
+    [Fact]
+    public void SparseHistoricalGapDistinguishesReachableAndUnreachableReceipts()
+    {
+        PublicHazardBranch Edge(string from, string to) => new()
+        {
+            SourceRegionId = from,
+            DestinationRegionId = to,
+            MinimumTravelTicks = 1,
+            MaximumTravelTicks = 1,
+            TransportType = HazardTransportType.HazardDriven,
+            ProvenanceId = $"ar55-{from}-{to}",
+            PublishedAtTick = 0
+        };
+        var envelope = new PublicHazardEnvelope
+        {
+            HazardId = "ar55-public",
+            SourceRegionId = "a",
+            PublishedAtTick = 0,
+            Branches = [Edge("a", "b"), Edge("b", "c")]
+        };
+        var historical = Warp(new InteractionTimeWindow(0, 1),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b"]);
+        var first = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 5, "ar55-first");
+        var reachable = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(2), ["c"], 5, "ar55-reachable");
+        var missing = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(2), ["x"], 5, "ar55-missing");
+
+        var baseline = Apply(historical, [first], 5, envelope);
+        var supported = Apply(historical, [first, reachable], 5, envelope);
+        var unknown = Apply(historical, [first, missing], 5, envelope);
+        Assert.Contains("c", baseline.CandidateWarps.PreferredRegionIdsAt(5));
+        Assert.Contains("c", supported.CandidateWarps.PreferredRegionIdsAt(2));
+        Assert.Contains("c", supported.CandidateWarps.PreferredRegionIdsAt(5));
+        Assert.Contains(supported.Audits, audit =>
+            audit.SourceObservationId == reachable.SourceObservationId &&
+            audit.Reason == ConstraintApplicationReason.Applied &&
+            audit.Disposition == ConstraintApplicationDisposition.Narrow);
+        Assert.DoesNotContain("x", unknown.CandidateWarps.PreferredRegionIdsAt(2));
+        Assert.Contains("x", unknown.CandidateWarps.OuterPlausibleRegionIdsAt(2));
+        Assert.DoesNotContain("c", unknown.CandidateWarps.PreferredRegionIdsAt(5));
+        Assert.NotEqual(JsonDefaults.Serialize(supported.CandidateWarps),
+            JsonDefaults.Serialize(unknown.CandidateWarps));
+        Assert.Equal(JsonDefaults.Serialize(supported),
+            JsonDefaults.Serialize(Apply(historical, [reachable, first], 5, envelope)));
+        var duplicate = Apply(historical, [first, reachable, reachable], 5, envelope);
+        Assert.Equal(supported.CandidateWarps.PreferredRegionIdsAt(5),
+            duplicate.CandidateWarps.PreferredRegionIdsAt(5));
+        Assert.Contains(duplicate.Audits, audit =>
+            audit.Reason == ConstraintApplicationReason.DuplicateSourceObservation);
+    }
+
+    // AR-56: learning of a secondary-transport edge at cutoff 5 does NOT
+    // imply that its destination with public minimum arrival 4 was reached at 1.
+    [Fact]
+    public void HistoricalArrivalCannotPrecedePublishedDestinationMinimum()
+    {
+        var envelope = new PublicHazardEnvelope
+        {
+            HazardId = "ar56-secondary",
+            SourceRegionId = "a",
+            PublishedAtTick = 0,
+            Regions =
+            [
+                new PublicHazardRegion
+                {
+                    RegionId = "a",
+                    PublishedAtTick = 0,
+                    MinimumArrivalTick = 0,
+                    MaximumArrivalTick = 0
+                },
+                new PublicHazardRegion
+                {
+                    RegionId = "b",
+                    PublishedAtTick = 4,
+                    MinimumArrivalTick = 4,
+                    MaximumArrivalTick = 4,
+                    TransportTypes = [HazardTransportType.SecondaryTransport]
+                }
+            ],
+            Branches =
+            [
+                new PublicHazardBranch
+                {
+                    SourceRegionId = "a",
+                    DestinationRegionId = "b",
+                    MinimumTravelTicks = 1,
+                    MaximumTravelTicks = 1,
+                    TransportType = HazardTransportType.SecondaryTransport,
+                    ProvenanceId = "ar56-a-b",
+                    PublishedAtTick = 4
+                }
+            ]
+        };
+        var historical = Warp(new InteractionTimeWindow(0, 1),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b"]);
+        var first = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 5, "ar56-first");
+        var early = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(1), ["b"], 5, "ar56-too-early");
+        var result = Apply(historical, [first, early], 5, envelope);
+        Assert.DoesNotContain("b", result.CandidateWarps.PreferredRegionIdsAt(1));
+        Assert.Contains("b", result.CandidateWarps.OuterPlausibleRegionIdsAt(1));
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(Apply(historical, [early, first], 5, envelope)));
+    }
+
     // The query's public-information cutoff is not the historical tick being
-    // reconstructed. A path published after an encounter can retrospectively
-    // verify that encounter, but a path published after the query cannot.
+    // reconstructed. With no Regions/onset information, this fixture assumes
+    // an already-existing route merely learned later; it cannot prove that
+    // such a route physically existed before publication. The same route
+    // published after the query cannot contribute to this conditional model.
     [Fact]
     public void HistoricalPublishedRouteUsesReceiptCutoffForVerificationAndTails()
     {

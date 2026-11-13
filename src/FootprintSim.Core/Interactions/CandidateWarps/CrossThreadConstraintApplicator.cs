@@ -288,18 +288,53 @@ public sealed class CrossThreadConstraintApplicator
                     state.TimeWindow.StartTick > constraint.ConstrainedTimeWindow.EndTick);
             if (crossesUnverifiedGap)
             {
-                var retained = CandidateWarpNormalization.CreateWarp(
+                // The lack of an original state at this tick is not evidence
+                // that a later received encounter did not occur. Introduce
+                // one provisional observation-time possibility, then use the
+                // SAME public region/time checks as an overlapping encounter.
+                // It is not a newly observed source or a declared path.
+                var receiptWindow = new InteractionTimeWindow(
+                    constraint.ConstrainedTimeWindow.StartTick,
+                    Math.Min(constraint.ConstrainedTimeWindow.EndTick,
+                        accessContext.CurrentTick));
+                var provisionalState = CandidateWarpNormalization.CreateState(
                     warp.ScenarioId, warp.Seed, warp.TargetEntityId,
-                    CandidateWarpStanding.OuterPlausible, warp.WarpId,
-                    warp.States, $"unverified-historical-gap:{constraint.ConstraintId}");
+                    receiptWindow,
+                    receiptWindow.StartTick == receiptWindow.EndTick
+                        ? CandidateWarpTemporalKind.EventPoint
+                        : CandidateWarpTemporalKind.StateInterval,
+                    constraint.AllowedRegionIds,
+                    constraint.EvidenceBoundaryState,
+                    [CreateCrossThreadProvenance(constraint)]);
+                var provisionalWarp = CandidateWarpNormalization.CreateWarp(
+                    warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                    warp.Standing, warp.WarpId,
+                    warp.States.Append(provisionalState),
+                    $"received-gap:{constraint.ConstraintId}");
+                var checkedGap = ApplyToWarp(
+                    provisionalWarp, constraint, accessContext,
+                    publicHazardEnvelope);
+                var gapWarps = checkedGap.Warps.ToList();
+                if (constraint.EvidenceBoundaryState ==
+                    EvidenceState.SupportedButUncertain)
+                {
+                    // An uncertain encounter can be wrong. Preserve the
+                    // original path as a genuine unconstrained outer option.
+                    gapWarps.Add(CandidateWarpNormalization.CreateWarp(
+                        warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                        CandidateWarpStanding.OuterPlausible, warp.WarpId,
+                        warp.States, $"weak-gap-unknown:{constraint.ConstraintId}"));
+                }
+
                 return new WarpApplication(
-                    [retained],
+                    gapWarps,
                     CreateAudit(
                         warp.WarpId, constraint, accessContext,
-                        ConstraintApplicationDisposition.RetainAlternative,
-                        ConstraintApplicationReason.NoTemporalOverlap,
-                        beforeCount, beforeCount,
-                        alternativesRetained: true, conflictDetected: false));
+                        checkedGap.Audit.Disposition, checkedGap.Audit.Reason,
+                        beforeCount, checkedGap.Audit.CandidateCountAfter,
+                        alternativesRetained: gapWarps.Count > 1 ||
+                            checkedGap.Audit.AlternativesRetained,
+                        conflictDetected: checkedGap.Audit.ConflictDetected));
             }
 
             return NoOp(
@@ -1295,7 +1330,7 @@ internal static class PublicCandidateWarpPropagator
         bool retainUndeclaredStay,
         long publicationCutoffTick)
     {
-        if (envelope is null || depth > envelope.Branches.Count)
+        if (envelope is null)
         {
             return [new ReachedRegion(regionId, [])];
         }
@@ -1304,6 +1339,21 @@ internal static class PublicCandidateWarpPropagator
             region.RegionId,
             regionId,
             StringComparison.Ordinal));
+        // A destination's published earliest hazard arrival is a physical
+        // lower bound on a branch-supported arrival, not just a publication
+        // cutoff. It must hold at the HISTORICAL tick being reconstructed.
+        // Do not reject a direct observation of an origin before the hazard.
+        if (depth > 0 && publicRegion is not null &&
+            currentTick < publicRegion.MinimumArrivalTick)
+        {
+            return [];
+        }
+
+        if (depth > envelope.Branches.Count)
+        {
+            return [new ReachedRegion(regionId, [])];
+        }
+
         if (publicRegion is not null)
         {
             earliestTick = Math.Max(earliestTick, publicRegion.MinimumArrivalTick);
