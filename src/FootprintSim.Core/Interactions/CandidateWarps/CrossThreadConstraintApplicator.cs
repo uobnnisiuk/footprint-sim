@@ -199,13 +199,22 @@ public sealed class CrossThreadConstraintApplicator
     {
         var output = new List<CandidateWarp>();
         var audits = new List<ConstraintApplicationAudit>();
+        // A preferred trajectory may omit raw historical states that remain
+        // on another outer branch. Never invent a preferred encounter in that
+        // gap if some alternative already represents the historical window.
+        // Such evidence requires an actual region/time intersection there.
+        var hasHistoricalCoverage = candidateWarps.Warps.Any(candidate =>
+            candidate.States.Any(state =>
+                state.TimeWindow.StartTick < accessContext.CurrentTick &&
+                Overlaps(state.TimeWindow, constraint.ConstrainedTimeWindow)));
         foreach (var warp in candidateWarps.Warps)
         {
             var result = ApplyToWarp(
                 warp,
                 constraint,
                 accessContext,
-                publicHazardEnvelope);
+                publicHazardEnvelope,
+                hasHistoricalCoverage);
             output.AddRange(result.Warps);
             audits.Add(result.Audit);
         }
@@ -259,7 +268,8 @@ public sealed class CrossThreadConstraintApplicator
         CandidateWarp warp,
         CrossThreadConstraint constraint,
         CandidateWarpAccessContext accessContext,
-        PublicHazardEnvelope? publicHazardEnvelope)
+        PublicHazardEnvelope? publicHazardEnvelope,
+        bool hasHistoricalCoverage)
     {
         var overlappingStates = warp.States
             .Where(state => Overlaps(state.TimeWindow, constraint.ConstrainedTimeWindow))
@@ -288,6 +298,25 @@ public sealed class CrossThreadConstraintApplicator
                     state.TimeWindow.StartTick > constraint.ConstrainedTimeWindow.EndTick);
             if (crossesUnverifiedGap)
             {
+                if (hasHistoricalCoverage)
+                {
+                    // Other outer alternatives hold original states in this
+                    // window. A preferred warp's missing state is not a
+                    // license to synthesize preferred evidence over them.
+                    var retained = CandidateWarpNormalization.CreateWarp(
+                        warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                        CandidateWarpStanding.OuterPlausible, warp.WarpId,
+                        warp.States, $"unverified-historical-gap:{constraint.ConstraintId}");
+                    return new WarpApplication(
+                        [retained],
+                        CreateAudit(
+                            warp.WarpId, constraint, accessContext,
+                            ConstraintApplicationDisposition.RetainAlternative,
+                            ConstraintApplicationReason.NoTemporalOverlap,
+                            beforeCount, beforeCount,
+                            alternativesRetained: true, conflictDetected: false));
+                }
+
                 // The lack of an original state at this tick is not evidence
                 // that a later received encounter did not occur. Introduce
                 // one provisional observation-time possibility, then use the
@@ -313,7 +342,7 @@ public sealed class CrossThreadConstraintApplicator
                     $"received-gap:{constraint.ConstraintId}");
                 var checkedGap = ApplyToWarp(
                     provisionalWarp, constraint, accessContext,
-                    publicHazardEnvelope);
+                    publicHazardEnvelope, hasHistoricalCoverage: true);
                 var gapWarps = checkedGap.Warps.ToList();
                 if (constraint.EvidenceBoundaryState ==
                     EvidenceState.SupportedButUncertain)
