@@ -518,11 +518,28 @@ public sealed class CrossThreadConstraintApplicator
                 CandidateWarpStanding.OuterPlausible,
                 "unverified-public-link", retainUndeclaredStay: true,
                 constrainedRegions: unverifiedRegionIds);
+            var branches = new List<CandidateWarp> { unknown };
+            // A weak encounter may be wrong. Its unverified public link
+            // must NOT turn a hypothetical location into a hard exclusion:
+            // retain the original, unconstrained outer path as a real branch.
+            var retainWeakAlternative =
+                constraint.EvidenceBoundaryState == EvidenceState.SupportedButUncertain;
+            if (retainWeakAlternative)
+            {
+                branches.Add(BuildAppliedWarp(
+                    warp, constraint, accessContext, publicHazardEnvelope,
+                    narrowRegions: false,
+                    CandidateWarpStanding.OuterPlausible,
+                    "outer-alternative", retainUndeclaredStay: true));
+            }
+
             return new WarpApplication(
-                [unknown],
+                branches,
                 CreateAudit(
                     warp.WarpId, constraint, accessContext,
-                    ConstraintApplicationDisposition.RetainAlternative,
+                    retainWeakAlternative
+                        ? ConstraintApplicationDisposition.Branch
+                        : ConstraintApplicationDisposition.RetainAlternative,
                     ConstraintApplicationReason.Applied,
                     beforeCount, afterCount,
                     alternativesRetained: true, conflictDetected: false));
@@ -567,7 +584,10 @@ public sealed class CrossThreadConstraintApplicator
                 .Any(source =>
                     source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
                     source.EvidenceBoundaryState == EvidenceState.SupportedButUncertain &&
-                    source.SourceTimeWindow?.EndTick < accessContext.CurrentTick);
+                    // An inclusive encounter [t, current] also has a PAST
+                    // portion. Ignoring it would erase earlier Confirmed history
+                    // when creating a direct-current preferred anchor.
+                    source.SourceTimeWindow?.StartTick < accessContext.CurrentTick);
             var hasPublicLinkToCurrent = publicHazardEnvelope is not null &&
                 PublicCandidateWarpPropagator.Propagate(
                     warp.ScenarioId, warp.Seed, warp.TargetEntityId,
