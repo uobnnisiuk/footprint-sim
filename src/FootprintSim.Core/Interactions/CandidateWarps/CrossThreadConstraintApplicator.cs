@@ -516,7 +516,8 @@ public sealed class CrossThreadConstraintApplicator
                     var reachedAtEnd = PublicCandidateWarpPropagator.Propagate(
                         warp.ScenarioId, warp.Seed, warp.TargetEntityId,
                         previousStates, lastEncounterTick,
-                        publicHazardEnvelope, retainUndeclaredStay: true);
+                        publicHazardEnvelope, retainUndeclaredStay: true,
+                        publicationCutoffTick: accessContext.CurrentTick);
                     if (!reachedAtEnd.RegionIds.Contains(regionId, StringComparer.Ordinal))
                     {
                         verifiedRegionIds.Remove(regionId);
@@ -534,7 +535,8 @@ public sealed class CrossThreadConstraintApplicator
                         var reached = PublicCandidateWarpPropagator.Propagate(
                             warp.ScenarioId, warp.Seed, warp.TargetEntityId,
                             previousStates, mid,
-                            publicHazardEnvelope, retainUndeclaredStay: true);
+                            publicHazardEnvelope, retainUndeclaredStay: true,
+                        publicationCutoffTick: accessContext.CurrentTick);
                         if (reached.RegionIds.Contains(regionId, StringComparer.Ordinal))
                         {
                             last = mid;
@@ -665,7 +667,8 @@ public sealed class CrossThreadConstraintApplicator
                 PublicCandidateWarpPropagator.Propagate(
                     warp.ScenarioId, warp.Seed, warp.TargetEntityId,
                     previousStates, accessContext.CurrentTick, publicHazardEnvelope,
-                    retainUndeclaredStay: true).RegionIds
+                    retainUndeclaredStay: true,
+                    publicationCutoffTick: accessContext.CurrentTick).RegionIds
                 .Intersect(verifiedRegionIds, StringComparer.Ordinal)
                 .Any();
             var retainPastOuter = distinctPastReceipts >= 2 ||
@@ -998,7 +1001,8 @@ public sealed class CrossThreadConstraintApplicator
                     regions = PublicCandidateWarpPropagator.Propagate(
                         warp.ScenarioId, warp.Seed, warp.TargetEntityId,
                         propagationSources, tick, publicHazardEnvelope,
-                        retainUndeclaredStay: true).RegionIds
+                        retainUndeclaredStay: true,
+                    publicationCutoffTick: accessContext.CurrentTick).RegionIds
                         .ToHashSet(StringComparer.Ordinal);
                     reachableByTick.Add(tick, regions);
                 }
@@ -1056,7 +1060,8 @@ public sealed class CrossThreadConstraintApplicator
                 propagationSources,
                 accessContext.CurrentTick,
                 publicHazardEnvelope,
-                retainUndeclaredStay);
+                retainUndeclaredStay,
+                publicationCutoffTick: accessContext.CurrentTick);
             history.Add(propagated);
         }
 
@@ -1233,8 +1238,13 @@ internal static class PublicCandidateWarpPropagator
         IEnumerable<CandidateWarpState> sourceStates,
         long currentTick,
         PublicHazardEnvelope? envelope,
-        bool retainUndeclaredStay = false)
+        bool retainUndeclaredStay = false,
+        long? publicationCutoffTick = null)
     {
+        // Historical propagation time and information availability are
+        // different axes: a later-published path can support an earlier
+        // encounter once the rescuer has received it by the query cutoff.
+        var availableAtTick = publicationCutoffTick ?? currentTick;
         var sources = sourceStates
             .OrderBy(state => state.TimeWindow.StartTick)
             .ThenBy(state => state.TimeWindow.EndTick)
@@ -1253,7 +1263,8 @@ internal static class PublicCandidateWarpPropagator
                     currentTick,
                     envelope,
                     depth: 0,
-                    retainUndeclaredStay: retainUndeclaredStay);
+                    retainUndeclaredStay: retainUndeclaredStay,
+                    publicationCutoffTick: availableAtTick);
                 foreach (var item in reached)
                 {
                     regions.Add(item.RegionId);
@@ -1281,7 +1292,8 @@ internal static class PublicCandidateWarpPropagator
         long currentTick,
         PublicHazardEnvelope? envelope,
         int depth,
-        bool retainUndeclaredStay)
+        bool retainUndeclaredStay,
+        long publicationCutoffTick)
     {
         if (envelope is null || depth > envelope.Branches.Count)
         {
@@ -1299,7 +1311,7 @@ internal static class PublicCandidateWarpPropagator
         }
 
         var branches = envelope.Branches
-            .Where(branch => branch.PublishedAtTick <= currentTick)
+            .Where(branch => branch.PublishedAtTick <= publicationCutoffTick)
             .Where(branch => string.Equals(
                 branch.SourceRegionId,
                 regionId,
@@ -1351,7 +1363,8 @@ internal static class PublicCandidateWarpPropagator
                 currentTick,
                 envelope,
                 depth + 1,
-                retainUndeclaredStay).Select(item => item with
+                retainUndeclaredStay,
+                publicationCutoffTick).Select(item => item with
                 {
                     Provenance = item.Provenance.Append(branchProvenance).ToArray()
                 }));
