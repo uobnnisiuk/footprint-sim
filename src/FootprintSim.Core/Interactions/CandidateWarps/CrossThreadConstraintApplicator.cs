@@ -558,7 +558,26 @@ public sealed class CrossThreadConstraintApplicator
                 .Distinct(StringComparer.Ordinal)
                 .Take(2)
                 .Count();
-            var retainPastOuter = distinctPastReceipts >= 1;
+            // One earlier confirmed receipt must survive as outer history
+            // when the route to this direct current anchor is unverified.
+            // A fully published link without an intervening weak encounter
+            // does not require a duplicate outer path at the current tick.
+            var hasUnverifiedIntermediate = warp.States
+                .SelectMany(state => state.Provenance)
+                .Any(source =>
+                    source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
+                    source.EvidenceBoundaryState == EvidenceState.SupportedButUncertain &&
+                    source.SourceTimeWindow?.EndTick < accessContext.CurrentTick);
+            var hasPublicLinkToCurrent = publicHazardEnvelope is not null &&
+                PublicCandidateWarpPropagator.Propagate(
+                    warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                    previousStates, accessContext.CurrentTick, publicHazardEnvelope,
+                    retainUndeclaredStay: true).RegionIds
+                .Intersect(verifiedRegionIds, StringComparer.Ordinal)
+                .Any();
+            var retainPastOuter = distinctPastReceipts >= 2 ||
+                (distinctPastReceipts >= 1 &&
+                    (hasUnverifiedIntermediate || !hasPublicLinkToCurrent));
             var anchoredWarps = new List<CandidateWarp> { currentAnchor };
             if (retainPastOuter)
             {
