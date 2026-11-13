@@ -764,8 +764,8 @@ public sealed class CrossThreadConstraintApplicator
         var history = new List<CandidateWarpState>();
         var propagationSources = new List<CandidateWarpState>();
         // Raw later historical candidates (StateInterval AND EventPoint) are
-        // outer possibilities until a public path verifies each location/tick. Verify each region and its earliest public
-        // arrival tick before including it in a preferred warp.
+        // outer possibilities until public reachability verifies their region
+        // and arrival tick. Do not promote an entire raw state.
         var unverifiedTails = new List<CandidateWarpState>();
         var crossThreadProvenance = CreateCrossThreadProvenance(constraint);
         foreach (var state in warp.States)
@@ -783,7 +783,7 @@ public sealed class CrossThreadConstraintApplicator
                     constraint.ConstrainedTimeWindow.EndTick &&
                     state.TimeWindow.StartTick < accessContext.CurrentTick)
                 {
-                    // Preserve a later historical interval for future receipts,
+                    // Preserve a later historical state for future receipts,
                     // but never leave its query-tick tail beside a new projection.
                     var lastHistoricalTick = Math.Min(
                         state.TimeWindow.EndTick, accessContext.CurrentTick - 1);
@@ -797,7 +797,7 @@ public sealed class CrossThreadConstraintApplicator
                                     state.TimeWindow.StartTick, lastHistoricalTick),
                                 state.TemporalKind, state.RegionIds,
                                 state.EvidenceBoundaryState, state.Provenance);
-                        if (standing == CandidateWarpStanding.Preferred && narrowRegions )
+                        if (standing == CandidateWarpStanding.Preferred && narrowRegions)
                         {
                             unverifiedTails.Add(tail);
                         }
@@ -921,7 +921,7 @@ public sealed class CrossThreadConstraintApplicator
                         new InteractionTimeWindow(intersection.EndTick + 1, tailEnd),
                         state.TemporalKind, state.RegionIds,
                         state.EvidenceBoundaryState, state.Provenance);
-                    if (standing == CandidateWarpStanding.Preferred && narrowRegions )
+                    if (standing == CandidateWarpStanding.Preferred && narrowRegions)
                     {
                         unverifiedTails.Add(tail);
                     }
