@@ -388,8 +388,12 @@ public sealed class CrossThreadConstraintApplicator
 
         // A previous outer-only or conflicted alternative must not become
         // preferred merely because another observation arrived.
+        // A received exact observation at the query tick directly establishes
+        // its region, regardless of earlier outer-only historical alternatives.
+        // Historical observations must not promote an unverified sequence.
         var standing = previous is not null &&
-            warp.Standing != CandidateWarpStanding.Preferred
+            warp.Standing != CandidateWarpStanding.Preferred &&
+            constraint.ConstrainedTimeWindow.EndTick < accessContext.CurrentTick
             ? warp.Standing
             : CandidateWarpStanding.Preferred;
         var constrainedWarp = BuildAppliedWarp(
