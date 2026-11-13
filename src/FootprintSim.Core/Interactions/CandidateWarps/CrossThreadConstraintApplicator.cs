@@ -270,6 +270,38 @@ public sealed class CrossThreadConstraintApplicator
             .Count();
         if (overlappingStates.Length == 0)
         {
+            // Verifying a later raw EventPoint/interval may leave a sparse
+            // preferred history (earlier receipt + query projection). A
+            // subsequently received encounter inside that gap is not a
+            // no-op proving the preferred path; keep it as unknown/outer.
+            var crossesUnverifiedGap =
+                warp.Standing == CandidateWarpStanding.Preferred &&
+                constraint.IsPersonEvidence && !constraint.IsDeviceOnlyEvidence &&
+                constraint.EvidenceBoundaryState is
+                    EvidenceState.Confirmed or EvidenceState.SupportedButUncertain &&
+                warp.States.Any(state =>
+                    state.TimeWindow.EndTick < constraint.ConstrainedTimeWindow.StartTick &&
+                    state.Provenance.Any(source =>
+                        source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
+                        source.EvidenceBoundaryState == EvidenceState.Confirmed)) &&
+                warp.States.Any(state =>
+                    state.TimeWindow.StartTick > constraint.ConstrainedTimeWindow.EndTick);
+            if (crossesUnverifiedGap)
+            {
+                var retained = CandidateWarpNormalization.CreateWarp(
+                    warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                    CandidateWarpStanding.OuterPlausible, warp.WarpId,
+                    warp.States, $"unverified-historical-gap:{constraint.ConstraintId}");
+                return new WarpApplication(
+                    [retained],
+                    CreateAudit(
+                        warp.WarpId, constraint, accessContext,
+                        ConstraintApplicationDisposition.RetainAlternative,
+                        ConstraintApplicationReason.NoTemporalOverlap,
+                        beforeCount, beforeCount,
+                        alternativesRetained: true, conflictDetected: false));
+            }
+
             return NoOp(
                 warp,
                 constraint,
@@ -355,8 +387,25 @@ public sealed class CrossThreadConstraintApplicator
                         conflictDetected: true));
             }
 
+            // An inconsistent weak encounter is not proof of a public path,
+            // but silently ignoring it can leave a prior preferred route
+            // falsely confirmed. Demote that route to an outer alternative,
+            // without excluding any regions or treating the weak event as true.
+            var hadPriorConfirmedReceipt = warp.States.Any(state =>
+                state.Provenance.Any(source =>
+                    source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
+                    source.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                    source.SourceTimeWindow?.EndTick <
+                        constraint.ConstrainedTimeWindow.StartTick));
+            var retained = warp.Standing == CandidateWarpStanding.Preferred &&
+                hadPriorConfirmedReceipt
+                ? CandidateWarpNormalization.CreateWarp(
+                    warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                    CandidateWarpStanding.OuterPlausible, warp.WarpId,
+                    warp.States, $"weak-unknown:{constraint.ConstraintId}")
+                : warp;
             return new WarpApplication(
-                [warp],
+                [retained],
                 CreateAudit(
                     warp.WarpId,
                     constraint,
