@@ -784,6 +784,74 @@ public sealed class CandidateWarpTests
         Assert.Contains("a", result.CandidateWarps.PreferredRegionIdsAt(1));
     }
 
+    // Ready-stage Codex P2: a later EventPoint is a possible historical
+    // location, not evidence that every candidate was publicly reached.
+    // Treat its unverified alternatives exactly like a raw interval tail:
+    // preserve them in outer, never inside a preferred history.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void UnverifiedHistoricalEventPointStaysOuter(bool publishLink)
+    {
+        var source = CandidateWarpProvenance.Create(
+            CandidateWarpSourceKind.VoluntaryReachability,
+            "tail-point-public-model", 0, false, false,
+            EvidenceState.SupportedButUncertain, ["a", "b", "d"]);
+        var historical = PublicCandidateWarpFactory.Create(
+            ScenarioId, Seed, TargetPersonId,
+            [
+                new PublicCandidateWarpStateDefinition
+                {
+                    TimeWindow = InteractionTimeWindow.At(0),
+                    TemporalKind = CandidateWarpTemporalKind.EventPoint,
+                    RegionIds = ["a"],
+                    EvidenceBoundaryState = EvidenceState.SupportedButUncertain,
+                    Provenance = [source]
+                },
+                new PublicCandidateWarpStateDefinition
+                {
+                    TimeWindow = InteractionTimeWindow.At(1),
+                    TemporalKind = CandidateWarpTemporalKind.EventPoint,
+                    RegionIds = ["b", "d"],
+                    EvidenceBoundaryState = EvidenceState.SupportedButUncertain,
+                    Provenance = [source]
+                }
+            ]);
+        var envelope = new PublicHazardEnvelope
+        {
+            HazardId = "tail-point-published-a-b",
+            SourceRegionId = "a",
+            PublishedAtTick = 0,
+            Branches =
+            [
+                new PublicHazardBranch
+                {
+                    SourceRegionId = "a", DestinationRegionId = "b",
+                    MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+                    TransportType = HazardTransportType.HazardDriven,
+                    ProvenanceId = "tail-point-a-b", PublishedAtTick = 0
+                }
+            ]
+        };
+        var confirmed = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 2, "tail-point-confirmed");
+        var result = Apply(historical, [confirmed], 2,
+            publishLink ? envelope : null);
+
+        Assert.Contains("a", result.CandidateWarps.PreferredRegionIdsAt(0));
+        Assert.DoesNotContain("d", result.CandidateWarps.PreferredRegionIdsAt(1));
+        Assert.Contains("d", result.CandidateWarps.OuterPlausibleRegionIdsAt(1));
+        Assert.Contains("d", result.CandidateWarps.CandidateRegionIdsAt(1));
+        if (publishLink)
+        {
+            Assert.Contains("b", result.CandidateWarps.PreferredRegionIdsAt(1));
+        }
+        else
+        {
+            Assert.DoesNotContain("b", result.CandidateWarps.PreferredRegionIdsAt(1));
+        }
+    }
+
     // AR-46: both a single public chain and a chain with an unverified
     // alternative must remain polynomial in observations, not 2^n warps.
     [Theory]

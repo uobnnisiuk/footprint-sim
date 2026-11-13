@@ -682,11 +682,10 @@ public sealed class CrossThreadConstraintApplicator
                     StringComparer.Ordinal)
                 .Any();
             var resultWarps = new List<CandidateWarp> { constrainedWarp };
-            // Raw later intervals are required for future receipts, but
+            // Raw later historical states are required for future receipts, but
             // cannot be presented as preferred history. Retain them on the
             // outer-only branch even if query-time region counts are equal.
             var hasRawHistoricalTail = warp.States.Any(state =>
-                state.TemporalKind == CandidateWarpTemporalKind.StateInterval &&
                 state.TimeWindow.EndTick > constraint.ConstrainedTimeWindow.EndTick &&
                 Math.Max(state.TimeWindow.StartTick,
                     constraint.ConstrainedTimeWindow.EndTick + 1) <
@@ -764,8 +763,8 @@ public sealed class CrossThreadConstraintApplicator
     {
         var history = new List<CandidateWarpState>();
         var propagationSources = new List<CandidateWarpState>();
-        // A raw retained interval is an outer possibility, not a preferred
-        // historical position. Verify each region and its earliest public
+        // Raw later historical candidates (StateInterval AND EventPoint) are
+        // outer possibilities until a public path verifies each location/tick. Verify each region and its earliest public
         // arrival tick before including it in a preferred warp.
         var unverifiedTails = new List<CandidateWarpState>();
         var crossThreadProvenance = CreateCrossThreadProvenance(constraint);
@@ -798,8 +797,7 @@ public sealed class CrossThreadConstraintApplicator
                                     state.TimeWindow.StartTick, lastHistoricalTick),
                                 state.TemporalKind, state.RegionIds,
                                 state.EvidenceBoundaryState, state.Provenance);
-                        if (standing == CandidateWarpStanding.Preferred && narrowRegions &&
-                            tail.TemporalKind == CandidateWarpTemporalKind.StateInterval)
+                        if (standing == CandidateWarpStanding.Preferred && narrowRegions )
                         {
                             unverifiedTails.Add(tail);
                         }
@@ -923,8 +921,7 @@ public sealed class CrossThreadConstraintApplicator
                         new InteractionTimeWindow(intersection.EndTick + 1, tailEnd),
                         state.TemporalKind, state.RegionIds,
                         state.EvidenceBoundaryState, state.Provenance);
-                    if (standing == CandidateWarpStanding.Preferred && narrowRegions &&
-                        tail.TemporalKind == CandidateWarpTemporalKind.StateInterval)
+                    if (standing == CandidateWarpStanding.Preferred && narrowRegions )
                     {
                         unverifiedTails.Add(tail);
                     }
@@ -936,8 +933,8 @@ public sealed class CrossThreadConstraintApplicator
             }
         }
 
-        // Prefer only the portion of the raw historical tail reachable from
-        // this received constraint using the *public* model. The unfiltered
+        // Prefer only the region/tick portion of raw later states reachable
+        // from this received constraint using the *public* model. The unfiltered
         // tail is retained on a separate outer warp by ApplyToWarp. Do not
         // treat the same raw StateInterval as a confirmed stay at every tick.
         if (unverifiedTails.Count > 0 && propagationSources.Count > 0)
