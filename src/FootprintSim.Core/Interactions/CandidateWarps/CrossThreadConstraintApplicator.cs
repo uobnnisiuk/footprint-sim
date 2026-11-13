@@ -369,16 +369,19 @@ public sealed class CrossThreadConstraintApplicator
                     conflictDetected: false));
         }
 
-        // An earlier confirmed observation can only support a preferred
-        // *sequence* if a public transition actually connects it to this
-        // observation. An unpublished relation is unknown, not impossible:
-        // keep the later received fact in outer without asserting a path.
+        // The immediately preceding preferred encounter may be Confirmed
+        // OR a SupportedButUncertain hypothesis. Skipping a narrowed weak
+        // encounter can silently join two Confirmed sightings through a
+        // route that the intervening hypothesis cannot publicly traverse.
+        // Unknown travel remains outer-only; this does not make weak evidence
+        // a hard exclusion or prove that the encounter happened.
         var previous = warp.States
             .Where(state => state.TimeWindow.EndTick <
                 constraint.ConstrainedTimeWindow.StartTick &&
                 state.Provenance.Any(source =>
                     source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
-                    source.EvidenceBoundaryState == EvidenceState.Confirmed))
+                    source.EvidenceBoundaryState is
+                        EvidenceState.Confirmed or EvidenceState.SupportedButUncertain))
             .OrderByDescending(state => state.TimeWindow.EndTick)
             .ThenBy(state => state.StateId, StringComparer.Ordinal)
             .FirstOrDefault();
@@ -395,7 +398,8 @@ public sealed class CrossThreadConstraintApplicator
             .ToHashSet(StringComparer.Ordinal);
         var unverifiedRegionIds = new HashSet<string>(StringComparer.Ordinal);
         var verifiedStartTicks = new Dictionary<string, long>(StringComparer.Ordinal);
-        if (constraint.EvidenceBoundaryState == EvidenceState.Confirmed &&
+        if (constraint.EvidenceBoundaryState is
+            EvidenceState.Confirmed or EvidenceState.SupportedButUncertain &&
             previous is not null && !directCurrentConfirmation)
         {
             // A verified region also needs a verified encounter TIME.
@@ -404,8 +408,10 @@ public sealed class CrossThreadConstraintApplicator
             unverifiedRegionIds.UnionWith(verifiedRegionIds);
             if (publicHazardEnvelope is null)
             {
-                // Repeated observations at the same location need no
-                // unpublished transport edge. Other movements remain unknown.
+                // A hypothetical stay at the previous region is allowed
+                // as a preferred *model assumption*, not a fact established
+                // by an ambiguous encounter. Other pedestrian moves without
+                // published edges remain outer-only, never hard-excluded.
                 verifiedRegionIds.IntersectWith(previous.RegionIds);
             }
             else
