@@ -924,7 +924,7 @@ public sealed class CrossThreadConstraintApplicator
                         state.TemporalKind, state.RegionIds,
                         state.EvidenceBoundaryState, state.Provenance);
                     if (standing == CandidateWarpStanding.Preferred && narrowRegions &&
-                            tail.TemporalKind == CandidateWarpTemporalKind.StateInterval)
+                        tail.TemporalKind == CandidateWarpTemporalKind.StateInterval)
                     {
                         unverifiedTails.Add(tail);
                     }
