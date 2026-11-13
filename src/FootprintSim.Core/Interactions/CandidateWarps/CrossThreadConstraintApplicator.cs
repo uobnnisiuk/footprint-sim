@@ -216,9 +216,43 @@ public sealed class CrossThreadConstraintApplicator
                 candidateWarps.ScenarioId,
                 candidateWarps.Seed,
                 candidateWarps.TargetEntityId,
-                output),
+                CollapseOuterAlternatives(output)),
             Audits = audits
         };
+    }
+
+    // A separate warp per hypothetical unobserved stop makes a series of
+    // received encounters exponential. Outer alternatives may be unioned
+    // conservatively: their state provenance is preserved, but their
+    // incompatible histories are NEVER promoted to a preferred path.
+    private static IReadOnlyList<CandidateWarp> CollapseOuterAlternatives(
+        IReadOnlyList<CandidateWarp> warps)
+    {
+        var outer = warps.Where(warp =>
+            warp.Standing == CandidateWarpStanding.OuterPlausible)
+            .OrderBy(warp => warp.WarpId, StringComparer.Ordinal)
+            .ToArray();
+        if (outer.Length < 2)
+        {
+            return warps;
+        }
+
+        var history = outer.SelectMany(warp => warp.States)
+            .GroupBy(state => state.StateId, StringComparer.Ordinal)
+            .Select(group => group.First())
+            .ToArray();
+        var union = CandidateWarpNormalization.CreateWarp(
+            outer[0].ScenarioId,
+            outer[0].Seed,
+            outer[0].TargetEntityId,
+            CandidateWarpStanding.OuterPlausible,
+            parentWarpId: null,
+            history,
+            "outer-conservative-union");
+        return warps.Where(warp =>
+            warp.Standing != CandidateWarpStanding.OuterPlausible)
+            .Append(union)
+            .ToArray();
     }
 
     private static WarpApplication ApplyToWarp(
@@ -360,28 +394,61 @@ public sealed class CrossThreadConstraintApplicator
             .Where(allowed.Contains)
             .ToHashSet(StringComparer.Ordinal);
         var unverifiedRegionIds = new HashSet<string>(StringComparer.Ordinal);
+        var verifiedStartTicks = new Dictionary<string, long>(StringComparer.Ordinal);
         if (constraint.EvidenceBoundaryState == EvidenceState.Confirmed &&
             previous is not null && !directCurrentConfirmation)
         {
-            // An existential public link cannot justify every allowed
-            // region. Keep each region without a verified path outer-only.
+            // A verified region also needs a verified encounter TIME.
+            // Reaching a region at the END of an inclusive observation
+            // window does not authorize forward projection from its start.
             unverifiedRegionIds.UnionWith(verifiedRegionIds);
             if (publicHazardEnvelope is null)
             {
-                verifiedRegionIds.Clear();
+                // Repeated observations at the same location need no
+                // unpublished transport edge. Other movements remain unknown.
+                verifiedRegionIds.IntersectWith(previous.RegionIds);
             }
             else
             {
-                // An inclusive encounter denotes possible observation times,
-                // not residence for the full window. A public path to the
-                // last eligible tick can support an earlier encounter.
-                var publicReachable = PublicCandidateWarpPropagator.Propagate(
-                    warp.ScenarioId, warp.Seed, warp.TargetEntityId,
-                    [previous],
-                    Math.Min(constraint.ConstrainedTimeWindow.EndTick,
-                        accessContext.CurrentTick),
-                    publicHazardEnvelope, retainUndeclaredStay: true);
-                verifiedRegionIds.IntersectWith(publicReachable.RegionIds);
+                var lastEncounterTick = Math.Min(
+                    constraint.ConstrainedTimeWindow.EndTick,
+                    accessContext.CurrentTick);
+                foreach (var regionId in verifiedRegionIds.ToArray())
+                {
+                    var reachedAtEnd = PublicCandidateWarpPropagator.Propagate(
+                        warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                        [previous], lastEncounterTick,
+                        publicHazardEnvelope, retainUndeclaredStay: true);
+                    if (!reachedAtEnd.RegionIds.Contains(regionId, StringComparer.Ordinal))
+                    {
+                        verifiedRegionIds.Remove(regionId);
+                        continue;
+                    }
+
+                    // Public reachability with undeclared stay is monotone
+                    // in the time bound. Binary search avoids enumerating
+                    // every tick of a potentially long interval.
+                    var first = constraint.ConstrainedTimeWindow.StartTick;
+                    var last = lastEncounterTick;
+                    while (first < last)
+                    {
+                        var mid = first + (last - first) / 2;
+                        var reached = PublicCandidateWarpPropagator.Propagate(
+                            warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                            [previous], mid,
+                            publicHazardEnvelope, retainUndeclaredStay: true);
+                        if (reached.RegionIds.Contains(regionId, StringComparer.Ordinal))
+                        {
+                            last = mid;
+                        }
+                        else
+                        {
+                            first = mid + 1;
+                        }
+                    }
+
+                    verifiedStartTicks[regionId] = first;
+                }
             }
 
             unverifiedRegionIds.ExceptWith(verifiedRegionIds);
@@ -406,10 +473,41 @@ public sealed class CrossThreadConstraintApplicator
                     alternativesRetained: true, conflictDetected: false));
         }
 
+        // A directly confirmed current location can be preferred WITHOUT
+        // promoting an unverified outer-only historical route. Warp standing
+        // applies to every tick, so the new preferred anchor has no past.
+        if (directCurrentConfirmation &&
+            warp.Standing == CandidateWarpStanding.OuterPlausible &&
+            previous is not null)
+        {
+            var currentState = CandidateWarpNormalization.CreateState(
+                warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                InteractionTimeWindow.At(accessContext.CurrentTick),
+                CandidateWarpTemporalKind.EventPoint,
+                verifiedRegionIds, EvidenceState.Confirmed,
+                [CreateCrossThreadProvenance(constraint)]);
+            var currentAnchor = CandidateWarpNormalization.CreateWarp(
+                warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                CandidateWarpStanding.Preferred, parentWarpId: null,
+                [currentState], $"direct-current:{constraint.ConstraintId}");
+            var unknownHistory = BuildAppliedWarp(
+                warp, constraint, accessContext, publicHazardEnvelope,
+                narrowRegions: true, CandidateWarpStanding.OuterPlausible,
+                "direct-current-unverified-history",
+                retainUndeclaredStay: true,
+                constrainedRegions: verifiedRegionIds);
+            return new WarpApplication(
+                [currentAnchor, unknownHistory],
+                CreateAudit(
+                    warp.WarpId, constraint, accessContext,
+                    ConstraintApplicationDisposition.Narrow,
+                    ConstraintApplicationReason.Applied,
+                    beforeCount, afterCount,
+                    alternativesRetained: true, conflictDetected: false));
+        }
+
         // A previous outer-only or conflicted alternative must not become
         // preferred merely because another observation arrived.
-        // A direct exact-tick confirmation can establish the current region;
-        // it does not retroactively verify a historical route.
         var standing = previous is not null &&
             warp.Standing != CandidateWarpStanding.Preferred &&
             !directCurrentConfirmation
@@ -423,7 +521,8 @@ public sealed class CrossThreadConstraintApplicator
             narrowRegions: true,
             standing,
             "constraint-applied",
-            constrainedRegions: verifiedRegionIds);
+            constrainedRegions: verifiedRegionIds,
+            verifiedStartTicks: verifiedStartTicks);
         if (constraint.EvidenceBoundaryState == EvidenceState.Confirmed)
         {
             // A historical confirmation can narrow the past, but a published
@@ -445,7 +544,11 @@ public sealed class CrossThreadConstraintApplicator
                     StringComparer.Ordinal)
                 .Any();
             var resultWarps = new List<CandidateWarp> { constrainedWarp };
-            if (hasExtraOuterRegion)
+            // The unverified EARLIER part of a received interval remains
+            // possible even if the same regions are reachable at its end.
+            var hasUnverifiedEncounterTime = verifiedStartTicks.Any(item =>
+                item.Value > constraint.ConstrainedTimeWindow.StartTick);
+            if (hasExtraOuterRegion || hasUnverifiedEncounterTime)
             {
                 resultWarps.Add(withUnobservedStay);
             }
@@ -508,7 +611,8 @@ public sealed class CrossThreadConstraintApplicator
         CandidateWarpStanding standing,
         string identityPrefix,
         bool retainUndeclaredStay = false,
-        IReadOnlyCollection<string>? constrainedRegions = null)
+        IReadOnlyCollection<string>? constrainedRegions = null,
+        IReadOnlyDictionary<string, long>? verifiedStartTicks = null)
     {
         var history = new List<CandidateWarpState>();
         var propagationSources = new List<CandidateWarpState>();
@@ -520,14 +624,31 @@ public sealed class CrossThreadConstraintApplicator
                 constraint.ConstrainedTimeWindow,
                 out var intersection))
             {
-                if (state.TimeWindow.EndTick < constraint.ConstrainedTimeWindow.StartTick ||
-                    (state.TimeWindow.StartTick > constraint.ConstrainedTimeWindow.EndTick &&
-                     state.TimeWindow.StartTick < accessContext.CurrentTick))
+                if (state.TimeWindow.EndTick < constraint.ConstrainedTimeWindow.StartTick)
                 {
-                    // Intermediate future states may contain the next received
-                    // historical observation. Only the stale current projection
-                    // is recomputed from the latest constrained state.
                     history.Add(state);
+                }
+                else if (state.TimeWindow.StartTick >
+                    constraint.ConstrainedTimeWindow.EndTick &&
+                    state.TimeWindow.StartTick < accessContext.CurrentTick)
+                {
+                    // Preserve a later historical interval for future receipts,
+                    // but never leave its query-tick tail beside a new projection.
+                    var lastHistoricalTick = Math.Min(
+                        state.TimeWindow.EndTick, accessContext.CurrentTick - 1);
+                    if (state.TimeWindow.EndTick <= lastHistoricalTick)
+                    {
+                        history.Add(state);
+                    }
+                    else if (state.TimeWindow.StartTick <= lastHistoricalTick)
+                    {
+                        history.Add(CandidateWarpNormalization.CreateState(
+                            warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                            new InteractionTimeWindow(
+                                state.TimeWindow.StartTick, lastHistoricalTick),
+                            state.TemporalKind, state.RegionIds,
+                            state.EvidenceBoundaryState, state.Provenance));
+                    }
                 }
 
                 continue;
@@ -562,19 +683,33 @@ public sealed class CrossThreadConstraintApplicator
             var provenance = narrowRegions
                 ? state.Provenance.Append(crossThreadProvenance)
                 : state.Provenance;
-            var constrainedState = CandidateWarpNormalization.CreateState(
-                warp.ScenarioId,
-                warp.Seed,
-                warp.TargetEntityId,
-                intersection,
-                state.TemporalKind,
-                regions,
-                narrowRegions
-                    ? constraint.EvidenceBoundaryState
-                    : state.EvidenceBoundaryState,
-                provenance);
-            history.Add(constrainedState);
-            propagationSources.Add(constrainedState);
+            // Regions reached at different times must NOT share the full
+            // encounter window as a propagation source. Group by the first
+            // PUBLICLY verified tick and keep each time-bound separately.
+            foreach (var group in regions.GroupBy(regionId =>
+                verifiedStartTicks is not null &&
+                verifiedStartTicks.TryGetValue(regionId, out var firstTick)
+                    ? Math.Max(intersection.StartTick, firstTick)
+                    : intersection.StartTick).OrderBy(group => group.Key))
+            {
+                if (group.Key > intersection.EndTick)
+                {
+                    continue;
+                }
+
+                var boundedWindow = new InteractionTimeWindow(
+                    group.Key, intersection.EndTick);
+                var constrainedState = CandidateWarpNormalization.CreateState(
+                    warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                    boundedWindow, state.TemporalKind,
+                    group.ToArray(),
+                    narrowRegions
+                        ? constraint.EvidenceBoundaryState
+                        : state.EvidenceBoundaryState,
+                    provenance);
+                history.Add(constrainedState);
+                propagationSources.Add(constrainedState);
+            }
 
             // A StateInterval is a set of possible regions at each tick,
             // not a declaration that a person remained in one region.

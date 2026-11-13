@@ -253,6 +253,243 @@ public sealed class CandidateWarpTests
             audit.Disposition == ConstraintApplicationDisposition.Narrow);
     }
 
+
+    // Ready-stage Codex: an unrelated later interval cannot survive at the
+    // query tick alongside propagation from the newly confirmed earlier state.
+    [Fact]
+    public void NonOverlappingLaterIntervalIsClippedBeforeQueryProjection()
+    {
+        var publicSource = CandidateWarpProvenance.Create(
+            CandidateWarpSourceKind.VoluntaryReachability,
+            "ar49-public-model", 0, false, false,
+            EvidenceState.SupportedButUncertain, ["a", "b", "c"]);
+        var historical = PublicCandidateWarpFactory.Create(
+            ScenarioId, Seed, TargetPersonId,
+            [
+                new PublicCandidateWarpStateDefinition
+                {
+                    TimeWindow = InteractionTimeWindow.At(0),
+                    TemporalKind = CandidateWarpTemporalKind.EventPoint,
+                    RegionIds = ["a"],
+                    EvidenceBoundaryState = EvidenceState.SupportedButUncertain,
+                    Provenance = [publicSource]
+                },
+                new PublicCandidateWarpStateDefinition
+                {
+                    TimeWindow = new InteractionTimeWindow(1, 3),
+                    TemporalKind = CandidateWarpTemporalKind.StateInterval,
+                    RegionIds = ["b", "c"],
+                    EvidenceBoundaryState = EvidenceState.SupportedButUncertain,
+                    Provenance = [publicSource]
+                }
+            ], CandidateWarpStanding.Preferred);
+        var envelope = new PublicHazardEnvelope
+        {
+            HazardId = "ar49-clipping",
+            SourceRegionId = "a",
+            PublishedAtTick = 0,
+            Branches =
+            [
+                new PublicHazardBranch
+                {
+                    SourceRegionId = "a", DestinationRegionId = "b",
+                    MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+                    TransportType = HazardTransportType.HazardDriven,
+                    ProvenanceId = "ar49-a-b", PublishedAtTick = 0
+                }
+            ]
+        };
+        var result = Apply(historical,
+            [Constraint(EvidenceState.Confirmed, InteractionTimeWindow.At(0),
+                ["a"], 3, "ar49-confirmed")], 3, envelope);
+        Assert.DoesNotContain("c", result.CandidateWarps.PreferredRegionIdsAt(3));
+        Assert.Contains("b", result.CandidateWarps.PreferredRegionIdsAt(3));
+        Assert.DoesNotContain(result.CandidateWarps.Warps
+            .Where(w => w.Standing == CandidateWarpStanding.Preferred)
+            .SelectMany(w => w.States), s =>
+            s.TimeWindow.EndTick >= 3 && s.RegionIds.Contains("c"));
+    }
+
+    // Arrival at tick 2 does not verify a location at tick 1 or authorize a
+    // two-tick trip from that location to finish at query tick 3.
+    [Fact]
+    public void InclusiveEncounterKeepsPublicArrivalTickBound()
+    {
+        var historical = Warp(new InteractionTimeWindow(0, 2),
+            CandidateWarpTemporalKind.StateInterval, ["a", "d", "f"]);
+        var envelope = new PublicHazardEnvelope
+        {
+            HazardId = "ar50-time-bounded",
+            SourceRegionId = "a", PublishedAtTick = 0,
+            Branches =
+            [
+                new PublicHazardBranch
+                {
+                    SourceRegionId = "a", DestinationRegionId = "d",
+                    MinimumTravelTicks = 2, MaximumTravelTicks = 2,
+                    TransportType = HazardTransportType.HazardDriven,
+                    ProvenanceId = "ar50-a-d", PublishedAtTick = 0
+                },
+                new PublicHazardBranch
+                {
+                    SourceRegionId = "d", DestinationRegionId = "f",
+                    MinimumTravelTicks = 2, MaximumTravelTicks = 2,
+                    TransportType = HazardTransportType.HazardDriven,
+                    ProvenanceId = "ar50-d-f", PublishedAtTick = 0
+                }
+            ]
+        };
+        var result = Apply(historical,
+        [
+            Constraint(EvidenceState.Confirmed, InteractionTimeWindow.At(0),
+                ["a"], 3, "ar50-at-zero"),
+            Constraint(EvidenceState.Confirmed, new InteractionTimeWindow(1, 2),
+                ["d"], 3, "ar50-later-window")
+        ], 3, envelope);
+        Assert.DoesNotContain("f", result.CandidateWarps.PreferredRegionIdsAt(3));
+        Assert.Contains("d", result.CandidateWarps.PreferredRegionIdsAt(3));
+        Assert.Contains("f", result.CandidateWarps.OuterPlausibleRegionIdsAt(3));
+    }
+
+    // Two direct sightings at the same region are consistent even without
+    // a published hazard graph. An unpublished move to a different region
+    // remains outer-only, never a fabricated preferred pedestrian route.
+    [Fact]
+    public void RepeatedSameRegionWithNoEnvelopeKeepsItsPreferredCandidate()
+    {
+        var historical = Warp(new InteractionTimeWindow(0, 1),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b"]);
+        var first = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 2, "ar47-first");
+        var second = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(1), ["a"], 2, "ar47-second");
+        var noEnvelope = Apply(historical, [first, second], 2);
+        var irrelevant = new PublicHazardEnvelope
+        {
+            HazardId = "ar47-irrelevant-public",
+            SourceRegionId = "x", PublishedAtTick = 0,
+            Branches =
+            [
+                new PublicHazardBranch
+                {
+                    SourceRegionId = "x", DestinationRegionId = "y",
+                    MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+                    TransportType = HazardTransportType.HazardDriven,
+                    ProvenanceId = "ar47-x-y", PublishedAtTick = 0
+                }
+            ]
+        };
+        var irrelevantGraph = Apply(historical, [first, second], 2, irrelevant);
+        Assert.Equal(["a"], noEnvelope.CandidateWarps.PreferredRegionIdsAt(2));
+        Assert.Equal(noEnvelope.CandidateWarps.PreferredRegionIdsAt(2),
+            irrelevantGraph.CandidateWarps.PreferredRegionIdsAt(2));
+
+        var uncertainSecond = Apply(historical,
+        [
+            first, Constraint(EvidenceState.SupportedButUncertain,
+                InteractionTimeWindow.At(1), ["a"], 2, "ar47-uncertain")
+        ], 2);
+        Assert.Contains("a", uncertainSecond.CandidateWarps.PreferredRegionIdsAt(2));
+        var unpublishedMove = Apply(historical,
+        [
+            first, Constraint(EvidenceState.Confirmed,
+                InteractionTimeWindow.At(1), ["b"], 2, "ar47-walk")
+        ], 2);
+        Assert.DoesNotContain("b", unpublishedMove.CandidateWarps.PreferredRegionIdsAt(2));
+        Assert.Contains("b", unpublishedMove.CandidateWarps.OuterPlausibleRegionIdsAt(2));
+    }
+
+    // Query-time direct confirmation must not turn an unverified past
+    // relationship into a preferred historical trajectory.
+    [Fact]
+    public void DirectCurrentAnchorDoesNotPromoteUnverifiedPast()
+    {
+        var historical = Warp(new InteractionTimeWindow(0, 2),
+            CandidateWarpTemporalKind.StateInterval, ["b", "c", "e"]);
+        var envelope = new PublicHazardEnvelope
+        {
+            HazardId = "ar48-unpublished-c-b",
+            SourceRegionId = "c", PublishedAtTick = 0,
+            Branches =
+            [
+                new PublicHazardBranch
+                {
+                    SourceRegionId = "b", DestinationRegionId = "e",
+                    MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+                    TransportType = HazardTransportType.HazardDriven,
+                    ProvenanceId = "ar48-b-e", PublishedAtTick = 0
+                }
+            ]
+        };
+        var result = Apply(historical,
+        [
+            Constraint(EvidenceState.Confirmed, InteractionTimeWindow.At(0),
+                ["c"], 2, "ar48-zero"),
+            Constraint(EvidenceState.Confirmed, InteractionTimeWindow.At(1),
+                ["b"], 2, "ar48-one"),
+            Constraint(EvidenceState.Confirmed, InteractionTimeWindow.At(2),
+                ["e"], 2, "ar48-direct-current")
+        ], 2, envelope);
+        Assert.Contains("e", result.CandidateWarps.PreferredRegionIdsAt(2));
+        Assert.DoesNotContain("c", result.CandidateWarps.PreferredRegionIdsAt(0));
+        Assert.DoesNotContain("b", result.CandidateWarps.PreferredRegionIdsAt(1));
+        Assert.Contains("c", result.CandidateWarps.OuterPlausibleRegionIdsAt(0));
+    }
+
+    // AR-46: both a single public chain and a chain with an unverified
+    // alternative must remain polynomial in observations, not 2^n warps.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ConfirmedEncounterChainsDoNotExplode(bool mixed)
+    {
+        const int n = 16;
+        string G(int tick) => $"g{tick}";
+        string U(int tick) => $"u{tick}";
+        var allRegions = Enumerable.Range(0, n + 1)
+            .SelectMany(tick => mixed
+                ? new[] { G(tick), U(tick) }
+                : new[] { G(tick) })
+            .ToArray();
+        var historical = Warp(new InteractionTimeWindow(0, n),
+            CandidateWarpTemporalKind.StateInterval, allRegions);
+        var branches = Enumerable.Range(0, n)
+            .Select(tick => new PublicHazardBranch
+            {
+                SourceRegionId = G(tick), DestinationRegionId = G(tick + 1),
+                MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+                TransportType = HazardTransportType.HazardDriven,
+                ProvenanceId = $"ar46-{tick}", PublishedAtTick = 0
+            }).ToArray();
+        var envelope = new PublicHazardEnvelope
+        {
+            HazardId = "ar46-chain",
+            SourceRegionId = G(0),
+            PublishedAtTick = 0,
+            Branches = branches
+        };
+        var received = Enumerable.Range(0, n + 1)
+            .Select(tick => Constraint(
+                EvidenceState.Confirmed, InteractionTimeWindow.At(tick),
+                mixed ? [G(tick), U(tick)] : [G(tick)],
+                n + 1, $"ar46-encounter-{tick}"))
+            .ToArray();
+        var result = Apply(historical, received, n + 1, envelope);
+        Assert.Contains(G(n), result.CandidateWarps.PreferredRegionIdsAt(n + 1));
+        Assert.Contains(G(n), result.CandidateWarps.CandidateRegionIdsAt(n + 1));
+        if (mixed)
+        {
+            Assert.Contains(U(n), result.CandidateWarps.OuterPlausibleRegionIdsAt(n + 1));
+        }
+
+        Assert.True(result.CandidateWarps.Warps.Count <= 32);
+        Assert.True(result.Audits.Count <= 200);
+        Assert.True(JsonDefaults.Serialize(result).Length < 2_000_000);
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(Apply(historical, received.Reverse(), n + 1,
+                envelope)));
+    }
+
     [Fact]
     public void ConfirmedExactTickNarrowsHistoricalStateThenUsesPublicForwardPropagation()
     {
