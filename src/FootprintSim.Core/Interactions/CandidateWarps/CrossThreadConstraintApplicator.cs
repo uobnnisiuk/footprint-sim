@@ -439,6 +439,17 @@ public sealed class CrossThreadConstraintApplicator
                     conflictDetected: true));
         }
 
+        // A later agreeing receipt cannot erase an earlier logical conflict.
+        // Retain both conflicting locations independently of source-ID order.
+        if (warp.Standing == CandidateWarpStanding.Conflicted &&
+            constraint.EvidenceBoundaryState is
+                EvidenceState.Confirmed or EvidenceState.SupportedButUncertain)
+        {
+            return RetainConflictedReceipt(
+                warp, constraint, accessContext, publicHazardEnvelope,
+                beforeCount, newConflict: false);
+        }
+
         var allowed = constraint.AllowedRegionIds.ToHashSet(StringComparer.Ordinal);
         var afterCount = overlappingStates
             .SelectMany(state => state.RegionIds)
@@ -447,6 +458,49 @@ public sealed class CrossThreadConstraintApplicator
             .Count();
         if (afterCount == 0)
         {
+            var exactReceipt = constraint.ConstrainedTimeWindow.StartTick ==
+                constraint.ConstrainedTimeWindow.EndTick;
+            var opposingExactConfirmed = exactReceipt &&
+                overlappingStates.Any(state => state.Provenance.Any(source =>
+                    source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
+                    source.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                    source.SourceTimeWindow is { } window &&
+                    window.StartTick == constraint.ConstrainedTimeWindow.StartTick &&
+                    window.EndTick == constraint.ConstrainedTimeWindow.EndTick &&
+                    !string.Equals(source.SourceObservationId,
+                        constraint.SourceObservationId, StringComparison.Ordinal)));
+            if (constraint.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                opposingExactConfirmed)
+            {
+                return RetainConflictedReceipt(
+                    warp, constraint, accessContext, publicHazardEnvelope,
+                    beforeCount, newConflict: true);
+            }
+
+            // An inclusive encounter is existential: a confirmed y@[2,4]
+            // and a different confirmed d@3 can both be true (y at tick 2).
+            // The overlap cannot establish continuous residence at y.
+            var inclusiveAlternative = exactReceipt && !opposingExactConfirmed &&
+                overlappingStates.Any(state => state.Provenance.Any(source =>
+                    source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
+                    source.EvidenceBoundaryState is
+                        EvidenceState.Confirmed or EvidenceState.SupportedButUncertain &&
+                    source.SourceTimeWindow is { } window &&
+                    window.StartTick < window.EndTick &&
+                    window.StartTick <= constraint.ConstrainedTimeWindow.StartTick &&
+                    window.EndTick >= constraint.ConstrainedTimeWindow.EndTick &&
+                    !string.Equals(source.SourceObservationId,
+                        constraint.SourceObservationId, StringComparison.Ordinal) &&
+                    (state.TimeWindow.StartTick < constraint.ConstrainedTimeWindow.StartTick ||
+                     state.TimeWindow.EndTick > constraint.ConstrainedTimeWindow.EndTick)));
+            if (constraint.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                inclusiveAlternative)
+            {
+                return RetainExactWithinEarlierInterval(
+                    warp, constraint, accessContext, publicHazardEnvelope,
+                    beforeCount);
+            }
+
             if (constraint.EvidenceBoundaryState == EvidenceState.Confirmed)
             {
                 // The union of outer alternatives can contain only a
@@ -923,6 +977,125 @@ public sealed class CrossThreadConstraintApplicator
                 afterCount,
                 alternativesRetained: true,
                 conflictDetected: false));
+    }
+
+    // Keep both exact locations and their ancestry; adding further
+    // agreements is not a majority vote resolving a logical conflict.
+    private static WarpApplication RetainConflictedReceipt(
+        CandidateWarp warp, CrossThreadConstraint constraint,
+        CandidateWarpAccessContext accessContext,
+        PublicHazardEnvelope? publicHazardEnvelope,
+        int beforeCount, bool newConflict)
+    {
+        var window = new InteractionTimeWindow(
+            constraint.ConstrainedTimeWindow.StartTick,
+            Math.Min(constraint.ConstrainedTimeWindow.EndTick,
+                accessContext.CurrentTick));
+        var observed = CandidateWarpNormalization.CreateState(
+            warp.ScenarioId, warp.Seed, warp.TargetEntityId, window,
+            window.StartTick == window.EndTick
+                ? CandidateWarpTemporalKind.EventPoint
+                : CandidateWarpTemporalKind.StateInterval,
+            constraint.AllowedRegionIds, constraint.EvidenceBoundaryState,
+            [CreateCrossThreadProvenance(constraint)]);
+        var states = warp.States.Append(observed).ToList();
+        if (window.EndTick < accessContext.CurrentTick)
+        {
+            states.Add(PublicCandidateWarpPropagator.Propagate(
+                warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                [observed], accessContext.CurrentTick, publicHazardEnvelope,
+                retainUndeclaredStay: true,
+                publicationCutoffTick: accessContext.CurrentTick));
+        }
+
+        var result = CandidateWarpNormalization.CreateWarp(
+            warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+            CandidateWarpStanding.Conflicted, warp.WarpId, states,
+            $"retained-conflict:{constraint.ConstraintId}");
+        return new WarpApplication([result], CreateAudit(
+            warp.WarpId, constraint, accessContext,
+            newConflict ? ConstraintApplicationDisposition.MarkConflict
+                : ConstraintApplicationDisposition.RetainAlternative,
+            newConflict ? ConstraintApplicationReason.NoRegionOverlap
+                : ConstraintApplicationReason.Applied,
+            beforeCount, beforeCount, alternativesRetained: true,
+            conflictDetected: true));
+    }
+
+    // Preserve the different possible witness times of an interval in an
+    // outer over-approximation, never in a preferred mandatory-stay history.
+    private static WarpApplication RetainExactWithinEarlierInterval(
+        CandidateWarp warp, CrossThreadConstraint constraint,
+        CandidateWarpAccessContext accessContext,
+        PublicHazardEnvelope? publicHazardEnvelope, int beforeCount)
+    {
+        var tick = constraint.ConstrainedTimeWindow.StartTick;
+        var history = new List<CandidateWarpState>();
+        foreach (var state in warp.States)
+        {
+            var intervalWitness = state.TimeWindow.StartTick <= tick &&
+                tick <= state.TimeWindow.EndTick &&
+                state.Provenance.Any(source =>
+                    source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
+                    source.EvidenceBoundaryState is
+                        EvidenceState.Confirmed or EvidenceState.SupportedButUncertain &&
+                    source.SourceTimeWindow is { } window &&
+                    window.StartTick < window.EndTick &&
+                    window.StartTick <= tick && tick <= window.EndTick &&
+                    !string.Equals(source.SourceObservationId,
+                        constraint.SourceObservationId, StringComparison.Ordinal));
+            if (!intervalWitness)
+            {
+                history.Add(state);
+                continue;
+            }
+
+            // Before/after are alternatives, not simultaneous locations.
+            // The conservative union is outer-only and retains provenance.
+            if (state.TimeWindow.StartTick < tick)
+            {
+                history.Add(CandidateWarpNormalization.CreateState(
+                    warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                    new InteractionTimeWindow(state.TimeWindow.StartTick, tick - 1),
+                    state.TemporalKind, state.RegionIds,
+                    state.EvidenceBoundaryState, state.Provenance));
+            }
+
+            if (tick < state.TimeWindow.EndTick)
+            {
+                history.Add(CandidateWarpNormalization.CreateState(
+                    warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                    new InteractionTimeWindow(tick + 1, state.TimeWindow.EndTick),
+                    state.TemporalKind, state.RegionIds,
+                    state.EvidenceBoundaryState, state.Provenance));
+            }
+        }
+
+        var exact = CandidateWarpNormalization.CreateState(
+            warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+            InteractionTimeWindow.At(tick), CandidateWarpTemporalKind.EventPoint,
+            constraint.AllowedRegionIds, EvidenceState.Confirmed,
+            [CreateCrossThreadProvenance(constraint)]);
+        history.Add(exact);
+        if (tick < accessContext.CurrentTick)
+        {
+            history.Add(PublicCandidateWarpPropagator.Propagate(
+                warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                [exact], accessContext.CurrentTick, publicHazardEnvelope,
+                retainUndeclaredStay: true,
+                publicationCutoffTick: accessContext.CurrentTick));
+        }
+
+        var result = CandidateWarpNormalization.CreateWarp(
+            warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+            CandidateWarpStanding.OuterPlausible, warp.WarpId, history,
+            $"interval-existential:{constraint.ConstraintId}");
+        return new WarpApplication([result], CreateAudit(
+            warp.WarpId, constraint, accessContext,
+            ConstraintApplicationDisposition.RetainAlternative,
+            ConstraintApplicationReason.Applied, beforeCount,
+            constraint.AllowedRegionIds.Count, alternativesRetained: true,
+            conflictDetected: false));
     }
 
     // An outer branch which has only a weak or absent history at this tick

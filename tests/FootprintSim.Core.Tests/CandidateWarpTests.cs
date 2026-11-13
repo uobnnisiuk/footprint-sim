@@ -15,6 +15,105 @@ namespace FootprintSim.Core.Tests;
 
 public sealed class CandidateWarpTests
 {
+    // AR-59: an inclusive encounter is true at SOME tick, not every tick.
+    // A separate exact confirmation inside its window must not be discarded.
+    [Theory]
+    [InlineData(EvidenceState.Confirmed)]
+    [InlineData(EvidenceState.SupportedButUncertain)]
+    public void InclusiveEncounterCanCoexistWithDifferentExactConfirmation(
+        EvidenceState intervalState)
+    {
+        PublicHazardBranch Edge(string from, string to) => new()
+        {
+            SourceRegionId = from, DestinationRegionId = to,
+            MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+            TransportType = HazardTransportType.HazardDriven,
+            ProvenanceId = $"ar59-{from}-{to}", PublishedAtTick = 0
+        };
+        var envelope = new PublicHazardEnvelope
+        {
+            HazardId = "ar59-public",
+            SourceRegionId = "a", PublishedAtTick = 0,
+            Branches =
+            [
+                Edge("a", "b"), Edge("b", "c"), Edge("b", "y"),
+                Edge("c", "d"), Edge("y", "d")
+            ]
+        };
+        var initial = Warp(new InteractionTimeWindow(0, 1),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b"]);
+        var first = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 5, "ar59-a");
+        var inclusive = Constraint(intervalState,
+            new InteractionTimeWindow(2, 4), ["y"], 5, "ar59-y");
+        var exact = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(3), ["d"], 5, "ar59-d");
+        var result = Apply(initial, [first, inclusive, exact], 5, envelope);
+        Assert.Contains("d", result.CandidateWarps.CandidateRegionIdsAt(3));
+        Assert.Contains("d", result.CandidateWarps.CandidateRegionIdsAt(5));
+        Assert.DoesNotContain(result.Audits, audit =>
+            audit.SourceObservationId == exact.SourceObservationId &&
+            audit.ConflictDetected);
+        Assert.DoesNotContain(result.CandidateWarps.Warps, warp =>
+            warp.Standing == CandidateWarpStanding.Conflicted);
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(Apply(initial,
+                [exact, first, inclusive], 5, envelope)));
+    }
+
+    [Fact]
+    public void InclusiveEncounterWithoutPublishedRouteKeepsLaterExactOuter()
+    {
+        var initial = Warp(new InteractionTimeWindow(0, 4),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b", "c", "d", "y"]);
+        var inclusive = Constraint(EvidenceState.Confirmed,
+            new InteractionTimeWindow(2, 4), ["y"], 5, "ar59-direct-y");
+        var exact = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(3), ["d"], 5, "ar59-direct-d");
+        var result = Apply(initial, [inclusive, exact], 5);
+        Assert.Contains("d", result.CandidateWarps.CandidateRegionIdsAt(3));
+        Assert.Contains("d", result.CandidateWarps.CandidateRegionIdsAt(5));
+        Assert.DoesNotContain(result.Audits, audit =>
+            audit.SourceObservationId == exact.SourceObservationId &&
+            audit.ConflictDetected);
+    }
+
+    // AR-60: source IDs may decide processing order, but not which of two
+    // opposing exact confirmations remains in the conservative candidate set.
+    [Theory]
+    [InlineData(EvidenceState.Confirmed)]
+    [InlineData(EvidenceState.SupportedButUncertain)]
+    public void ContradictorySameTickConfirmedKeepBothRegionsAcrossSourceIds(
+        EvidenceState thirdState)
+    {
+        var initial = Warp(new InteractionTimeWindow(0, 2),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b"]);
+        for (var suffix = 0; suffix < 6; suffix++)
+        {
+            var first = Constraint(EvidenceState.Confirmed,
+                InteractionTimeWindow.At(0), ["a"], 2, $"ar60-a-{suffix}");
+            var second = Constraint(EvidenceState.Confirmed,
+                InteractionTimeWindow.At(0), ["b"], 2, $"ar60-b-{suffix}");
+            var third = Constraint(thirdState,
+                InteractionTimeWindow.At(0), ["a"], 2, $"ar60-third-{suffix}");
+            var result = Apply(initial, [first, second, third], 2);
+            Assert.Contains("a", result.CandidateWarps.CandidateRegionIdsAt(0));
+            Assert.Contains("b", result.CandidateWarps.CandidateRegionIdsAt(0));
+            Assert.Contains("a", result.CandidateWarps.CandidateRegionIdsAt(2));
+            Assert.Contains("b", result.CandidateWarps.CandidateRegionIdsAt(2));
+            Assert.Empty(result.CandidateWarps.PreferredRegionIdsAt(2));
+            Assert.All(result.CandidateWarps.Warps, warp =>
+                Assert.Equal(CandidateWarpStanding.Conflicted, warp.Standing));
+            Assert.Contains(result.Audits, audit => audit.ConflictDetected);
+            Assert.Equal(JsonDefaults.Serialize(result),
+                JsonDefaults.Serialize(Apply(initial,
+                    [third, second, first], 2)));
+            var duplicate = Apply(initial, [first, second, third, third], 2);
+            Assert.Equal(result.CandidateWarps.CandidateRegionIdsAt(2),
+                duplicate.CandidateWarps.CandidateRegionIdsAt(2));
+        }
+    }
+
     // Codex P2 / AR-58: an inclusive receipt synthesized in a historical
     // gap must not be mistaken for its own predecessor. Published edges are
     // needed to promote an independent later region into preferred.
