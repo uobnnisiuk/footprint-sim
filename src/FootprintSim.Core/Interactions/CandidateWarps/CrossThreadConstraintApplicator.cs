@@ -686,8 +686,11 @@ public sealed class CrossThreadConstraintApplicator
             // cannot be presented as preferred history. Retain them on the
             // outer-only branch even if query-time region counts are equal.
             var hasRawHistoricalTail = warp.States.Any(state =>
+                state.TemporalKind == CandidateWarpTemporalKind.StateInterval &&
                 state.TimeWindow.EndTick > constraint.ConstrainedTimeWindow.EndTick &&
-                state.TimeWindow.StartTick < accessContext.CurrentTick);
+                Math.Max(state.TimeWindow.StartTick,
+                    constraint.ConstrainedTimeWindow.EndTick + 1) <
+                accessContext.CurrentTick);
             // The unverified EARLIER part of a received interval remains
             // possible even if the same regions are reachable at its end.
             var hasUnverifiedEncounterTime = verifiedStartTicks.Any(item =>
@@ -795,7 +798,8 @@ public sealed class CrossThreadConstraintApplicator
                                     state.TimeWindow.StartTick, lastHistoricalTick),
                                 state.TemporalKind, state.RegionIds,
                                 state.EvidenceBoundaryState, state.Provenance);
-                        if (standing == CandidateWarpStanding.Preferred && narrowRegions)
+                        if (standing == CandidateWarpStanding.Preferred && narrowRegions &&
+                            tail.TemporalKind == CandidateWarpTemporalKind.StateInterval)
                         {
                             unverifiedTails.Add(tail);
                         }
@@ -919,7 +923,8 @@ public sealed class CrossThreadConstraintApplicator
                         new InteractionTimeWindow(intersection.EndTick + 1, tailEnd),
                         state.TemporalKind, state.RegionIds,
                         state.EvidenceBoundaryState, state.Provenance);
-                    if (standing == CandidateWarpStanding.Preferred && narrowRegions)
+                    if (standing == CandidateWarpStanding.Preferred && narrowRegions &&
+                            tail.TemporalKind == CandidateWarpTemporalKind.StateInterval)
                     {
                         unverifiedTails.Add(tail);
                     }
