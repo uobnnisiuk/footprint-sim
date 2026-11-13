@@ -189,6 +189,70 @@ public sealed class CandidateWarpTests
             uncertainFollowup.CandidateWarps.OuterPlausibleRegionIdsAt(2));
     }
 
+
+    // Ready-stage Codex review: a public route to b cannot promote an
+    // unverified d, even when both are allowed by one confirmed encounter.
+    [Fact]
+    public void MixedPublicReachabilityKeepsUnverifiedDescendantOuterOnly()
+    {
+        PublicHazardBranch Edge(string from, string to) => new()
+        {
+            SourceRegionId = from,
+            DestinationRegionId = to,
+            MinimumTravelTicks = 1,
+            MaximumTravelTicks = 1,
+            TransportType = HazardTransportType.HazardDriven,
+            ProvenanceId = $"codex-public-{from}-{to}",
+            PublishedAtTick = 0
+        };
+        var envelope = new PublicHazardEnvelope
+        {
+            HazardId = "codex-mixed-public-link",
+            SourceRegionId = "a",
+            PublishedAtTick = 0,
+            Branches = [Edge("a", "b"), Edge("b", "e"), Edge("d", "f")]
+        };
+        var historical = Warp(new InteractionTimeWindow(0, 1),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b", "d"]);
+        var first = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 2, "codex-first");
+        var mixed = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(1), ["b", "d"], 2, "codex-mixed");
+        var result = Apply(historical, [first, mixed], 2, envelope);
+        var reversed = Apply(historical, [mixed, first], 2, envelope);
+
+        Assert.Contains("e", result.CandidateWarps.PreferredRegionIdsAt(2));
+        Assert.DoesNotContain("f", result.CandidateWarps.PreferredRegionIdsAt(2));
+        Assert.Contains("f", result.CandidateWarps.OuterPlausibleRegionIdsAt(2));
+        Assert.Contains(result.Audits, audit =>
+            audit.ConstraintId == mixed.ConstraintId &&
+            audit.Disposition == ConstraintApplicationDisposition.Narrow &&
+            audit.AlternativesRetained);
+        Assert.Equal(JsonDefaults.Serialize(result), JsonDefaults.Serialize(reversed));
+    }
+
+    // An exact confirmed query-time observation can support the current
+    // region without a hazard envelope; earlier route uncertainty remains
+    // separate from that direct evidence.
+    [Fact]
+    public void ExactCurrentConfirmationWithoutEnvelopeRemainsPreferred()
+    {
+        var historical = Warp(new InteractionTimeWindow(0, 1),
+            CandidateWarpTemporalKind.StateInterval, ["a"]);
+        var earlier = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 1, "codex-current-earlier");
+        var atQuery = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(1), ["a"], 1, "codex-current-direct");
+        var result = Apply(historical, [earlier, atQuery], 1);
+
+        Assert.Contains("a", result.CandidateWarps.PreferredRegionIdsAt(1));
+        Assert.Contains(result.CandidateWarps.CandidateRegionIdsAt(1),
+            region => region == "a");
+        Assert.Contains(result.Audits, audit =>
+            audit.ConstraintId == atQuery.ConstraintId &&
+            audit.Disposition == ConstraintApplicationDisposition.Narrow);
+    }
+
     [Fact]
     public void ConfirmedExactTickNarrowsHistoricalStateThenUsesPublicForwardPropagation()
     {
