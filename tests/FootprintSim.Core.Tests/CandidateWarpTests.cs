@@ -439,6 +439,96 @@ public sealed class CandidateWarpTests
         Assert.Contains("c", result.CandidateWarps.OuterPlausibleRegionIdsAt(0));
     }
 
+    // AR-49: a preferred hypothetical weak encounter is still a waypoint.
+    // If its link is unpublished, neither it nor later Confirmed receipts
+    // can turn the entire historical sequence into a verified route.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void UncertainIntermediateEncounterCannotBypassMissingPublicLink(
+        bool oneWayPublicEdge)
+    {
+        var publicSource = CandidateWarpProvenance.Create(
+            CandidateWarpSourceKind.VoluntaryReachability,
+            "ar49-public-baseline", 0, false, false,
+            EvidenceState.SupportedButUncertain, ["a", "b"]);
+        var historical = PublicCandidateWarpFactory.Create(
+            ScenarioId, Seed, TargetPersonId,
+            Enumerable.Range(0, 3)
+                .Select(tick => new PublicCandidateWarpStateDefinition
+                {
+                    TimeWindow = InteractionTimeWindow.At(tick),
+                    TemporalKind = CandidateWarpTemporalKind.EventPoint,
+                    RegionIds = ["a", "b"],
+                    EvidenceBoundaryState = EvidenceState.SupportedButUncertain,
+                    Provenance = [publicSource]
+                })
+                .ToArray());
+        PublicHazardEnvelope? envelope = oneWayPublicEdge
+            ? new PublicHazardEnvelope
+            {
+                HazardId = "ar49-one-way",
+                SourceRegionId = "a",
+                PublishedAtTick = 0,
+                Branches =
+                [
+                    new PublicHazardBranch
+                    {
+                        SourceRegionId = "a",
+                        DestinationRegionId = "b",
+                        MinimumTravelTicks = 1,
+                        MaximumTravelTicks = 1,
+                        TransportType = HazardTransportType.HazardDriven,
+                        ProvenanceId = "ar49-a-b",
+                        PublishedAtTick = 0
+                    }
+                ]
+            }
+            : null;
+        var first = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 3, "ar49-first");
+        var middleWeak = Constraint(EvidenceState.SupportedButUncertain,
+            InteractionTimeWindow.At(1), ["b"], 3, "ar49-middle-weak");
+        var middleStrong = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(1), ["b"], 3, "ar49-middle-strong");
+        var last = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(2),
+            oneWayPublicEdge ? ["a"] : ["a", "b"], 3, "ar49-last");
+
+        var weak = Apply(historical, [first, middleWeak, last], 3, envelope);
+        var strong = Apply(historical, [first, middleStrong, last], 3, envelope);
+        Assert.Empty(weak.CandidateWarps.PreferredRegionIdsAt(3));
+        Assert.Empty(strong.CandidateWarps.PreferredRegionIdsAt(3));
+        Assert.Contains("b", weak.CandidateWarps.OuterPlausibleRegionIdsAt(1));
+        Assert.Contains("a", weak.CandidateWarps.OuterPlausibleRegionIdsAt(2));
+        Assert.Equal(JsonDefaults.Serialize(weak),
+            JsonDefaults.Serialize(Apply(historical,
+                [last, middleWeak, first], 3, envelope)));
+    }
+
+    // AR-50: stay-at-the-last-confirmed-region is a preferred modelling
+    // assumption, not new location evidence. Unpublished walking remains
+    // possible in outer, so this preference must not become a hard exclusion.
+    [Fact]
+    public void AmbiguousLaterEncounterPrefersStayButPreservesUnknownMove()
+    {
+        var historical = Warp(new InteractionTimeWindow(0, 1),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b"]);
+        var later = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(1), ["a", "b"], 2, "ar50-later");
+        var laterOnly = Apply(historical, [later], 2);
+        var withEarlier = Apply(historical,
+        [
+            Constraint(EvidenceState.Confirmed, InteractionTimeWindow.At(0),
+                ["a"], 2, "ar50-earlier"),
+            later
+        ], 2);
+
+        Assert.Contains("b", laterOnly.CandidateWarps.PreferredRegionIdsAt(2));
+        Assert.Equal(["a"], withEarlier.CandidateWarps.PreferredRegionIdsAt(2));
+        Assert.Contains("b", withEarlier.CandidateWarps.OuterPlausibleRegionIdsAt(2));
+    }
+
     // AR-46: both a single public chain and a chain with an unverified
     // alternative must remain polynomial in observations, not 2^n warps.
     [Theory]
