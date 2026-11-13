@@ -80,6 +80,102 @@ public sealed class CandidateWarpTests
         Assert.Contains(partial.Audits, audit =>
             audit.ConstrainedTimeWindow.StartTick == 1 &&
             audit.Disposition == ConstraintApplicationDisposition.RetainAlternative);
+
+        // AR-44: the later Confirmed BLE encounter can span two ticks.
+        // A published a@0 -> d@1 path remains usable inside [1,2];
+        // an inclusive observation does not assert residence at both ticks.
+        var intervalStart = Warp(new InteractionTimeWindow(0, 2),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b", "c", "d"]);
+        var initialAtZero = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 3, "ar44-initial");
+        var laterInterval = Constraint(EvidenceState.Confirmed,
+            new InteractionTimeWindow(1, 2), ["d"], 3, "ar44-later-window");
+        var laterOnly = Apply(intervalStart, [laterInterval], 3, envelope);
+        var intervalCombined = Apply(intervalStart,
+            [initialAtZero, laterInterval], 3, envelope);
+        Assert.Contains("f", laterOnly.CandidateWarps.PreferredRegionIdsAt(3));
+        Assert.Contains("f", intervalCombined.CandidateWarps.PreferredRegionIdsAt(3));
+        Assert.Contains(intervalCombined.Audits, audit =>
+            audit.ConstrainedTimeWindow.StartTick == 1 &&
+            audit.Disposition == ConstraintApplicationDisposition.Narrow &&
+            audit.Reason == ConstraintApplicationReason.Applied);
+        Assert.DoesNotContain(intervalCombined.Audits, audit =>
+            audit.ConstrainedTimeWindow.StartTick == 1 &&
+            audit.Reason == ConstraintApplicationReason.NoRegionOverlap);
+
+        // With no published path a->d, retain the possible observed
+        // encounter as outer-only; the audit must not claim empty regions.
+        var missingLinkEnvelope = new PublicHazardEnvelope
+        {
+            HazardId = "ar44-missing-link",
+            SourceRegionId = "a",
+            PublishedAtTick = 0,
+            Branches = envelope.Branches
+                .Where(edge => edge.SourceRegionId != "a" ||
+                    edge.DestinationRegionId != "d")
+                .ToArray()
+        };
+        var unverifiedInterval = Apply(intervalStart,
+            [initialAtZero, laterInterval], 3, missingLinkEnvelope);
+        Assert.DoesNotContain("f",
+            unverifiedInterval.CandidateWarps.PreferredRegionIdsAt(3));
+        Assert.Contains("f",
+            unverifiedInterval.CandidateWarps.OuterPlausibleRegionIdsAt(3));
+        Assert.Contains(unverifiedInterval.Audits, audit =>
+            audit.ConstrainedTimeWindow.StartTick == 1 &&
+            audit.Disposition == ConstraintApplicationDisposition.RetainAlternative &&
+            audit.Reason == ConstraintApplicationReason.Applied &&
+            audit.CandidateCountAfter > 0);
+
+        // AR-44 also reproduces with distinct EventPoint layers.
+        var eventPoints = PublicCandidateWarpFactory.Create(
+            ScenarioId, Seed, TargetPersonId,
+            [
+                new PublicCandidateWarpStateDefinition
+                {
+                    TimeWindow = InteractionTimeWindow.At(0),
+                    TemporalKind = CandidateWarpTemporalKind.EventPoint,
+                    RegionIds = ["a", "c"],
+                    EvidenceBoundaryState = EvidenceState.SupportedButUncertain
+                },
+                new PublicCandidateWarpStateDefinition
+                {
+                    TimeWindow = InteractionTimeWindow.At(1),
+                    TemporalKind = CandidateWarpTemporalKind.EventPoint,
+                    RegionIds = ["b", "d"],
+                    EvidenceBoundaryState = EvidenceState.SupportedButUncertain
+                },
+                new PublicCandidateWarpStateDefinition
+                {
+                    TimeWindow = InteractionTimeWindow.At(2),
+                    TemporalKind = CandidateWarpTemporalKind.EventPoint,
+                    RegionIds = ["e", "f"],
+                    EvidenceBoundaryState = EvidenceState.SupportedButUncertain
+                }
+            ]);
+        var layeredInterval = Apply(eventPoints,
+            [initialAtZero, laterInterval], 3, envelope);
+        Assert.Contains("f", layeredInterval.CandidateWarps.PreferredRegionIdsAt(3));
+        Assert.DoesNotContain(layeredInterval.Audits, audit =>
+            audit.ConstrainedTimeWindow.StartTick == 1 &&
+            audit.Reason == ConstraintApplicationReason.NoRegionOverlap);
+
+        // AR-45: an uncertain query-time observation cannot turn the
+        // unpublished c@0 -> b@1 sequence into a preferred history.
+        var uncertainAtCurrent = Constraint(EvidenceState.SupportedButUncertain,
+            InteractionTimeWindow.At(2), ["e", "f"], 2, "ar45-uncertain");
+        var uncertainFollowup = Apply(historical,
+        [
+            Constraint(EvidenceState.Confirmed, InteractionTimeWindow.At(0),
+                ["c"], 2, "ar40-partial-zero"),
+            Constraint(EvidenceState.Confirmed, InteractionTimeWindow.At(1),
+                ["b"], 2, "ar40-partial-one"),
+            uncertainAtCurrent
+        ], 2, envelope);
+        Assert.DoesNotContain("e",
+            uncertainFollowup.CandidateWarps.PreferredRegionIdsAt(2));
+        Assert.Contains("e",
+            uncertainFollowup.CandidateWarps.OuterPlausibleRegionIdsAt(2));
     }
 
     [Fact]
