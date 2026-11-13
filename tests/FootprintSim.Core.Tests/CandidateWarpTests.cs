@@ -352,6 +352,77 @@ public sealed class CandidateWarpTests
         Assert.Contains("f", result.CandidateWarps.OuterPlausibleRegionIdsAt(3));
     }
 
+    // Independent review: b is on a historical EventPoint only at tick 1,
+    // although the declared a->b route first reaches b at tick 2. Checking
+    // regions and arrival times separately must neither throw nor certify
+    // an impossible preferred historical encounter; unknown travel stays outer.
+    [Fact]
+    public void InclusiveEncounterNeedsRegionAndArrivalInTheSameState()
+    {
+        var publicSource = CandidateWarpProvenance.Create(
+            CandidateWarpSourceKind.VoluntaryReachability,
+            "ar51-public-model", 0, false, false,
+            EvidenceState.SupportedButUncertain, ["a", "b", "c"]);
+        var historical = PublicCandidateWarpFactory.Create(
+            ScenarioId, Seed, TargetPersonId,
+            [
+                new PublicCandidateWarpStateDefinition
+                {
+                    TimeWindow = InteractionTimeWindow.At(0),
+                    TemporalKind = CandidateWarpTemporalKind.EventPoint,
+                    RegionIds = ["a"],
+                    EvidenceBoundaryState = EvidenceState.SupportedButUncertain,
+                    Provenance = [publicSource]
+                },
+                new PublicCandidateWarpStateDefinition
+                {
+                    TimeWindow = InteractionTimeWindow.At(1),
+                    TemporalKind = CandidateWarpTemporalKind.EventPoint,
+                    RegionIds = ["b"],
+                    EvidenceBoundaryState = EvidenceState.SupportedButUncertain,
+                    Provenance = [publicSource]
+                },
+                new PublicCandidateWarpStateDefinition
+                {
+                    TimeWindow = InteractionTimeWindow.At(2),
+                    TemporalKind = CandidateWarpTemporalKind.EventPoint,
+                    RegionIds = ["c"],
+                    EvidenceBoundaryState = EvidenceState.SupportedButUncertain,
+                    Provenance = [publicSource]
+                }
+            ]);
+        var envelope = new PublicHazardEnvelope
+        {
+            HazardId = "ar51-late-arrival",
+            SourceRegionId = "a",
+            PublishedAtTick = 0,
+            Branches =
+            [
+                new PublicHazardBranch
+                {
+                    SourceRegionId = "a", DestinationRegionId = "b",
+                    MinimumTravelTicks = 2, MaximumTravelTicks = 2,
+                    TransportType = HazardTransportType.HazardDriven,
+                    ProvenanceId = "ar51-a-b", PublishedAtTick = 0
+                }
+            ]
+        };
+        var first = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 3, "ar51-first");
+        var later = Constraint(EvidenceState.Confirmed,
+            new InteractionTimeWindow(1, 2), ["b"], 3, "ar51-later");
+
+        var result = Apply(historical, [first, later], 3, envelope);
+        var reversed = Apply(historical, [later, first], 3, envelope);
+        Assert.Equal(JsonDefaults.Serialize(result), JsonDefaults.Serialize(reversed));
+        Assert.DoesNotContain("b", result.CandidateWarps.PreferredRegionIdsAt(3));
+        Assert.Contains("b", result.CandidateWarps.OuterPlausibleRegionIdsAt(3));
+        Assert.Contains(result.Audits, audit =>
+            audit.ConstraintId == later.ConstraintId &&
+            audit.Disposition == ConstraintApplicationDisposition.RetainAlternative &&
+            audit.Reason == ConstraintApplicationReason.Applied);
+    }
+
     // Two direct sightings at the same region are consistent even without
     // a published hazard graph. An unpublished move to a different region
     // remains outer-only, never a fabricated preferred pedestrian route.
