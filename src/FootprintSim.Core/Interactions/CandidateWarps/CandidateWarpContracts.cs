@@ -474,14 +474,14 @@ public static class PublicCandidateWarpProjection
                 var unresolved = PublicCandidateWarpPropagator.Propagate(
                     warp.ScenarioId, warp.Seed, warp.TargetEntityId, latest,
                     currentTick, publicHazardEnvelope, retainUndeclaredStay: true);
-                var outer = CandidateWarpNormalization.CreateWarp(
+                var unreachableOuter = CandidateWarpNormalization.CreateWarp(
                     warp.ScenarioId, warp.Seed, warp.TargetEntityId,
                     warp.Standing == CandidateWarpStanding.Conflicted
                         ? CandidateWarpStanding.Conflicted
                         : CandidateWarpStanding.OuterPlausible,
                     warp.WarpId, warp.States.Append(unresolved),
                     $"public-forward-no-reachable-region:{currentTick}");
-                return new[] { outer };
+                return new[] { unreachableOuter };
             }
 
             var propagated = CandidateWarpNormalization.CreateWarp(
