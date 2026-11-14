@@ -1247,7 +1247,20 @@ public sealed class CrossThreadConstraintApplicator
             warp.ScenarioId, warp.Seed, warp.TargetEntityId,
             CandidateWarpStanding.OuterPlausible, warp.WarpId, history,
             $"overlapping-inclusive-existential:{constraint.ConstraintId}");
-        return new WarpApplication([retained], CreateAudit(
+        var alternatives = new List<CandidateWarp> { retained };
+        if (constraint.EvidenceBoundaryState ==
+            EvidenceState.SupportedButUncertain)
+        {
+            // An uncertain inclusive receipt may be false. Appending its
+            // witness replaces the original history's fallback at later ticks,
+            // so preserve that history on a separate outer-only branch.
+            alternatives.Add(CandidateWarpNormalization.CreateWarp(
+                warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                CandidateWarpStanding.OuterPlausible, warp.WarpId,
+                warp.States, $"weak-overlapping-inclusive-unknown:{constraint.ConstraintId}"));
+        }
+
+        return new WarpApplication(alternatives, CreateAudit(
             warp.WarpId, constraint, accessContext,
             ConstraintApplicationDisposition.RetainAlternative,
             ConstraintApplicationReason.Applied, beforeCount,

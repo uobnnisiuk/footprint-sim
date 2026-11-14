@@ -615,6 +615,49 @@ public sealed class CandidateWarpTests
             JsonDefaults.Serialize(Apply(initial, [exact, weak, weak], 4).CandidateWarps));
     }
 
+    // A later weak interval need not be true. Its existential witness must
+    // not erase the original interval's fallback in an unrelated outer path.
+    [Fact]
+    public void WeakOverlappingInclusiveRetainsUnconstrainedOuterHistory()
+    {
+        var initial = Warp(new InteractionTimeWindow(0, 1),
+            CandidateWarpTemporalKind.StateInterval, ["a"]);
+        var confirmed = Constraint(EvidenceState.Confirmed,
+            new InteractionTimeWindow(0, 1), ["a"], 4,
+            "weak-overlap-confirmed-a");
+        var weak = Constraint(EvidenceState.SupportedButUncertain,
+            new InteractionTimeWindow(1, 2), ["b"], 4,
+            "weak-overlap-possible-b");
+
+        var baseline = Apply(initial, [confirmed], 4);
+        var result = Apply(initial, [confirmed, weak], 4);
+
+        Assert.Contains("a", baseline.CandidateWarps.CandidateRegionIdsAt(2));
+        Assert.Contains("a", result.CandidateWarps.OuterPlausibleRegionIdsAt(2));
+        Assert.Contains("b", result.CandidateWarps.OuterPlausibleRegionIdsAt(2));
+        Assert.Contains("a", result.CandidateWarps.OuterPlausibleRegionIdsAt(4));
+        Assert.DoesNotContain("b", result.CandidateWarps.PreferredRegionIdsAt(2));
+        Assert.Contains(result.CandidateWarps.Warps, warp =>
+            warp.Standing == CandidateWarpStanding.OuterPlausible &&
+            warp.CandidateRegionIdsAt(2).Contains("a") &&
+            warp.States.All(state => state.Provenance.All(source =>
+                source.SourceObservationId != weak.SourceObservationId)));
+        Assert.Contains(result.CandidateWarps.Warps
+            .SelectMany(warp => warp.States)
+            .SelectMany(state => state.Provenance), source =>
+                source.SourceObservationId == weak.SourceObservationId &&
+                source.SourceTimeWindow == weak.ConstrainedTimeWindow);
+        Assert.Contains(result.Audits, audit =>
+            audit.SourceObservationId == weak.SourceObservationId &&
+            audit.Disposition == ConstraintApplicationDisposition.RetainAlternative &&
+            audit.AlternativesRetained && !audit.ConflictDetected);
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(Apply(initial, [weak, confirmed], 4)));
+        Assert.Equal(JsonDefaults.Serialize(result.CandidateWarps),
+            JsonDefaults.Serialize(
+                Apply(initial, [confirmed, weak, weak], 4).CandidateWarps));
+    }
+
     [Fact]
     public void TwoDifferentExactConfirmationsAtInclusiveStartStillConflict()
     {
