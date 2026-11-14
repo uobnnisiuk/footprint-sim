@@ -501,6 +501,34 @@ public sealed class CrossThreadConstraintApplicator
                     beforeCount);
             }
 
+            // An exact confirmation at the START of a subsequent inclusive
+            // encounter does not require residence there throughout its window.
+            // The person may visit the different region at a later tick;
+            // absent public movement edges make that link unknown, not false.
+            var laterInclusiveAfterExact =
+                constraint.ConstrainedTimeWindow.StartTick <
+                    constraint.ConstrainedTimeWindow.EndTick &&
+                constraint.ConstrainedTimeWindow.StartTick < accessContext.CurrentTick &&
+                constraint.EvidenceBoundaryState is
+                    EvidenceState.Confirmed or EvidenceState.SupportedButUncertain &&
+                overlappingStates.Any(state =>
+                    state.Provenance.Any(source =>
+                        source.SourceKind ==
+                            CandidateWarpSourceKind.CrossThreadObservation &&
+                        source.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                        source.SourceTimeWindow is { } window &&
+                        window.StartTick == window.EndTick &&
+                        window.StartTick ==
+                            constraint.ConstrainedTimeWindow.StartTick &&
+                        !string.Equals(source.SourceObservationId,
+                            constraint.SourceObservationId, StringComparison.Ordinal)));
+            if (laterInclusiveAfterExact)
+            {
+                return RetainLaterInclusiveAfterExact(
+                    warp, constraint, accessContext, publicHazardEnvelope,
+                    beforeCount);
+            }
+
             if (constraint.EvidenceBoundaryState == EvidenceState.Confirmed)
             {
                 // The union of outer alternatives can contain only a
@@ -1020,6 +1048,46 @@ public sealed class CrossThreadConstraintApplicator
                 : ConstraintApplicationReason.Applied,
             beforeCount, beforeCount, alternativesRetained: true,
             conflictDetected: true));
+    }
+
+    // Two distinct confirmed facts can coexist at different ticks when one
+    // has an inclusive witness window. Keep the earlier exact and the later
+    // possible witness as an OUTER union, not a proven public movement or a
+    // preferred trajectory. The original source window stays in provenance.
+    private static WarpApplication RetainLaterInclusiveAfterExact(
+        CandidateWarp warp, CrossThreadConstraint constraint,
+        CandidateWarpAccessContext accessContext,
+        PublicHazardEnvelope? publicHazardEnvelope, int beforeCount)
+    {
+        var possibleStart = constraint.ConstrainedTimeWindow.StartTick + 1;
+        var possibleEnd = Math.Min(
+            constraint.ConstrainedTimeWindow.EndTick, accessContext.CurrentTick);
+        var possibleWindow = new InteractionTimeWindow(possibleStart, possibleEnd);
+        var laterWitness = CandidateWarpNormalization.CreateState(
+            warp.ScenarioId, warp.Seed, warp.TargetEntityId, possibleWindow,
+            CandidateWarpTemporalKind.StateInterval,
+            constraint.AllowedRegionIds, constraint.EvidenceBoundaryState,
+            [CreateCrossThreadProvenance(constraint)]);
+        var history = warp.States.Append(laterWitness).ToList();
+        if (possibleEnd < accessContext.CurrentTick)
+        {
+            history.Add(PublicCandidateWarpPropagator.Propagate(
+                warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                [laterWitness], accessContext.CurrentTick, publicHazardEnvelope,
+                retainUndeclaredStay: true,
+                publicationCutoffTick: accessContext.CurrentTick));
+        }
+
+        var retained = CandidateWarpNormalization.CreateWarp(
+            warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+            CandidateWarpStanding.OuterPlausible, warp.WarpId, history,
+            $"later-inclusive-existential:{constraint.ConstraintId}");
+        return new WarpApplication([retained], CreateAudit(
+            warp.WarpId, constraint, accessContext,
+            ConstraintApplicationDisposition.RetainAlternative,
+            ConstraintApplicationReason.Applied, beforeCount,
+            constraint.AllowedRegionIds.Count, alternativesRetained: true,
+            conflictDetected: false));
     }
 
     // Preserve the different possible witness times of an interval in an
