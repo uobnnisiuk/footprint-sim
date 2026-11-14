@@ -371,6 +371,73 @@ public sealed class CandidateWarpTests
             audit.ConflictDetected);
     }
 
+    // Ready-stage P2: the earlier existential receipt does not force
+    // residence at its region after a different exact confirmation.
+    [Theory]
+    [InlineData(0)]
+    [InlineData(5)]
+    public void EarlierInclusiveTailCannotHideLaterExactContinuation(
+        long onwardPublishedAt)
+    {
+        var initial = Warp(new InteractionTimeWindow(0, 3),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b"]);
+        var earlier = Constraint(EvidenceState.Confirmed,
+            new InteractionTimeWindow(0, 3), ["a"], 4,
+            "post-exact-inclusive-a");
+        var exact = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(2), ["b"], 4, "post-exact-b");
+        var envelope = new PublicHazardEnvelope
+        {
+            HazardId = "post-exact-public-route",
+            SourceRegionId = "b",
+            PublishedAtTick = onwardPublishedAt,
+            Branches =
+            [
+                new PublicHazardBranch
+                {
+                    SourceRegionId = "b", DestinationRegionId = "c",
+                    MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+                    TransportType = HazardTransportType.HazardDriven,
+                    ProvenanceId = "post-exact-b-c",
+                    PublishedAtTick = onwardPublishedAt
+                }
+            ]
+        };
+        var result = Apply(initial, [earlier, exact], 4, envelope);
+
+        Assert.Contains("b", result.CandidateWarps.OuterPlausibleRegionIdsAt(2));
+        Assert.Contains("b", result.CandidateWarps.OuterPlausibleRegionIdsAt(3));
+        Assert.Contains("a", result.CandidateWarps.OuterPlausibleRegionIdsAt(3));
+        Assert.Contains("b", result.CandidateWarps.OuterPlausibleRegionIdsAt(4));
+        if (onwardPublishedAt <= 4)
+        {
+            Assert.Contains("c", result.CandidateWarps.OuterPlausibleRegionIdsAt(3));
+        }
+        else
+        {
+            Assert.DoesNotContain("c", result.CandidateWarps.CandidateRegionIdsAt(3));
+        }
+
+        Assert.DoesNotContain("c", result.CandidateWarps.PreferredRegionIdsAt(3));
+        Assert.DoesNotContain(result.Audits, audit => audit.ConflictDetected);
+        Assert.Contains(result.Audits, audit =>
+            audit.SourceObservationId == exact.SourceObservationId &&
+            audit.AlternativesRetained);
+        Assert.Contains(result.CandidateWarps.Warps.SelectMany(warp => warp.States)
+            .SelectMany(state => state.Provenance), source =>
+                source.SourceObservationId == earlier.SourceObservationId &&
+                source.SourceTimeWindow == earlier.ConstrainedTimeWindow);
+        Assert.Contains(result.CandidateWarps.Warps.SelectMany(warp => warp.States)
+            .SelectMany(state => state.Provenance), source =>
+                source.SourceObservationId == exact.SourceObservationId &&
+                source.SourceTimeWindow == exact.ConstrainedTimeWindow);
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(Apply(initial, [exact, earlier], 4, envelope)));
+        Assert.Equal(JsonDefaults.Serialize(result.CandidateWarps),
+            JsonDefaults.Serialize(Apply(initial, [earlier, exact, exact], 4,
+                envelope).CandidateWarps));
+    }
+
     // AR-61: two interval receipts can have different witness ticks even
     // when their windows overlap (or share just one endpoint).
     [Theory]
