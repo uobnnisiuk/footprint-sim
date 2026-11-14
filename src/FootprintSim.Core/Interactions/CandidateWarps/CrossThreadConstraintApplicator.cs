@@ -427,6 +427,36 @@ public sealed class CrossThreadConstraintApplicator
                         conflictDetected: checkedGap.Audit.ConflictDetected));
             }
 
+            // An outer-only continuation from a received exact encounter
+            // can have only its source point and its query-time projection.
+            // A later Confirmed receipt in the intervening gap must NOT be
+            // ignored merely because no public route has filled that gap.
+            // Retain the earlier exact and re-anchor this outer branch on
+            // the later receipt; unpublished movement remains unknown.
+            var sparseConfirmedContinuation =
+                warp.Standing == CandidateWarpStanding.OuterPlausible &&
+                constraint.IsPersonEvidence && !constraint.IsDeviceOnlyEvidence &&
+                constraint.EvidenceBoundaryState is
+                    EvidenceState.Confirmed or EvidenceState.SupportedButUncertain &&
+                warp.States.Any(state =>
+                    state.TimeWindow.EndTick <
+                        constraint.ConstrainedTimeWindow.StartTick &&
+                    state.Provenance.Any(source =>
+                        source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
+                        source.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                        source.SourceTimeWindow is { } prior &&
+                        prior.StartTick == prior.EndTick &&
+                        prior.EndTick < constraint.ConstrainedTimeWindow.StartTick)) &&
+                warp.States.Any(state =>
+                    state.TimeWindow.StartTick >
+                        constraint.ConstrainedTimeWindow.EndTick);
+            if (sparseConfirmedContinuation)
+            {
+                return ReanchorOuterContinuationOnReceipt(
+                    warp, constraint, accessContext, publicHazardEnvelope,
+                    beforeCount);
+            }
+
             // A weak historical sighting can be false. When a later
             // independently confirmed receipt falls into the remaining
             // outer-only history gap, retain that new location as an outer
@@ -691,6 +721,38 @@ public sealed class CrossThreadConstraintApplicator
             if (laterInclusiveAfterExact)
             {
                 return RetainLaterInclusiveAfterExact(
+                    warp, constraint, accessContext, publicHazardEnvelope,
+                    beforeCount);
+            }
+
+            // An outer stay/projection sourced solely from an EARLIER
+            // Confirmed exact does not assert continuous residence. A new
+            // Confirmed exact at a different region can follow via unknown
+            // movement even when no suitable public branch is declared.
+            // Do not mark a conflict unless two distinct exact receipts
+            // actually disagree at the same tick (checked above).
+            var projectedEarlierExact =
+                warp.Standing == CandidateWarpStanding.OuterPlausible &&
+                constraint.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                !opposingExactConfirmed &&
+                overlappingStates.All(state => state.Provenance.Any(source =>
+                    source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
+                    source.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                    source.SourceTimeWindow is { } earlier &&
+                    earlier.StartTick == earlier.EndTick &&
+                    earlier.EndTick < constraint.ConstrainedTimeWindow.StartTick)) &&
+                warp.States.Any(state =>
+                    state.TimeWindow.EndTick <
+                        constraint.ConstrainedTimeWindow.StartTick &&
+                    state.Provenance.Any(source =>
+                        source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
+                        source.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                        source.SourceTimeWindow is { } earlier &&
+                        earlier.StartTick == earlier.EndTick &&
+                        earlier.EndTick < constraint.ConstrainedTimeWindow.StartTick));
+            if (projectedEarlierExact)
+            {
+                return ReanchorOuterContinuationOnReceipt(
                     warp, constraint, accessContext, publicHazardEnvelope,
                     beforeCount);
             }
@@ -1557,6 +1619,70 @@ public sealed class CrossThreadConstraintApplicator
                 warp.ScenarioId, warp.Seed, warp.TargetEntityId,
                 CandidateWarpStanding.OuterPlausible, warp.WarpId,
                 warp.States, $"weak-exact-unknown:{constraint.ConstraintId}"));
+        }
+
+        return new WarpApplication(alternatives, CreateAudit(
+            warp.WarpId, constraint, accessContext,
+            ConstraintApplicationDisposition.RetainAlternative,
+            ConstraintApplicationReason.Applied, beforeCount,
+            constraint.AllowedRegionIds.Count, alternativesRetained: true,
+            conflictDetected: false));
+    }
+
+    // A prior exact fact is a point in time, not an assumption that the
+    // person stayed at its location until the query. When its outer-only
+    // continuation omits an intermediate tick, or its possible-stay state
+    // conflicts with a later Confirmed exact, replace the stale projection
+    // on THIS branch with the new received anchor. Do not promote any
+    // unpublished transition to preferred evidence. Weak reports retain
+    // the original alternative because they may be false.
+    private static WarpApplication ReanchorOuterContinuationOnReceipt(
+        CandidateWarp warp, CrossThreadConstraint constraint,
+        CandidateWarpAccessContext accessContext,
+        PublicHazardEnvelope? publicHazardEnvelope, int beforeCount)
+    {
+        var receiptEnd = Math.Min(
+            constraint.ConstrainedTimeWindow.EndTick, accessContext.CurrentTick);
+        var receivedWindow = new InteractionTimeWindow(
+            constraint.ConstrainedTimeWindow.StartTick, receiptEnd);
+        var received = CandidateWarpNormalization.CreateState(
+            warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+            receivedWindow,
+            receivedWindow.StartTick == receivedWindow.EndTick
+                ? CandidateWarpTemporalKind.EventPoint
+                : CandidateWarpTemporalKind.StateInterval,
+            constraint.AllowedRegionIds, constraint.EvidenceBoundaryState,
+            [CreateCrossThreadProvenance(constraint)]);
+        var history = warp.States
+            .Where(state => state.TimeWindow.EndTick < receivedWindow.StartTick)
+            .ToList();
+        history.Add(received);
+        if (receiptEnd < accessContext.CurrentTick)
+        {
+            history.Add(PublicCandidateWarpPropagator.Propagate(
+                warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                [received], accessContext.CurrentTick, publicHazardEnvelope,
+                retainUndeclaredStay: true,
+                publicationCutoffTick: accessContext.CurrentTick));
+        }
+
+        AppendPublicTransitOuterHistory(
+            history, warp, constraint, accessContext, publicHazardEnvelope,
+            receivedWindow.StartTick);
+        var alternatives = new List<CandidateWarp>
+        {
+            CandidateWarpNormalization.CreateWarp(
+                warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                CandidateWarpStanding.OuterPlausible, warp.WarpId,
+                history, $"outer-later-receipt:{constraint.ConstraintId}")
+        };
+        if (constraint.EvidenceBoundaryState ==
+            EvidenceState.SupportedButUncertain)
+        {
+            alternatives.Add(CandidateWarpNormalization.CreateWarp(
+                warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                CandidateWarpStanding.OuterPlausible, warp.WarpId,
+                warp.States, $"outer-weak-unreceived-alternative:{constraint.ConstraintId}"));
         }
 
         return new WarpApplication(alternatives, CreateAudit(

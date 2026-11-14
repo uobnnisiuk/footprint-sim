@@ -438,6 +438,70 @@ public sealed class CandidateWarpTests
                 envelope).CandidateWarps));
     }
 
+    // AR-40 follow-up: the post-exact outer branch must incorporate a
+    // third independent Confirmed exact, even with no public route to fill
+    // the gap (or an irrelevant published branch).
+    [Theory]
+    [InlineData(4, 1, 3, false)]
+    [InlineData(6, 2, 4, false)]
+    [InlineData(4, 1, 3, true)]
+    public void PostExactOuterContinuationCannotIgnoreLaterConfirmed(
+        long current, long firstExactTick, long lastExactTick,
+        bool unrelatedPublicBranch)
+    {
+        var initial = Warp(new InteractionTimeWindow(0, current),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b", "c"]);
+        var first = Constraint(EvidenceState.Confirmed,
+            new InteractionTimeWindow(0, 3), ["a"], current, "ar40-tail-a");
+        var middle = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(firstExactTick), ["b"], current,
+            "ar40-tail-b");
+        var last = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(lastExactTick), ["c"], current,
+            "ar40-tail-c");
+        PublicHazardEnvelope? envelope = unrelatedPublicBranch
+            ? new PublicHazardEnvelope
+            {
+                HazardId = "ar40-irrelevant-public",
+                SourceRegionId = "c",
+                PublishedAtTick = 0,
+                Branches =
+                [
+                    new PublicHazardBranch
+                    {
+                        SourceRegionId = "c", DestinationRegionId = "a",
+                        MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+                        TransportType = HazardTransportType.HazardDriven,
+                        ProvenanceId = "ar40-c-a", PublishedAtTick = 0
+                    }
+                ]
+            }
+            : null;
+        var result = Apply(initial, [first, middle, last], current, envelope);
+
+        Assert.Contains("b", result.CandidateWarps.CandidateRegionIdsAt(
+            firstExactTick + 1));
+        Assert.Contains("c", result.CandidateWarps.CandidateRegionIdsAt(lastExactTick));
+        Assert.DoesNotContain("b",
+            result.CandidateWarps.CandidateRegionIdsAt(lastExactTick));
+        Assert.DoesNotContain("b", result.CandidateWarps.CandidateRegionIdsAt(current));
+        Assert.Contains("c", result.CandidateWarps.CandidateRegionIdsAt(current));
+        Assert.DoesNotContain(result.Audits, audit =>
+            audit.SourceObservationId == last.SourceObservationId &&
+            (audit.Reason == ConstraintApplicationReason.NoTemporalOverlap ||
+             audit.ConflictDetected));
+        Assert.Contains(result.Audits, audit =>
+            audit.SourceObservationId == last.SourceObservationId &&
+            audit.Reason == ConstraintApplicationReason.Applied);
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(Apply(initial, [last, first, middle],
+                current, envelope)));
+        Assert.Equal(JsonDefaults.Serialize(result.CandidateWarps),
+            JsonDefaults.Serialize(Apply(initial,
+                [first, middle, last, middle, last], current,
+                envelope).CandidateWarps));
+    }
+
     // AR-61: two interval receipts can have different witness ticks even
     // when their windows overlap (or share just one endpoint).
     [Theory]
