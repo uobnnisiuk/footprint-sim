@@ -1287,7 +1287,20 @@ public sealed class CrossThreadConstraintApplicator
             warp.ScenarioId, warp.Seed, warp.TargetEntityId,
             CandidateWarpStanding.OuterPlausible, warp.WarpId, history,
             $"later-inclusive-existential:{constraint.ConstraintId}");
-        return new WarpApplication([retained], CreateAudit(
+        var alternatives = new List<CandidateWarp> { retained };
+        if (constraint.EvidenceBoundaryState ==
+            EvidenceState.SupportedButUncertain)
+        {
+            // The inclusive receipt may be false. A combined state list
+            // chooses the weak witness over the original history at its
+            // intermediate ticks; keep that history as a separate outer path.
+            alternatives.Add(CandidateWarpNormalization.CreateWarp(
+                warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                CandidateWarpStanding.OuterPlausible, warp.WarpId,
+                warp.States, $"weak-later-inclusive-unknown:{constraint.ConstraintId}"));
+        }
+
+        return new WarpApplication(alternatives, CreateAudit(
             warp.WarpId, constraint, accessContext,
             ConstraintApplicationDisposition.RetainAlternative,
             ConstraintApplicationReason.Applied, beforeCount,

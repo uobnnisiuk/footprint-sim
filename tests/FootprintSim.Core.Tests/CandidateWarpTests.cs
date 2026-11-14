@@ -580,6 +580,41 @@ public sealed class CandidateWarpTests
         }
     }
 
+    // A weak later inclusive receipt can be false. Appending its possible
+    // witness to the same history must not hide the original a path at tick 1.
+    [Fact]
+    public void WeakInclusiveAfterExactRetainsUnconstrainedOuterHistory()
+    {
+        var initial = Warp(InteractionTimeWindow.At(0),
+            CandidateWarpTemporalKind.EventPoint, ["a"]);
+        var exact = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 4, "weak-inclusive-exact-a");
+        var weak = Constraint(EvidenceState.SupportedButUncertain,
+            new InteractionTimeWindow(0, 2), ["b"], 4,
+            "weak-inclusive-possible-b");
+
+        var baseline = Apply(initial, [exact], 4);
+        var result = Apply(initial, [exact, weak], 4);
+
+        Assert.Contains("a", baseline.CandidateWarps.CandidateRegionIdsAt(1));
+        Assert.Contains("a", result.CandidateWarps.OuterPlausibleRegionIdsAt(1));
+        Assert.Contains("b", result.CandidateWarps.OuterPlausibleRegionIdsAt(1));
+        Assert.Contains("a", result.CandidateWarps.OuterPlausibleRegionIdsAt(4));
+        Assert.DoesNotContain("b", result.CandidateWarps.PreferredRegionIdsAt(1));
+        Assert.Contains(result.CandidateWarps.Warps, warp =>
+            warp.Standing == CandidateWarpStanding.OuterPlausible &&
+            warp.States.All(state => state.Provenance.All(source =>
+                source.SourceObservationId != weak.SourceObservationId)));
+        Assert.Contains(result.Audits, audit =>
+            audit.SourceObservationId == weak.SourceObservationId &&
+            audit.Disposition == ConstraintApplicationDisposition.RetainAlternative &&
+            audit.AlternativesRetained && !audit.ConflictDetected);
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(Apply(initial, [weak, exact], 4)));
+        Assert.Equal(JsonDefaults.Serialize(result.CandidateWarps),
+            JsonDefaults.Serialize(Apply(initial, [exact, weak, weak], 4).CandidateWarps));
+    }
+
     [Fact]
     public void TwoDifferentExactConfirmationsAtInclusiveStartStillConflict()
     {
