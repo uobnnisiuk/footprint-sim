@@ -1385,12 +1385,14 @@ public sealed class CrossThreadConstraintApplicator
             return;
         }
 
-        // At most one interval per additional PUBLIC region. Binary search
-        // avoids expanding a potentially long observation window tick by tick.
-        // With retained undeclared stay, reachable regions are monotone in
-        // time under the same publication cutoff.
+        // A public route is an option, not proof of departure. Retain the
+        // possible stay at the witnessed region as well as public descendants:
+        // a descendant interval would otherwise mask historical fallback and
+        // silently remove the observed region after the encounter window.
+        // All these continuations are outer-only, never preferred. With
+        // undeclared stay retained, reachability is monotone at fixed cutoff;
+        // binary search avoids expanding every intermediate tick.
         foreach (var regionId in finalReach.RegionIds
-            .Except(constraint.AllowedRegionIds, StringComparer.Ordinal)
             .OrderBy(id => id, StringComparer.Ordinal))
         {
             var first = firstWitnessTick;
@@ -1417,7 +1419,8 @@ public sealed class CrossThreadConstraintApplicator
                     ? CandidateWarpTemporalKind.EventPoint
                     : CandidateWarpTemporalKind.StateInterval,
                 [regionId], EvidenceState.SupportedButUncertain,
-                finalReach.Provenance));
+                constraint.AllowedRegionIds.Contains(regionId, StringComparer.Ordinal)
+                    ? witness.Provenance : finalReach.Provenance));
         }
     }
 

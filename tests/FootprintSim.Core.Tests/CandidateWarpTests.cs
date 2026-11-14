@@ -687,6 +687,129 @@ public sealed class CandidateWarpTests
                 envelope).CandidateWarps));
     }
 
+    // AR-66 follow-up: optional public b->c transit must not mask a valid
+    // post-window stay at b. Cover Confirmed/SBU and publication cutoff.
+    [Theory]
+    [InlineData(EvidenceState.Confirmed, 1, 0)]
+    [InlineData(EvidenceState.Confirmed, 1, 7)]
+    [InlineData(EvidenceState.SupportedButUncertain, 2, 0)]
+    [InlineData(EvidenceState.SupportedButUncertain, 2, 7)]
+    public void PublicTransitRetainsPostWindowObservedRegionOuter(
+        EvidenceState state, long witnessEnd, long onwardPublishedAt)
+    {
+        var initial = Warp(InteractionTimeWindow.At(0),
+            CandidateWarpTemporalKind.EventPoint, ["a"]);
+        var exact = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 6, "ar66-postwindow-exact");
+        var inclusive = Constraint(state,
+            new InteractionTimeWindow(0, witnessEnd), ["b"], 6,
+            "ar66-postwindow-inclusive");
+        var envelope = new PublicHazardEnvelope
+        {
+            HazardId = "ar66-postwindow-public",
+            SourceRegionId = "a",
+            PublishedAtTick = 0,
+            Branches =
+            [
+                new PublicHazardBranch
+                {
+                    SourceRegionId = "a", DestinationRegionId = "b",
+                    MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+                    TransportType = HazardTransportType.HazardDriven,
+                    ProvenanceId = "ar66-post-a-b", PublishedAtTick = 0
+                },
+                new PublicHazardBranch
+                {
+                    SourceRegionId = "b", DestinationRegionId = "c",
+                    MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+                    TransportType = HazardTransportType.HazardDriven,
+                    ProvenanceId = "ar66-post-b-c",
+                    PublishedAtTick = onwardPublishedAt
+                }
+            ]
+        };
+        var result = Apply(initial, [exact, inclusive], 6, envelope);
+        for (var tick = witnessEnd + 1; tick < 6; tick++)
+        {
+            Assert.Contains("b", result.CandidateWarps.OuterPlausibleRegionIdsAt(tick));
+        }
+        Assert.Contains("b", result.CandidateWarps.OuterPlausibleRegionIdsAt(6));
+        Assert.DoesNotContain("c", result.CandidateWarps.PreferredRegionIdsAt(2));
+        if (onwardPublishedAt <= 6)
+        {
+            Assert.Contains("c", result.CandidateWarps.OuterPlausibleRegionIdsAt(2));
+        }
+        else
+        {
+            Assert.DoesNotContain("c", result.CandidateWarps.CandidateRegionIdsAt(2));
+        }
+        Assert.Contains(result.CandidateWarps.Warps.SelectMany(warp => warp.States)
+            .SelectMany(candidate => candidate.Provenance), source =>
+                source.SourceObservationId == inclusive.SourceObservationId &&
+                source.SourceTimeWindow == inclusive.ConstrainedTimeWindow);
+        Assert.DoesNotContain(result.Audits, audit => audit.ConflictDetected);
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(Apply(initial, [inclusive, exact], 6, envelope)));
+        Assert.Equal(JsonDefaults.Serialize(result.CandidateWarps),
+            JsonDefaults.Serialize(Apply(initial, [exact, inclusive, inclusive], 6,
+                envelope).CandidateWarps));
+    }
+
+    // Same regression through overlapping inclusive witness application.
+    [Theory]
+    [InlineData(EvidenceState.Confirmed)]
+    [InlineData(EvidenceState.SupportedButUncertain)]
+    public void OverlappingInclusiveTransitRetainsPostWindowStayOuter(
+        EvidenceState state)
+    {
+        var initial = Warp(new InteractionTimeWindow(0, 1),
+            CandidateWarpTemporalKind.StateInterval, ["a"]);
+        var early = Constraint(EvidenceState.Confirmed,
+            new InteractionTimeWindow(0, 1), ["a"], 6,
+            "ar66-post-overlap-early");
+        var later = Constraint(state,
+            new InteractionTimeWindow(1, 2), ["b"], 6,
+            "ar66-post-overlap-later");
+        var envelope = new PublicHazardEnvelope
+        {
+            HazardId = "ar66-post-overlap-model",
+            SourceRegionId = "a",
+            PublishedAtTick = 0,
+            Branches =
+            [
+                new PublicHazardBranch
+                {
+                    SourceRegionId = "a", DestinationRegionId = "b",
+                    MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+                    TransportType = HazardTransportType.HazardDriven,
+                    ProvenanceId = "ar66-overlap-a-b", PublishedAtTick = 0
+                },
+                new PublicHazardBranch
+                {
+                    SourceRegionId = "b", DestinationRegionId = "c",
+                    MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+                    TransportType = HazardTransportType.HazardDriven,
+                    ProvenanceId = "ar66-overlap-b-c", PublishedAtTick = 0
+                }
+            ]
+        };
+        var result = Apply(initial, [early, later], 6, envelope);
+        for (var tick = 3; tick < 6; tick++)
+        {
+            Assert.Contains("b", result.CandidateWarps.OuterPlausibleRegionIdsAt(tick));
+        }
+        Assert.Contains("c", result.CandidateWarps.OuterPlausibleRegionIdsAt(2));
+        Assert.DoesNotContain("c", result.CandidateWarps.PreferredRegionIdsAt(2));
+        Assert.Contains(result.Audits, audit =>
+            audit.SourceObservationId == later.SourceObservationId &&
+            audit.AlternativesRetained && !audit.ConflictDetected);
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(Apply(initial, [later, early], 6, envelope)));
+        Assert.Equal(JsonDefaults.Serialize(result.CandidateWarps),
+            JsonDefaults.Serialize(Apply(initial, [early, later, later], 6,
+                envelope).CandidateWarps));
+    }
+
     // A weak later inclusive receipt can be false. Appending its possible
     // witness to the same history must not hide the original a path at tick 1.
     [Fact]
