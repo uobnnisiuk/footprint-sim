@@ -1526,6 +1526,47 @@ public sealed class CrossThreadConstraintApplicator
         var history = new List<CandidateWarpState>();
         foreach (var state in warp.States)
         {
+            // Query-tick points projected from receipts no later than this
+            // new exact are stale. Project afresh from the new witness rather
+            // than preserving the old query candidate beside it.
+            var staleQueryProjection =
+                state.TimeWindow.StartTick >= accessContext.CurrentTick &&
+                state.Provenance.Any(source =>
+                    source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
+                    source.SourceTimeWindow is { } oldWindow &&
+                    oldWindow.EndTick <= tick);
+            if (staleQueryProjection)
+            {
+                continue;
+            }
+
+            // A published/undeclared stay derived from a PREVIOUS exact is
+            // only a possible continuation, never continuous confirmed
+            // residence. Once a later Confirmed exact arrives, the prior
+            // continuation may survive before that new tick but cannot
+            // override it (or leak into the new query projection).
+            var olderExactProjection =
+                state.TimeWindow.EndTick >= tick &&
+                state.Provenance.Any(source =>
+                    source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
+                    source.SourceTimeWindow is { } oldWindow &&
+                    oldWindow.StartTick == oldWindow.EndTick &&
+                    oldWindow.EndTick < tick);
+            if (olderExactProjection)
+            {
+                if (state.TimeWindow.StartTick < tick)
+                {
+                    history.Add(CandidateWarpNormalization.CreateState(
+                        warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                        new InteractionTimeWindow(
+                            state.TimeWindow.StartTick, tick - 1),
+                        state.TemporalKind, state.RegionIds,
+                        state.EvidenceBoundaryState, state.Provenance));
+                }
+
+                continue;
+            }
+
             var intervalWitness = state.TimeWindow.StartTick <= tick &&
                 tick <= state.TimeWindow.EndTick &&
                 state.Provenance.Any(source =>
