@@ -149,6 +149,75 @@ public sealed class CandidateWarpTests
         }
     }
 
+    // AR-62: overlapping inclusive receipts may each be witnessed at
+    // different ticks, even if their allowed region sets share one region.
+    // The common b is not proof of continuous residence there.
+    [Theory]
+    [InlineData(false, false, EvidenceState.Confirmed)]
+    [InlineData(false, true, EvidenceState.Confirmed)]
+    [InlineData(true, false, EvidenceState.Confirmed)]
+    [InlineData(true, true, EvidenceState.Confirmed)]
+    [InlineData(false, false, EvidenceState.SupportedButUncertain)]
+    [InlineData(false, true, EvidenceState.SupportedButUncertain)]
+    [InlineData(true, false, EvidenceState.SupportedButUncertain)]
+    [InlineData(true, true, EvidenceState.SupportedButUncertain)]
+    public void PartiallySharedInclusiveRegionsPreserveDistinctWitnesses(
+        bool sameWindow, bool publishedRoute, EvidenceState laterState)
+    {
+        var initial = Warp(new InteractionTimeWindow(0, 5),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b", "c"]);
+        var publicEnvelope = new PublicHazardEnvelope
+        {
+            HazardId = "ar62-public-a-c",
+            SourceRegionId = "a",
+            PublishedAtTick = 0,
+            Branches =
+            [
+                new PublicHazardBranch
+                {
+                    SourceRegionId = "a", DestinationRegionId = "c",
+                    MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+                    TransportType = HazardTransportType.HazardDriven,
+                    ProvenanceId = "ar62-a-c", PublishedAtTick = 0
+                }
+            ]
+        };
+        var laterWindow = sameWindow
+            ? new InteractionTimeWindow(2, 4)
+            : new InteractionTimeWindow(3, 5);
+        for (var idOrder = 0; idOrder < 2; idOrder++)
+        {
+            var first = Constraint(EvidenceState.Confirmed,
+                new InteractionTimeWindow(2, 4), ["a", "b"], 6,
+                idOrder == 0 ? "ar62-a-first" : "ar62-z-first");
+            var second = Constraint(laterState, laterWindow, ["b", "c"], 6,
+                idOrder == 0 ? "ar62-z-second" : "ar62-a-second");
+            var model = publishedRoute ? publicEnvelope : null;
+            var result = Apply(initial, [first, second], 6, model);
+            Assert.Contains("a", result.CandidateWarps.CandidateRegionIdsAt(2));
+            Assert.Contains("c", result.CandidateWarps.CandidateRegionIdsAt(
+                sameWindow ? 4 : 5));
+            Assert.Contains("c", result.CandidateWarps.CandidateRegionIdsAt(6));
+            Assert.DoesNotContain("c", result.CandidateWarps.PreferredRegionIdsAt(6));
+            Assert.DoesNotContain(result.CandidateWarps.Warps, warp =>
+                warp.Standing == CandidateWarpStanding.Conflicted);
+            Assert.DoesNotContain(result.Audits, audit => audit.ConflictDetected);
+            Assert.Contains(result.Audits, audit =>
+                audit.SourceObservationId == second.SourceObservationId &&
+                audit.Disposition == ConstraintApplicationDisposition.RetainAlternative);
+            Assert.Contains(result.CandidateWarps.Warps
+                .SelectMany(warp => warp.States)
+                .SelectMany(state => state.Provenance), source =>
+                    source.SourceObservationId == second.SourceObservationId &&
+                    source.SourceTimeWindow == second.ConstrainedTimeWindow);
+            Assert.Equal(JsonDefaults.Serialize(result),
+                JsonDefaults.Serialize(Apply(initial, [second, first], 6, model)));
+            var withCopy = Apply(initial, [first, second, second], 6, model);
+            Assert.Equal(JsonDefaults.Serialize(result.CandidateWarps),
+                JsonDefaults.Serialize(withCopy.CandidateWarps));
+        }
+    }
+
     // AR-59 reverse boundary: d@2 followed by y@[2,4] may mean y@3.
     // Neither a missing public edge nor a changed receipt/source ordering can
     // convert an existential interval into a same-tick hard contradiction.
