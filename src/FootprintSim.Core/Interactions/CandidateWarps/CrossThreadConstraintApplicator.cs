@@ -451,6 +451,37 @@ public sealed class CrossThreadConstraintApplicator
         }
 
         var allowed = constraint.AllowedRegionIds.ToHashSet(StringComparer.Ordinal);
+        // Compare ORIGINAL receipt regions, not a projected/publicly
+        // reachable region that happens to overlap the later interval.
+        // Two disjoint inclusive receipts may have different witness ticks,
+        // even when a public model connects their regions. Preserve them
+        // outer-only until that joint timing is explicitly resolved.
+        var otherInclusiveReceipt =
+            constraint.ConstrainedTimeWindow.StartTick <
+                constraint.ConstrainedTimeWindow.EndTick &&
+            constraint.ConstrainedTimeWindow.StartTick < accessContext.CurrentTick &&
+            constraint.EvidenceBoundaryState is
+                EvidenceState.Confirmed or EvidenceState.SupportedButUncertain &&
+            overlappingStates.Any(state =>
+                state.Provenance.Any(source =>
+                    source.SourceKind ==
+                        CandidateWarpSourceKind.CrossThreadObservation &&
+                    source.EvidenceBoundaryState is
+                        EvidenceState.Confirmed or EvidenceState.SupportedButUncertain &&
+                    source.SourceTimeWindow is { } earlierWindow &&
+                    earlierWindow.StartTick < earlierWindow.EndTick &&
+                    Overlaps(state.TimeWindow, earlierWindow) &&
+                    !source.RegionIds.Intersect(allowed, StringComparer.Ordinal).Any() &&
+                    !string.Equals(source.SourceObservationId,
+                        constraint.SourceObservationId, StringComparison.Ordinal)));
+        if (otherInclusiveReceipt)
+        {
+            return RetainOverlappingInclusiveWitnesses(
+                warp, constraint, accessContext, publicHazardEnvelope,
+                overlappingStates.SelectMany(state => state.RegionIds)
+                    .Distinct(StringComparer.Ordinal).Count());
+        }
+
         var afterCount = overlappingStates
             .SelectMany(state => state.RegionIds)
             .Where(allowed.Contains)
@@ -525,35 +556,6 @@ public sealed class CrossThreadConstraintApplicator
             if (laterInclusiveAfterExact)
             {
                 return RetainLaterInclusiveAfterExact(
-                    warp, constraint, accessContext, publicHazardEnvelope,
-                    beforeCount);
-            }
-
-            // Two inclusive observations are existential witnesses, not
-            // residence throughout their overlapping windows. Distinct
-            // receipts can occur at different ticks even with disjoint
-            // regions. Keep both histories outer-only, never invent a
-            // published transition or treat missing public edges as absence.
-            var otherInclusiveReceipt =
-                constraint.ConstrainedTimeWindow.StartTick <
-                    constraint.ConstrainedTimeWindow.EndTick &&
-                constraint.ConstrainedTimeWindow.StartTick < accessContext.CurrentTick &&
-                constraint.EvidenceBoundaryState is
-                    EvidenceState.Confirmed or EvidenceState.SupportedButUncertain &&
-                overlappingStates.Any(state =>
-                    state.Provenance.Any(source =>
-                        source.SourceKind ==
-                            CandidateWarpSourceKind.CrossThreadObservation &&
-                        source.EvidenceBoundaryState is
-                            EvidenceState.Confirmed or EvidenceState.SupportedButUncertain &&
-                        source.SourceTimeWindow is { } earlierWindow &&
-                        earlierWindow.StartTick < earlierWindow.EndTick &&
-                        Overlaps(state.TimeWindow, earlierWindow) &&
-                        !string.Equals(source.SourceObservationId,
-                            constraint.SourceObservationId, StringComparison.Ordinal)));
-            if (otherInclusiveReceipt)
-            {
-                return RetainOverlappingInclusiveWitnesses(
                     warp, constraint, accessContext, publicHazardEnvelope,
                     beforeCount);
             }
