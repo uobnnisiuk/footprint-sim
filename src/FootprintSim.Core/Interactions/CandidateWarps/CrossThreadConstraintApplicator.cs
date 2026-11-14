@@ -453,9 +453,10 @@ public sealed class CrossThreadConstraintApplicator
         var allowed = constraint.AllowedRegionIds.ToHashSet(StringComparer.Ordinal);
         // Compare ORIGINAL receipt regions, not a projected/publicly
         // reachable region that happens to overlap the later interval.
-        // Two disjoint inclusive receipts may have different witness ticks,
-        // even when a public model connects their regions. Preserve them
-        // outer-only until that joint timing is explicitly resolved.
+        // Two different inclusive region sets may have different witness
+        // ticks even when they share a region: {a,b} and {b,c} need not both
+        // be witnessed at b. Preserve their alternatives outer-only until
+        // joint timing and movement have actually been verified.
         var otherInclusiveReceipt =
             constraint.ConstrainedTimeWindow.StartTick <
                 constraint.ConstrainedTimeWindow.EndTick &&
@@ -471,7 +472,8 @@ public sealed class CrossThreadConstraintApplicator
                     source.SourceTimeWindow is { } earlierWindow &&
                     earlierWindow.StartTick < earlierWindow.EndTick &&
                     Overlaps(state.TimeWindow, earlierWindow) &&
-                    !source.RegionIds.Intersect(allowed, StringComparer.Ordinal).Any() &&
+                    !source.RegionIds.ToHashSet(StringComparer.Ordinal)
+                        .SetEquals(allowed) &&
                     !string.Equals(source.SourceObservationId,
                         constraint.SourceObservationId, StringComparison.Ordinal)));
         if (otherInclusiveReceipt)
