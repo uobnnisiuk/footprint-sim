@@ -560,6 +560,7 @@ public sealed class CandidateWarpTests
             var result = Apply(initial, [exact, inclusive], 5, publicModel);
             Assert.Contains("d", result.CandidateWarps.CandidateRegionIdsAt(2));
             Assert.Contains("y", result.CandidateWarps.CandidateRegionIdsAt(3));
+            Assert.Contains("d", result.CandidateWarps.OuterPlausibleRegionIdsAt(3));
             Assert.Contains("y", result.CandidateWarps.CandidateRegionIdsAt(5));
             Assert.DoesNotContain("y", result.CandidateWarps.PreferredRegionIdsAt(5));
             Assert.DoesNotContain(result.CandidateWarps.Warps, warp =>
@@ -578,6 +579,40 @@ public sealed class CandidateWarpTests
             Assert.Equal(JsonDefaults.Serialize(result.CandidateWarps),
                 JsonDefaults.Serialize(withCopy.CandidateWarps));
         }
+    }
+
+    // AR-66: a Confirmed interval is still existential. A true b encounter
+    // at tick 2 need not exclude a at tick 1 after an earlier exact a@0.
+    [Fact]
+    public void ConfirmedInclusiveAfterExactKeepsEarlierOuterUntilWitness()
+    {
+        var initial = Warp(InteractionTimeWindow.At(0),
+            CandidateWarpTemporalKind.EventPoint, ["a"]);
+        var exact = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 4, "ar66-exact-a");
+        var inclusive = Constraint(EvidenceState.Confirmed,
+            new InteractionTimeWindow(0, 2), ["b"], 4,
+            "ar66-confirmed-inclusive-b");
+
+        var result = Apply(initial, [exact, inclusive], 4);
+        Assert.Contains("a", result.CandidateWarps.OuterPlausibleRegionIdsAt(1));
+        Assert.Contains("b", result.CandidateWarps.OuterPlausibleRegionIdsAt(1));
+        Assert.Contains("b", result.CandidateWarps.CandidateRegionIdsAt(2));
+        Assert.DoesNotContain("b", result.CandidateWarps.PreferredRegionIdsAt(1));
+        Assert.Contains(result.CandidateWarps.Warps, warp =>
+            warp.Standing == CandidateWarpStanding.OuterPlausible &&
+            warp.CandidateRegionIdsAt(1).Contains("a") &&
+            warp.States.Any(state => state.Provenance.Any(source =>
+                source.SourceObservationId == inclusive.SourceObservationId &&
+                source.SourceTimeWindow == inclusive.ConstrainedTimeWindow)));
+        Assert.Contains(result.Audits, audit =>
+            audit.SourceObservationId == inclusive.SourceObservationId &&
+            audit.AlternativesRetained && !audit.ConflictDetected);
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(Apply(initial, [inclusive, exact], 4)));
+        Assert.Equal(JsonDefaults.Serialize(result.CandidateWarps),
+            JsonDefaults.Serialize(Apply(initial, [exact, inclusive, inclusive], 4)
+                .CandidateWarps));
     }
 
     // A weak later inclusive receipt can be false. Appending its possible

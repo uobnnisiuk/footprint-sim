@@ -1248,6 +1248,15 @@ public sealed class CrossThreadConstraintApplicator
             CandidateWarpStanding.OuterPlausible, warp.WarpId, history,
             $"overlapping-inclusive-existential:{constraint.ConstraintId}");
         var alternatives = new List<CandidateWarp> { retained };
+        if (constraint.EvidenceBoundaryState == EvidenceState.Confirmed &&
+            window.StartTick < window.EndTick)
+        {
+            // Confirmed means at least one encounter within the interval,
+            // not residence at its region at every intermediate tick.
+            alternatives.Add(RetainLastConfirmedInclusiveWitness(
+                warp, constraint, accessContext, publicHazardEnvelope,
+                window.EndTick));
+        }
         if (constraint.EvidenceBoundaryState ==
             EvidenceState.SupportedButUncertain)
         {
@@ -1301,6 +1310,15 @@ public sealed class CrossThreadConstraintApplicator
             CandidateWarpStanding.OuterPlausible, warp.WarpId, history,
             $"later-inclusive-existential:{constraint.ConstraintId}");
         var alternatives = new List<CandidateWarp> { retained };
+        if (constraint.EvidenceBoundaryState == EvidenceState.Confirmed &&
+            possibleStart < possibleEnd)
+        {
+            // The late witness is true while the earlier historical region
+            // may still be possible before that witness tick.
+            alternatives.Add(RetainLastConfirmedInclusiveWitness(
+                warp, constraint, accessContext, publicHazardEnvelope,
+                possibleEnd));
+        }
         if (constraint.EvidenceBoundaryState ==
             EvidenceState.SupportedButUncertain)
         {
@@ -1319,6 +1337,36 @@ public sealed class CrossThreadConstraintApplicator
             ConstraintApplicationReason.Applied, beforeCount,
             constraint.AllowedRegionIds.Count, alternativesRetained: true,
             conflictDetected: false));
+    }
+
+    // A Confirmed interval is an existential observation. A last-tick
+    // witness is a valid conservative alternative, not an assumption that
+    // the observation was false or that the target stayed there throughout.
+    private static CandidateWarp RetainLastConfirmedInclusiveWitness(
+        CandidateWarp warp, CrossThreadConstraint constraint,
+        CandidateWarpAccessContext accessContext,
+        PublicHazardEnvelope? publicHazardEnvelope, long witnessTick)
+    {
+        var witness = CandidateWarpNormalization.CreateState(
+            warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+            InteractionTimeWindow.At(witnessTick),
+            CandidateWarpTemporalKind.EventPoint,
+            constraint.AllowedRegionIds, constraint.EvidenceBoundaryState,
+            [CreateCrossThreadProvenance(constraint)]);
+        var history = warp.States.Append(witness).ToList();
+        if (witnessTick < accessContext.CurrentTick)
+        {
+            history.Add(PublicCandidateWarpPropagator.Propagate(
+                warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                [witness], accessContext.CurrentTick, publicHazardEnvelope,
+                retainUndeclaredStay: true,
+                publicationCutoffTick: accessContext.CurrentTick));
+        }
+
+        return CandidateWarpNormalization.CreateWarp(
+            warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+            CandidateWarpStanding.OuterPlausible, warp.WarpId, history,
+            $"confirmed-inclusive-last-witness:{constraint.ConstraintId}");
     }
 
     // Preserve the different possible witness times of an interval in an
