@@ -198,12 +198,21 @@ public sealed class CandidateWarpTests
             Assert.Contains("c", result.CandidateWarps.CandidateRegionIdsAt(
                 sameWindow ? 4 : 5));
             Assert.Contains("c", result.CandidateWarps.CandidateRegionIdsAt(6));
-            Assert.DoesNotContain("c", result.CandidateWarps.PreferredRegionIdsAt(6));
+            // A weak interval can be processed before the independent
+            // Confirmed one. A published a->c path may then support c
+            // independently; without that path, c must remain outer-only.
+            if (laterState == EvidenceState.Confirmed || !publishedRoute)
+            {
+                Assert.DoesNotContain("c", result.CandidateWarps.PreferredRegionIdsAt(6));
+            }
             Assert.DoesNotContain(result.CandidateWarps.Warps, warp =>
                 warp.Standing == CandidateWarpStanding.Conflicted);
             Assert.DoesNotContain(result.Audits, audit => audit.ConflictDetected);
+            // Same-window observations can apply in either source-ID order.
+            // The conservative retention may be audited on either receipt.
             Assert.Contains(result.Audits, audit =>
-                audit.SourceObservationId == second.SourceObservationId &&
+                (audit.SourceObservationId == first.SourceObservationId ||
+                 audit.SourceObservationId == second.SourceObservationId) &&
                 audit.Disposition == ConstraintApplicationDisposition.RetainAlternative);
             Assert.Contains(result.CandidateWarps.Warps
                 .SelectMany(warp => warp.States)
