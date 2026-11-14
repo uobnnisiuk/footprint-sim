@@ -529,6 +529,35 @@ public sealed class CrossThreadConstraintApplicator
                     beforeCount);
             }
 
+            // Two inclusive observations are existential witnesses, not
+            // residence throughout their overlapping windows. Distinct
+            // receipts can occur at different ticks even with disjoint
+            // regions. Keep both histories outer-only, never invent a
+            // published transition or treat missing public edges as absence.
+            var otherInclusiveReceipt =
+                constraint.ConstrainedTimeWindow.StartTick <
+                    constraint.ConstrainedTimeWindow.EndTick &&
+                constraint.ConstrainedTimeWindow.StartTick < accessContext.CurrentTick &&
+                constraint.EvidenceBoundaryState is
+                    EvidenceState.Confirmed or EvidenceState.SupportedButUncertain &&
+                overlappingStates.Any(state =>
+                    state.Provenance.Any(source =>
+                        source.SourceKind ==
+                            CandidateWarpSourceKind.CrossThreadObservation &&
+                        source.EvidenceBoundaryState is
+                            EvidenceState.Confirmed or EvidenceState.SupportedButUncertain &&
+                        source.SourceTimeWindow is { } earlierWindow &&
+                        earlierWindow.StartTick < earlierWindow.EndTick &&
+                        Overlaps(state.TimeWindow, earlierWindow) &&
+                        !string.Equals(source.SourceObservationId,
+                            constraint.SourceObservationId, StringComparison.Ordinal)));
+            if (otherInclusiveReceipt)
+            {
+                return RetainOverlappingInclusiveWitnesses(
+                    warp, constraint, accessContext, publicHazardEnvelope,
+                    beforeCount);
+            }
+
             if (constraint.EvidenceBoundaryState == EvidenceState.Confirmed)
             {
                 // The union of outer alternatives can contain only a
@@ -1048,6 +1077,45 @@ public sealed class CrossThreadConstraintApplicator
                 : ConstraintApplicationReason.Applied,
             beforeCount, beforeCount, alternativesRetained: true,
             conflictDetected: true));
+    }
+
+    // Keep both inclusive witness windows and their ancestry in a
+    // conservative OUTER union. This does not prove either actual route
+    // or universal consistency of the two constraints.
+    private static WarpApplication RetainOverlappingInclusiveWitnesses(
+        CandidateWarp warp, CrossThreadConstraint constraint,
+        CandidateWarpAccessContext accessContext,
+        PublicHazardEnvelope? publicHazardEnvelope, int beforeCount)
+    {
+        var window = new InteractionTimeWindow(
+            constraint.ConstrainedTimeWindow.StartTick,
+            Math.Min(constraint.ConstrainedTimeWindow.EndTick,
+                accessContext.CurrentTick));
+        var witness = CandidateWarpNormalization.CreateState(
+            warp.ScenarioId, warp.Seed, warp.TargetEntityId, window,
+            CandidateWarpTemporalKind.StateInterval,
+            constraint.AllowedRegionIds, constraint.EvidenceBoundaryState,
+            [CreateCrossThreadProvenance(constraint)]);
+        var history = warp.States.Append(witness).ToList();
+        if (window.EndTick < accessContext.CurrentTick)
+        {
+            history.Add(PublicCandidateWarpPropagator.Propagate(
+                warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                [witness], accessContext.CurrentTick, publicHazardEnvelope,
+                retainUndeclaredStay: true,
+                publicationCutoffTick: accessContext.CurrentTick));
+        }
+
+        var retained = CandidateWarpNormalization.CreateWarp(
+            warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+            CandidateWarpStanding.OuterPlausible, warp.WarpId, history,
+            $"overlapping-inclusive-existential:{constraint.ConstraintId}");
+        return new WarpApplication([retained], CreateAudit(
+            warp.WarpId, constraint, accessContext,
+            ConstraintApplicationDisposition.RetainAlternative,
+            ConstraintApplicationReason.Applied, beforeCount,
+            constraint.AllowedRegionIds.Count, alternativesRetained: true,
+            conflictDetected: false));
     }
 
     // Two distinct confirmed facts can coexist at different ticks when one

@@ -82,6 +82,73 @@ public sealed class CandidateWarpTests
             audit.ConflictDetected);
     }
 
+    // AR-61: two interval receipts can have different witness ticks even
+    // when their windows overlap (or share just one endpoint).
+    [Theory]
+    [InlineData(false, false, EvidenceState.Confirmed)]
+    [InlineData(false, true, EvidenceState.Confirmed)]
+    [InlineData(true, false, EvidenceState.Confirmed)]
+    [InlineData(true, true, EvidenceState.Confirmed)]
+    [InlineData(false, false, EvidenceState.SupportedButUncertain)]
+    [InlineData(false, true, EvidenceState.SupportedButUncertain)]
+    [InlineData(true, false, EvidenceState.SupportedButUncertain)]
+    [InlineData(true, true, EvidenceState.SupportedButUncertain)]
+    public void OverlappingInclusiveReceiptsRetainDistinctWitnessTicks(
+        bool sharedEndpoint, bool publishedRoute, EvidenceState laterState)
+    {
+        var initial = Warp(new InteractionTimeWindow(0, 5),
+            CandidateWarpTemporalKind.StateInterval, ["y", "z"]);
+        var publicEnvelope = new PublicHazardEnvelope
+        {
+            HazardId = "ar61-public-y-z",
+            SourceRegionId = "y",
+            PublishedAtTick = 0,
+            Branches =
+            [
+                new PublicHazardBranch
+                {
+                    SourceRegionId = "y", DestinationRegionId = "z",
+                    MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+                    TransportType = HazardTransportType.HazardDriven,
+                    ProvenanceId = "ar61-y-z", PublishedAtTick = 0
+                }
+            ]
+        };
+        var laterWindow = sharedEndpoint
+            ? new InteractionTimeWindow(4, 6)
+            : new InteractionTimeWindow(3, 5);
+        for (var idOrder = 0; idOrder < 2; idOrder++)
+        {
+            var early = Constraint(EvidenceState.Confirmed,
+                new InteractionTimeWindow(2, 4), ["y"], 6,
+                idOrder == 0 ? "ar61-a-y" : "ar61-z-y");
+            var later = Constraint(laterState, laterWindow, ["z"], 6,
+                idOrder == 0 ? "ar61-z-z" : "ar61-a-z");
+            var model = publishedRoute ? publicEnvelope : null;
+            var result = Apply(initial, [early, later], 6, model);
+            Assert.Contains("y", result.CandidateWarps.CandidateRegionIdsAt(2));
+            Assert.Contains("z", result.CandidateWarps.CandidateRegionIdsAt(
+                sharedEndpoint ? 5 : 3));
+            Assert.Contains("z", result.CandidateWarps.CandidateRegionIdsAt(6));
+            Assert.DoesNotContain(result.CandidateWarps.Warps, warp =>
+                warp.Standing == CandidateWarpStanding.Conflicted);
+            Assert.DoesNotContain(result.Audits, audit => audit.ConflictDetected);
+            Assert.Contains(result.Audits, audit =>
+                audit.SourceObservationId == later.SourceObservationId &&
+                audit.Disposition == ConstraintApplicationDisposition.RetainAlternative);
+            Assert.Contains(result.CandidateWarps.Warps
+                .SelectMany(warp => warp.States)
+                .SelectMany(state => state.Provenance), source =>
+                    source.SourceObservationId == later.SourceObservationId &&
+                    source.SourceTimeWindow == later.ConstrainedTimeWindow);
+            Assert.Equal(JsonDefaults.Serialize(result),
+                JsonDefaults.Serialize(Apply(initial, [later, early], 6, model)));
+            var copy = Apply(initial, [early, later, later], 6, model);
+            Assert.Equal(JsonDefaults.Serialize(result.CandidateWarps),
+                JsonDefaults.Serialize(copy.CandidateWarps));
+        }
+    }
+
     // AR-59 reverse boundary: d@2 followed by y@[2,4] may mean y@3.
     // Neither a missing public edge nor a changed receipt/source ordering can
     // convert an existential interval into a same-tick hard contradiction.
