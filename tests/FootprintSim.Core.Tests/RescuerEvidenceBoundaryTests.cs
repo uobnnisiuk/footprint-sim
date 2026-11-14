@@ -3153,8 +3153,11 @@ public sealed class RescuerEvidenceBoundaryTests
                 initial, constraints,
                 new CandidateWarpAccessContext
                 {
-                    ScenarioId = ScenarioId, Seed = Seed, TargetEntityId = TargetId,
-                    CurrentTick = 2, QueryContextId = "received-reanchor"
+                    ScenarioId = ScenarioId,
+                    Seed = Seed,
+                    TargetEntityId = TargetId,
+                    CurrentTick = 2,
+                    QueryContextId = "received-reanchor"
                 }, publicHazardEnvelope: null);
         }
 
