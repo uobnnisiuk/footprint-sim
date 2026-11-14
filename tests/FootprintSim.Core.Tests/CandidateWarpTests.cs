@@ -15,6 +15,58 @@ namespace FootprintSim.Core.Tests;
 
 public sealed class CandidateWarpTests
 {
+    // Ready-stage Codex P2: merging sparse outer histories must not erase
+    // a branch whose last preceding state differs from another branch.
+    [Fact]
+    public void SparseOuterUnionPreservesEachBranchTemporalFallback()
+    {
+        var publicSource = CandidateWarpProvenance.Create(
+            CandidateWarpSourceKind.VoluntaryReachability,
+            "outer-fallback-public", 0, false, false,
+            EvidenceState.SupportedButUncertain, ["a", "b"]);
+        var historical = PublicCandidateWarpFactory.Create(
+            ScenarioId, Seed, TargetPersonId,
+            [
+                new PublicCandidateWarpStateDefinition
+                {
+                    TimeWindow = InteractionTimeWindow.At(0),
+                    TemporalKind = CandidateWarpTemporalKind.EventPoint,
+                    RegionIds = ["a"],
+                    EvidenceBoundaryState = EvidenceState.SupportedButUncertain,
+                    Provenance = [publicSource]
+                },
+                new PublicCandidateWarpStateDefinition
+                {
+                    TimeWindow = InteractionTimeWindow.At(2),
+                    TemporalKind = CandidateWarpTemporalKind.EventPoint,
+                    RegionIds = ["b"],
+                    EvidenceBoundaryState = EvidenceState.SupportedButUncertain,
+                    Provenance = [publicSource]
+                }
+            ]);
+        var confirmed = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 4, "outer-fallback-a");
+        var uncertain = Constraint(EvidenceState.SupportedButUncertain,
+            InteractionTimeWindow.At(2), ["b"], 4, "outer-fallback-b");
+        var result = Apply(historical, [confirmed, uncertain], 4);
+
+        // The uncertain b@2 can be false, so a@3 is still possible;
+        // b@3 also remains possible if it was true. These are not a
+        // combined preferred path or independent copies of one source.
+        Assert.Contains("a", result.CandidateWarps.OuterPlausibleRegionIdsAt(3));
+        Assert.Contains("b", result.CandidateWarps.OuterPlausibleRegionIdsAt(3));
+        Assert.Contains("a", result.CandidateWarps.CandidateRegionIdsAt(4));
+        Assert.Contains("b", result.CandidateWarps.CandidateRegionIdsAt(4));
+        Assert.DoesNotContain("b", result.CandidateWarps.PreferredRegionIdsAt(3));
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(Apply(historical,
+                [uncertain, confirmed], 4)));
+        var copied = Apply(historical,
+            [confirmed, uncertain, uncertain], 4);
+        Assert.Equal(JsonDefaults.Serialize(result.CandidateWarps),
+            JsonDefaults.Serialize(copied.CandidateWarps));
+    }
+
     // AR-59: an inclusive encounter is true at SOME tick, not every tick.
     // A separate exact confirmation inside its window must not be discarded.
     [Theory]

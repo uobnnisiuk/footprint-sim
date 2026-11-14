@@ -230,10 +230,11 @@ public sealed class CrossThreadConstraintApplicator
         };
     }
 
-    // A separate warp per hypothetical unobserved stop makes a series of
-    // received encounters exponential. Outer alternatives may be unioned
-    // conservatively: their state provenance is preserved, but their
-    // incompatible histories are NEVER promoted to a preferred path.
+    // Keep outer history growth bounded when alternatives can be combined
+    // without losing any of their per-warp historical time fallbacks.
+    // A state-list union is NOT generally a union of trajectories: if one
+    // branch has a@0,a@4 and another has a@0,b@2,b@4, the combined list
+    // returns only b at tick 3 rather than the safe outer union {a,b}.
     private static IReadOnlyList<CandidateWarp> CollapseOuterAlternatives(
         IReadOnlyList<CandidateWarp> warps)
     {
@@ -246,22 +247,82 @@ public sealed class CrossThreadConstraintApplicator
             return warps;
         }
 
-        var history = outer.SelectMany(warp => warp.States)
+        // Combine only compatible branches. Distinct incompatible histories
+        // must remain distinct, even though their standing is both outer.
+        // Stable WarpId ordering keeps the grouping deterministic.
+        var groups = new List<List<CandidateWarp>>();
+        foreach (var warp in outer)
+        {
+            var combined = false;
+            foreach (var group in groups)
+            {
+                var proposed = group.Append(warp).ToArray();
+                var merged = UnionOuterStates(proposed);
+                if (!PreservesOuterFallback(proposed, merged))
+                {
+                    continue;
+                }
+
+                group.Add(warp);
+                combined = true;
+                break;
+            }
+
+            if (!combined)
+            {
+                groups.Add([warp]);
+            }
+        }
+
+        return warps.Where(warp =>
+            warp.Standing != CandidateWarpStanding.OuterPlausible)
+            .Concat(groups.Select(group => group.Count == 1
+                ? group[0]
+                : UnionOuterStates(group)))
+            .ToArray();
+    }
+
+    private static CandidateWarp UnionOuterStates(
+        IReadOnlyList<CandidateWarp> alternatives)
+    {
+        var first = alternatives[0];
+        var history = alternatives.SelectMany(warp => warp.States)
             .GroupBy(state => state.StateId, StringComparer.Ordinal)
             .Select(group => group.First())
             .ToArray();
-        var union = CandidateWarpNormalization.CreateWarp(
-            outer[0].ScenarioId,
-            outer[0].Seed,
-            outer[0].TargetEntityId,
+        return CandidateWarpNormalization.CreateWarp(
+            first.ScenarioId, first.Seed, first.TargetEntityId,
             CandidateWarpStanding.OuterPlausible,
-            parentWarpId: null,
-            history,
-            "outer-conservative-union");
-        return warps.Where(warp =>
-            warp.Standing != CandidateWarpStanding.OuterPlausible)
-            .Append(union)
-            .ToArray();
+            parentWarpId: null, history, "outer-conservative-union");
+    }
+
+    private static bool PreservesOuterFallback(
+        IReadOnlyList<CandidateWarp> alternatives, CandidateWarp merged)
+    {
+        // CandidateRegionIdsAt changes only at starts and immediately after
+        // ends of state windows; between those boundaries, either the same
+        // windows contain the tick or the same latest preceding states win.
+        // Inspect boundaries without expanding an arbitrarily long window.
+        var boundaries = alternatives.SelectMany(warp => warp.States)
+            .SelectMany(state => state.TimeWindow.EndTick == long.MaxValue
+                ? new[] { state.TimeWindow.StartTick, state.TimeWindow.EndTick }
+                : new[] { state.TimeWindow.StartTick, state.TimeWindow.EndTick,
+                    state.TimeWindow.EndTick + 1 })
+            .Distinct()
+            .OrderBy(tick => tick);
+        foreach (var tick in boundaries)
+        {
+            var mergedRegions = merged.CandidateRegionIdsAt(tick)
+                .ToHashSet(StringComparer.Ordinal);
+            if (alternatives.Any(warp =>
+                warp.CandidateRegionIdsAt(tick).Any(region =>
+                    !mergedRegions.Contains(region))))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static WarpApplication ApplyToWarp(
