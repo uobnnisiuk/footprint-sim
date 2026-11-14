@@ -436,8 +436,7 @@ public sealed class CrossThreadConstraintApplicator
             var sparseConfirmedContinuation =
                 warp.Standing == CandidateWarpStanding.OuterPlausible &&
                 constraint.IsPersonEvidence && !constraint.IsDeviceOnlyEvidence &&
-                constraint.EvidenceBoundaryState is
-                    EvidenceState.Confirmed or EvidenceState.SupportedButUncertain &&
+                constraint.EvidenceBoundaryState == EvidenceState.Confirmed &&
                 warp.States.Any(state =>
                     state.TimeWindow.EndTick <
                         constraint.ConstrainedTimeWindow.StartTick &&

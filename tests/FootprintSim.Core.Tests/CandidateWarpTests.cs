@@ -482,9 +482,16 @@ public sealed class CandidateWarpTests
         Assert.Contains("b", result.CandidateWarps.CandidateRegionIdsAt(
             firstExactTick + 1));
         Assert.Contains("c", result.CandidateWarps.CandidateRegionIdsAt(lastExactTick));
-        Assert.DoesNotContain("b",
-            result.CandidateWarps.CandidateRegionIdsAt(lastExactTick));
-        Assert.DoesNotContain("b", result.CandidateWarps.CandidateRegionIdsAt(current));
+        var trace = string.Join(" | ", result.CandidateWarps.Warps.Select(warp =>
+            $"{warp.Standing}:" + string.Join(";", warp.States.Select(state =>
+                $"{state.TimeWindow.StartTick}-{state.TimeWindow.EndTick}=" +
+                string.Join(",", state.RegionIds)))));
+        Assert.True(!result.CandidateWarps.CandidateRegionIdsAt(lastExactTick)
+            .Contains("b", StringComparer.Ordinal),
+            $"b survived last exact at {lastExactTick}: {trace}");
+        Assert.True(!result.CandidateWarps.CandidateRegionIdsAt(current)
+            .Contains("b", StringComparer.Ordinal),
+            $"b survived query at {current}: {trace}");
         Assert.Contains("c", result.CandidateWarps.CandidateRegionIdsAt(current));
         Assert.DoesNotContain(result.Audits, audit =>
             audit.SourceObservationId == last.SourceObservationId &&
