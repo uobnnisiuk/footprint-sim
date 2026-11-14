@@ -775,7 +775,12 @@ public sealed class CrossThreadConstraintApplicator
                             source.EvidenceBoundaryState ==
                                 EvidenceState.SupportedButUncertain &&
                             source.SourceTimeWindow is { } weakWindow &&
-                            Overlaps(weakWindow, constraint.ConstrainedTimeWindow)) &&
+                            // The weak report may describe a possible earlier
+                            // location, not a mandatory continuing stay.
+                            // A later independent Confirmed exact can follow
+                            // an unpublished link without a hard conflict.
+                            weakWindow.StartTick <=
+                                constraint.ConstrainedTimeWindow.StartTick) &&
                         !state.Provenance.Any(source =>
                             source.SourceKind ==
                                 CandidateWarpSourceKind.CrossThreadObservation &&
