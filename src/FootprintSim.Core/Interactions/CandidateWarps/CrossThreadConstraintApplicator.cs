@@ -563,6 +563,10 @@ public sealed class CrossThreadConstraintApplicator
                 window.StartTick <= constraint.ConstrainedTimeWindow.StartTick &&
                 constraint.ConstrainedTimeWindow.EndTick <= window.EndTick &&
                 !source.RegionIds.ToHashSet(StringComparer.Ordinal).SetEquals(allowed) &&
+                // This new guard is only for *partially shared* sets. Fully
+                // disjoint sets already use the existing exact/inclusive
+                // witness handling, including publicly verified routes.
+                source.RegionIds.Intersect(allowed, StringComparer.Ordinal).Any() &&
                 !string.Equals(source.SourceObservationId,
                     constraint.SourceObservationId, StringComparison.Ordinal) &&
                 (state.TimeWindow.StartTick <
@@ -601,6 +605,10 @@ public sealed class CrossThreadConstraintApplicator
                 window.StartTick == window.EndTick &&
                 window.StartTick == constraint.ConstrainedTimeWindow.StartTick &&
                 !source.RegionIds.ToHashSet(StringComparer.Ordinal).SetEquals(allowed) &&
+                // This new guard is only for *partially shared* sets. Fully
+                // disjoint sets already use the existing exact/inclusive
+                // witness handling, including publicly verified routes.
+                source.RegionIds.Intersect(allowed, StringComparer.Ordinal).Any() &&
                 !string.Equals(source.SourceObservationId,
                     constraint.SourceObservationId, StringComparison.Ordinal)));
         if (differentInclusiveAfterExact)
