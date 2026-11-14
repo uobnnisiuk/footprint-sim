@@ -475,6 +475,42 @@ public sealed class CandidateWarpTests
                 .CandidateWarps));
     }
 
+    // Ready-stage P2: reanchoring an outer-only continuation must still
+    // recognize a direct current Confirmed receipt. The historical path
+    // a@0 -> b@1 -> a@2 is not publicly verified, but a@2 itself is exact.
+    [Fact]
+    public void ReanchoredOuterContinuationKeepsDirectCurrentPreferred()
+    {
+        var initial = Warp(InteractionTimeWindow.At(0),
+            CandidateWarpTemporalKind.EventPoint, ["a"]);
+        var first = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 2, "reanchor-a0");
+        var middle = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(1), ["b"], 2, "reanchor-b1");
+        var current = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(2), ["a"], 2, "reanchor-a2");
+
+        var result = Apply(initial, [first, middle, current], 2);
+        Assert.Contains("a", result.CandidateWarps.PreferredRegionIdsAt(2));
+        Assert.DoesNotContain("b", result.CandidateWarps.PreferredRegionIdsAt(2));
+        Assert.Contains("b", result.CandidateWarps.OuterPlausibleRegionIdsAt(1));
+        Assert.Contains(result.CandidateWarps.Warps, warp =>
+            warp.Standing == CandidateWarpStanding.Preferred &&
+            warp.States.Count == 1 &&
+            warp.States[0].TimeWindow == InteractionTimeWindow.At(2) &&
+            warp.States[0].Provenance.Any(source =>
+                source.SourceObservationId == current.SourceObservationId));
+        Assert.Contains(result.Audits, audit =>
+            audit.SourceObservationId == current.SourceObservationId &&
+            audit.Reason == ConstraintApplicationReason.Applied &&
+            !audit.ConflictDetected);
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(Apply(initial, [current, middle, first], 2)));
+        Assert.Equal(JsonDefaults.Serialize(result.CandidateWarps),
+            JsonDefaults.Serialize(Apply(initial,
+                [first, middle, current, middle, current], 2).CandidateWarps));
+    }
+
     // AR-40 follow-up: the post-exact outer branch must incorporate a
     // third independent Confirmed exact, even with no public route to fill
     // the gap (or an irrelevant published branch).

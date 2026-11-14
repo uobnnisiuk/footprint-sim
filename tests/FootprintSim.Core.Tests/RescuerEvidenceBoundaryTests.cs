@@ -3083,6 +3083,85 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Throws<ArgumentException>(() => BuildDistinct([first, second], [null!], 5));
     }
 
+    // Real three-original receipt boundary -> applicator: a directly
+    // received current exact cannot be demoted by an unknown historical
+    // continuation. All receipts share one cutoff, not one source ancestry.
+    [Fact]
+    public void ThreeDistinctReceivedExactsPreserveCurrentPreferredAfterOuterReanchor()
+    {
+        var items = new[]
+        {
+            (Id: "reanchor-original-a0", Holder: "reanchor-holder-0",
+                Tick: 0L, Region: "A"),
+            (Id: "reanchor-original-b1", Holder: "reanchor-holder-1",
+                Tick: 1L, Region: "B"),
+            (Id: "reanchor-original-a2", Holder: "reanchor-holder-2",
+                Tick: 2L, Region: "A")
+        };
+        var context = Context() with
+        {
+            PublicDeviceIds = items.Select(item => item.Holder).ToArray()
+        };
+        var originals = items.Select(item =>
+            new DeviceHeldInteractionRecord(
+                item.Holder, item.Tick,
+                InteractionObservation.Create(
+                    ScenarioId, Seed, item.Id, null,
+                    InteractionRelationKind.PersonPersonEncounter,
+                    [
+                        new InteractionParticipant(TargetId, InteractionEntityKind.Person,
+                            InteractionParticipantRole.EncounterParticipant),
+                        new InteractionParticipant("person-b", InteractionEntityKind.Person,
+                            InteractionParticipantRole.EncounterParticipant)
+                    ],
+                    InteractionTimeWindow.At(item.Tick), [item.Region],
+                    item.Tick, EvidenceState.Confirmed,
+                    isPersonEvidence: true, isDeviceOnlyEvidence: false,
+                    InteractionVisibility.PrivateEvidence,
+                    [new InteractionProvenance(
+                        InteractionProvenanceKind.EvidenceRecord, item.Id)])))
+            .ToArray();
+        var receipts = items.Select(item => new InteractionRecordReceipt(
+            ScenarioId, Seed, item.Id, item.Holder, RescuerId, 2)).ToArray();
+        var builder = new RescuerEvidenceInputBuilder();
+        RescuerEvidenceInput Received(IEnumerable<DeviceHeldInteractionRecord> held,
+            IEnumerable<InteractionRecordReceipt> deliveries) =>
+            builder.BuildDistinctOriginals(context, Seed, 2, RescuerId,
+                held, deliveries);
+        CandidateWarpApplicationResult Evaluate(RescuerEvidenceInput received)
+        {
+            var initial = PublicCandidateWarpFactory.Create(
+                ScenarioId, Seed, TargetId, [State(0, ["A"])],
+                CandidateWarpStanding.Preferred);
+            return new CrossThreadConstraintApplicator().Apply(
+                initial, received.Input.AvailableCrossThreadConstraints!.Constraints,
+                new CandidateWarpAccessContext
+                {
+                    ScenarioId = ScenarioId, Seed = Seed, TargetEntityId = TargetId,
+                    CurrentTick = 2, QueryContextId = "received-reanchor"
+                }, publicHazardEnvelope: null);
+        }
+
+        var received = Received(originals, receipts);
+        Assert.Equal(3, received.Input.AvailableCrossThreadConstraints!.Constraints.Count);
+        Assert.Equal(3, received.ReceivedRecords.Count);
+        var applied = Evaluate(received);
+        Assert.Contains("A", applied.CandidateWarps.PreferredRegionIdsAt(2));
+        Assert.DoesNotContain("B", applied.CandidateWarps.PreferredRegionIdsAt(2));
+        Assert.Contains("B", applied.CandidateWarps.OuterPlausibleRegionIdsAt(1));
+        Assert.Contains(applied.CandidateWarps.Warps, warp =>
+            warp.Standing == CandidateWarpStanding.Preferred &&
+            warp.States.Count == 1 &&
+            warp.States[0].TimeWindow == InteractionTimeWindow.At(2));
+        Assert.Equal(JsonDefaults.Serialize(applied),
+            JsonDefaults.Serialize(Evaluate(Received(
+                originals.Reverse(), receipts.Reverse()))));
+        Assert.Equal(JsonDefaults.Serialize(applied.CandidateWarps),
+            JsonDefaults.Serialize(Evaluate(Received(
+                originals, receipts.Concat([receipts[1], receipts[2]])))
+                .CandidateWarps));
+    }
+
     [Fact]
     public void DistinctCompositionValidatesEveryOriginalRunAndHolder()
     {

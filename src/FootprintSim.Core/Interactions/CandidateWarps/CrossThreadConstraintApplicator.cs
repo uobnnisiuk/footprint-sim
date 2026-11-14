@@ -1760,6 +1760,54 @@ public sealed class CrossThreadConstraintApplicator
                 CandidateWarpStanding.OuterPlausible, warp.WarpId,
                 history, $"outer-later-receipt:{constraint.ConstraintId}")
         };
+        // The preceding outer continuation is not a certified route.
+        // An independently received exact confirmation at the QUERY tick
+        // certifies its current region even if that historical route is
+        // unresolved. Give it a separate past-free preferred anchor; keep
+        // the previous possible history outer-only, without inventing a
+        // public transition or promoting its candidate locations.
+        if (constraint.EvidenceBoundaryState == EvidenceState.Confirmed &&
+            receivedWindow.StartTick == accessContext.CurrentTick &&
+            receivedWindow.EndTick == accessContext.CurrentTick)
+        {
+            var currentRegions = constraint.AllowedRegionIds
+                .ToHashSet(StringComparer.Ordinal);
+            var otherCurrentExactFacts = warp.States
+                .SelectMany(state => state.Provenance)
+                .Where(source =>
+                    source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
+                    source.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                    source.SourceTimeWindow is { } window &&
+                    window.StartTick == accessContext.CurrentTick &&
+                    window.EndTick == accessContext.CurrentTick &&
+                    !string.Equals(source.SourceObservationId,
+                        constraint.SourceObservationId, StringComparison.Ordinal))
+                .DistinctBy(source => source.SourceObservationId ??
+                    source.SourceIdentifier, StringComparer.Ordinal)
+                .ToArray();
+            foreach (var other in otherCurrentExactFacts)
+            {
+                currentRegions.IntersectWith(other.RegionIds);
+            }
+
+            // Disjoint independently confirmed exact facts are not a
+            // majority vote and must never create a preferred anchor.
+            if (currentRegions.Count > 0)
+            {
+                var currentState = CandidateWarpNormalization.CreateState(
+                    warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                    InteractionTimeWindow.At(accessContext.CurrentTick),
+                    CandidateWarpTemporalKind.EventPoint,
+                    currentRegions, EvidenceState.Confirmed,
+                    otherCurrentExactFacts.Append(
+                        CreateCrossThreadProvenance(constraint)));
+                alternatives.Add(CandidateWarpNormalization.CreateWarp(
+                    warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                    CandidateWarpStanding.Preferred, parentWarpId: null,
+                    [currentState],
+                    $"direct-current-reanchored:{constraint.ConstraintId}"));
+            }
+        }
         if (constraint.EvidenceBoundaryState ==
             EvidenceState.SupportedButUncertain)
         {
