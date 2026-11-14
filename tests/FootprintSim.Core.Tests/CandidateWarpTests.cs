@@ -143,10 +143,13 @@ public sealed class CandidateWarpTests
         {
             branches.Add(new PublicHazardBranch
             {
-                SourceRegionId = "a", DestinationRegionId = "c",
-                MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+                SourceRegionId = "a",
+                DestinationRegionId = "c",
+                MinimumTravelTicks = 1,
+                MaximumTravelTicks = 1,
                 TransportType = HazardTransportType.HazardDriven,
-                ProvenanceId = "minimum-arrival-a-c", PublishedAtTick = 0
+                ProvenanceId = "minimum-arrival-a-c",
+                PublishedAtTick = 0
             });
         }
 
