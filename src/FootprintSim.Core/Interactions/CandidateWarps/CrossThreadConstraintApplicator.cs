@@ -1627,6 +1627,50 @@ public sealed class CrossThreadConstraintApplicator
         // An uncertain exact report may be false. Preserve the original
         // candidate history alongside the reported witness.
         var alternatives = new List<CandidateWarp> { result };
+        // A directly received Confirmed exact at the query tick certifies
+        // the CURRENT location, not a route through an earlier existential
+        // interval. Retain the uncertain history as outer-only, while giving
+        // the independent current observation its own past-free preferred
+        // anchor. Other exact Confirmed observations at this same tick must
+        // still be intersected; an inclusive window is NOT an exact fact.
+        if (constraint.EvidenceBoundaryState == EvidenceState.Confirmed &&
+            tick == accessContext.CurrentTick)
+        {
+            var currentRegions = constraint.AllowedRegionIds
+                .ToHashSet(StringComparer.Ordinal);
+            var otherCurrentExactFacts = warp.States
+                .SelectMany(state => state.Provenance)
+                .Where(source =>
+                    source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
+                    source.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                    source.SourceTimeWindow is { } window &&
+                    window.StartTick == tick && window.EndTick == tick &&
+                    !string.Equals(source.SourceObservationId,
+                        constraint.SourceObservationId, StringComparison.Ordinal))
+                .DistinctBy(source => source.SourceObservationId ??
+                    source.SourceIdentifier, StringComparer.Ordinal)
+                .ToArray();
+            foreach (var other in otherCurrentExactFacts)
+            {
+                currentRegions.IntersectWith(other.RegionIds);
+            }
+
+            if (currentRegions.Count > 0)
+            {
+                var currentAnchorState = CandidateWarpNormalization.CreateState(
+                    warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                    InteractionTimeWindow.At(tick),
+                    CandidateWarpTemporalKind.EventPoint,
+                    currentRegions, EvidenceState.Confirmed,
+                    otherCurrentExactFacts.Append(
+                        CreateCrossThreadProvenance(constraint)));
+                alternatives.Add(CandidateWarpNormalization.CreateWarp(
+                    warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                    CandidateWarpStanding.Preferred, parentWarpId: null,
+                    [currentAnchorState],
+                    $"direct-current-inclusive:{constraint.ConstraintId}"));
+            }
+        }
         // A later exact witness can continue beyond its tick. The earlier
         // inclusive receipt only has to be true at one tick; its remaining
         // tail must not mask the exact witness's post-tick possibilities.
