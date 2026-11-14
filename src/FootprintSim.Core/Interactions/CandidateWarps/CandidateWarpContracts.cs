@@ -457,13 +457,33 @@ public static class PublicCandidateWarpProjection
 
             var latestTick = sources[0].TimeWindow.EndTick;
             var latest = sources.Where(state => state.TimeWindow.EndTick == latestTick).ToArray();
-            var future = PublicCandidateWarpPropagator.Propagate(
+            var future = PublicCandidateWarpPropagator.TryPropagate(
                 warp.ScenarioId,
                 warp.Seed,
                 warp.TargetEntityId,
                 latest,
                 currentTick,
                 publicHazardEnvelope);
+            if (future is null)
+            {
+                // No published route reaches a permitted region at the query
+                // tick (for example, the destination's minimum arrival is
+                // later). A missing route is not proof of no possible person
+                // location. Retain source ancestry without promoting a
+                // speculative stay or an unreachable destination to Preferred.
+                var unresolved = PublicCandidateWarpPropagator.Propagate(
+                    warp.ScenarioId, warp.Seed, warp.TargetEntityId, latest,
+                    currentTick, publicHazardEnvelope, retainUndeclaredStay: true);
+                var outer = CandidateWarpNormalization.CreateWarp(
+                    warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                    warp.Standing == CandidateWarpStanding.Conflicted
+                        ? CandidateWarpStanding.Conflicted
+                        : CandidateWarpStanding.OuterPlausible,
+                    warp.WarpId, warp.States.Append(unresolved),
+                    $"public-forward-no-reachable-region:{currentTick}");
+                return new[] { outer };
+            }
+
             var propagated = CandidateWarpNormalization.CreateWarp(
                 warp.ScenarioId,
                 warp.Seed,

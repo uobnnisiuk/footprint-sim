@@ -15,6 +15,163 @@ namespace FootprintSim.Core.Tests;
 
 public sealed class CandidateWarpTests
 {
+    // A published route is not proof of departure, and a destination with a
+    // later minimum arrival cannot be used as a positive current location.
+    [Theory]
+    [InlineData(2, false)]
+    [InlineData(3, false)]
+    [InlineData(4, true)]
+    [InlineData(5, true)]
+    public void ForwardProjectionBeforeMinimumArrivalKeepsUnknownOuter(
+        long queryTick, bool destinationAvailable)
+    {
+        var source = MinimumArrivalSource();
+        var envelope = MinimumArrivalEnvelope();
+        var projected = PublicCandidateWarpProjection.ForwardTo(
+            source, queryTick, envelope);
+
+        Assert.Contains("a", projected.CandidateRegionIdsAt(0));
+        Assert.Contains("a", projected.OuterPlausibleRegionIdsAt(queryTick));
+        if (destinationAvailable)
+        {
+            Assert.Contains("b", projected.PreferredRegionIdsAt(queryTick));
+        }
+        else
+        {
+            Assert.DoesNotContain("b", projected.CandidateRegionIdsAt(queryTick));
+            Assert.Empty(projected.PreferredRegionIdsAt(queryTick));
+        }
+
+        Assert.Equal(JsonDefaults.Serialize(projected),
+            JsonDefaults.Serialize(PublicCandidateWarpProjection.ForwardTo(
+                source, queryTick, envelope)));
+        Assert.All(projected.Warps, warp =>
+            Assert.Contains(warp.States.SelectMany(state => state.Provenance),
+                sourceProvenance => sourceProvenance.SourceIdentifier ==
+                    "minimum-arrival-source"));
+    }
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void ReceivedConfirmationBeforeMinimumArrivalDoesNotThrowOrPreferStop(
+        long queryTick)
+    {
+        var candidates = Warp(InteractionTimeWindow.At(0),
+            CandidateWarpTemporalKind.EventPoint, ["a"]);
+        var confirmed = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 0, "minimum-arrival-receipt");
+        var envelope = MinimumArrivalEnvelope();
+
+        var applied = Apply(candidates, [confirmed], queryTick, envelope);
+        Assert.Contains("a", applied.CandidateWarps.CandidateRegionIdsAt(0));
+        Assert.Contains("a", applied.CandidateWarps.OuterPlausibleRegionIdsAt(queryTick));
+        Assert.DoesNotContain("b",
+            applied.CandidateWarps.CandidateRegionIdsAt(queryTick));
+        Assert.DoesNotContain("a",
+            applied.CandidateWarps.PreferredRegionIdsAt(queryTick));
+        Assert.Equal(JsonDefaults.Serialize(applied.CandidateWarps),
+            JsonDefaults.Serialize(Apply(candidates,
+                [confirmed, confirmed], queryTick, envelope).CandidateWarps));
+    }
+
+    [Fact]
+    public void UnreachableDestinationDoesNotEraseOtherPublishedBranch()
+    {
+        var projected = PublicCandidateWarpProjection.ForwardTo(
+            MinimumArrivalSource(), 2,
+            MinimumArrivalEnvelope(includeReachableAlternative: true));
+
+        Assert.Contains("c", projected.PreferredRegionIdsAt(2));
+        Assert.Contains("c", projected.CandidateRegionIdsAt(2));
+        Assert.Contains("a", projected.OuterPlausibleRegionIdsAt(2));
+        Assert.DoesNotContain("b", projected.CandidateRegionIdsAt(2));
+        Assert.DoesNotContain("a", projected.PreferredRegionIdsAt(2));
+    }
+
+    [Fact]
+    public void UnpublishedMinimumArrivalBranchCannotStrengthenEarlyQuery()
+    {
+        var source = MinimumArrivalSource();
+        var envelope = MinimumArrivalEnvelope(branchPublishedAtTick: 3);
+        var early = PublicCandidateWarpProjection.ForwardTo(source, 2, envelope);
+        var later = PublicCandidateWarpProjection.ForwardTo(source, 4, envelope);
+
+        Assert.DoesNotContain("b", early.CandidateRegionIdsAt(2));
+        Assert.Contains("b", later.PreferredRegionIdsAt(4));
+        Assert.Equal(JsonDefaults.Serialize(early),
+            JsonDefaults.Serialize(PublicCandidateWarpProjection.ForwardTo(
+                source, 2, envelope)));
+    }
+
+    private static CandidateWarpSet MinimumArrivalSource() =>
+        PublicCandidateWarpFactory.Create(
+            ScenarioId, Seed, TargetPersonId,
+            [
+                new PublicCandidateWarpStateDefinition
+                {
+                    TimeWindow = InteractionTimeWindow.At(0),
+                    TemporalKind = CandidateWarpTemporalKind.EventPoint,
+                    RegionIds = ["a"],
+                    EvidenceBoundaryState = EvidenceState.Confirmed,
+                    Provenance =
+                    [
+                        CandidateWarpProvenance.Create(
+                            CandidateWarpSourceKind.LastConfirmed,
+                            "minimum-arrival-source", 0, true, false,
+                            EvidenceState.Confirmed, ["a"])
+                    ]
+                }
+            ], CandidateWarpStanding.Preferred);
+
+    private static PublicHazardEnvelope MinimumArrivalEnvelope(
+        bool includeReachableAlternative = false,
+        long branchPublishedAtTick = 0)
+    {
+        var branches = new List<PublicHazardBranch>
+        {
+            new()
+            {
+                SourceRegionId = "a", DestinationRegionId = "b",
+                MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+                TransportType = HazardTransportType.HazardDriven,
+                ProvenanceId = "minimum-arrival-a-b",
+                PublishedAtTick = branchPublishedAtTick
+            }
+        };
+        if (includeReachableAlternative)
+        {
+            branches.Add(new PublicHazardBranch
+            {
+                SourceRegionId = "a", DestinationRegionId = "c",
+                MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+                TransportType = HazardTransportType.HazardDriven,
+                ProvenanceId = "minimum-arrival-a-c", PublishedAtTick = 0
+            });
+        }
+
+        return new PublicHazardEnvelope
+        {
+            HazardId = "minimum-arrival-public-model",
+            SourceRegionId = "a",
+            PublishedAtTick = 0,
+            Regions =
+            [
+                new PublicHazardRegion
+                {
+                    RegionId = "a", PublishedAtTick = 0,
+                    MinimumArrivalTick = 0, MaximumArrivalTick = 0
+                },
+                new PublicHazardRegion
+                {
+                    RegionId = "b", PublishedAtTick = 0,
+                    MinimumArrivalTick = 4, MaximumArrivalTick = 4
+                }
+            ],
+            Branches = branches
+        };
+    }
+
     // AR-62 derivative: a partly shared region is not a mandatory
     // simultaneous witness when one encounter covers an inclusive window.
     [Theory]

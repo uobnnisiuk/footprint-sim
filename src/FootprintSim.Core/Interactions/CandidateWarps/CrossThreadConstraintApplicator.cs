@@ -1681,7 +1681,7 @@ public sealed class CrossThreadConstraintApplicator
 
         if (accessContext.CurrentTick > propagationSources.Max(state => state.TimeWindow.EndTick))
         {
-            var propagated = PublicCandidateWarpPropagator.Propagate(
+            var propagated = PublicCandidateWarpPropagator.TryPropagate(
                 warp.ScenarioId,
                 warp.Seed,
                 warp.TargetEntityId,
@@ -1690,6 +1690,22 @@ public sealed class CrossThreadConstraintApplicator
                 publicHazardEnvelope,
                 retainUndeclaredStay,
                 publicationCutoffTick: accessContext.CurrentTick);
+            if (propagated is null)
+            {
+                // No positive publicly reachable location exists at this tick.
+                // Keep the received source as an unverified OUTER possibility;
+                // it cannot certify either a departure or an ongoing stay.
+                propagated = PublicCandidateWarpPropagator.Propagate(
+                    warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                    propagationSources, accessContext.CurrentTick,
+                    publicHazardEnvelope, retainUndeclaredStay: true,
+                    publicationCutoffTick: accessContext.CurrentTick);
+                if (standing != CandidateWarpStanding.Conflicted)
+                {
+                    standing = CandidateWarpStanding.OuterPlausible;
+                }
+            }
+
             history.Add(propagated);
         }
 
@@ -1867,6 +1883,24 @@ internal static class PublicCandidateWarpPropagator
         long currentTick,
         PublicHazardEnvelope? envelope,
         bool retainUndeclaredStay = false,
+        long? publicationCutoffTick = null) =>
+        TryPropagate(
+            scenarioId, seed, targetEntityId, sourceStates, currentTick,
+            envelope, retainUndeclaredStay, publicationCutoffTick) ??
+        throw new InvalidOperationException(
+            "No public forward candidate can be represented as a nonempty state.");
+
+    // Null means no publicly supported region survived, not an observed
+    // empty search space. Callers must retain unknown outer possibilities
+    // rather than inventing a preferred location or constructing an empty state.
+    public static CandidateWarpState? TryPropagate(
+        string scenarioId,
+        int seed,
+        string targetEntityId,
+        IEnumerable<CandidateWarpState> sourceStates,
+        long currentTick,
+        PublicHazardEnvelope? envelope,
+        bool retainUndeclaredStay = false,
         long? publicationCutoffTick = null)
     {
         // Historical propagation time and information availability are
@@ -1900,6 +1934,13 @@ internal static class PublicCandidateWarpPropagator
                     provenance.AddRange(item.Provenance);
                 }
             }
+        }
+
+        if (regions.Count == 0)
+        {
+            // A forbidden early arrival is neither an observed empty world
+            // nor evidence that the original location remains preferred.
+            return null;
         }
 
         return CandidateWarpNormalization.CreateState(
