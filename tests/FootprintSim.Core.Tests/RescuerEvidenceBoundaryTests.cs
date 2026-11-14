@@ -3124,17 +3124,33 @@ public sealed class RescuerEvidenceBoundaryTests
         var receipts = items.Select(item => new InteractionRecordReceipt(
             ScenarioId, Seed, item.Id, item.Holder, RescuerId, 2)).ToArray();
         var builder = new RescuerEvidenceInputBuilder();
-        RescuerEvidenceInput Received(IEnumerable<DeviceHeldInteractionRecord> held,
-            IEnumerable<InteractionRecordReceipt> deliveries) =>
-            builder.BuildDistinctOriginals(context, Seed, 2, RescuerId,
-                held, deliveries);
-        CandidateWarpApplicationResult Evaluate(RescuerEvidenceInput received)
+        // The existing BuildDistinctOriginals contract accepts EXACTLY TWO
+        // originals. Compose its two eligible source projections with a third
+        // ordinary Build projection for this three-receipt safety regression.
+        // Do not expand a production API in a scoped safety correction.
+        CrossThreadConstraint[] ReceivedConstraints(
+            IEnumerable<DeviceHeldInteractionRecord> held,
+            IEnumerable<InteractionRecordReceipt> deliveries)
+        {
+            var sorted = held.OrderBy(record => record.OriginalRecordId,
+                StringComparer.Ordinal).ToArray();
+            var ledger = deliveries.ToArray();
+            var firstTwo = builder.BuildDistinctOriginals(
+                context, Seed, 2, RescuerId, sorted.Take(2), ledger);
+            var third = builder.Build(
+                context, Seed, 2, RescuerId, sorted[2], ledger);
+            return firstTwo.Input.AvailableCrossThreadConstraints!.Constraints
+                .Concat(third.Input.AvailableCrossThreadConstraints!.Constraints)
+                .ToArray();
+        }
+        CandidateWarpApplicationResult Evaluate(
+            IReadOnlyList<CrossThreadConstraint> constraints)
         {
             var initial = PublicCandidateWarpFactory.Create(
                 ScenarioId, Seed, TargetId, [State(0, ["A"])],
                 CandidateWarpStanding.Preferred);
             return new CrossThreadConstraintApplicator().Apply(
-                initial, received.Input.AvailableCrossThreadConstraints!.Constraints,
+                initial, constraints,
                 new CandidateWarpAccessContext
                 {
                     ScenarioId = ScenarioId, Seed = Seed, TargetEntityId = TargetId,
@@ -3142,9 +3158,11 @@ public sealed class RescuerEvidenceBoundaryTests
                 }, publicHazardEnvelope: null);
         }
 
-        var received = Received(originals, receipts);
-        Assert.Equal(3, received.Input.AvailableCrossThreadConstraints!.Constraints.Count);
-        Assert.Equal(3, received.ReceivedRecords.Count);
+        var received = ReceivedConstraints(originals, receipts);
+        Assert.Equal(3, received.Length);
+        Assert.Equal(3, received.Select(item => item.SourceObservationId)
+            .Distinct(StringComparer.Ordinal).Count());
+        Assert.All(received, item => Assert.Equal(2, item.AvailableAtTick));
         var applied = Evaluate(received);
         Assert.Contains("A", applied.CandidateWarps.PreferredRegionIdsAt(2));
         Assert.DoesNotContain("B", applied.CandidateWarps.PreferredRegionIdsAt(2));
@@ -3154,10 +3172,10 @@ public sealed class RescuerEvidenceBoundaryTests
             warp.States.Count == 1 &&
             warp.States[0].TimeWindow == InteractionTimeWindow.At(2));
         Assert.Equal(JsonDefaults.Serialize(applied),
-            JsonDefaults.Serialize(Evaluate(Received(
+            JsonDefaults.Serialize(Evaluate(ReceivedConstraints(
                 originals.Reverse(), receipts.Reverse()))));
         Assert.Equal(JsonDefaults.Serialize(applied.CandidateWarps),
-            JsonDefaults.Serialize(Evaluate(Received(
+            JsonDefaults.Serialize(Evaluate(ReceivedConstraints(
                 originals, receipts.Concat([receipts[1], receipts[2]])))
                 .CandidateWarps));
     }
