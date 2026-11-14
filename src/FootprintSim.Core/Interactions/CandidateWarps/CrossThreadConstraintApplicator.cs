@@ -1243,6 +1243,13 @@ public sealed class CrossThreadConstraintApplicator
                 publicationCutoffTick: accessContext.CurrentTick));
         }
 
+        // The encounter can have occurred at the window's first tick and
+        // the person can have travelled onward before its last tick.
+        // Historical projections are only outer possibilities, never proof
+        // of residence or a reason to narrow an unrelated earlier state.
+        AppendPublicTransitOuterHistory(
+            history, warp, constraint, accessContext, publicHazardEnvelope,
+            window.StartTick);
         var retained = CandidateWarpNormalization.CreateWarp(
             warp.ScenarioId, warp.Seed, warp.TargetEntityId,
             CandidateWarpStanding.OuterPlausible, warp.WarpId, history,
@@ -1305,6 +1312,9 @@ public sealed class CrossThreadConstraintApplicator
                 publicationCutoffTick: accessContext.CurrentTick));
         }
 
+        AppendPublicTransitOuterHistory(
+            history, warp, constraint, accessContext, publicHazardEnvelope,
+            possibleStart);
         var retained = CandidateWarpNormalization.CreateWarp(
             warp.ScenarioId, warp.Seed, warp.TargetEntityId,
             CandidateWarpStanding.OuterPlausible, warp.WarpId, history,
@@ -1337,6 +1347,78 @@ public sealed class CrossThreadConstraintApplicator
             ConstraintApplicationReason.Applied, beforeCount,
             constraint.AllowedRegionIds.Count, alternativesRetained: true,
             conflictDetected: false));
+    }
+
+    // A window is an existential witness, not a continuous stay. In
+    // particular, a b@[1,3] witness may have occurred at tick 1 and the
+    // public b->c route can put c in the outer set at tick 2. Preserve the
+    // earliest possible witness's intermediate PUBLIC descendants without
+    // enumerating all witness ticks or promoting them to Preferred.
+    private static void AppendPublicTransitOuterHistory(
+        List<CandidateWarpState> history, CandidateWarp warp,
+        CrossThreadConstraint constraint, CandidateWarpAccessContext accessContext,
+        PublicHazardEnvelope? publicHazardEnvelope, long firstWitnessTick)
+    {
+        if (publicHazardEnvelope is null ||
+            firstWitnessTick >= accessContext.CurrentTick)
+        {
+            return;
+        }
+
+        var witness = CandidateWarpNormalization.CreateState(
+            warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+            InteractionTimeWindow.At(firstWitnessTick),
+            CandidateWarpTemporalKind.EventPoint,
+            constraint.AllowedRegionIds, constraint.EvidenceBoundaryState,
+            [CreateCrossThreadProvenance(constraint)]);
+        var currentTick = accessContext.CurrentTick;
+        CandidateWarpState? ReachableAt(long tick) =>
+            PublicCandidateWarpPropagator.TryPropagate(
+                warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                [witness], tick, publicHazardEnvelope,
+                retainUndeclaredStay: true,
+                publicationCutoffTick: currentTick);
+
+        var finalReach = ReachableAt(currentTick);
+        if (finalReach is null)
+        {
+            return;
+        }
+
+        // At most one interval per additional PUBLIC region. Binary search
+        // avoids expanding a potentially long observation window tick by tick.
+        // With retained undeclared stay, reachable regions are monotone in
+        // time under the same publication cutoff.
+        foreach (var regionId in finalReach.RegionIds
+            .Except(constraint.AllowedRegionIds, StringComparer.Ordinal)
+            .OrderBy(id => id, StringComparer.Ordinal))
+        {
+            var first = firstWitnessTick;
+            var last = currentTick;
+            while (first < last)
+            {
+                var middle = first + (last - first) / 2;
+                var candidate = ReachableAt(middle);
+                if (candidate is not null &&
+                    candidate.RegionIds.Contains(regionId, StringComparer.Ordinal))
+                {
+                    last = middle;
+                }
+                else
+                {
+                    first = middle + 1;
+                }
+            }
+
+            history.Add(CandidateWarpNormalization.CreateState(
+                warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                new InteractionTimeWindow(first, currentTick),
+                first == currentTick
+                    ? CandidateWarpTemporalKind.EventPoint
+                    : CandidateWarpTemporalKind.StateInterval,
+                [regionId], EvidenceState.SupportedButUncertain,
+                finalReach.Provenance));
+        }
     }
 
     // A Confirmed interval is an existential observation. A last-tick
