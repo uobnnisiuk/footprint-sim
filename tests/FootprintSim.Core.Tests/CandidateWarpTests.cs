@@ -615,6 +615,78 @@ public sealed class CandidateWarpTests
                 .CandidateWarps));
     }
 
+    // Independent AR-66 follow-up: the confirmed b encounter may be at
+    // tick 1, followed by the public b->c transition at tick 2. A late
+    // witness alone cannot retain c in the intermediate historical outer set.
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(5, false)]
+    public void ConfirmedInclusiveKeepsPublishedMidWindowDescendantOuter(
+        long onwardPublicationTick, bool publishedByCutoff)
+    {
+        var initial = Warp(InteractionTimeWindow.At(0),
+            CandidateWarpTemporalKind.EventPoint, ["a"]);
+        var exact = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 4, "ar66-transit-exact");
+        var inclusive = Constraint(EvidenceState.Confirmed,
+            new InteractionTimeWindow(0, 3), ["b"], 4,
+            "ar66-transit-inclusive");
+        var envelope = new PublicHazardEnvelope
+        {
+            HazardId = "ar66-mid-window-public",
+            SourceRegionId = "a",
+            PublishedAtTick = 0,
+            Branches =
+            [
+                new PublicHazardBranch
+                {
+                    SourceRegionId = "a", DestinationRegionId = "b",
+                    MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+                    TransportType = HazardTransportType.HazardDriven,
+                    ProvenanceId = "ar66-a-b", PublishedAtTick = 0
+                },
+                new PublicHazardBranch
+                {
+                    SourceRegionId = "b", DestinationRegionId = "c",
+                    MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+                    TransportType = HazardTransportType.HazardDriven,
+                    ProvenanceId = "ar66-b-c",
+                    PublishedAtTick = onwardPublicationTick
+                }
+            ]
+        };
+
+        var result = Apply(initial, [exact, inclusive], 4, envelope);
+        Assert.Contains("a", result.CandidateWarps.OuterPlausibleRegionIdsAt(0));
+        Assert.Contains("b", result.CandidateWarps.OuterPlausibleRegionIdsAt(1));
+        Assert.DoesNotContain("c", result.CandidateWarps.PreferredRegionIdsAt(2));
+        Assert.DoesNotContain("c", result.CandidateWarps.OuterPlausibleRegionIdsAt(1));
+        if (publishedByCutoff)
+        {
+            Assert.Contains("c", result.CandidateWarps.OuterPlausibleRegionIdsAt(2));
+            Assert.Contains(result.CandidateWarps.Warps
+                .Where(warp => warp.Standing == CandidateWarpStanding.OuterPlausible)
+                .SelectMany(warp => warp.States), state =>
+                state.RegionIds.Contains("c") &&
+                state.TimeWindow.StartTick == 2 &&
+                state.Provenance.Any(source =>
+                    source.SourceObservationId == inclusive.SourceObservationId));
+        }
+        else
+        {
+            Assert.DoesNotContain("c", result.CandidateWarps.CandidateRegionIdsAt(2));
+        }
+
+        Assert.Contains(result.Audits, audit =>
+            audit.SourceObservationId == inclusive.SourceObservationId &&
+            audit.AlternativesRetained && !audit.ConflictDetected);
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(Apply(initial, [inclusive, exact], 4, envelope)));
+        Assert.Equal(JsonDefaults.Serialize(result.CandidateWarps),
+            JsonDefaults.Serialize(Apply(initial, [exact, inclusive, inclusive], 4,
+                envelope).CandidateWarps));
+    }
+
     // A weak later inclusive receipt can be false. Appending its possible
     // witness to the same history must not hide the original a path at tick 1.
     [Fact]
