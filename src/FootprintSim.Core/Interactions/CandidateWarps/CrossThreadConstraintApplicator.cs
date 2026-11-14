@@ -1525,6 +1525,31 @@ public sealed class CrossThreadConstraintApplicator
         // An uncertain exact report may be false. Preserve the original
         // candidate history alongside the reported witness.
         var alternatives = new List<CandidateWarp> { result };
+        // A later exact witness can continue beyond its tick. The earlier
+        // inclusive receipt only has to be true at one tick; its remaining
+        // tail must not mask the exact witness's post-tick possibilities.
+        // Keep this continuation on a separate outer branch so both the
+        // earlier interval's alternatives and the new exact stay visible.
+        if (tick < accessContext.CurrentTick)
+        {
+            var continuation = history
+                .Where(state => state.TimeWindow.EndTick < tick)
+                .Append(exact)
+                .ToList();
+            continuation.Add(PublicCandidateWarpPropagator.Propagate(
+                warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                [exact], accessContext.CurrentTick, publicHazardEnvelope,
+                retainUndeclaredStay: true,
+                publicationCutoffTick: accessContext.CurrentTick));
+            AppendPublicTransitOuterHistory(
+                continuation, warp, constraint, accessContext,
+                publicHazardEnvelope, tick);
+            alternatives.Add(CandidateWarpNormalization.CreateWarp(
+                warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                CandidateWarpStanding.OuterPlausible, warp.WarpId,
+                continuation,
+                $"interval-post-exact-continuation:{constraint.ConstraintId}"));
+        }
         if (constraint.EvidenceBoundaryState ==
             EvidenceState.SupportedButUncertain)
         {
