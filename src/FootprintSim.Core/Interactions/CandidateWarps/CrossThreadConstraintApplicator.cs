@@ -436,7 +436,8 @@ public sealed class CrossThreadConstraintApplicator
             var sparseConfirmedContinuation =
                 warp.Standing == CandidateWarpStanding.OuterPlausible &&
                 constraint.IsPersonEvidence && !constraint.IsDeviceOnlyEvidence &&
-                constraint.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                constraint.EvidenceBoundaryState is
+                    EvidenceState.Confirmed or EvidenceState.SupportedButUncertain &&
                 warp.States.Any(state =>
                     state.TimeWindow.EndTick <
                         constraint.ConstrainedTimeWindow.StartTick &&
@@ -688,7 +689,8 @@ public sealed class CrossThreadConstraintApplicator
                         constraint.SourceObservationId, StringComparison.Ordinal) &&
                     (state.TimeWindow.StartTick < constraint.ConstrainedTimeWindow.StartTick ||
                      state.TimeWindow.EndTick > constraint.ConstrainedTimeWindow.EndTick)));
-            if (constraint.EvidenceBoundaryState == EvidenceState.Confirmed &&
+            if (constraint.EvidenceBoundaryState is
+                    EvidenceState.Confirmed or EvidenceState.SupportedButUncertain &&
                 inclusiveAlternative)
             {
                 return RetainExactWithinEarlierInterval(
@@ -732,7 +734,8 @@ public sealed class CrossThreadConstraintApplicator
             // actually disagree at the same tick (checked above).
             var projectedEarlierExact =
                 warp.Standing == CandidateWarpStanding.OuterPlausible &&
-                constraint.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                constraint.EvidenceBoundaryState is
+                    EvidenceState.Confirmed or EvidenceState.SupportedButUncertain &&
                 !opposingExactConfirmed &&
                 overlappingStates.All(state => state.Provenance.Any(source =>
                     source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&

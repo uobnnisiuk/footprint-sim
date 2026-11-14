@@ -511,6 +511,83 @@ public sealed class CandidateWarpTests
                 [first, middle, current, middle, current], 2).CandidateWarps));
     }
 
+    // AR-67: weakening an exact report from Confirmed to
+    // SupportedButUncertain cannot remove its possible location from the
+    // outer-safe set. The weak report might be true or false; neither
+    // alternative is proof of a public movement or preferred residence.
+    [Fact]
+    public void WeakExactInsideConfirmedInclusiveRetainsTrueAndFalseAlternatives()
+    {
+        var initial = Warp(new InteractionTimeWindow(0, 2),
+            CandidateWarpTemporalKind.StateInterval, ["a", "c"]);
+        var inclusive = Constraint(EvidenceState.Confirmed,
+            new InteractionTimeWindow(0, 2), ["a"], 2,
+            "ar67-earlier-inclusive");
+        var exactStrong = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(2), ["c"], 2, "ar67-exact");
+        var exactWeak = Constraint(EvidenceState.SupportedButUncertain,
+            InteractionTimeWindow.At(2), ["c"], 2, "ar67-exact");
+        var confirmed = Apply(initial, [inclusive, exactStrong], 2);
+        var uncertain = Apply(initial, [inclusive, exactWeak], 2);
+
+        Assert.Contains("c", confirmed.CandidateWarps.CandidateRegionIdsAt(2));
+        Assert.Contains("c", uncertain.CandidateWarps.CandidateRegionIdsAt(2));
+        Assert.Contains("a", uncertain.CandidateWarps.CandidateRegionIdsAt(2));
+        Assert.DoesNotContain("c", uncertain.CandidateWarps.PreferredRegionIdsAt(2));
+        for (var tick = 0; tick <= 2; tick++)
+        {
+            Assert.All(confirmed.CandidateWarps.CandidateRegionIdsAt(tick),
+                region => Assert.Contains(region,
+                    uncertain.CandidateWarps.CandidateRegionIdsAt(tick)));
+        }
+
+        Assert.Contains(uncertain.Audits, audit =>
+            audit.SourceObservationId == exactWeak.SourceObservationId &&
+            audit.Reason == ConstraintApplicationReason.Applied &&
+            audit.AlternativesRetained && !audit.ConflictDetected);
+        Assert.Equal(JsonDefaults.Serialize(uncertain),
+            JsonDefaults.Serialize(Apply(initial, [exactWeak, inclusive], 2)));
+        Assert.Equal(JsonDefaults.Serialize(uncertain.CandidateWarps),
+            JsonDefaults.Serialize(Apply(initial,
+                [inclusive, exactWeak, exactWeak], 2).CandidateWarps));
+    }
+
+    // AR-67: the sparse post-exact outer branch must also accept an
+    // uncertain third receipt rather than ignore it as NoTemporalOverlap.
+    [Fact]
+    public void WeakLaterExactCannotDisappearFromSparsePostExactOuter()
+    {
+        var initial = Warp(new InteractionTimeWindow(0, 4),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b", "c"]);
+        var earlier = Constraint(EvidenceState.Confirmed,
+            new InteractionTimeWindow(0, 3), ["a"], 4, "ar67-earlier");
+        var middle = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(1), ["b"], 4, "ar67-middle");
+        var strong = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(3), ["c"], 4, "ar67-last");
+        var weak = Constraint(EvidenceState.SupportedButUncertain,
+            InteractionTimeWindow.At(3), ["c"], 4, "ar67-last");
+        var confirmed = Apply(initial, [earlier, middle, strong], 4);
+        var uncertain = Apply(initial, [earlier, middle, weak], 4);
+
+        Assert.Contains("c", confirmed.CandidateWarps.CandidateRegionIdsAt(3));
+        Assert.Contains("c", uncertain.CandidateWarps.CandidateRegionIdsAt(3));
+        Assert.Contains("c", uncertain.CandidateWarps.CandidateRegionIdsAt(4));
+        Assert.DoesNotContain("c", uncertain.CandidateWarps.PreferredRegionIdsAt(4));
+        Assert.Contains(uncertain.Audits, audit =>
+            audit.SourceObservationId == weak.SourceObservationId &&
+            audit.Reason == ConstraintApplicationReason.Applied &&
+            audit.AlternativesRetained);
+        Assert.DoesNotContain(uncertain.Audits, audit =>
+            audit.SourceObservationId == weak.SourceObservationId &&
+            audit.Reason == ConstraintApplicationReason.NoTemporalOverlap);
+        Assert.Equal(JsonDefaults.Serialize(uncertain),
+            JsonDefaults.Serialize(Apply(initial, [weak, earlier, middle], 4)));
+        Assert.Equal(JsonDefaults.Serialize(uncertain.CandidateWarps),
+            JsonDefaults.Serialize(Apply(initial,
+                [earlier, middle, weak, weak], 4).CandidateWarps));
+    }
+
     // AR-40 follow-up: the post-exact outer branch must incorporate a
     // third independent Confirmed exact, even with no public route to fill
     // the gap (or an irrelevant published branch).
