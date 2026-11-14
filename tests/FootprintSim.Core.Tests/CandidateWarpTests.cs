@@ -15,6 +15,83 @@ namespace FootprintSim.Core.Tests;
 
 public sealed class CandidateWarpTests
 {
+    // AR-62 derivative: a partly shared region is not a mandatory
+    // simultaneous witness when one encounter covers an inclusive window.
+    [Theory]
+    [InlineData(3, false, EvidenceState.Confirmed)]
+    [InlineData(4, true, EvidenceState.Confirmed)]
+    [InlineData(5, false, EvidenceState.Confirmed)]
+    [InlineData(3, false, EvidenceState.SupportedButUncertain)]
+    public void PartiallySharedIntervalAndExactKeepDistinctWitnesses(
+        int exactTick, bool withEnvelope, EvidenceState exactEvidence)
+    {
+        var initial = Warp(new InteractionTimeWindow(0, 5),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b", "c"]);
+        var interval = Constraint(EvidenceState.Confirmed,
+            new InteractionTimeWindow(2, exactTick == 5 ? 5 : 4),
+            ["a", "b"], 6, "ar62-derivative-interval");
+        var exact = Constraint(exactEvidence, InteractionTimeWindow.At(exactTick),
+            ["b", "c"], 6, "ar62-derivative-exact");
+        var envelope = withEnvelope ? new PublicHazardEnvelope
+        {
+            HazardId = "ar62-derivative-route",
+            SourceRegionId = "a",
+            PublishedAtTick = 0,
+            Branches =
+            [
+                new PublicHazardBranch
+                {
+                    SourceRegionId = "a", DestinationRegionId = "c",
+                    MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+                    TransportType = HazardTransportType.HazardDriven,
+                    ProvenanceId = "ar62-derivative-a-c", PublishedAtTick = 0
+                }
+            ]
+        } : null;
+        var result = Apply(initial, [interval, exact], 6, envelope);
+        Assert.Contains("a", result.CandidateWarps.CandidateRegionIdsAt(2));
+        Assert.Contains("c", result.CandidateWarps.CandidateRegionIdsAt(exactTick));
+        Assert.Contains("c", result.CandidateWarps.CandidateRegionIdsAt(6));
+        if (!withEnvelope)
+        {
+            Assert.DoesNotContain("c",
+                result.CandidateWarps.PreferredRegionIdsAt(6));
+        }
+        if (exactEvidence == EvidenceState.SupportedButUncertain)
+        {
+            Assert.Contains("a", result.CandidateWarps.CandidateRegionIdsAt(exactTick));
+        }
+        Assert.DoesNotContain(result.Audits, audit => audit.ConflictDetected);
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(Apply(initial, [exact, interval], 6, envelope)));
+        Assert.Equal(JsonDefaults.Serialize(result.CandidateWarps),
+            JsonDefaults.Serialize(Apply(initial,
+                [interval, exact, exact], 6, envelope).CandidateWarps));
+    }
+
+    [Theory]
+    [InlineData(EvidenceState.Confirmed)]
+    [InlineData(EvidenceState.SupportedButUncertain)]
+    public void PartiallySharedExactAtInclusiveStartKeepsLaterWitness(
+        EvidenceState intervalEvidence)
+    {
+        var initial = Warp(new InteractionTimeWindow(0, 5),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b", "c"]);
+        var exact = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(2), ["a", "b"], 6,
+            "ar62-derivative-first-exact");
+        var interval = Constraint(intervalEvidence,
+            new InteractionTimeWindow(2, 4), ["b", "c"], 6,
+            "ar62-derivative-later-interval");
+        var result = Apply(initial, [exact, interval], 6);
+        Assert.Contains("a", result.CandidateWarps.CandidateRegionIdsAt(2));
+        Assert.Contains("c", result.CandidateWarps.CandidateRegionIdsAt(3));
+        Assert.Contains("c", result.CandidateWarps.CandidateRegionIdsAt(6));
+        Assert.DoesNotContain(result.Audits, audit => audit.ConflictDetected);
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(Apply(initial, [interval, exact], 6)));
+    }
+
     // Ready-stage Codex P2: merging sparse outer histories must not erase
     // a branch whose last preceding state differs from another branch.
     [Fact]

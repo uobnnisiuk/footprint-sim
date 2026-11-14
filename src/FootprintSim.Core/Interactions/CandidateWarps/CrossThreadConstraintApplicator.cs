@@ -545,6 +545,70 @@ public sealed class CrossThreadConstraintApplicator
                     .Distinct(StringComparer.Ordinal).Count());
         }
 
+        // An exact receipt need not be witnessed at the same tick as an
+        // earlier inclusive encounter, even if their regions partially
+        // overlap. Retain both witness alternatives rather than intersecting
+        // their regions as though the interval were continuous residence.
+        var exactWithinDifferentInclusive =
+            constraint.ConstrainedTimeWindow.StartTick ==
+                constraint.ConstrainedTimeWindow.EndTick &&
+            constraint.EvidenceBoundaryState is
+                EvidenceState.Confirmed or EvidenceState.SupportedButUncertain &&
+            overlappingStates.Any(state => state.Provenance.Any(source =>
+                source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
+                source.EvidenceBoundaryState is
+                    EvidenceState.Confirmed or EvidenceState.SupportedButUncertain &&
+                source.SourceTimeWindow is { } window &&
+                window.StartTick < window.EndTick &&
+                window.StartTick <= constraint.ConstrainedTimeWindow.StartTick &&
+                constraint.ConstrainedTimeWindow.EndTick <= window.EndTick &&
+                !source.RegionIds.ToHashSet(StringComparer.Ordinal).SetEquals(allowed) &&
+                !string.Equals(source.SourceObservationId,
+                    constraint.SourceObservationId, StringComparison.Ordinal) &&
+                (state.TimeWindow.StartTick <
+                    constraint.ConstrainedTimeWindow.StartTick ||
+                 state.TimeWindow.EndTick >
+                    constraint.ConstrainedTimeWindow.EndTick))) &&
+            // Two disjoint *exact* Confirmed receipts at this tick still
+            // constitute a real conflict, regardless of an older interval.
+            !overlappingStates.Any(state => state.Provenance.Any(source =>
+                source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
+                source.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                source.SourceTimeWindow is { } window &&
+                window.StartTick == constraint.ConstrainedTimeWindow.StartTick &&
+                window.EndTick == constraint.ConstrainedTimeWindow.EndTick &&
+                !string.Equals(source.SourceObservationId,
+                    constraint.SourceObservationId, StringComparison.Ordinal) &&
+                !source.RegionIds.Intersect(allowed, StringComparer.Ordinal).Any()));
+        if (exactWithinDifferentInclusive)
+        {
+            return RetainExactWithinEarlierInterval(
+                warp, constraint, accessContext, publicHazardEnvelope, beforeCount);
+        }
+
+        // The converse ordering is also existential: an exact observation at
+        // the inclusive start does not force its later witness to the overlap.
+        var differentInclusiveAfterExact =
+            constraint.ConstrainedTimeWindow.StartTick <
+                constraint.ConstrainedTimeWindow.EndTick &&
+            constraint.ConstrainedTimeWindow.StartTick < accessContext.CurrentTick &&
+            constraint.EvidenceBoundaryState is
+                EvidenceState.Confirmed or EvidenceState.SupportedButUncertain &&
+            overlappingStates.Any(state => state.Provenance.Any(source =>
+                source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
+                source.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                source.SourceTimeWindow is { } window &&
+                window.StartTick == window.EndTick &&
+                window.StartTick == constraint.ConstrainedTimeWindow.StartTick &&
+                !source.RegionIds.ToHashSet(StringComparer.Ordinal).SetEquals(allowed) &&
+                !string.Equals(source.SourceObservationId,
+                    constraint.SourceObservationId, StringComparison.Ordinal)));
+        if (differentInclusiveAfterExact)
+        {
+            return RetainLaterInclusiveAfterExact(
+                warp, constraint, accessContext, publicHazardEnvelope, beforeCount);
+        }
+
         var afterCount = overlappingStates
             .SelectMany(state => state.RegionIds)
             .Where(allowed.Contains)
@@ -1275,7 +1339,7 @@ public sealed class CrossThreadConstraintApplicator
         var exact = CandidateWarpNormalization.CreateState(
             warp.ScenarioId, warp.Seed, warp.TargetEntityId,
             InteractionTimeWindow.At(tick), CandidateWarpTemporalKind.EventPoint,
-            constraint.AllowedRegionIds, EvidenceState.Confirmed,
+            constraint.AllowedRegionIds, constraint.EvidenceBoundaryState,
             [CreateCrossThreadProvenance(constraint)]);
         history.Add(exact);
         if (tick < accessContext.CurrentTick)
@@ -1291,7 +1355,19 @@ public sealed class CrossThreadConstraintApplicator
             warp.ScenarioId, warp.Seed, warp.TargetEntityId,
             CandidateWarpStanding.OuterPlausible, warp.WarpId, history,
             $"interval-existential:{constraint.ConstraintId}");
-        return new WarpApplication([result], CreateAudit(
+        // An uncertain exact report may be false. Preserve the original
+        // candidate history alongside the reported witness.
+        var alternatives = new List<CandidateWarp> { result };
+        if (constraint.EvidenceBoundaryState ==
+            EvidenceState.SupportedButUncertain)
+        {
+            alternatives.Add(CandidateWarpNormalization.CreateWarp(
+                warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                CandidateWarpStanding.OuterPlausible, warp.WarpId,
+                warp.States, $"weak-exact-unknown:{constraint.ConstraintId}"));
+        }
+
+        return new WarpApplication(alternatives, CreateAudit(
             warp.WarpId, constraint, accessContext,
             ConstraintApplicationDisposition.RetainAlternative,
             ConstraintApplicationReason.Applied, beforeCount,
