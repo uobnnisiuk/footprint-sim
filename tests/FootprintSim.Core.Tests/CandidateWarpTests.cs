@@ -82,6 +82,85 @@ public sealed class CandidateWarpTests
             audit.ConflictDetected);
     }
 
+    // AR-59 reverse boundary: d@2 followed by y@[2,4] may mean y@3.
+    // Neither a missing public edge nor a changed receipt/source ordering can
+    // convert an existential interval into a same-tick hard contradiction.
+    [Theory]
+    [InlineData(EvidenceState.Confirmed, true)]
+    [InlineData(EvidenceState.Confirmed, false)]
+    [InlineData(EvidenceState.SupportedButUncertain, true)]
+    [InlineData(EvidenceState.SupportedButUncertain, false)]
+    public void ExactAtInclusiveStartRetainsLaterWitnessAsOuter(
+        EvidenceState intervalState, bool publishedRoute)
+    {
+        var initial = Warp(new InteractionTimeWindow(0, 2),
+            CandidateWarpTemporalKind.StateInterval, ["d"]);
+        var envelope = new PublicHazardEnvelope
+        {
+            HazardId = "ar59-reverse-public",
+            SourceRegionId = "d",
+            PublishedAtTick = 0,
+            Branches =
+            [
+                new PublicHazardBranch
+                {
+                    SourceRegionId = "d",
+                    DestinationRegionId = "y",
+                    MinimumTravelTicks = 1,
+                    MaximumTravelTicks = 1,
+                    TransportType = HazardTransportType.HazardDriven,
+                    ProvenanceId = "ar59-reverse-d-y",
+                    PublishedAtTick = 0
+                }
+            ]
+        };
+        for (var idOrder = 0; idOrder < 2; idOrder++)
+        {
+            var exact = Constraint(EvidenceState.Confirmed,
+                InteractionTimeWindow.At(2), ["d"], 5,
+                idOrder == 0 ? "ar59-reverse-a-exact" : "ar59-reverse-z-exact");
+            var inclusive = Constraint(intervalState,
+                new InteractionTimeWindow(2, 4), ["y"], 5,
+                idOrder == 0 ? "ar59-reverse-z-inclusive" : "ar59-reverse-a-inclusive");
+            var publicModel = publishedRoute ? envelope : null;
+            var result = Apply(initial, [exact, inclusive], 5, publicModel);
+            Assert.Contains("d", result.CandidateWarps.CandidateRegionIdsAt(2));
+            Assert.Contains("y", result.CandidateWarps.CandidateRegionIdsAt(3));
+            Assert.Contains("y", result.CandidateWarps.CandidateRegionIdsAt(5));
+            Assert.DoesNotContain("y", result.CandidateWarps.PreferredRegionIdsAt(5));
+            Assert.DoesNotContain(result.CandidateWarps.Warps, warp =>
+                warp.Standing == CandidateWarpStanding.Conflicted);
+            Assert.All(result.Audits, audit => Assert.False(audit.ConflictDetected));
+            Assert.Contains(result.Audits, audit =>
+                audit.SourceObservationId == inclusive.SourceObservationId &&
+                audit.Disposition == ConstraintApplicationDisposition.RetainAlternative);
+            Assert.Contains(result.CandidateWarps.Warps.SelectMany(warp => warp.States)
+                .SelectMany(state => state.Provenance), source =>
+                    source.SourceObservationId == inclusive.SourceObservationId &&
+                    source.SourceTimeWindow == inclusive.ConstrainedTimeWindow);
+            Assert.Equal(JsonDefaults.Serialize(result),
+                JsonDefaults.Serialize(Apply(initial, [inclusive, exact], 5, publicModel)));
+            var withCopy = Apply(initial, [exact, inclusive, inclusive], 5, publicModel);
+            Assert.Equal(JsonDefaults.Serialize(result.CandidateWarps),
+                JsonDefaults.Serialize(withCopy.CandidateWarps));
+        }
+    }
+
+    [Fact]
+    public void TwoDifferentExactConfirmationsAtInclusiveStartStillConflict()
+    {
+        var initial = Warp(new InteractionTimeWindow(0, 2),
+            CandidateWarpTemporalKind.StateInterval, ["d", "y"]);
+        var exactD = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(2), ["d"], 5, "ar59-exact-d");
+        var exactY = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(2), ["y"], 5, "ar59-exact-y");
+        var result = Apply(initial, [exactD, exactY], 5);
+        Assert.All(result.CandidateWarps.Warps, warp =>
+            Assert.Equal(CandidateWarpStanding.Conflicted, warp.Standing));
+        Assert.Contains(result.Audits, audit => audit.ConflictDetected);
+    }
+
     // AR-60: source IDs may decide processing order, but not which of two
     // opposing exact confirmations remains in the conservative candidate set.
     [Theory]
