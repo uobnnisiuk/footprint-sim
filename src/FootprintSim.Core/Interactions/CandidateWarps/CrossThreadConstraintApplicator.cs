@@ -1080,24 +1080,35 @@ public sealed class CrossThreadConstraintApplicator
             // Current confirmation cannot erase an earlier received fact.
             // Keep its past trajectory outer-only even with just one earlier
             // confirmed original; the preferred current anchor remains past-free.
-            // Keep past outer alternatives unless the public model
-            // actually supplies a branch-supported route to the current
-            // confirmed region. Merely permitting an undeclared stay at a
-            // source is not such a route (P1); neither is a weak-only past
-            // receipt (AR-67). Avoid duplicating the outer query candidate
-            // when a complete published path already justifies the result.
-            var publiclyReached = publicHazardEnvelope is null
-                ? null
-                : PublicCandidateWarpPropagator.TryPropagate(
-                    warp.ScenarioId, warp.Seed, warp.TargetEntityId,
-                    previousStates, accessContext.CurrentTick,
-                    publicHazardEnvelope, retainUndeclaredStay: false,
-                    publicationCutoffTick: accessContext.CurrentTick);
-            var hasPublishedLinkToCurrent = publiclyReached is not null &&
-                publiclyReached.RegionIds
-                    .Intersect(verifiedRegionIds, StringComparer.Ordinal).Any() &&
-                publiclyReached.Provenance.Any(source =>
-                    source.SourceKind == CandidateWarpSourceKind.PublicHazardEnvelope);
+            // A published path from just ONE recent witness is insufficient
+            // to certify the entire received history: the earlier witness
+            // may require an unpublished link (AR-48). Verify each actually
+            // witnessed earlier confirmed fact, not unrelated raw tail states.
+            // Undeclared stay and a minimum-arrival-rejected edge (P1) do
+            // not prove that all historical evidence can be discarded.
+            var earlierConfirmedWitnesses = previousStates.Where(state =>
+                state.Provenance.Any(source =>
+                    source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
+                    source.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                    source.SourceTimeWindow is { } window &&
+                    window.EndTick < accessContext.CurrentTick &&
+                    Overlaps(state.TimeWindow, window))).ToArray();
+            var hasCompletePublishedLinks = publicHazardEnvelope is not null &&
+                earlierConfirmedWitnesses.Length > 0 &&
+                earlierConfirmedWitnesses.All(state =>
+                {
+                    var projected = PublicCandidateWarpPropagator.TryPropagate(
+                        warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                        [state], accessContext.CurrentTick, publicHazardEnvelope,
+                        retainUndeclaredStay: false,
+                        publicationCutoffTick: accessContext.CurrentTick);
+                    return projected is not null &&
+                        projected.RegionIds.Intersect(
+                            verifiedRegionIds, StringComparer.Ordinal).Any() &&
+                        projected.Provenance.Any(source =>
+                            source.SourceKind ==
+                                CandidateWarpSourceKind.PublicHazardEnvelope);
+                });
             var hasWeakHistoricalReceipt = warp.States
                 .SelectMany(state => state.Provenance)
                 .Any(source =>
@@ -1105,7 +1116,7 @@ public sealed class CrossThreadConstraintApplicator
                     source.EvidenceBoundaryState == EvidenceState.SupportedButUncertain &&
                     source.SourceTimeWindow?.StartTick < accessContext.CurrentTick);
             var retainPastOuter = hasWeakHistoricalReceipt ||
-                !hasPublishedLinkToCurrent;
+                !hasCompletePublishedLinks;
             var anchoredWarps = new List<CandidateWarp> { currentAnchor };
             if (retainPastOuter)
             {
