@@ -539,6 +539,79 @@ public sealed class CandidateWarpTests
                 [earlier, current, earlier, current], 3).CandidateWarps));
     }
 
+    // AR-70: a weak same-tick report cannot invalidate a Confirmed current
+    // point based on the spelling of a source observation identifier.
+    [Theory]
+    [InlineData(false, 3, "a,b")]
+    [InlineData(false, 3, "a")]
+    [InlineData(false, 3, "a,b,c")]
+    [InlineData(false, 4, "a,b")]
+    [InlineData(false, 4, "a")]
+    [InlineData(false, 4, "a,b,c")]
+    [InlineData(false, 5, "a,b")]
+    [InlineData(false, 5, "a")]
+    [InlineData(false, 5, "a,b,c")]
+    [InlineData(true, 3, "a,b")]
+    [InlineData(true, 3, "a")]
+    [InlineData(true, 3, "a,b,c")]
+    [InlineData(true, 4, "a,b")]
+    [InlineData(true, 4, "a")]
+    [InlineData(true, 4, "a,b,c")]
+    [InlineData(true, 5, "a,b")]
+    [InlineData(true, 5, "a")]
+    [InlineData(true, 5, "a,b,c")]
+    public void DirectCurrentConfirmedSurvivesSameTickWeakAcrossSourceIds(
+        bool earlierInclusive, long currentTick, string weakRegions)
+    {
+        var initial = Warp(new InteractionTimeWindow(0, currentTick),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b", "c"]);
+        var weakAllowed = weakRegions.Split(',');
+        string? firstCandidates = null;
+        string? firstPreferred = null;
+        for (var suffix = 0; suffix < 20; suffix++)
+        {
+            var earlier = Constraint(EvidenceState.Confirmed,
+                earlierInclusive ? new InteractionTimeWindow(0, 1) :
+                    InteractionTimeWindow.At(1), ["a"], currentTick,
+                $"ar70-earlier-{suffix}");
+            var weak = Constraint(EvidenceState.SupportedButUncertain,
+                InteractionTimeWindow.At(currentTick), weakAllowed, currentTick,
+                $"ar70-weak-{suffix}");
+            var current = Constraint(EvidenceState.Confirmed,
+                InteractionTimeWindow.At(currentTick), ["b"], currentTick,
+                $"ar70-current-{suffix}");
+
+            var baseline = Apply(initial, [earlier, current], currentTick);
+            var result = Apply(initial, [earlier, weak, current], currentTick);
+            var currentCandidates = result.CandidateWarps.CandidateRegionIdsAt(currentTick);
+            var currentPreferred = result.CandidateWarps.PreferredRegionIdsAt(currentTick);
+            Assert.Contains("b", currentCandidates);
+            Assert.Contains("b", currentPreferred);
+            Assert.All(baseline.CandidateWarps.CandidateRegionIdsAt(currentTick),
+                region => Assert.Contains(region, currentCandidates));
+            Assert.Contains(result.Audits, audit =>
+                audit.SourceObservationId == current.SourceObservationId &&
+                audit.Reason == ConstraintApplicationReason.Applied &&
+                !audit.ConflictDetected);
+
+            Assert.Equal(JsonDefaults.Serialize(result),
+                JsonDefaults.Serialize(Apply(initial,
+                    [current, weak, earlier], currentTick)));
+            var candidateSignature = string.Join(",", currentCandidates);
+            var preferredSignature = string.Join(",", currentPreferred);
+            if (firstCandidates is not null)
+            {
+                Assert.Equal(firstCandidates, candidateSignature);
+                Assert.Equal(firstPreferred, preferredSignature);
+            }
+            else
+            {
+                firstCandidates = candidateSignature;
+                firstPreferred = preferredSignature;
+            }
+        }
+    }
+
     // AR-67 Z1: weakening the past encounter must not erase the
     // weak-false historical alternatives on receipt of a current exact.
     [Fact]

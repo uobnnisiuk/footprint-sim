@@ -142,6 +142,11 @@ public sealed class CrossThreadConstraintApplicator
             .GroupBy(constraint => constraint.SourceObservationId, StringComparer.Ordinal)
             .OrderBy(group => group.Min(item => item.ConstrainedTimeWindow.StartTick))
             .ThenBy(group => group.Min(item => item.ConstrainedTimeWindow.EndTick))
+            // At the same observed tick, a weak encounter must not precede
+            // an independent Confirmed fact solely because of its source ID.
+            // This is processing precedence, not statistical independence.
+            .ThenBy(group => group.Any(item =>
+                item.EvidenceBoundaryState == EvidenceState.Confirmed) ? 0 : 1)
             .ThenBy(group => group.Key, StringComparer.Ordinal))
         {
             var orderedSourceConstraints = sourceGroup
