@@ -727,13 +727,13 @@ public sealed class CrossThreadConstraintApplicator
                     beforeCount);
             }
 
-            // An outer stay/projection sourced solely from an EARLIER
-            // Confirmed exact does not assert continuous residence. A new
-            // Confirmed exact at a different region can follow via unknown
-            // movement even when no suitable public branch is declared.
+            // An outer stay/projection from an EARLIER confirmed observation
+            // (exact OR inclusive) does not assert continuous residence.
+            // A later exact can follow via an unobserved movement without
+            // a published route; keep the earlier historical alternative.
             // Do not mark a conflict unless two distinct exact receipts
             // actually disagree at the same tick (checked above).
-            var projectedEarlierExact =
+            var projectedEarlierConfirmed =
                 warp.Standing == CandidateWarpStanding.OuterPlausible &&
                 constraint.EvidenceBoundaryState is
                     EvidenceState.Confirmed or EvidenceState.SupportedButUncertain &&
@@ -742,7 +742,6 @@ public sealed class CrossThreadConstraintApplicator
                     source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
                     source.EvidenceBoundaryState == EvidenceState.Confirmed &&
                     source.SourceTimeWindow is { } earlier &&
-                    earlier.StartTick == earlier.EndTick &&
                     earlier.EndTick < constraint.ConstrainedTimeWindow.StartTick)) &&
                 warp.States.Any(state =>
                     state.TimeWindow.EndTick <
@@ -751,9 +750,8 @@ public sealed class CrossThreadConstraintApplicator
                         source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
                         source.EvidenceBoundaryState == EvidenceState.Confirmed &&
                         source.SourceTimeWindow is { } earlier &&
-                        earlier.StartTick == earlier.EndTick &&
                         earlier.EndTick < constraint.ConstrainedTimeWindow.StartTick));
-            if (projectedEarlierExact)
+            if (projectedEarlierConfirmed)
             {
                 return ReanchorOuterContinuationOnReceipt(
                     warp, constraint, accessContext, publicHazardEnvelope,
@@ -1082,40 +1080,13 @@ public sealed class CrossThreadConstraintApplicator
             // Current confirmation cannot erase an earlier received fact.
             // Keep its past trajectory outer-only even with just one earlier
             // confirmed original; the preferred current anchor remains past-free.
-            var distinctPastReceipts = warp.States
-                .Where(state => state.TimeWindow.EndTick < accessContext.CurrentTick)
-                .SelectMany(state => state.Provenance)
-                .Where(source =>
-                    source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
-                    source.EvidenceBoundaryState == EvidenceState.Confirmed)
-                .Select(source => source.SourceObservationId ?? source.SourceIdentifier)
-                .Distinct(StringComparer.Ordinal)
-                .Take(2)
-                .Count();
-            // One earlier confirmed receipt must survive as outer history
-            // when the route to this direct current anchor is unverified.
-            // A fully published link without an intervening weak encounter
-            // does not require a duplicate outer path at the current tick.
-            var hasUnverifiedIntermediate = warp.States
-                .SelectMany(state => state.Provenance)
-                .Any(source =>
-                    source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
-                    source.EvidenceBoundaryState == EvidenceState.SupportedButUncertain &&
-                    // An inclusive encounter [t, current] also has a PAST
-                    // portion. Ignoring it would erase earlier Confirmed history
-                    // when creating a direct-current preferred anchor.
-                    source.SourceTimeWindow?.StartTick < accessContext.CurrentTick);
-            var hasPublicLinkToCurrent = publicHazardEnvelope is not null &&
-                PublicCandidateWarpPropagator.Propagate(
-                    warp.ScenarioId, warp.Seed, warp.TargetEntityId,
-                    previousStates, accessContext.CurrentTick, publicHazardEnvelope,
-                    retainUndeclaredStay: true,
-                    publicationCutoffTick: accessContext.CurrentTick).RegionIds
-                .Intersect(verifiedRegionIds, StringComparer.Ordinal)
-                .Any();
-            var retainPastOuter = distinctPastReceipts >= 2 ||
-                (distinctPastReceipts >= 1 &&
-                    (hasUnverifiedIntermediate || !hasPublicLinkToCurrent));
+            // A confirmed current point proves that point, not that its
+            // unverified past vanished. Preserve every earlier candidate
+            // trajectory as OUTER, including weak-false alternatives and a
+            // source that can only "reach" the current point by undeclared stay.
+            // Public-link existence is not evidence that old history is false.
+            var retainPastOuter = warp.States.Any(state =>
+                state.TimeWindow.StartTick < accessContext.CurrentTick);
             var anchoredWarps = new List<CandidateWarp> { currentAnchor };
             if (retainPastOuter)
             {

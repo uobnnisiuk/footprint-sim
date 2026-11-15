@@ -511,6 +511,95 @@ public sealed class CandidateWarpTests
                 [first, middle, current, middle, current], 2).CandidateWarps));
     }
 
+    // AR-69: an earlier confirmed INCLUSIVE encounter is not a mandatory
+    // residence at every later tick. It cannot conflict with an independent
+    // confirmed exact point at the query tick when public movement is unknown.
+    [Fact]
+    public void EarlierConfirmedIntervalKeepsLaterIndependentCurrentExact()
+    {
+        var initial = Warp(new InteractionTimeWindow(0, 3),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b", "c"]);
+        var earlier = Constraint(EvidenceState.Confirmed,
+            new InteractionTimeWindow(0, 1), ["a"], 3, "ar69-inclusive");
+        var current = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(3), ["c"], 3, "ar69-current");
+
+        var result = Apply(initial, [earlier, current], 3);
+        Assert.Contains("a", result.CandidateWarps.CandidateRegionIdsAt(0));
+        Assert.Contains("c", result.CandidateWarps.CandidateRegionIdsAt(3));
+        Assert.Contains("c", result.CandidateWarps.PreferredRegionIdsAt(3));
+        Assert.Contains(result.Audits, audit =>
+            audit.SourceObservationId == current.SourceObservationId &&
+            audit.Reason == ConstraintApplicationReason.Applied &&
+            !audit.ConflictDetected);
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(Apply(initial, [current, earlier], 3)));
+        Assert.Equal(JsonDefaults.Serialize(result.CandidateWarps),
+            JsonDefaults.Serialize(Apply(initial,
+                [earlier, current, earlier, current], 3).CandidateWarps));
+    }
+
+    // AR-67 Z1: weakening the past encounter must not erase the
+    // weak-false historical alternatives on receipt of a current exact.
+    [Fact]
+    public void WeakPastThenCurrentExactRetainsUnconstrainedOuterHistory()
+    {
+        var initial = Warp(new InteractionTimeWindow(0, 5),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b", "c"]);
+        var strongPast = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(1), ["b"], 5, "ar67-z1-past");
+        var weakPast = Constraint(EvidenceState.SupportedButUncertain,
+            InteractionTimeWindow.At(1), ["b"], 5, "ar67-z1-past");
+        var current = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(5), ["b"], 5, "ar67-z1-current");
+
+        var confirmed = Apply(initial, [strongPast, current], 5);
+        var weak = Apply(initial, [weakPast, current], 5);
+        for (long tick = 0; tick <= 5; tick++)
+        {
+            Assert.All(confirmed.CandidateWarps.CandidateRegionIdsAt(tick),
+                region => Assert.Contains(region,
+                    weak.CandidateWarps.CandidateRegionIdsAt(tick)));
+        }
+        Assert.Contains("a", weak.CandidateWarps.CandidateRegionIdsAt(1));
+        Assert.Contains("c", weak.CandidateWarps.CandidateRegionIdsAt(4));
+        Assert.Contains("b", weak.CandidateWarps.PreferredRegionIdsAt(5));
+        Assert.Equal(JsonDefaults.Serialize(weak),
+            JsonDefaults.Serialize(Apply(initial, [current, weakPast], 5)));
+        Assert.Equal(JsonDefaults.Serialize(weak.CandidateWarps),
+            JsonDefaults.Serialize(Apply(initial,
+                [weakPast, current, current, weakPast], 5).CandidateWarps));
+    }
+
+    // Codex P1: a published route whose destination cannot arrive yet may
+    // not turn an earlier received source observation into missing history
+    // merely because undeclared stay reaches a later confirmed source point.
+    [Fact]
+    public void UnreachableDestinationFallbackPreservesEarlierSourceHistory()
+    {
+        var initial = Warp(InteractionTimeWindow.At(0),
+            CandidateWarpTemporalKind.EventPoint, ["a"]);
+        var earlier = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 2, "p1-source-at-zero");
+        var current = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(2), ["a"], 2, "p1-source-at-two");
+        var envelope = MinimumArrivalEnvelope();
+
+        var result = Apply(initial, [earlier, current], 2, envelope);
+        Assert.Contains("a", result.CandidateWarps.CandidateRegionIdsAt(0));
+        Assert.Contains("a", result.CandidateWarps.CandidateRegionIdsAt(2));
+        Assert.DoesNotContain("b", result.CandidateWarps.PreferredRegionIdsAt(2));
+        Assert.Contains("a", result.CandidateWarps.PreferredRegionIdsAt(2));
+        Assert.Contains(result.CandidateWarps.Warps, warp =>
+            warp.Standing == CandidateWarpStanding.OuterPlausible &&
+            warp.CandidateRegionIdsAt(0).Contains("a", StringComparer.Ordinal));
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(Apply(initial, [current, earlier], 2, envelope)));
+        Assert.Equal(JsonDefaults.Serialize(result.CandidateWarps),
+            JsonDefaults.Serialize(Apply(initial,
+                [earlier, current, current], 2, envelope).CandidateWarps));
+    }
+
     // Ready-stage Codex P2: a weak-only historical witness must not make
     // a separately received exact Confirmed current observation outer-only.
     [Fact]
