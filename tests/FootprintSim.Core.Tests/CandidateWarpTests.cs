@@ -589,6 +589,84 @@ public sealed class CandidateWarpTests
         }
     }
 
+    // AR-70 / Codex P2 follow-up: a later receipt cutoff must not erase
+    // a directly Confirmed exact at the SAME historical tick as a wrong
+    // weak report. Keep the past-free observed anchor, without asserting
+    // that its preferred stay is newly confirmed at the query tick.
+    [Theory]
+    [InlineData(false, 2, 1, "b")]
+    [InlineData(false, 2, 1, "b,c")]
+    [InlineData(false, 2, 2, "b")]
+    [InlineData(false, 2, 2, "b,c")]
+    [InlineData(false, 3, 1, "b")]
+    [InlineData(false, 3, 1, "b,c")]
+    [InlineData(false, 3, 2, "b")]
+    [InlineData(false, 3, 2, "b,c")]
+    [InlineData(true, 2, 1, "b")]
+    [InlineData(true, 2, 1, "b,c")]
+    [InlineData(true, 2, 2, "b")]
+    [InlineData(true, 2, 2, "b,c")]
+    [InlineData(true, 3, 1, "b")]
+    [InlineData(true, 3, 1, "b,c")]
+    [InlineData(true, 3, 2, "b")]
+    [InlineData(true, 3, 2, "b,c")]
+    public void HistoricalConfirmedAtWeakTickSurvivesLaterQuery(
+        bool initialInterval, long observedTick, long queryLag,
+        string weakRegions)
+    {
+        var queryTick = observedTick + queryLag;
+        var initial = initialInterval
+            ? Warp(new InteractionTimeWindow(0, queryTick),
+                CandidateWarpTemporalKind.StateInterval, ["a", "b", "c"])
+            : Warp(InteractionTimeWindow.At(0),
+                CandidateWarpTemporalKind.EventPoint, ["a"]);
+
+        for (var suffix = 0; suffix < 12; suffix++)
+        {
+            var earlier = Constraint(EvidenceState.Confirmed,
+                InteractionTimeWindow.At(0), ["a"], queryTick,
+                $"ar70-later-earlier-{suffix}");
+            var directlyConfirmed = Constraint(EvidenceState.Confirmed,
+                InteractionTimeWindow.At(observedTick), ["a"], queryTick,
+                $"ar70-later-confirmed-{suffix}");
+            var weak = Constraint(EvidenceState.SupportedButUncertain,
+                InteractionTimeWindow.At(observedTick),
+                weakRegions.Split(','), queryTick,
+                $"ar70-later-weak-{suffix}");
+
+            var baseline = Apply(initial,
+                [earlier, directlyConfirmed], queryTick);
+            var result = Apply(initial,
+                [earlier, directlyConfirmed, weak], queryTick);
+            Assert.Contains("a", baseline.CandidateWarps
+                .PreferredRegionIdsAt(observedTick));
+            Assert.Contains("a", result.CandidateWarps
+                .PreferredRegionIdsAt(observedTick));
+            Assert.DoesNotContain("b", result.CandidateWarps
+                .PreferredRegionIdsAt(observedTick));
+            Assert.Contains("a", result.CandidateWarps
+                .CandidateRegionIdsAt(observedTick));
+            Assert.Contains(result.CandidateWarps.Warps, warp =>
+                warp.Standing == CandidateWarpStanding.Preferred &&
+                warp.States.Count == 1 &&
+                warp.States[0].TimeWindow == InteractionTimeWindow.At(observedTick) &&
+                warp.States[0].Provenance.Any(source =>
+                    source.SourceObservationId == directlyConfirmed.SourceObservationId) &&
+                warp.States[0].Provenance.All(source =>
+                    source.EvidenceBoundaryState == EvidenceState.Confirmed));
+            Assert.Contains(result.CandidateWarps.Warps, warp =>
+                warp.Standing == CandidateWarpStanding.OuterPlausible &&
+                warp.CandidateRegionIdsAt(0).Contains("a", StringComparer.Ordinal));
+            Assert.Equal(JsonDefaults.Serialize(result),
+                JsonDefaults.Serialize(Apply(initial,
+                    [weak, directlyConfirmed, earlier], queryTick)));
+            Assert.Equal(JsonDefaults.Serialize(result.CandidateWarps),
+                JsonDefaults.Serialize(Apply(initial,
+                    [earlier, directlyConfirmed, weak, directlyConfirmed, weak],
+                    queryTick).CandidateWarps));
+        }
+    }
+
     // AR-70: a weak same-tick report cannot invalidate a Confirmed current
     // point based on the spelling of a source observation identifier.
     [Theory]
