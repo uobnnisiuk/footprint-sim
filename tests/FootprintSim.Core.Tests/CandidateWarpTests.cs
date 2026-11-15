@@ -659,6 +659,77 @@ public sealed class CandidateWarpTests
                 envelope).CandidateWarps));
     }
 
+    // AR-67: replacing one Confirmed receipt with SBU cannot make any
+    // formerly possible region disappear. Test the inclusive window and
+    // the weak exact at a following Confirmed interval's first tick.
+    [Theory]
+    [InlineData("X2")]
+    [InlineData("X1")]
+    [InlineData("X3")]
+    [InlineData("Y")]
+    public void WeakeningReceiptPreservesOuterAtEveryTick(string caseId)
+    {
+        var settings = caseId switch
+        {
+            "X2" => (Current: 4L, First: InteractionTimeWindow.At(0),
+                Second: new InteractionTimeWindow(1, 4),
+                Initial: new[] { "a", "b", "c" },
+                FirstRegions: new[] { "c" }, SecondRegions: new[] { "b", "c" }),
+            "X1" => (Current: 4L, First: new InteractionTimeWindow(0, 2),
+                Second: new InteractionTimeWindow(3, 4),
+                Initial: new[] { "a", "b", "c" },
+                FirstRegions: new[] { "b" }, SecondRegions: new[] { "a", "b" }),
+            "X3" => (Current: 3L, First: new InteractionTimeWindow(0, 1),
+                Second: new InteractionTimeWindow(2, 3),
+                Initial: new[] { "a", "b", "c" },
+                FirstRegions: new[] { "c" }, SecondRegions: new[] { "b", "c" }),
+            _ => (Current: 2L, First: InteractionTimeWindow.At(0),
+                Second: new InteractionTimeWindow(0, 2),
+                Initial: new[] { "a", "b", "c" },
+                FirstRegions: new[] { "a", "b" }, SecondRegions: new[] { "a" })
+        };
+        var initial = Warp(new InteractionTimeWindow(0, settings.Current),
+            CandidateWarpTemporalKind.StateInterval, settings.Initial);
+        var weakFirst = caseId == "Y";
+        var firstStrong = Constraint(EvidenceState.Confirmed,
+            settings.First, settings.FirstRegions, settings.Current,
+            $"ar67-{caseId}-first");
+        var firstWeak = Constraint(weakFirst
+                ? EvidenceState.SupportedButUncertain : EvidenceState.Confirmed,
+            settings.First, settings.FirstRegions, settings.Current,
+            $"ar67-{caseId}-first");
+        var secondStrong = Constraint(EvidenceState.Confirmed,
+            settings.Second, settings.SecondRegions, settings.Current,
+            $"ar67-{caseId}-second");
+        var secondWeak = Constraint(weakFirst
+                ? EvidenceState.Confirmed : EvidenceState.SupportedButUncertain,
+            settings.Second, settings.SecondRegions, settings.Current,
+            $"ar67-{caseId}-second");
+        var confirmed = Apply(initial, [firstStrong, secondStrong], settings.Current);
+        var weak = Apply(initial, [firstWeak, secondWeak], settings.Current);
+        for (long tick = 0; tick <= settings.Current; tick++)
+        {
+            Assert.All(confirmed.CandidateWarps.CandidateRegionIdsAt(tick),
+                region => Assert.Contains(region,
+                    weak.CandidateWarps.CandidateRegionIdsAt(tick)));
+        }
+
+        // A weaker witness must not confer NEW preferred certainty.
+        Assert.All(weak.CandidateWarps.PreferredRegionIdsAt(settings.Current),
+            region => Assert.Contains(region,
+                confirmed.CandidateWarps.PreferredRegionIdsAt(settings.Current)));
+        var weakenedSource = weakFirst ? firstWeak : secondWeak;
+        Assert.Contains(weak.Audits, audit =>
+            audit.SourceObservationId == weakenedSource.SourceObservationId &&
+            audit.AlternativesRetained && !audit.ConflictDetected);
+        Assert.Equal(JsonDefaults.Serialize(weak),
+            JsonDefaults.Serialize(Apply(initial,
+                [secondWeak, firstWeak], settings.Current)));
+        Assert.Equal(JsonDefaults.Serialize(weak.CandidateWarps),
+            JsonDefaults.Serialize(Apply(initial,
+                [firstWeak, secondWeak, secondWeak], settings.Current).CandidateWarps));
+    }
+
     // AR-61: two interval receipts can have different witness ticks even
     // when their windows overlap (or share just one endpoint).
     [Theory]

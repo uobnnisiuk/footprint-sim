@@ -630,7 +630,8 @@ public sealed class CrossThreadConstraintApplicator
                 EvidenceState.Confirmed or EvidenceState.SupportedButUncertain &&
             overlappingStates.Any(state => state.Provenance.Any(source =>
                 source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
-                source.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                source.EvidenceBoundaryState is
+                    EvidenceState.Confirmed or EvidenceState.SupportedButUncertain &&
                 source.SourceTimeWindow is { } window &&
                 window.StartTick == window.EndTick &&
                 window.StartTick == constraint.ConstrainedTimeWindow.StartTick &&
@@ -1228,8 +1229,21 @@ public sealed class CrossThreadConstraintApplicator
             CandidateWarpStanding.OuterPlausible,
             "outer-alternative",
             retainUndeclaredStay: true);
+        var weakBranches = new List<CandidateWarp> { constrainedWarp, outerWarp };
+        if (unverifiedRegionIds.Count > 0)
+        {
+            // An uncertain report can be TRUE at a region with no declared
+            // public link from the earlier receipt. Keep that witness at
+            // the query tick as outer-only, just as a Confirmed report does.
+            // The unmodified outer branch above also represents it being false.
+            weakBranches.Add(BuildAppliedWarp(
+                warp, constraint, accessContext, publicHazardEnvelope,
+                narrowRegions: true, CandidateWarpStanding.OuterPlausible,
+                "weak-unverified-public-link", retainUndeclaredStay: true,
+                constrainedRegions: unverifiedRegionIds));
+        }
         return new WarpApplication(
-            [constrainedWarp, outerWarp],
+            weakBranches,
             CreateAudit(
                 warp.WarpId,
                 constraint,
@@ -1324,7 +1338,8 @@ public sealed class CrossThreadConstraintApplicator
             CandidateWarpStanding.OuterPlausible, warp.WarpId, history,
             $"overlapping-inclusive-existential:{constraint.ConstraintId}");
         var alternatives = new List<CandidateWarp> { retained };
-        if (constraint.EvidenceBoundaryState == EvidenceState.Confirmed &&
+        if (constraint.EvidenceBoundaryState is
+                EvidenceState.Confirmed or EvidenceState.SupportedButUncertain &&
             window.StartTick < window.EndTick)
         {
             // Confirmed means at least one encounter within the interval,
@@ -1389,7 +1404,8 @@ public sealed class CrossThreadConstraintApplicator
             CandidateWarpStanding.OuterPlausible, warp.WarpId, history,
             $"later-inclusive-existential:{constraint.ConstraintId}");
         var alternatives = new List<CandidateWarp> { retained };
-        if (constraint.EvidenceBoundaryState == EvidenceState.Confirmed &&
+        if (constraint.EvidenceBoundaryState is
+                EvidenceState.Confirmed or EvidenceState.SupportedButUncertain &&
             possibleStart < possibleEnd)
         {
             // The late witness is true while the earlier historical region
@@ -1408,6 +1424,47 @@ public sealed class CrossThreadConstraintApplicator
                 warp.ScenarioId, warp.Seed, warp.TargetEntityId,
                 CandidateWarpStanding.OuterPlausible, warp.WarpId,
                 warp.States, $"weak-later-inclusive-unknown:{constraint.ConstraintId}"));
+        }
+        // A weak exact at the inclusive START may already have witnessed
+        // the later Confirmed interval there. Its alternative regions at
+        // the query tick cannot be erased just because no public movement
+        // was published after that possible witness.
+        var weakAtStart = warp.States.SelectMany(state => state.Provenance)
+            .Any(source =>
+                source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
+                source.EvidenceBoundaryState == EvidenceState.SupportedButUncertain &&
+                source.SourceTimeWindow is { } earlier &&
+                earlier.StartTick == earlier.EndTick &&
+                earlier.StartTick == constraint.ConstrainedTimeWindow.StartTick &&
+                source.RegionIds.Intersect(constraint.AllowedRegionIds,
+                    StringComparer.Ordinal).Any());
+        if (weakAtStart)
+        {
+            var startRegions = warp.States.SelectMany(state => state.Provenance)
+                .Where(source =>
+                    source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
+                    source.EvidenceBoundaryState == EvidenceState.SupportedButUncertain &&
+                    source.SourceTimeWindow is { } earlier &&
+                    earlier.StartTick == earlier.EndTick &&
+                    earlier.StartTick == constraint.ConstrainedTimeWindow.StartTick)
+                .SelectMany(source => source.RegionIds)
+                .Intersect(constraint.AllowedRegionIds, StringComparer.Ordinal)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            if (startRegions.Length > 0)
+            {
+                var startWitness = CandidateWarpNormalization.CreateState(
+                    warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                    InteractionTimeWindow.At(constraint.ConstrainedTimeWindow.StartTick),
+                    CandidateWarpTemporalKind.EventPoint, startRegions,
+                    constraint.EvidenceBoundaryState,
+                    [CreateCrossThreadProvenance(constraint)]);
+                alternatives.Add(CandidateWarpNormalization.CreateWarp(
+                    warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                    CandidateWarpStanding.OuterPlausible, warp.WarpId,
+                    warp.States.Append(startWitness),
+                    $"weak-start-inclusive-witness:{constraint.ConstraintId}"));
+            }
         }
 
         return new WarpApplication(alternatives, CreateAudit(
@@ -1520,7 +1577,7 @@ public sealed class CrossThreadConstraintApplicator
         return CandidateWarpNormalization.CreateWarp(
             warp.ScenarioId, warp.Seed, warp.TargetEntityId,
             CandidateWarpStanding.OuterPlausible, warp.WarpId, history,
-            $"confirmed-inclusive-last-witness:{constraint.ConstraintId}");
+            $"{(constraint.EvidenceBoundaryState == EvidenceState.Confirmed ? "confirmed" : "weak")}-inclusive-last-witness:{constraint.ConstraintId}");
     }
 
     // Preserve the different possible witness times of an interval in an
