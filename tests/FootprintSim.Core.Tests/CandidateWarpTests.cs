@@ -4176,7 +4176,7 @@ public sealed class CandidateWarpTests
         Assert.True(conflictStep.ConflictDetected);
         var atZero = Assert.Single(result.CandidateWarps.Warps
             .Single(warp => warp.Standing == CandidateWarpStanding.OuterPlausible)
-            .States.Where(state => state.TimeWindow == InteractionTimeWindow.At(0)));
+            .States, state => state.TimeWindow == InteractionTimeWindow.At(0));
         Assert.NotEqual(atZero.StateId, conflictStep.SourceStateId);
         Assert.Contains(result.CandidateWarps.Warps,
             warp => warp.Standing == CandidateWarpStanding.Conflicted);
