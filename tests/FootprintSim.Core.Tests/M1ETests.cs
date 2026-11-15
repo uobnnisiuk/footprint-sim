@@ -865,7 +865,8 @@ public sealed class M1ETests
                 PublicHazardEnvelope = edge
                     ? new FootprintSim.Hazards.PublicHazardEnvelope
                     {
-                        HazardId = "ar43-published-move", SourceRegionId = "a",
+                        HazardId = "ar43-published-move",
+                        SourceRegionId = "a",
                         PublishedAtTick = 0,
                         Branches =
                         [
