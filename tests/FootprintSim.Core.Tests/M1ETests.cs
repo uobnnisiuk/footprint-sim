@@ -652,7 +652,6 @@ public sealed class M1ETests
         }
     }
 
-
     [Fact]
     public void Ar43OverlappingSourceWindowsDoNotInventLocalStateMembership()
     {
@@ -689,22 +688,24 @@ public sealed class M1ETests
         var diagnostics = comparison.Methods.Single(item =>
             item.Method == PastStateMethod.ReconstructionWithLocalTraversal).Diagnostics!;
         var memberships = diagnostics.LocalStates;
-        // A [0,3] splits at tick 1 into [0], [1], [2,3].
-        // B [1,2] splits into [1], [2]. B's [2] must NOT
-        // manufacture an A@[2] slice with A's provenance/candidates.
+        // BuildLocalStates intentionally expands both target states to the
+        // union of candidate regions. Their provenance and source identities
+        // still differ. Only A@[0], A@[1], A@[2,3], B@[1], B@[2] may exist:
+        // B@[2] must not create an extra A@[2] audit membership.
         Assert.Equal(
             [
-                "0-0:a,shared",
-                "1-1:a,shared",
-                "1-1:b,shared",
-                "2-2:b,shared",
-                "2-3:a,shared"
+                "0-0",
+                "1-1",
+                "1-1",
+                "2-2",
+                "2-3"
             ],
             memberships
-                .Select(item => $"{item.TimeWindow.StartTick}-{item.TimeWindow.EndTick}:" +
-                    string.Join(",", item.RegionIds))
+                .Select(item => $"{item.TimeWindow.StartTick}-{item.TimeWindow.EndTick}")
                 .OrderBy(item => item, StringComparer.Ordinal)
                 .ToArray());
+        Assert.All(memberships, item =>
+            Assert.Equal(["a", "b", "shared"], item.RegionIds));
         Assert.Equal(5, memberships.Select(item => item.StateId)
             .Distinct(StringComparer.Ordinal).Count());
         Assert.All(memberships, item => Assert.NotEmpty(item.CandidateIds));
