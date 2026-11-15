@@ -40,6 +40,15 @@ Surviving candidates retain supporting source groups, constraint IDs, relation k
 
 ### AR-43: tracing one interval with differently timed observations
 
+Rev1: Exact Person Conflicting evidence also causes an exact-tick partition,
+so later Confirmed evidence cannot erase a known earlier conflict. Inclusive
+Conflicting evidence still cannot establish a conflict at every tick. M1-E's
+interval-query traversal now takes a conservative union of outer-plausible
+regions from all tracer states overlapping the query. This is a "possible at
+some point in the window" candidate set, **not** a TargetEndTick prediction
+or a rescue-time inference; evaluation using end-tick truth has a different
+interpretation. A missing published path is never proof that a path is impossible.
+
 A multi-tick `StateInterval` is **not** a stationary location. For public, received,
 person-specific exact Confirmed observations, operational tracing now divides the
 interval at the observed ticks, retains the original outer possibilities in

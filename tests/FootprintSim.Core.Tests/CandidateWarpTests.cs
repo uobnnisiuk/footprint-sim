@@ -4182,6 +4182,30 @@ public sealed class CandidateWarpTests
             warp => warp.Standing == CandidateWarpStanding.Conflicted);
     }
 
+    [Fact]
+    public void TracerExactConflictIsNotLostWhenAnotherTickIsConfirmed()
+    {
+        var input = Warp(new InteractionTimeWindow(0, 3),
+            CandidateWarpTemporalKind.StateInterval, ["a", "d"]);
+        var conflict = Ar43Exact("early-conflict", 1, ["a"],
+            state: EvidenceState.Conflicting, availableAtTick: 3);
+        var later = Ar43Exact("later-confirmation", 3, ["d"], availableAtTick: 3);
+        var tracer = new OperationalCausalTracer();
+        var result = tracer.Trace(input, [conflict, later], Ar43Access(3), null);
+        var marker = Assert.Single(result.Steps,
+            step => step.ConstraintId == conflict.ConstraintId);
+        Assert.Equal(InteractionTimeWindow.At(1), marker.TimeWindow);
+        Assert.True(marker.ConflictDetected);
+        Assert.Equal(TracingStepDisposition.MarkConflict, marker.Disposition);
+        Assert.Contains("source-early-conflict", marker.SourceAncestryIds);
+        Assert.Equal(["d"], result.CandidateWarps.OuterPlausibleRegionIdsAt(3));
+        Assert.DoesNotContain(result.Steps, step =>
+            step.ConflictDetected && step.TimeWindow != InteractionTimeWindow.At(1));
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(tracer.Trace(input, [later, conflict, conflict],
+                Ar43Access(3), null)));
+    }
+
     private static CandidateWarpAccessContext Ar43Access(long currentTick) => new()
     {
         ScenarioId = ScenarioId,

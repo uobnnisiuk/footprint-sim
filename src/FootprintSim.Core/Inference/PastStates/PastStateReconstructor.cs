@@ -492,8 +492,17 @@ public sealed class PastStateReconstructor
                 .Distinct(StringComparer.Ordinal)
                 .OrderBy(item => item, StringComparer.Ordinal)
                 .ToArray(),
-            CandidateRegionIds = tracing.CandidateWarps
-                .OuterPlausibleRegionIdsAt(context.Query.TargetTimeWindow.StartTick),
+            // This window asks where the person may have been at ANY overlapping
+            // state time; it is not a prediction of the end tick. Do not
+            // collapse differently timed outer sets onto the first tick.
+            CandidateRegionIds = tracing.CandidateWarps.Warps
+                .Where(warp => warp.Standing == CandidateWarpStanding.OuterPlausible)
+                .SelectMany(warp => warp.States)
+                .Where(state => Overlaps(state.TimeWindow, context.Query.TargetTimeWindow))
+                .SelectMany(state => state.RegionIds)
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(region => region, StringComparer.Ordinal)
+                .ToArray(),
             Steps = method == PastStateMethod.BackwardTraversal
                 ? tracing.Steps.Count(item => item.Direction == CausalTracingDirection.Backward)
                 : tracing.Steps.Count,

@@ -77,7 +77,7 @@ public sealed class OperationalCausalTracer
         var states = sourceWarp.States
             .SelectMany(state =>
             {
-                var slices = SplitAtReceivedExactConfirmations(
+                var slices = SplitAtReceivedExactPersonEvidence(
                     state, canonical, candidateWarps).ToArray();
                 return slices.Select(slice => new WorkingState(slice, slices.Length > 1));
             })
@@ -165,9 +165,11 @@ public sealed class OperationalCausalTracer
     }
 
     // StateInterval expresses a time window, not continuous residence in one region.
-    // Split only at received exact Confirmed observations. Untouched portions retain
+    // Split at exact received Confirmed or Conflicting Person observations. This
+    // retains the actual conflict tick even if another observation comes later.
+    // Untouched portions retain
     // the original outer possibilities; no missing public path becomes a negative fact.
-    private static IEnumerable<CandidateWarpState> SplitAtReceivedExactConfirmations(
+    private static IEnumerable<CandidateWarpState> SplitAtReceivedExactPersonEvidence(
         CandidateWarpState state,
         IReadOnlyList<CausalTracingConstraint> constraints,
         CandidateWarpSet warps)
@@ -180,9 +182,10 @@ public sealed class OperationalCausalTracer
             yield break;
         }
 
-        var confirmedTicks = constraints
+        var exactEvidenceTicks = constraints
             .Where(item => item.IsPersonEvidence && !item.IsDeviceOnlyEvidence)
-            .Where(item => item.EvidenceBoundaryState == EvidenceState.Confirmed)
+            .Where(item => item.EvidenceBoundaryState is
+                (EvidenceState.Confirmed or EvidenceState.Conflicting))
             .Where(item => item.ConstrainedTimeWindow.StartTick ==
                            item.ConstrainedTimeWindow.EndTick)
             .Select(item => item.ConstrainedTimeWindow.StartTick)
@@ -190,7 +193,7 @@ public sealed class OperationalCausalTracer
             .Distinct()
             .OrderBy(tick => tick)
             .ToArray();
-        if (confirmedTicks.Length == 0)
+        if (exactEvidenceTicks.Length == 0)
         {
             yield return state;
             yield break;
@@ -203,7 +206,7 @@ public sealed class OperationalCausalTracer
                 state.EvidenceBoundaryState, state.Provenance);
 
         var start = window.StartTick;
-        foreach (var tick in confirmedTicks)
+        foreach (var tick in exactEvidenceTicks)
         {
             if (start < tick)
                 yield return Slice(new InteractionTimeWindow(start, tick - 1));
