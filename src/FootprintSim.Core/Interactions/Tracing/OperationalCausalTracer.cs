@@ -74,16 +74,8 @@ public sealed class OperationalCausalTracer
             .OrderBy(warp => warp.Standing)
             .ThenBy(warp => warp.WarpId, StringComparer.Ordinal)
             .First();
-        var states = sourceWarp.States
-            .SelectMany(state =>
-            {
-                var slices = SplitAtReceivedExactPersonEvidence(
-                    state, canonical, candidateWarps).ToArray();
-                return slices.Select(slice => new WorkingState(slice, slices.Length > 1));
-            })
-            .OrderBy(state => state.Source.TimeWindow.StartTick)
-            .ThenBy(state => state.Source.TimeWindow.EndTick)
-            .ThenBy(state => state.Source.StateId, StringComparer.Ordinal)
+        var states = PartitionSourceStates(sourceWarp, canonical, candidateWarps)
+            .Select(item => new WorkingState(item.State, item.TemporallyPartitioned))
             .ToArray();
         var steps = new List<CausalTracingStepAudit>();
         foreach (var state in states)
@@ -163,6 +155,27 @@ public sealed class OperationalCausalTracer
             ConstraintOrderInvariant = true
         };
     }
+
+    // This is also used by M1-E local telemetry. Partition each original
+    // source state independently: windows from another overlapping source
+    // state are not evidence that this state was actually split there.
+    internal static IReadOnlyList<(CandidateWarpState State, bool TemporallyPartitioned)>
+        PartitionSourceStates(
+            CandidateWarp sourceWarp,
+            IReadOnlyList<CausalTracingConstraint> constraints,
+            CandidateWarpSet warps) =>
+        sourceWarp.States
+            .SelectMany(state =>
+            {
+                var slices = SplitAtReceivedExactPersonEvidence(
+                    state, constraints, warps).ToArray();
+                return slices.Select(slice =>
+                    (State: slice, TemporallyPartitioned: slices.Length > 1));
+            })
+            .OrderBy(item => item.State.TimeWindow.StartTick)
+            .ThenBy(item => item.State.TimeWindow.EndTick)
+            .ThenBy(item => item.State.StateId, StringComparer.Ordinal)
+            .ToArray();
 
     // StateInterval expresses a time window, not continuous residence in one region.
     // Split at exact received Confirmed or Conflicting Person observations. This

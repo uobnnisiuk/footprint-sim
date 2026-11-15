@@ -652,6 +652,74 @@ public sealed class M1ETests
         }
     }
 
+
+    [Fact]
+    public void Ar43OverlappingSourceWindowsDoNotInventLocalStateMembership()
+    {
+        const string scenario = "ar43-overlapping-source-windows";
+        const int seed = 43;
+        var exact = CausalTracingConstraint.Create(
+            scenario, seed, "ar43-overlap-observation", "ar43-overlap-source",
+            ["ar43-overlap-ancestry"], "person-a",
+            TracingConstraintSourceKind.CrossThreadObservation, "person-person",
+            [new InteractionParticipant("person-a", InteractionEntityKind.Person,
+                InteractionParticipantRole.EncounterParticipant)],
+            TracingConstraintRole.Local, InteractionTimeWindow.At(1),
+            InteractionTimeWindow.At(1), ["shared"], 1,
+            EvidenceState.Confirmed, true, false,
+            InteractionVisibility.PublicEvidence, "ar43-overlap-derivation",
+            [new InteractionProvenance(InteractionProvenanceKind.ExternalSource,
+                "ar43-overlap-ancestry")]);
+        var comparison = new PastStateReconstructor().Compare(
+            new PastStatePublicContext
+            {
+                Query = PastStateQuery.Create(scenario, seed, "person-a",
+                    new InteractionTimeWindow(0, 3), "ar43-overlap-query", 3),
+                PublicCandidateStates =
+                [
+                    PublicState(0, 3, ["a", "shared"]),
+                    PublicState(1, 2, ["b", "shared"])
+                ],
+                TraversalDirectSourceIds = ["ar43-overlap-source"],
+                AvailableObservationIds = ["ar43-overlap-observation"],
+                LocalTraversalWindowPaddingTicks = 0
+            },
+            new ObservationSet { ScenarioId = scenario, Seed = seed, Observations = [] },
+            new CausalTracingConstraintSet(scenario, seed, [exact]));
+        var diagnostics = comparison.Methods.Single(item =>
+            item.Method == PastStateMethod.ReconstructionWithLocalTraversal).Diagnostics!;
+        var memberships = diagnostics.LocalStates;
+        // A [0,3] splits at tick 1 into [0], [1], [2,3].
+        // B [1,2] splits into [1], [2]. B's [2] must NOT
+        // manufacture an A@[2] slice with A's provenance/candidates.
+        Assert.Equal(
+            [
+                "0-0:a,shared",
+                "1-1:a,shared",
+                "1-1:b,shared",
+                "2-2:b,shared",
+                "2-3:a,shared"
+            ],
+            memberships
+                .Select(item => $"{item.TimeWindow.StartTick}-{item.TimeWindow.EndTick}:" +
+                    string.Join(",", item.RegionIds))
+                .OrderBy(item => item, StringComparer.Ordinal)
+                .ToArray());
+        Assert.Equal(5, memberships.Select(item => item.StateId)
+            .Distinct(StringComparer.Ordinal).Count());
+        Assert.All(memberships, item => Assert.NotEmpty(item.CandidateIds));
+        var witnessedIds = diagnostics.TracingSteps
+            .Where(step => step.ConstraintId == exact.ConstraintId)
+            .SelectMany(step => new[] { step.SourceStateId, step.DestinationStateId })
+            .Where(id => id is not null)
+            .Select(id => id!)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        Assert.NotEmpty(witnessedIds);
+        Assert.All(witnessedIds, id =>
+            Assert.Contains(memberships, item => item.StateId == id));
+    }
+
     [Fact]
     public void Ar43RecreatedCopiesAreIdempotentAcrossPublicComparison()
     {

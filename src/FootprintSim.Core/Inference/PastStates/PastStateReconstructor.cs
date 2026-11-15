@@ -453,44 +453,29 @@ public sealed class PastStateReconstructor
             selectedConstraints,
             AccessContext(context.Query),
             context.PublicHazardEnvelope);
-        // Tracer can partition an interval into exact-tick states. Its step
-        // audit uses the partitioned *source* state IDs, not the unsplit IDs
-        // and not the output-warp IDs (which may contain new provenance).
-        // Recover the source slice identities using the actual output
-        // windows and original source region/provenance, without treating
-        // a preferred region as an outer-safe membership restriction.
-        var tracedWindows = tracing.CandidateWarps.Warps
-            .Where(warp => warp.Standing == CandidateWarpStanding.OuterPlausible)
-            .SelectMany(warp => warp.States)
-            .Select(state => state.TimeWindow)
-            .Distinct()
+        // Tracer step IDs refer to partitioned source states. Reuse the
+        // exact source-by-source partition instead of applying all output
+        // windows to every overlapping original state: that would invent
+        // state IDs absent from the actual trace and misattribute candidates.
+        var acceptedConstraintIds = tracing.SourceGroups
+            .SelectMany(group => group.ConstraintIds)
+            .ToHashSet(StringComparer.Ordinal);
+        var tracingConstraints = selectedConstraints
+            .Where(item => acceptedConstraintIds.Contains(item.ConstraintId))
             .ToArray();
-        var localStateMembership = sourceWarp.States
-            .SelectMany(source => tracedWindows
-                .Where(window =>
-                    source.TimeWindow.StartTick <= window.StartTick &&
-                    window.EndTick <= source.TimeWindow.EndTick)
-                .Select(window => new
-                {
-                    Source = source,
-                    Slice = CandidateWarpNormalization.CreateState(
-                        warps.ScenarioId, warps.Seed, warps.TargetEntityId,
-                        window, source.TemporalKind, source.RegionIds,
-                        source.EvidenceBoundaryState, source.Provenance)
-                }))
-            .DistinctBy(item => item.Slice.StateId, StringComparer.Ordinal)
-            .OrderBy(item => item.Slice.TimeWindow.StartTick)
-            .ThenBy(item => item.Slice.TimeWindow.EndTick)
-            .ThenBy(item => item.Slice.StateId, StringComparer.Ordinal)
-            .Select(item => new PastStateLocalStateMembership
+        var localStateMembership = OperationalCausalTracer
+            .PartitionSourceStates(sourceWarp, tracingConstraints, warps)
+            .Select(item => item.State)
+            .DistinctBy(item => item.StateId, StringComparer.Ordinal)
+            .Select(slice => new PastStateLocalStateMembership
             {
-                StateId = item.Slice.StateId,
-                TimeWindow = item.Slice.TimeWindow,
+                StateId = slice.StateId,
+                TimeWindow = slice.TimeWindow,
                 IsTargetWindowState = Overlaps(
-                    item.Slice.TimeWindow, context.Query.TargetTimeWindow),
-                RegionIds = item.Source.RegionIds,
-                CandidateIds = Overlaps(item.Slice.TimeWindow, context.Query.TargetTimeWindow)
-                    ? item.Source.RegionIds
+                    slice.TimeWindow, context.Query.TargetTimeWindow),
+                RegionIds = slice.RegionIds,
+                CandidateIds = Overlaps(slice.TimeWindow, context.Query.TargetTimeWindow)
+                    ? slice.RegionIds
                         .Where(candidateIdsByRegion.ContainsKey)
                         .Select(region => candidateIdsByRegion[region])
                         .Distinct(StringComparer.Ordinal)
