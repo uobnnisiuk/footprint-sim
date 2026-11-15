@@ -590,7 +590,7 @@ public sealed class M1ETests
     [Fact]
     public void Ar43WindowUnionHonorsCutoffAndSourceCopies()
     {
-        var before = Ar43WindowFixture(true, true, cutoff: 5)
+        var before = Ar43WindowFixture(true, true, delayedB: true)
             .Methods.Single(item =>
                 item.Method == PastStateMethod.ReconstructionWithLocalTraversal);
         var after = Ar43WindowFixture(true, true)
@@ -823,7 +823,7 @@ public sealed class M1ETests
 
     private static PastStateComparisonResult Ar43WindowFixture(
         bool atFive, bool atSix, bool eventPoints = false, bool edge = false,
-        bool reverseCopy = false, long cutoff = 6)
+        bool reverseCopy = false, bool delayedB = false)
     {
         const string scenario = "ar43-query-window";
         const int seed = 43;
@@ -835,7 +835,8 @@ public sealed class M1ETests
                 [new InteractionParticipant("person-a", InteractionEntityKind.Person,
                     InteractionParticipantRole.EncounterParticipant)],
                 TracingConstraintRole.Local, InteractionTimeWindow.At(tick),
-                InteractionTimeWindow.At(tick), [region], tick,
+                InteractionTimeWindow.At(tick), [region],
+                region == "b" && delayedB ? 7 : tick,
                 EvidenceState.Confirmed, true, false,
                 InteractionVisibility.PublicEvidence, "ar43-evidence",
                 [new InteractionProvenance(InteractionProvenanceKind.ExternalSource,
@@ -853,7 +854,7 @@ public sealed class M1ETests
             new PastStatePublicContext
             {
                 Query = PastStateQuery.Create(scenario, seed, "person-a",
-                    new InteractionTimeWindow(5, 6), "ar43-query", cutoff),
+                    new InteractionTimeWindow(5, 6), "ar43-query", 6),
                 PublicCandidateStates = eventPoints
                     ? [PublicState(5, ["a", "b", "c"]),
                        PublicState(6, ["a", "b", "c"])]
