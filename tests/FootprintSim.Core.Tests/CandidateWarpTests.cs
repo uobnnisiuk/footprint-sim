@@ -511,6 +511,46 @@ public sealed class CandidateWarpTests
                 [first, middle, current, middle, current], 2).CandidateWarps));
     }
 
+    // Ready-stage Codex P2: a weak-only historical witness must not make
+    // a separately received exact Confirmed current observation outer-only.
+    [Fact]
+    public void WeakHistoricalGapKeepsIndependentCurrentConfirmedPreferred()
+    {
+        var initial = Warp(new InteractionTimeWindow(0, 1),
+            CandidateWarpTemporalKind.StateInterval, ["a"]);
+        var first = Constraint(EvidenceState.Confirmed,
+            new InteractionTimeWindow(0, 1), ["a"], 3,
+            "current-after-weak-first");
+        var weak = Constraint(EvidenceState.SupportedButUncertain,
+            InteractionTimeWindow.At(2), ["b"], 3,
+            "current-after-weak-middle");
+        var current = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(3), ["c"], 3,
+            "current-after-weak-exact");
+
+        var result = Apply(initial, [first, weak, current], 3);
+        Assert.Contains("c", result.CandidateWarps.PreferredRegionIdsAt(3));
+        Assert.Contains("c", result.CandidateWarps.CandidateRegionIdsAt(3));
+        Assert.DoesNotContain("b", result.CandidateWarps.PreferredRegionIdsAt(3));
+        Assert.Contains("a", result.CandidateWarps.CandidateRegionIdsAt(0));
+        Assert.Contains(result.CandidateWarps.Warps, warp =>
+            warp.Standing == CandidateWarpStanding.Preferred &&
+            warp.States.Count == 1 &&
+            warp.States[0].TimeWindow == InteractionTimeWindow.At(3) &&
+            warp.States[0].RegionIds.Contains("c", StringComparer.Ordinal) &&
+            warp.States[0].Provenance.Any(source =>
+                source.SourceObservationId == current.SourceObservationId));
+        Assert.Contains(result.Audits, audit =>
+            audit.SourceObservationId == current.SourceObservationId &&
+            audit.Reason == ConstraintApplicationReason.Applied &&
+            !audit.ConflictDetected);
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(Apply(initial, [current, weak, first], 3)));
+        Assert.Equal(JsonDefaults.Serialize(result.CandidateWarps),
+            JsonDefaults.Serialize(Apply(initial,
+                [first, weak, weak, current, current], 3).CandidateWarps));
+    }
+
     // AR-67: weakening an exact report from Confirmed to
     // SupportedButUncertain cannot remove its possible location from the
     // outer-safe set. The weak report might be true or false; neither

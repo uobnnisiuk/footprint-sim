@@ -1980,8 +1980,53 @@ public sealed class CrossThreadConstraintApplicator
             warp.ScenarioId, warp.Seed, warp.TargetEntityId,
             CandidateWarpStanding.OuterPlausible, warp.WarpId, history,
             $"confirmed-after-weak-unknown:{constraint.ConstraintId}");
+        var alternatives = new List<CandidateWarp> { retained };
+        // The weak historical route cannot invalidate an independently
+        // Confirmed exact location at the query tick. Retain historical
+        // uncertainty as outer-only and add a past-free preferred anchor.
+        // Distinct Confirmed exact facts at this tick must still intersect.
+        if (observedWindow.StartTick == accessContext.CurrentTick &&
+            observedWindow.EndTick == accessContext.CurrentTick)
+        {
+            var currentRegions = constraint.AllowedRegionIds
+                .ToHashSet(StringComparer.Ordinal);
+            var otherCurrentExactFacts = warp.States
+                .SelectMany(state => state.Provenance)
+                .Where(source =>
+                    source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
+                    source.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                    source.SourceTimeWindow is { } window &&
+                    window.StartTick == accessContext.CurrentTick &&
+                    window.EndTick == accessContext.CurrentTick &&
+                    !string.Equals(source.SourceObservationId,
+                        constraint.SourceObservationId, StringComparison.Ordinal))
+                .DistinctBy(source => source.SourceObservationId ??
+                    source.SourceIdentifier, StringComparer.Ordinal)
+                .ToArray();
+            foreach (var other in otherCurrentExactFacts)
+            {
+                currentRegions.IntersectWith(other.RegionIds);
+            }
+
+            if (currentRegions.Count > 0)
+            {
+                var currentState = CandidateWarpNormalization.CreateState(
+                    warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                    InteractionTimeWindow.At(accessContext.CurrentTick),
+                    CandidateWarpTemporalKind.EventPoint,
+                    currentRegions, EvidenceState.Confirmed,
+                    otherCurrentExactFacts.Append(
+                        CreateCrossThreadProvenance(constraint)));
+                alternatives.Add(CandidateWarpNormalization.CreateWarp(
+                    warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                    CandidateWarpStanding.Preferred, parentWarpId: null,
+                    [currentState],
+                    $"direct-current-after-weak:{constraint.ConstraintId}"));
+            }
+        }
+
         return new WarpApplication(
-            [retained],
+            alternatives,
             CreateAudit(
                 warp.WarpId, constraint, accessContext,
                 ConstraintApplicationDisposition.RetainAlternative,
