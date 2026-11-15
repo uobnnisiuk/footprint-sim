@@ -839,54 +839,58 @@ public sealed class CrossThreadConstraintApplicator
                 : warp;
             var retainedBranches = new List<CandidateWarp> { retained };
 
-            // AR-70 follow-up: a weak same-tick report may invalidate the
-            // preferred historical ROUTE, but cannot revoke independently
-            // received Confirmed exact facts at the query tick. Standing is
-            // warp-wide, so preserve a past-free preferred current anchor
-            // separately from the demoted outer-only history. Never turn a
-            // possibly false weak report into a hard current exclusion.
+            // A weak exact report can challenge the preferred historical
+            // ROUTE, but not revoke a distinct directly Confirmed exact at
+            // that SAME observed tick. This remains true when the rescuer
+            // queries later. Preserve only the independently witnessed tick
+            // as a history-free preferred anchor; the original history stays
+            // outer-only. Any later stay is a model preference, not a newly
+            // confirmed current position or a proven public path.
+            var weakTick = constraint.ConstrainedTimeWindow.StartTick;
             if (warp.Standing == CandidateWarpStanding.Preferred &&
                 hadPriorConfirmedReceipt &&
                 constraint.EvidenceBoundaryState == EvidenceState.SupportedButUncertain &&
-                constraint.ConstrainedTimeWindow.StartTick == accessContext.CurrentTick &&
-                constraint.ConstrainedTimeWindow.EndTick == accessContext.CurrentTick)
+                weakTick == constraint.ConstrainedTimeWindow.EndTick &&
+                weakTick <= accessContext.CurrentTick)
             {
-                var directCurrentFacts = warp.States
+                var directExactFacts = warp.States
                     .SelectMany(state => state.Provenance)
                     .Where(source =>
                         source.SourceKind ==
                             CandidateWarpSourceKind.CrossThreadObservation &&
                         source.EvidenceBoundaryState == EvidenceState.Confirmed &&
                         source.SourceTimeWindow is { } window &&
-                        window.StartTick == accessContext.CurrentTick &&
-                        window.EndTick == accessContext.CurrentTick)
+                        window.StartTick == weakTick &&
+                        window.EndTick == weakTick)
                     .DistinctBy(source => source.SourceObservationId ??
                         source.SourceIdentifier, StringComparer.Ordinal)
                     .ToArray();
-                if (directCurrentFacts.Length > 0)
+                if (directExactFacts.Length > 0)
                 {
-                    var exactCurrentRegions = directCurrentFacts[0].RegionIds
+                    var exactRegions = directExactFacts[0].RegionIds
                         .ToHashSet(StringComparer.Ordinal);
-                    foreach (var fact in directCurrentFacts.Skip(1))
+                    foreach (var fact in directExactFacts.Skip(1))
                     {
-                        exactCurrentRegions.IntersectWith(fact.RegionIds);
+                        exactRegions.IntersectWith(fact.RegionIds);
                     }
 
                     // Conflicting same-tick Confirmed originals never
                     // manufacture a preferred location by majority vote.
-                    if (exactCurrentRegions.Count > 0)
+                    if (exactRegions.Count > 0)
                     {
-                        var exactCurrentState = CandidateWarpNormalization.CreateState(
+                        var exactState = CandidateWarpNormalization.CreateState(
                             warp.ScenarioId, warp.Seed, warp.TargetEntityId,
-                            InteractionTimeWindow.At(accessContext.CurrentTick),
+                            InteractionTimeWindow.At(weakTick),
                             CandidateWarpTemporalKind.EventPoint,
-                            exactCurrentRegions, EvidenceState.Confirmed,
-                            directCurrentFacts);
+                            exactRegions, EvidenceState.Confirmed,
+                            directExactFacts);
                         retainedBranches.Add(CandidateWarpNormalization.CreateWarp(
                             warp.ScenarioId, warp.Seed, warp.TargetEntityId,
                             CandidateWarpStanding.Preferred, parentWarpId: null,
-                            [exactCurrentState],
-                            $"direct-current-after-weak-demotion:{constraint.ConstraintId}"));
+                            [exactState],
+                            weakTick == accessContext.CurrentTick
+                                ? $"direct-current-after-weak-demotion:{constraint.ConstraintId}"
+                                : $"direct-past-after-weak-demotion:{constraint.ConstraintId}"));
                     }
                 }
             }
