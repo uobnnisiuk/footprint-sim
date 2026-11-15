@@ -4123,12 +4123,23 @@ public sealed class CandidateWarpTests
             input, [conflict, atOne], Ar43Access(1), null);
 
         Assert.Equal(["a", "b"], result.CandidateWarps.OuterPlausibleRegionIdsAt(0));
-        Assert.Equal(["a", "b"], result.CandidateWarps.OuterPlausibleRegionIdsAt(1));
-        Assert.Contains(result.Steps, step =>
-            step.ConstraintId == conflict.ConstraintId &&
-            step.Disposition == TracingStepDisposition.MarkConflict &&
-            step.ConflictDetected);
-        Assert.Contains(result.CandidateWarps.Warps,
+        Assert.Equal(["b"], result.CandidateWarps.OuterPlausibleRegionIdsAt(1));
+        // [0,1] says only that the alternative concerns some unknown time.
+        // Its two overlap audits are not proofs of conflict at either tick.
+        var unresolved = result.Steps.Where(step =>
+            step.ConstraintId == conflict.ConstraintId).ToArray();
+        Assert.Equal(2, unresolved.Length);
+        Assert.Equal(2, unresolved.Select(step => step.SourceStateId).Distinct().Count());
+        Assert.All(unresolved, step =>
+        {
+            Assert.Equal(TracingStepDisposition.NoOp, step.Disposition);
+            Assert.False(step.ConflictDetected);
+            Assert.True(step.AlternativesRetained);
+            Assert.Contains("interval-conflict-source", step.SourceAncestryIds);
+            Assert.Equal(new InteractionTimeWindow(0, 1), step.TimeWindow);
+        });
+        Assert.DoesNotContain(result.Steps, step => step.ConflictDetected);
+        Assert.DoesNotContain(result.CandidateWarps.Warps,
             warp => warp.Standing == CandidateWarpStanding.Conflicted);
         var sourceGroup = Assert.Single(result.SourceGroups, group =>
             group.ConstraintIds.Contains(conflict.ConstraintId));
@@ -4137,6 +4148,38 @@ public sealed class CandidateWarpTests
         Assert.Equal(JsonDefaults.Serialize(result),
             JsonDefaults.Serialize(new OperationalCausalTracer().Trace(
                 input, [atOne, conflict], Ar43Access(1), null)));
+    }
+
+    [Fact]
+    public void TracerExactConflictingWitnessMarksOnlyItsObservedTick()
+    {
+        var input = Warp(new InteractionTimeWindow(0, 1),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b"]);
+        var atOne = Ar43Exact("exact-anchor", 1, ["b"]);
+        var conflictingAtOne = CausalTracingConstraint.Create(
+            ScenarioId, Seed, "exact-conflict", "exact-conflict-source",
+            ["exact-conflict-source"], TargetPersonId,
+            TracingConstraintSourceKind.CrossThreadObservation, "person-person",
+            [Participant(TargetPersonId, InteractionEntityKind.Person),
+             Participant("person-c", InteractionEntityKind.Person)],
+            TracingConstraintRole.Local, InteractionTimeWindow.At(1),
+            InteractionTimeWindow.At(1), ["a"], 1,
+            EvidenceState.Conflicting, true, false,
+            InteractionVisibility.PublicEvidence, "ar43-exact-conflict",
+            [new InteractionProvenance(InteractionProvenanceKind.ExternalSource,
+                "exact-conflict-source")]);
+        var result = new OperationalCausalTracer().Trace(
+            input, [conflictingAtOne, atOne], Ar43Access(1), null);
+        var conflictStep = Assert.Single(result.Steps,
+            step => step.ConstraintId == conflictingAtOne.ConstraintId);
+        Assert.Equal(TracingStepDisposition.MarkConflict, conflictStep.Disposition);
+        Assert.True(conflictStep.ConflictDetected);
+        var atZero = Assert.Single(result.CandidateWarps.Warps
+            .Single(warp => warp.Standing == CandidateWarpStanding.OuterPlausible)
+            .States.Where(state => state.TimeWindow == InteractionTimeWindow.At(0)));
+        Assert.NotEqual(atZero.StateId, conflictStep.SourceStateId);
+        Assert.Contains(result.CandidateWarps.Warps,
+            warp => warp.Standing == CandidateWarpStanding.Conflicted);
     }
 
     private static CandidateWarpAccessContext Ar43Access(long currentTick) => new()

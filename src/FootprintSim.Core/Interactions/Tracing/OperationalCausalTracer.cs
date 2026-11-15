@@ -274,10 +274,30 @@ public sealed class OperationalCausalTracer
                 conflictDetected: false));
         }
 
-        // An explicitly conflicting interval stays visible as a competing
-        // alternative even if exact receipts partition its time window.
-        // It cannot hard-exclude any region or prove conflict at each tick.
-        var conflicts = unique
+        // An inclusive Conflicting source has no established contradiction
+        // at every slice of a partitioned interval. Keep its competing
+        // ancestry and a non-applied audit, without manufacturing per-tick
+        // Conflicted standing or ConflictDetected.
+        if (state.TemporallyPartitioned)
+        {
+            foreach (var item in unique.Except(applicable).Where(item =>
+                item.IsPersonEvidence && !item.IsDeviceOnlyEvidence &&
+                item.EvidenceBoundaryState == EvidenceState.Conflicting))
+            {
+                var sourceGroup = groupByConstraint[item.ConstraintId];
+                state.ConflictingSourceGroups.Add(sourceGroup.SourceGroupId);
+                steps.Add(CreateConstraintStep(
+                    item, sourceGroup, sessionId, accessContext, state,
+                    TracingStepDisposition.NoOp,
+                    TracingStepReason.EvidenceStateDoesNotConstrain,
+                    state.Preferred, alternativesRetained: true,
+                    conflictDetected: false));
+            }
+        }
+
+        // Only an exact-tick conflicting source may mark a partitioned tick
+        // as conflicted. Legacy unsplit windows retain their prior semantics.
+        var conflicts = applicable
             .Where(item => item.IsPersonEvidence && !item.IsDeviceOnlyEvidence)
             .Where(item => item.EvidenceBoundaryState == EvidenceState.Conflicting)
             .ToArray();

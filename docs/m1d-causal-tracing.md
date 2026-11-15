@@ -52,9 +52,11 @@ An inclusive interval observation means *somewhere in the interval*, not
 residence at every tick. In an interval that was split by independently received
 exact Confirmed observations, other broad or weak witnesses are left as
 non-applied audit steps rather than broadcast over every new time slice.
-Explicitly Conflicting sources remain competing, non-excluding alternatives
-in both split and unsplit windows; their interval marker does not prove a
-contradiction at every individual tick. Unsplit legacy intervals keep their
+In split windows, an inclusive Conflicting witness retains its source
+ancestry and competing-region lineage and emits a non-applied, alternatives-
+retained audit for each overlapping slice. It does **not** mark a contradiction
+or create a Conflicted candidate at any unverified exact tick. Exact-tick
+Conflicting witnesses can still mark that tick as conflicted. Unsplit legacy intervals keep their
 existing treatment; the complete semantics of overlapping inclusive evidence
 remains an open limitation, not a proof of continuous residence. A positive published path may supply support, but a
 missing/unpublished path does not refute a received fact. This is a conservative
