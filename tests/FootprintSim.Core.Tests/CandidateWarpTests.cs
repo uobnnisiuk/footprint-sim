@@ -705,10 +705,12 @@ public sealed class CandidateWarpTests
                 state.RegionIds.Contains("x", StringComparer.Ordinal));
         Assert.Contains("d", result.CandidateWarps.CandidateRegionIdsAt(4));
         Assert.DoesNotContain("x", result.CandidateWarps.PreferredRegionIdsAt(4));
-        Assert.DoesNotContain(result.Audits, audit =>
+        // Other inconsistent outer branches may be conflicted; at least
+        // one valid receipt path must retain the later d observation.
+        Assert.Contains(result.Audits, audit =>
             audit.SourceObservationId == d.SourceObservationId &&
-            (audit.Reason == ConstraintApplicationReason.NoTemporalOverlap ||
-             audit.ConflictDetected));
+            audit.Reason == ConstraintApplicationReason.Applied &&
+            !audit.ConflictDetected);
         Assert.Equal(JsonDefaults.Serialize(result),
             JsonDefaults.Serialize(Apply(initial, [d, c, b, a], 5, envelope)));
         Assert.Equal(JsonDefaults.Serialize(result.CandidateWarps),
