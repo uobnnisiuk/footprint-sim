@@ -3083,6 +3083,106 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Throws<ArgumentException>(() => BuildDistinct([first, second], [null!], 5));
     }
 
+    // Real three-original receipt boundary -> applicator: a directly
+    // received current exact cannot be demoted by an unknown historical
+    // continuation. All receipts share one cutoff, not one source ancestry.
+    [Fact]
+    public void ThreeDistinctReceivedExactsPreserveCurrentPreferredAfterOuterReanchor()
+    {
+        var items = new[]
+        {
+            (Id: "reanchor-original-a0", Holder: "reanchor-holder-0",
+                Tick: 0L, Region: "A"),
+            (Id: "reanchor-original-b1", Holder: "reanchor-holder-1",
+                Tick: 1L, Region: "B"),
+            (Id: "reanchor-original-a2", Holder: "reanchor-holder-2",
+                Tick: 2L, Region: "A")
+        };
+        var context = Context() with
+        {
+            PublicDeviceIds = items.Select(item => item.Holder).ToArray()
+        };
+        var originals = items.Select(item =>
+            new DeviceHeldInteractionRecord(
+                item.Holder, item.Tick,
+                InteractionObservation.Create(
+                    ScenarioId, Seed, item.Id, null,
+                    InteractionRelationKind.PersonPersonEncounter,
+                    [
+                        new InteractionParticipant(TargetId, InteractionEntityKind.Person,
+                            InteractionParticipantRole.EncounterParticipant),
+                        new InteractionParticipant("person-b", InteractionEntityKind.Person,
+                            InteractionParticipantRole.EncounterParticipant)
+                    ],
+                    InteractionTimeWindow.At(item.Tick), [item.Region],
+                    item.Tick, EvidenceState.Confirmed,
+                    isPersonEvidence: true, isDeviceOnlyEvidence: false,
+                    InteractionVisibility.PrivateEvidence,
+                    [new InteractionProvenance(
+                        InteractionProvenanceKind.EvidenceRecord, item.Id)])))
+            .ToArray();
+        var receipts = items.Select(item => new InteractionRecordReceipt(
+            ScenarioId, Seed, item.Id, item.Holder, RescuerId, 2)).ToArray();
+        var builder = new RescuerEvidenceInputBuilder();
+        // The existing BuildDistinctOriginals contract accepts EXACTLY TWO
+        // originals. Compose its two eligible source projections with a third
+        // ordinary Build projection for this three-receipt safety regression.
+        // Do not expand a production API in a scoped safety correction.
+        CrossThreadConstraint[] ReceivedConstraints(
+            IEnumerable<DeviceHeldInteractionRecord> held,
+            IEnumerable<InteractionRecordReceipt> deliveries)
+        {
+            var sorted = held.OrderBy(record => record.OriginalRecordId,
+                StringComparer.Ordinal).ToArray();
+            var ledger = deliveries.ToArray();
+            var firstTwo = builder.BuildDistinctOriginals(
+                context, Seed, 2, RescuerId, sorted.Take(2), ledger);
+            var third = builder.Build(
+                context, Seed, 2, RescuerId, sorted[2], ledger);
+            return firstTwo.Input.AvailableCrossThreadConstraints!.Constraints
+                .Concat(third.Input.AvailableCrossThreadConstraints!.Constraints)
+                .ToArray();
+        }
+        CandidateWarpApplicationResult Evaluate(
+            IReadOnlyList<CrossThreadConstraint> constraints)
+        {
+            var initial = PublicCandidateWarpFactory.Create(
+                ScenarioId, Seed, TargetId, [State(0, ["A"])],
+                CandidateWarpStanding.Preferred);
+            return new CrossThreadConstraintApplicator().Apply(
+                initial, constraints,
+                new CandidateWarpAccessContext
+                {
+                    ScenarioId = ScenarioId,
+                    Seed = Seed,
+                    TargetEntityId = TargetId,
+                    CurrentTick = 2,
+                    QueryContextId = "received-reanchor"
+                }, publicHazardEnvelope: null);
+        }
+
+        var received = ReceivedConstraints(originals, receipts);
+        Assert.Equal(3, received.Length);
+        Assert.Equal(3, received.Select(item => item.SourceObservationId)
+            .Distinct(StringComparer.Ordinal).Count());
+        Assert.All(received, item => Assert.Equal(2, item.AvailableAtTick));
+        var applied = Evaluate(received);
+        Assert.Contains("A", applied.CandidateWarps.PreferredRegionIdsAt(2));
+        Assert.DoesNotContain("B", applied.CandidateWarps.PreferredRegionIdsAt(2));
+        Assert.Contains("B", applied.CandidateWarps.OuterPlausibleRegionIdsAt(1));
+        Assert.Contains(applied.CandidateWarps.Warps, warp =>
+            warp.Standing == CandidateWarpStanding.Preferred &&
+            warp.States.Count == 1 &&
+            warp.States[0].TimeWindow == InteractionTimeWindow.At(2));
+        Assert.Equal(JsonDefaults.Serialize(applied),
+            JsonDefaults.Serialize(Evaluate(ReceivedConstraints(
+                originals.Reverse(), receipts.Reverse()))));
+        Assert.Equal(JsonDefaults.Serialize(applied.CandidateWarps),
+            JsonDefaults.Serialize(Evaluate(ReceivedConstraints(
+                originals, receipts.Concat([receipts[1], receipts[2]])))
+                .CandidateWarps));
+    }
+
     [Fact]
     public void DistinctCompositionValidatesEveryOriginalRunAndHolder()
     {
@@ -7318,23 +7418,58 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Equal(expectedFromBothPastReceipts,
             middleOnlyResult.CandidateWarps.PreferredRegionIdsAt(2));
         var observedBothPast = bothPastResult.CandidateWarps.PreferredRegionIdsAt(2);
-        if (!observedBothPast.SequenceEqual(expectedFromBothPastReceipts))
+        Assert.Equal(expectedFromBothPastReceipts, observedBothPast);
+        Assert.DoesNotContain(bothPastResult.Audits, audit =>
+            audit.ConstrainedTimeWindow.StartTick == 1 &&
+            audit.Reason == ConstraintApplicationReason.NoTemporalOverlap);
+
+        // The production S3 path makes *one* historical StateInterval, not
+        // the three separate EventPoint layers used by the reference above.
+        // Supply own public evidence solely for this strategy prerequisite;
+        // the cross-thread facts still come from the real receipt builder.
+        var intervalWorld = world with
         {
-            // Baseline defect: {e,f} rather than the reference {f}, and
-            // the confirmed tick-1 observation is recorded as a NoOp.
-            // Do not treat this characterization as correctness approval.
-            Assert.Equal(["e", "f"], observedBothPast);
-            // A nonempty outer-only branch does not repair the loss of the
-            // received intermediate-tick constraint or prove outer safety.
-            Assert.NotEmpty(bothPastResult.CandidateWarps
-                .OuterPlausibleRegionIdsAt(2));
-            Assert.DoesNotContain(bothPastResult.Audits, audit =>
-                audit.ConflictDetected);
-            Assert.Contains(bothPastResult.Audits, audit =>
-                audit.ConstrainedTimeWindow.StartTick == 1 &&
-                audit.Disposition == ConstraintApplicationDisposition.NoOp &&
-                audit.Reason == ConstraintApplicationReason.NoTemporalOverlap);
-        }
+            PublicCandidateWarp = new PublicCandidateWarpDefinition
+            {
+                HistoricalTimeWindow = new InteractionTimeWindow(0, 1),
+                AvailableAtTick = 0,
+                HistoricalCandidateRegionIds = ["a", "b", "c", "d"]
+            }
+        };
+        var intervalReceived = builder.BuildDistinctOriginals(
+            intervalWorld, Seed, 2, RescuerId,
+            [originals[0], middleD], [receipts[0], middleReceipt]);
+        var intervalInput = intervalReceived.Input with
+        {
+            AvailableEvidence = new ObservationSet
+            {
+                ScenarioId = ScenarioId,
+                Seed = Seed,
+                Observations =
+                [
+                    new ObservationRecord
+                    {
+                        ObservationId = "public-own-anchor-ar40",
+                        ObservedTick = 0,
+                        AvailableTick = 0,
+                        EvidenceType = "person-location",
+                        SubjectIds = [TargetId],
+                        ReportedRegionId = "a",
+                        State = EvidenceState.Confirmed
+                    }
+                ]
+            }
+        };
+        var production = new CrossThreadConstrainedStrategy().Evaluate(intervalInput);
+        Assert.Equal(expectedFromBothPastReceipts,
+            production.PreferredCandidateRegionIds);
+        Assert.Contains("f", production.OuterPlausibleCandidateRegionIds);
+        Assert.Contains(production.CrossThreadConstraintAudits, audit =>
+            audit.ConstrainedTimeWindow.StartTick == 1 &&
+            audit.Disposition == ConstraintApplicationDisposition.Narrow);
+        Assert.DoesNotContain(production.CrossThreadConstraintAudits, audit =>
+            audit.ConstrainedTimeWindow.StartTick == 1 &&
+            audit.Reason == ConstraintApplicationReason.NoTemporalOverlap);
 
         // Region e has no b/d public unit mapping in this fixed example.
         // No confirmation unit at t=2 is invented for an unmapped region.
