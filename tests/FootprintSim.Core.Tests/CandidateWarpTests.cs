@@ -659,6 +659,63 @@ public sealed class CandidateWarpTests
                 envelope).CandidateWarps));
     }
 
+    // Ready-stage Codex P2: reanchoring on a later Confirmed exact must not
+    // erase the valid prefix of a publicly reachable outer interval. The
+    // c@2 -> x@3 possibility predates d@4, even though x@[3,5] crosses d@4.
+    [Fact]
+    public void ReanchoringLaterExactPreservesCrossingTransitPrefix()
+    {
+        var initial = Warp(new InteractionTimeWindow(0, 5),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b", "c", "d", "x"]);
+        var a = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 5, "ar68-exact-a");
+        var b = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(1), ["b"], 5, "ar68-exact-b");
+        var c = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(2), ["c"], 5, "ar68-exact-c");
+        var d = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(4), ["d"], 5, "ar68-exact-d");
+        var envelope = new PublicHazardEnvelope
+        {
+            HazardId = "ar68-public-transit",
+            SourceRegionId = "c",
+            PublishedAtTick = 0,
+            Branches =
+            [
+                new PublicHazardBranch
+                {
+                    SourceRegionId = "c", DestinationRegionId = "x",
+                    MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+                    TransportType = HazardTransportType.HazardDriven,
+                    ProvenanceId = "ar68-c-x", PublishedAtTick = 0
+                }
+            ]
+        };
+
+        var before = Apply(initial, [a, b, c], 5, envelope);
+        Assert.Contains("x", before.CandidateWarps.OuterPlausibleRegionIdsAt(3));
+
+        var result = Apply(initial, [a, b, c, d], 5, envelope);
+        Assert.Contains("x", result.CandidateWarps.OuterPlausibleRegionIdsAt(3));
+        Assert.Contains(result.CandidateWarps.Warps
+            .Where(warp => warp.Standing == CandidateWarpStanding.OuterPlausible)
+            .SelectMany(warp => warp.States), state =>
+                state.TimeWindow.StartTick == 3 &&
+                state.TimeWindow.EndTick == 3 &&
+                state.RegionIds.Contains("x", StringComparer.Ordinal));
+        Assert.Contains("d", result.CandidateWarps.CandidateRegionIdsAt(4));
+        Assert.DoesNotContain("x", result.CandidateWarps.PreferredRegionIdsAt(4));
+        Assert.DoesNotContain(result.Audits, audit =>
+            audit.SourceObservationId == d.SourceObservationId &&
+            (audit.Reason == ConstraintApplicationReason.NoTemporalOverlap ||
+             audit.ConflictDetected));
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(Apply(initial, [d, c, b, a], 5, envelope)));
+        Assert.Equal(JsonDefaults.Serialize(result.CandidateWarps),
+            JsonDefaults.Serialize(Apply(initial, [a, b, c, d, c, d], 5, envelope)
+                .CandidateWarps));
+    }
+
     // AR-67: replacing one Confirmed receipt with SBU cannot make any
     // formerly possible region disappear. Test the inclusive window and
     // the weak exact at a following Confirmed interval's first tick.

@@ -1833,9 +1833,32 @@ public sealed class CrossThreadConstraintApplicator
                 : CandidateWarpTemporalKind.StateInterval,
             constraint.AllowedRegionIds, constraint.EvidenceBoundaryState,
             [CreateCrossThreadProvenance(constraint)]);
-        var history = warp.States
-            .Where(state => state.TimeWindow.EndTick < receivedWindow.StartTick)
-            .ToList();
+        // A later received exact replaces an old projection at and after
+        // its tick, but not a previously possible PUBLIC transit before it.
+        // Trim crossing intervals instead of discarding their valid prefixes.
+        // Preserve regions, evidence state and source provenance exactly;
+        // the clipped history remains outer-only, not a verified route.
+        var history = new List<CandidateWarpState>();
+        foreach (var state in warp.States)
+        {
+            if (state.TimeWindow.StartTick >= receivedWindow.StartTick)
+            {
+                continue;
+            }
+
+            if (state.TimeWindow.EndTick < receivedWindow.StartTick)
+            {
+                history.Add(state);
+                continue;
+            }
+
+            history.Add(CandidateWarpNormalization.CreateState(
+                warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                new InteractionTimeWindow(
+                    state.TimeWindow.StartTick, receivedWindow.StartTick - 1),
+                state.TemporalKind, state.RegionIds,
+                state.EvidenceBoundaryState, state.Provenance));
+        }
         history.Add(received);
         if (receiptEnd < accessContext.CurrentTick)
         {
