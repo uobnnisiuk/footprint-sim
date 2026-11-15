@@ -1080,13 +1080,32 @@ public sealed class CrossThreadConstraintApplicator
             // Current confirmation cannot erase an earlier received fact.
             // Keep its past trajectory outer-only even with just one earlier
             // confirmed original; the preferred current anchor remains past-free.
-            // A confirmed current point proves that point, not that its
-            // unverified past vanished. Preserve every earlier candidate
-            // trajectory as OUTER, including weak-false alternatives and a
-            // source that can only "reach" the current point by undeclared stay.
-            // Public-link existence is not evidence that old history is false.
-            var retainPastOuter = warp.States.Any(state =>
-                state.TimeWindow.StartTick < accessContext.CurrentTick);
+            // Keep past outer alternatives unless the public model
+            // actually supplies a branch-supported route to the current
+            // confirmed region. Merely permitting an undeclared stay at a
+            // source is not such a route (P1); neither is a weak-only past
+            // receipt (AR-67). Avoid duplicating the outer query candidate
+            // when a complete published path already justifies the result.
+            var publiclyReached = publicHazardEnvelope is null
+                ? null
+                : PublicCandidateWarpPropagator.TryPropagate(
+                    warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                    previousStates, accessContext.CurrentTick,
+                    publicHazardEnvelope, retainUndeclaredStay: false,
+                    publicationCutoffTick: accessContext.CurrentTick);
+            var hasPublishedLinkToCurrent = publiclyReached is not null &&
+                publiclyReached.RegionIds
+                    .Intersect(verifiedRegionIds, StringComparer.Ordinal).Any() &&
+                publiclyReached.Provenance.Any(source =>
+                    source.SourceKind == CandidateWarpSourceKind.PublicHazardEnvelope);
+            var hasWeakHistoricalReceipt = warp.States
+                .SelectMany(state => state.Provenance)
+                .Any(source =>
+                    source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
+                    source.EvidenceBoundaryState == EvidenceState.SupportedButUncertain &&
+                    source.SourceTimeWindow?.StartTick < accessContext.CurrentTick);
+            var retainPastOuter = hasWeakHistoricalReceipt ||
+                !hasPublishedLinkToCurrent;
             var anchoredWarps = new List<CandidateWarp> { currentAnchor };
             if (retainPastOuter)
             {
