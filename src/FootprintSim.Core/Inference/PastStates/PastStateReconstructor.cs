@@ -120,6 +120,10 @@ public sealed class PastStateReconstructor
             .OrderBy(item => item.AvailableAtTick)
             .ThenBy(item => item.ConstrainedTimeWindow.StartTick)
             .ThenBy(item => item.ConstraintId, StringComparer.Ordinal)
+            // The same normalized claim can arrive as separately allocated copies.
+            // Identity is the ConstraintId, not its collection object references
+            // or the shared source ancestry of other, distinct valid claims.
+            .DistinctBy(item => item.ConstraintId, StringComparer.Ordinal)
             .ToArray();
         var access = AccessContext(query);
         var sourceGroups = new OperationalCausalTracer().GroupSources(constraints, access);
@@ -431,9 +435,9 @@ public sealed class PastStateReconstructor
             .Where(item => states.Any(state => Overlaps(item.ConstrainedTimeWindow, state.TimeWindow)))
             .Where(item => method != PastStateMethod.BackwardTraversal ||
                 !Overlaps(item.ConstrainedTimeWindow, context.Query.TargetTimeWindow))
-            // Re-receiving the identical source object must not inflate
-            // traversal diagnostics; distinct claims remain separately visible.
-            .Distinct()
+            // A re-created copy has different collection references but the
+            // same canonical claim identity; distinct claims remain visible.
+            .DistinctBy(item => item.ConstraintId, StringComparer.Ordinal)
             .OrderBy(item => item.ConstraintId, StringComparer.Ordinal)
             .ToArray();
         var sourceWarp = warps.Warps

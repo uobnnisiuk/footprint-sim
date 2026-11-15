@@ -609,6 +609,49 @@ public sealed class M1ETests
     }
 
     [Fact]
+    public void Ar43RecreatedCopiesAreIdempotentAcrossPublicComparison()
+    {
+        var original = Ar43WindowFixture(true, true);
+        var reproduced = Ar43WindowFixture(true, true, recreatedCopy: true);
+
+        Assert.Equal(JsonDefaults.Serialize(original), JsonDefaults.Serialize(reproduced));
+        Assert.Equal(2, reproduced.Reconstruction.EvidenceSet.Constraints.Count);
+        Assert.Equal(2, reproduced.EvidenceUsage.Count);
+        foreach (var method in reproduced.Methods)
+        {
+            var baselineMethod = original.Methods.Single(item => item.Method == method.Method);
+            Assert.Equal(JsonDefaults.Serialize(baselineMethod.Diagnostics),
+                JsonDefaults.Serialize(method.Diagnostics));
+            Assert.Equal(method.Diagnostics!.ConstraintUsages.Count,
+                method.Diagnostics.ConstraintUsages
+                    .Select(item => item.ConstraintId)
+                    .Distinct(StringComparer.Ordinal)
+                    .Count());
+        }
+    }
+
+    [Fact]
+    public void Ar43SameSourceCanSupplyDifferentValidClaims()
+    {
+        var compared = Ar43WindowFixture(true, false, sameSourceSecondClaim: true);
+        var evidence = compared.Reconstruction.EvidenceSet.Constraints;
+
+        Assert.Equal(2, evidence.Count);
+        Assert.Equal(2, evidence.Select(item => item.ConstraintId)
+            .Distinct(StringComparer.Ordinal).Count());
+        Assert.All(evidence, item =>
+        {
+            Assert.Equal("ar43-source-a", item.DirectSourceId);
+            Assert.Contains("ar43-origin-a", item.SourceAncestryIds);
+        });
+        Assert.Equal(2, compared.EvidenceUsage.Count);
+        var local = compared.Methods.Single(item =>
+            item.Method == PastStateMethod.ReconstructionWithLocalTraversal);
+        Assert.Equal(2, local.Diagnostics!.ConstraintUsages.Count);
+        Assert.Equal(["a"], local.CandidateRegionIds);
+    }
+
+    [Fact]
     public void LocalNeighborhoodSelectionIsChronologicalAndDeterministic()
     {
         var ordered = LocalNeighborhoodFixture(
@@ -823,7 +866,8 @@ public sealed class M1ETests
 
     private static PastStateComparisonResult Ar43WindowFixture(
         bool atFive, bool atSix, bool eventPoints = false, bool edge = false,
-        bool reverseCopy = false, bool delayedB = false)
+        bool reverseCopy = false, bool delayedB = false,
+        bool recreatedCopy = false, bool sameSourceSecondClaim = false)
     {
         const string scenario = "ar43-query-window";
         const int seed = 43;
@@ -844,6 +888,8 @@ public sealed class M1ETests
         var facts = new List<CausalTracingConstraint>();
         if (atFive) facts.Add(Evidence("a", 5));
         if (atSix) facts.Add(Evidence("b", 6));
+        if (sameSourceSecondClaim) facts.Add(Evidence("a", 6));
+        if (recreatedCopy) facts.Add(Evidence("a", 5));
         if (reverseCopy)
         {
             facts.Reverse();
