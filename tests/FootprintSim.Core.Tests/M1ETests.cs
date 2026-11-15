@@ -608,6 +608,50 @@ public sealed class M1ETests
             item => item.SourceObservationId == "ar43-obs-b");
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public void Ar43TraversalTelemetryResolvesPartitionedStateIds(
+        bool eventPoints, bool publishedMove)
+    {
+        var compared = Ar43WindowFixture(
+            atFive: true, atSix: true, eventPoints: eventPoints, edge: publishedMove);
+        var local = compared.Methods.Single(item =>
+            item.Method == PastStateMethod.ReconstructionWithLocalTraversal);
+        var diagnostics = local.Diagnostics!;
+        var memberships = diagnostics.LocalStates.ToDictionary(
+            item => item.StateId, StringComparer.Ordinal);
+
+        // The exact-tick evidence partitions [5,6] into two independently
+        // identifiable slices. The telemetry join must retain both.
+        Assert.Equal(
+            [InteractionTimeWindow.At(5), InteractionTimeWindow.At(6)],
+            diagnostics.LocalStates
+                .Where(item => item.IsTargetWindowState)
+                .Select(item => item.TimeWindow)
+                .Distinct()
+                .OrderBy(item => item.StartTick)
+                .ToArray());
+        var touched = diagnostics.TracingSteps
+            .Where(step => step.ConstraintId is not null)
+            .SelectMany(step => new[] { step.SourceStateId, step.DestinationStateId })
+            .Where(id => id is not null)
+            .Select(id => id!)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        Assert.NotEmpty(touched);
+        foreach (var id in touched)
+        {
+            Assert.True(memberships.TryGetValue(id, out var membership),
+                "Missing tracing state from M1-E local telemetry membership: " + id);
+            Assert.NotEmpty(membership!.CandidateIds);
+            Assert.All(membership.CandidateIds, candidateId =>
+                Assert.Contains(compared.Reconstruction.Candidates,
+                    candidate => candidate.CandidateId == candidateId));
+        }
+    }
+
     [Fact]
     public void Ar43RecreatedCopiesAreIdempotentAcrossPublicComparison()
     {

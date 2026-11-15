@@ -448,31 +448,57 @@ public sealed class PastStateReconstructor
             item => item.RegionId,
             item => item.CandidateId,
             StringComparer.Ordinal);
-        var localStateMembership = sourceWarp.States
-            .OrderBy(item => item.TimeWindow.StartTick)
-            .ThenBy(item => item.TimeWindow.EndTick)
-            .ThenBy(item => item.StateId, StringComparer.Ordinal)
-            .Select(item => new PastStateLocalStateMembership
-            {
-                StateId = item.StateId,
-                TimeWindow = item.TimeWindow,
-                IsTargetWindowState = Overlaps(item.TimeWindow, context.Query.TargetTimeWindow),
-                RegionIds = item.RegionIds,
-                CandidateIds = Overlaps(item.TimeWindow, context.Query.TargetTimeWindow)
-                    ? item.RegionIds
-                        .Where(candidateIdsByRegion.ContainsKey)
-                        .Select(region => candidateIdsByRegion[region])
-                        .Distinct(StringComparer.Ordinal)
-                        .OrderBy(item => item, StringComparer.Ordinal)
-                        .ToArray()
-                    : []
-            })
-            .ToArray();
         var tracing = new OperationalCausalTracer().Trace(
             warps,
             selectedConstraints,
             AccessContext(context.Query),
             context.PublicHazardEnvelope);
+        // Tracer can partition an interval into exact-tick states. Its step
+        // audit uses the partitioned *source* state IDs, not the unsplit IDs
+        // and not the output-warp IDs (which may contain new provenance).
+        // Recover the source slice identities using the actual output
+        // windows and original source region/provenance, without treating
+        // a preferred region as an outer-safe membership restriction.
+        var tracedWindows = tracing.CandidateWarps.Warps
+            .Where(warp => warp.Standing == CandidateWarpStanding.OuterPlausible)
+            .SelectMany(warp => warp.States)
+            .Select(state => state.TimeWindow)
+            .Distinct()
+            .ToArray();
+        var localStateMembership = sourceWarp.States
+            .SelectMany(source => tracedWindows
+                .Where(window =>
+                    source.TimeWindow.StartTick <= window.StartTick &&
+                    window.EndTick <= source.TimeWindow.EndTick)
+                .Select(window => new
+                {
+                    Source = source,
+                    Slice = CandidateWarpNormalization.CreateState(
+                        warps.ScenarioId, warps.Seed, warps.TargetEntityId,
+                        window, source.TemporalKind, source.RegionIds,
+                        source.EvidenceBoundaryState, source.Provenance)
+                }))
+            .DistinctBy(item => item.Slice.StateId, StringComparer.Ordinal)
+            .OrderBy(item => item.Slice.TimeWindow.StartTick)
+            .ThenBy(item => item.Slice.TimeWindow.EndTick)
+            .ThenBy(item => item.Slice.StateId, StringComparer.Ordinal)
+            .Select(item => new PastStateLocalStateMembership
+            {
+                StateId = item.Slice.StateId,
+                TimeWindow = item.Slice.TimeWindow,
+                IsTargetWindowState = Overlaps(
+                    item.Slice.TimeWindow, context.Query.TargetTimeWindow),
+                RegionIds = item.Source.RegionIds,
+                CandidateIds = Overlaps(item.Slice.TimeWindow, context.Query.TargetTimeWindow)
+                    ? item.Source.RegionIds
+                        .Where(candidateIdsByRegion.ContainsKey)
+                        .Select(region => candidateIdsByRegion[region])
+                        .Distinct(StringComparer.Ordinal)
+                        .OrderBy(id => id, StringComparer.Ordinal)
+                        .ToArray()
+                    : []
+            })
+            .ToArray();
         var forwardTransitionSteps = tracing.Steps.Count(item =>
             item.Direction == CausalTracingDirection.Forward &&
             item.RealTransitionTraversalOccurred);
