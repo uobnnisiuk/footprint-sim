@@ -4100,6 +4100,45 @@ public sealed class CandidateWarpTests
             step.Disposition == TracingStepDisposition.NoOp);
     }
 
+
+    [Fact]
+    public void TracerSplitWindowRetainsReceivedConflictingSourceAsCompetingAlternative()
+    {
+        var input = Warp(new InteractionTimeWindow(0, 1),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b"]);
+        var atOne = Ar43Exact("conflict-anchor", 1, ["b"]);
+        var conflict = CausalTracingConstraint.Create(
+            ScenarioId, Seed, "interval-conflict", "interval-conflict-source",
+            ["interval-conflict-source"], TargetPersonId,
+            TracingConstraintSourceKind.CrossThreadObservation, "person-person",
+            [Participant(TargetPersonId, InteractionEntityKind.Person),
+             Participant("person-c", InteractionEntityKind.Person)],
+            TracingConstraintRole.Local, new InteractionTimeWindow(0, 1),
+            new InteractionTimeWindow(0, 1), ["a"], 1,
+            EvidenceState.Conflicting, true, false,
+            InteractionVisibility.PublicEvidence, "ar43-competing-derivation",
+            [new InteractionProvenance(InteractionProvenanceKind.ExternalSource,
+                "interval-conflict-source")]);
+        var result = new OperationalCausalTracer().Trace(
+            input, [conflict, atOne], Ar43Access(1), null);
+
+        Assert.Equal(["a", "b"], result.CandidateWarps.OuterPlausibleRegionIdsAt(0));
+        Assert.Equal(["a", "b"], result.CandidateWarps.OuterPlausibleRegionIdsAt(1));
+        Assert.Contains(result.Steps, step =>
+            step.ConstraintId == conflict.ConstraintId &&
+            step.Disposition == TracingStepDisposition.MarkConflict &&
+            step.ConflictDetected);
+        Assert.Contains(result.CandidateWarps.Warps,
+            warp => warp.Standing == CandidateWarpStanding.Conflicted);
+        var sourceGroup = Assert.Single(result.SourceGroups, group =>
+            group.ConstraintIds.Contains(conflict.ConstraintId));
+        Assert.Contains(result.SupportLineage, entry =>
+            entry.CompetingSourceGroupIds.Contains(sourceGroup.SourceGroupId));
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(new OperationalCausalTracer().Trace(
+                input, [atOne, conflict], Ar43Access(1), null)));
+    }
+
     private static CandidateWarpAccessContext Ar43Access(long currentTick) => new()
     {
         ScenarioId = ScenarioId,

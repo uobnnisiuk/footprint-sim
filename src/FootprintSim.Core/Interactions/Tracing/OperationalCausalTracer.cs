@@ -246,7 +246,7 @@ public sealed class OperationalCausalTracer
         foreach (var item in unique.Except(applicable).Where(item =>
             item.IsPersonEvidence && !item.IsDeviceOnlyEvidence &&
             item.EvidenceBoundaryState is (EvidenceState.Confirmed or
-                EvidenceState.Conflicting or EvidenceState.SupportedButUncertain)))
+                EvidenceState.SupportedButUncertain)))
         {
             // Existing audit vocabulary has no "temporally unresolved" reason.
             // A NoOp is safer than fabricating an Applied/Preferred result.
@@ -274,7 +274,10 @@ public sealed class OperationalCausalTracer
                 conflictDetected: false));
         }
 
-        var conflicts = applicable
+        // An explicitly conflicting interval stays visible as a competing
+        // alternative even if exact receipts partition its time window.
+        // It cannot hard-exclude any region or prove conflict at each tick.
+        var conflicts = unique
             .Where(item => item.IsPersonEvidence && !item.IsDeviceOnlyEvidence)
             .Where(item => item.EvidenceBoundaryState == EvidenceState.Conflicting)
             .ToArray();

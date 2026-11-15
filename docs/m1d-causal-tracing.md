@@ -52,9 +52,11 @@ An inclusive interval observation means *somewhere in the interval*, not
 residence at every tick. In an interval that was split by independently received
 exact Confirmed observations, other broad or weak witnesses are left as
 non-applied audit steps rather than broadcast over every new time slice.
-Unsplit legacy intervals keep their existing treatment; the complete semantics
-of overlapping inclusive evidence remains an open limitation, not a proof of
-continuous residence. A positive published path may supply support, but a
+Explicitly Conflicting sources remain competing, non-excluding alternatives
+in both split and unsplit windows; their interval marker does not prove a
+contradiction at every individual tick. Unsplit legacy intervals keep their
+existing treatment; the complete semantics of overlapping inclusive evidence
+remains an open limitation, not a proof of continuous residence. A positive published path may supply support, but a
 missing/unpublished path does not refute a received fact. This is a conservative
 finite correction, not complete temporal logic, route reconstruction, or a
 general safety proof. The synthetic S4/S5 evaluation and exact-tick regression
