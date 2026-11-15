@@ -1230,6 +1230,35 @@ public sealed class CrossThreadConstraintApplicator
             "outer-alternative",
             retainUndeclaredStay: true);
         var weakBranches = new List<CandidateWarp> { constrainedWarp, outerWarp };
+        if (constraint.ConstrainedTimeWindow.StartTick ==
+                constraint.ConstrainedTimeWindow.EndTick)
+        {
+            // The weak exact may be TRUE without certifying the public route
+            // beyond its observed tick. Pair its own provenance with the
+            // unconstrained outer continuation, while retaining outerWarp
+            // separately for the possibility that the report is false.
+            // In particular, a later Confirmed existential interval can be
+            // witnessed at this start tick; its later possible regions must
+            // not disappear merely because the weak source was nonmandatory.
+            var witnessRegions = warp.CandidateRegionIdsAt(
+                    constraint.ConstrainedTimeWindow.StartTick)
+                .Intersect(constraint.AllowedRegionIds, StringComparer.Ordinal)
+                .ToArray();
+            if (witnessRegions.Length > 0)
+            {
+                var possibleWitness = CandidateWarpNormalization.CreateState(
+                    warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                    constraint.ConstrainedTimeWindow,
+                    CandidateWarpTemporalKind.EventPoint,
+                    witnessRegions, constraint.EvidenceBoundaryState,
+                    [CreateCrossThreadProvenance(constraint)]);
+                weakBranches.Add(CandidateWarpNormalization.CreateWarp(
+                    warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                    CandidateWarpStanding.OuterPlausible, warp.WarpId,
+                    outerWarp.States.Append(possibleWitness),
+                    $"weak-exact-with-unknown-future:{constraint.ConstraintId}"));
+            }
+        }
         if (unverifiedRegionIds.Count > 0)
         {
             // An uncertain report can be TRUE at a region with no declared
@@ -1574,10 +1603,12 @@ public sealed class CrossThreadConstraintApplicator
                 publicationCutoffTick: accessContext.CurrentTick));
         }
 
+        var witnessPrefix = constraint.EvidenceBoundaryState ==
+            EvidenceState.Confirmed ? "confirmed" : "weak";
         return CandidateWarpNormalization.CreateWarp(
             warp.ScenarioId, warp.Seed, warp.TargetEntityId,
             CandidateWarpStanding.OuterPlausible, warp.WarpId, history,
-            $"{(constraint.EvidenceBoundaryState == EvidenceState.Confirmed ? "confirmed" : "weak")}-inclusive-last-witness:{constraint.ConstraintId}");
+            $"{witnessPrefix}-inclusive-last-witness:{constraint.ConstraintId}");
     }
 
     // Preserve the different possible witness times of an interval in an
