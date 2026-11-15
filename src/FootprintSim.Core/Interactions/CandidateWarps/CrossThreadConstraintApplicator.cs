@@ -1115,7 +1115,21 @@ public sealed class CrossThreadConstraintApplicator
                     source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
                     source.EvidenceBoundaryState == EvidenceState.SupportedButUncertain &&
                     source.SourceTimeWindow?.StartTick < accessContext.CurrentTick);
+            // A published route from the most recent witness is not a
+            // proof that two earlier independently received facts have been
+            // reconciled. Preserve their history until joint verification.
+            var distinctPastConfirmedReceipts = warp.States
+                .SelectMany(state => state.Provenance)
+                .Where(source =>
+                    source.SourceKind == CandidateWarpSourceKind.CrossThreadObservation &&
+                    source.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                    source.SourceTimeWindow?.EndTick < accessContext.CurrentTick)
+                .Select(source => source.SourceObservationId ?? source.SourceIdentifier)
+                .Distinct(StringComparer.Ordinal)
+                .Take(2)
+                .Count();
             var retainPastOuter = hasWeakHistoricalReceipt ||
+                distinctPastConfirmedReceipts >= 2 ||
                 !hasCompletePublishedLinks;
             var anchoredWarps = new List<CandidateWarp> { currentAnchor };
             if (retainPastOuter)
