@@ -3949,6 +3949,192 @@ public sealed class CandidateWarpTests
             JsonDefaults.Serialize(tracer.Trace(warps, [observation], access, envelope)));
     }
 
+
+    // AR-43: confirmed witnesses at different ticks of one StateInterval are
+    // independently true; their regions must not be intersected at one time.
+    [Fact]
+    public void TracerKeepsDifferentTickConfirmedWitnessesAndPublishedMove()
+    {
+        var input = Warp(new InteractionTimeWindow(0, 1),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b", "c", "d"]);
+        var earlier = Ar43Exact("earlier", 0, ["a"]);
+        var later = Ar43Exact("later", 1, ["d"]);
+        var tracer = new OperationalCausalTracer();
+        var access = Ar43Access(1);
+        var envelope = Ar43Envelope();
+
+        var result = tracer.Trace(input, [earlier, later], access, envelope);
+        Assert.Equal(["a"], result.CandidateWarps.OuterPlausibleRegionIdsAt(0));
+        Assert.Equal(["d"], result.CandidateWarps.OuterPlausibleRegionIdsAt(1));
+        Assert.DoesNotContain(result.Steps, step => step.ConflictDetected);
+        Assert.Contains(result.Steps, step => step.ConstraintId == earlier.ConstraintId &&
+            step.Disposition == TracingStepDisposition.Applied &&
+            step.TimeWindow == InteractionTimeWindow.At(0));
+        Assert.Contains(result.Steps, step => step.ConstraintId == later.ConstraintId &&
+            step.Disposition == TracingStepDisposition.Applied &&
+            step.TimeWindow == InteractionTimeWindow.At(1));
+        var atA = Assert.Single(result.SupportLineage, item => item.RegionId == "a");
+        Assert.DoesNotContain(later.ConstraintId, atA.ConstraintIds);
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(tracer.Trace(input, [later, earlier, earlier],
+                access, envelope)));
+    }
+
+    [Fact]
+    public void TracerLaterExactDoesNotMakeEarlierWindowAConfirmedResidence()
+    {
+        var input = Warp(new InteractionTimeWindow(0, 2),
+            CandidateWarpTemporalKind.StateInterval, ["a", "c", "d"]);
+        var later = Ar43Exact("later-only", 2, ["d"], availableAtTick: 2);
+        var tracer = new OperationalCausalTracer();
+        var before = tracer.Trace(input, [later], Ar43Access(1), null);
+        var after = tracer.Trace(input, [later], Ar43Access(2), null);
+
+        Assert.Equal(["a", "c", "d"], before.CandidateWarps.OuterPlausibleRegionIdsAt(0));
+        Assert.Equal(["a", "c", "d"], after.CandidateWarps.OuterPlausibleRegionIdsAt(0));
+        Assert.Equal(["a", "c", "d"], after.CandidateWarps.OuterPlausibleRegionIdsAt(1));
+        Assert.Equal(["d"], after.CandidateWarps.OuterPlausibleRegionIdsAt(2));
+        Assert.DoesNotContain(after.Steps, step =>
+            step.ConstraintId == later.ConstraintId &&
+            step.SourceStateId == after.CandidateWarps.Warps[0].States[0].StateId);
+        Assert.Empty(before.Steps);
+    }
+
+    [Fact]
+    public void TracerSameTickIndependentContradictionStaysExplicitConflict()
+    {
+        var input = Warp(new InteractionTimeWindow(0, 1),
+            CandidateWarpTemporalKind.StateInterval, ["a", "d"]);
+        var first = Ar43Exact("same-a", 1, ["a"]);
+        var second = Ar43Exact("same-d", 1, ["d"]);
+        var result = new OperationalCausalTracer().Trace(
+            input, [first, second], Ar43Access(1), null);
+
+        Assert.Equal(["a", "d"], result.CandidateWarps.OuterPlausibleRegionIdsAt(1));
+        Assert.Contains(result.Steps, step => step.ConflictDetected &&
+            step.Disposition == TracingStepDisposition.MarkConflict);
+        Assert.Contains(result.CandidateWarps.Warps,
+            warp => warp.Standing == CandidateWarpStanding.Conflicted);
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(new OperationalCausalTracer().Trace(
+                input, [second, first], Ar43Access(1), null)));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void TracerMissingPublicEdgeIsNotProofAgainstReceivedHistory(
+        bool unpublishedBranch)
+    {
+        var input = Warp(new InteractionTimeWindow(0, 1),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b", "c"]);
+        var first = Ar43Exact("hidden-c", 0, ["c"]);
+        var later = Ar43Exact("hidden-b", 1, ["b"]);
+        // In this synthetic world a c->b movement can exist privately.
+        // The truth-side path is deliberately NOT passed to the tracer.
+        var envelope = unpublishedBranch ? new PublicHazardEnvelope
+        {
+            HazardId = "unpublished-ar43",
+            SourceRegionId = "c",
+            PublishedAtTick = 0,
+            Branches =
+            [
+                new PublicHazardBranch
+                {
+                    SourceRegionId = "c", DestinationRegionId = "b",
+                    MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+                    TransportType = HazardTransportType.HazardDriven,
+                    ProvenanceId = "future-c-b", PublishedAtTick = 3
+                }
+            ]
+        } : null;
+        var result = new OperationalCausalTracer().Trace(
+            input, [first, later], Ar43Access(1), envelope);
+
+        Assert.Equal(["c"], result.CandidateWarps.OuterPlausibleRegionIdsAt(0));
+        Assert.Equal(["b"], result.CandidateWarps.OuterPlausibleRegionIdsAt(1));
+        Assert.DoesNotContain(result.Steps, step => step.ConflictDetected);
+        Assert.DoesNotContain(result.Steps, step =>
+            step.RealTransitionTraversalOccurred);
+    }
+
+    [Fact]
+    public void TracerUncertainAndInclusiveWindowsDoNotInventExactSupport()
+    {
+        var input = Warp(new InteractionTimeWindow(0, 2),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b"]);
+        var confirmed = Ar43Exact("at-two", 2, ["b"], availableAtTick: 2);
+        var weak = Ar43Exact("weak-zero", 0, ["a"],
+            state: EvidenceState.SupportedButUncertain, availableAtTick: 2);
+        var interval = CausalTracingConstraint.Create(
+            ScenarioId, Seed, "inclusive-one", "source-inclusive",
+            ["source-inclusive"], TargetPersonId,
+            TracingConstraintSourceKind.CrossThreadObservation, "person-person",
+            [Participant(TargetPersonId, InteractionEntityKind.Person),
+             Participant("person-b", InteractionEntityKind.Person)],
+            TracingConstraintRole.Local, new InteractionTimeWindow(0, 2),
+            new InteractionTimeWindow(0, 2), ["a"], 2,
+            EvidenceState.Confirmed, true, false,
+            InteractionVisibility.PublicEvidence, "inclusive-derivation",
+            [new InteractionProvenance(InteractionProvenanceKind.ExternalSource,
+                "source-inclusive")]);
+        var result = new OperationalCausalTracer().Trace(
+            input, [interval, weak, confirmed], Ar43Access(2), null);
+
+        Assert.Equal(["a", "b"], result.CandidateWarps.OuterPlausibleRegionIdsAt(0));
+        Assert.Equal(["b"], result.CandidateWarps.OuterPlausibleRegionIdsAt(2));
+        Assert.DoesNotContain(result.Steps, step =>
+            step.ConstraintId == interval.ConstraintId &&
+            step.Disposition == TracingStepDisposition.Applied);
+        Assert.DoesNotContain(result.Steps, step =>
+            step.ConstraintId == weak.ConstraintId &&
+            step.Disposition == TracingStepDisposition.Branch);
+        Assert.Contains(result.Steps, step =>
+            step.ConstraintId == interval.ConstraintId &&
+            step.Disposition == TracingStepDisposition.NoOp);
+    }
+
+    private static CandidateWarpAccessContext Ar43Access(long currentTick) => new()
+    {
+        ScenarioId = ScenarioId,
+        Seed = Seed,
+        TargetEntityId = TargetPersonId,
+        CurrentTick = currentTick,
+        QueryContextId = "ar43-direct-tracer"
+    };
+
+    private static CausalTracingConstraint Ar43Exact(
+        string source, long tick, IReadOnlyList<string> regions,
+        EvidenceState state = EvidenceState.Confirmed, long availableAtTick = 1) =>
+        CausalTracingConstraint.Create(
+            ScenarioId, Seed, "observation-" + source, "source-" + source,
+            ["source-" + source], TargetPersonId,
+            TracingConstraintSourceKind.CrossThreadObservation, "person-person",
+            [Participant(TargetPersonId, InteractionEntityKind.Person),
+             Participant("person-b", InteractionEntityKind.Person)],
+            TracingConstraintRole.Local, InteractionTimeWindow.At(tick),
+            InteractionTimeWindow.At(tick), regions, availableAtTick, state,
+            true, false, InteractionVisibility.PublicEvidence, "ar43-direct-derivation",
+            [new InteractionProvenance(InteractionProvenanceKind.ExternalSource,
+                "source-" + source)]);
+
+    private static PublicHazardEnvelope Ar43Envelope() => new()
+    {
+        HazardId = "ar43-known-move",
+        SourceRegionId = "a",
+        PublishedAtTick = 0,
+        Branches =
+        [
+            new PublicHazardBranch
+            {
+                SourceRegionId = "a", DestinationRegionId = "d",
+                MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+                TransportType = HazardTransportType.HazardDriven,
+                ProvenanceId = "ar43-a-d", PublishedAtTick = 0
+            }
+        ]
+    };
+
     private static CandidateWarpSet Warp(
         InteractionTimeWindow timeWindow,
         CandidateWarpTemporalKind temporalKind,

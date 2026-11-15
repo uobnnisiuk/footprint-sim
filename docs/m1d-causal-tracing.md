@@ -38,6 +38,26 @@ Surviving candidates retain supporting source groups, constraint IDs, relation k
 
 ## Evidence-state working semantics
 
+### AR-43: tracing one interval with differently timed observations
+
+A multi-tick `StateInterval` is **not** a stationary location. For public, received,
+person-specific exact Confirmed observations, operational tracing now divides the
+interval at the observed ticks, retains the original outer possibilities in
+unobserved portions, and narrows only the corresponding exact tick. A later
+confirmed location never proves the same location at an earlier tick. Two
+disjoint locations at the **same** exact tick can still produce a conflict;
+different ticks alone cannot.
+
+An inclusive interval observation means *somewhere in the interval*, not
+residence at every tick. When a narrower time interpretation is not established,
+tracing keeps its outer candidates and emits a non-applied audit step rather
+than silently claiming Applied or Preferred. A positive published path may
+supply support, but a missing/unpublished path does not refute a received fact.
+This is a conservative finite implementation rule, not a complete temporal
+logic, route reconstruction, or general safety proof. The synthetic S4/S5
+evaluation and exact-tick regression checks remain necessary.
+
+
 - `Confirmed + Confirmed`: narrow when consistent; preserve candidates and mark conflict on empty intersection.
 - `Confirmed + SupportedButUncertain`: confirmed evidence may bound the outer set; uncertain evidence may affect preferred candidates without hard outer exclusion.
 - `SupportedButUncertain + SupportedButUncertain`: retain alternatives; no hard exclusion.
