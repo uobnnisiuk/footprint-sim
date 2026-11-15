@@ -837,8 +837,62 @@ public sealed class CrossThreadConstraintApplicator
                     CandidateWarpStanding.OuterPlausible, warp.WarpId,
                     warp.States, $"weak-unknown:{constraint.ConstraintId}")
                 : warp;
+            var retainedBranches = new List<CandidateWarp> { retained };
+
+            // AR-70 follow-up: a weak same-tick report may invalidate the
+            // preferred historical ROUTE, but cannot revoke independently
+            // received Confirmed exact facts at the query tick. Standing is
+            // warp-wide, so preserve a past-free preferred current anchor
+            // separately from the demoted outer-only history. Never turn a
+            // possibly false weak report into a hard current exclusion.
+            if (warp.Standing == CandidateWarpStanding.Preferred &&
+                hadPriorConfirmedReceipt &&
+                constraint.EvidenceBoundaryState == EvidenceState.SupportedButUncertain &&
+                constraint.ConstrainedTimeWindow.StartTick == accessContext.CurrentTick &&
+                constraint.ConstrainedTimeWindow.EndTick == accessContext.CurrentTick)
+            {
+                var directCurrentFacts = warp.States
+                    .SelectMany(state => state.Provenance)
+                    .Where(source =>
+                        source.SourceKind ==
+                            CandidateWarpSourceKind.CrossThreadObservation &&
+                        source.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                        source.SourceTimeWindow is { } window &&
+                        window.StartTick == accessContext.CurrentTick &&
+                        window.EndTick == accessContext.CurrentTick)
+                    .DistinctBy(source => source.SourceObservationId ??
+                        source.SourceIdentifier, StringComparer.Ordinal)
+                    .ToArray();
+                if (directCurrentFacts.Length > 0)
+                {
+                    var exactCurrentRegions = directCurrentFacts[0].RegionIds
+                        .ToHashSet(StringComparer.Ordinal);
+                    foreach (var fact in directCurrentFacts.Skip(1))
+                    {
+                        exactCurrentRegions.IntersectWith(fact.RegionIds);
+                    }
+
+                    // Conflicting same-tick Confirmed originals never
+                    // manufacture a preferred location by majority vote.
+                    if (exactCurrentRegions.Count > 0)
+                    {
+                        var exactCurrentState = CandidateWarpNormalization.CreateState(
+                            warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                            InteractionTimeWindow.At(accessContext.CurrentTick),
+                            CandidateWarpTemporalKind.EventPoint,
+                            exactCurrentRegions, EvidenceState.Confirmed,
+                            directCurrentFacts);
+                        retainedBranches.Add(CandidateWarpNormalization.CreateWarp(
+                            warp.ScenarioId, warp.Seed, warp.TargetEntityId,
+                            CandidateWarpStanding.Preferred, parentWarpId: null,
+                            [exactCurrentState],
+                            $"direct-current-after-weak-demotion:{constraint.ConstraintId}"));
+                    }
+                }
+            }
+
             return new WarpApplication(
-                [retained],
+                retainedBranches,
                 CreateAudit(
                     warp.WarpId,
                     constraint,

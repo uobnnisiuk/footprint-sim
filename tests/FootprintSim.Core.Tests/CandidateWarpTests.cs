@@ -539,6 +539,56 @@ public sealed class CandidateWarpTests
                 [earlier, current, earlier, current], 3).CandidateWarps));
     }
 
+    // Ready-stage Codex P2 after AR-70: an inconsistent weak report at
+    // the query tick may demote a historical route, but must not demote
+    // the independently Confirmed current position carried on that route.
+    [Fact]
+    public void SameTickWeakDemotionRetainsIndependentCurrentPreferred()
+    {
+        var initial = Warp(InteractionTimeWindow.At(0),
+            CandidateWarpTemporalKind.EventPoint, ["a"]);
+        for (var suffix = 0; suffix < 12; suffix++)
+        {
+            var earlier = Constraint(EvidenceState.Confirmed,
+                InteractionTimeWindow.At(0), ["a"], 2,
+                $"weak-demotion-earlier-{suffix}");
+            var current = Constraint(EvidenceState.Confirmed,
+                InteractionTimeWindow.At(2), ["a"], 2,
+                $"weak-demotion-current-{suffix}");
+            var weak = Constraint(EvidenceState.SupportedButUncertain,
+                InteractionTimeWindow.At(2), ["b"], 2,
+                $"weak-demotion-weak-{suffix}");
+
+            var baseline = Apply(initial, [earlier, current], 2);
+            var result = Apply(initial, [earlier, current, weak], 2);
+            Assert.Contains("a", baseline.CandidateWarps.PreferredRegionIdsAt(2));
+            Assert.Contains("a", result.CandidateWarps.PreferredRegionIdsAt(2));
+            Assert.Contains("a", result.CandidateWarps.CandidateRegionIdsAt(0));
+            Assert.DoesNotContain("b", result.CandidateWarps.PreferredRegionIdsAt(2));
+            Assert.Contains(result.CandidateWarps.Warps, warp =>
+                warp.Standing == CandidateWarpStanding.Preferred &&
+                warp.States.Count == 1 &&
+                warp.States[0].TimeWindow == InteractionTimeWindow.At(2) &&
+                warp.States[0].RegionIds.Contains("a", StringComparer.Ordinal) &&
+                warp.States[0].Provenance.Any(source =>
+                    source.SourceObservationId == current.SourceObservationId) &&
+                warp.States[0].Provenance.All(source =>
+                    source.EvidenceBoundaryState == EvidenceState.Confirmed));
+            Assert.Contains(result.CandidateWarps.Warps, warp =>
+                warp.Standing == CandidateWarpStanding.OuterPlausible &&
+                warp.CandidateRegionIdsAt(0).Contains("a", StringComparer.Ordinal));
+            Assert.Contains(result.Audits, audit =>
+                audit.SourceObservationId == weak.SourceObservationId &&
+                audit.Reason == ConstraintApplicationReason.NoRegionOverlap &&
+                !audit.ConflictDetected);
+            Assert.Equal(JsonDefaults.Serialize(result),
+                JsonDefaults.Serialize(Apply(initial, [weak, current, earlier], 2)));
+            Assert.Equal(JsonDefaults.Serialize(result.CandidateWarps),
+                JsonDefaults.Serialize(Apply(initial,
+                    [earlier, current, weak, current, weak], 2).CandidateWarps));
+        }
+    }
+
     // AR-70: a weak same-tick report cannot invalidate a Confirmed current
     // point based on the spelling of a source observation identifier.
     [Theory]
