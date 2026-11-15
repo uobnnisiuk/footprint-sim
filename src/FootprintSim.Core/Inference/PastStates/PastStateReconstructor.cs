@@ -431,6 +431,9 @@ public sealed class PastStateReconstructor
             .Where(item => states.Any(state => Overlaps(item.ConstrainedTimeWindow, state.TimeWindow)))
             .Where(item => method != PastStateMethod.BackwardTraversal ||
                 !Overlaps(item.ConstrainedTimeWindow, context.Query.TargetTimeWindow))
+            // Re-receiving the identical source object must not inflate
+            // traversal diagnostics; distinct claims remain separately visible.
+            .Distinct()
             .OrderBy(item => item.ConstraintId, StringComparer.Ordinal)
             .ToArray();
         var sourceWarp = warps.Warps
