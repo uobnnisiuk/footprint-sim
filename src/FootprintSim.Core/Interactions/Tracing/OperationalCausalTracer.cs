@@ -75,8 +75,12 @@ public sealed class OperationalCausalTracer
             .ThenBy(warp => warp.WarpId, StringComparer.Ordinal)
             .First();
         var states = sourceWarp.States
-            .SelectMany(state => SplitAtReceivedExactConfirmations(state, canonical, candidateWarps))
-            .Select(state => new WorkingState(state))
+            .SelectMany(state =>
+            {
+                var slices = SplitAtReceivedExactConfirmations(
+                    state, canonical, candidateWarps).ToArray();
+                return slices.Select(slice => new WorkingState(slice, slices.Length > 1));
+            })
             .OrderBy(state => state.Source.TimeWindow.StartTick)
             .ThenBy(state => state.Source.TimeWindow.EndTick)
             .ThenBy(state => state.Source.StateId, StringComparer.Ordinal)
@@ -228,15 +232,18 @@ public sealed class OperationalCausalTracer
         // A region witnessed somewhere in an interval cannot be imposed at
         // every tick, nor can two different exact ticks be intersected as one
         // position. Only a received exact fact at this exact state can narrow.
-        var exactAtState = unique
-            .Where(item => state.Source.TimeWindow.StartTick ==
-                           state.Source.TimeWindow.EndTick &&
-                           item.ConstrainedTimeWindow.StartTick ==
-                           item.ConstrainedTimeWindow.EndTick &&
-                           item.ConstrainedTimeWindow.StartTick ==
-                           state.Source.TimeWindow.StartTick)
-            .ToArray();
-        foreach (var item in unique.Except(exactAtState).Where(item =>
+        // Keep the pre-existing treatment of an unsplit (legacy) interval.
+        // When exact receipts force a split, a broad existential witness must
+        // not be broadcast to each of the resulting time slices.
+        var applicable = state.TemporallyPartitioned
+            ? unique.Where(item => state.Source.TimeWindow.StartTick ==
+                                   state.Source.TimeWindow.EndTick &&
+                                   item.ConstrainedTimeWindow.StartTick ==
+                                   item.ConstrainedTimeWindow.EndTick &&
+                                   item.ConstrainedTimeWindow.StartTick ==
+                                   state.Source.TimeWindow.StartTick).ToArray()
+            : unique;
+        foreach (var item in unique.Except(applicable).Where(item =>
             item.IsPersonEvidence && !item.IsDeviceOnlyEvidence &&
             item.EvidenceBoundaryState is (EvidenceState.Confirmed or
                 EvidenceState.Conflicting or EvidenceState.SupportedButUncertain)))
@@ -267,7 +274,7 @@ public sealed class OperationalCausalTracer
                 conflictDetected: false));
         }
 
-        var conflicts = exactAtState
+        var conflicts = applicable
             .Where(item => item.IsPersonEvidence && !item.IsDeviceOnlyEvidence)
             .Where(item => item.EvidenceBoundaryState == EvidenceState.Conflicting)
             .ToArray();
@@ -289,7 +296,7 @@ public sealed class OperationalCausalTracer
                 conflictDetected: true));
         }
 
-        var confirmed = exactAtState
+        var confirmed = applicable
             .Where(item => item.IsPersonEvidence && !item.IsDeviceOnlyEvidence)
             .Where(item => item.EvidenceBoundaryState == EvidenceState.Confirmed)
             .ToArray();
@@ -355,7 +362,7 @@ public sealed class OperationalCausalTracer
             }
         }
 
-        var uncertain = exactAtState
+        var uncertain = applicable
             .Where(item => item.IsPersonEvidence && !item.IsDeviceOnlyEvidence)
             .Where(item => item.EvidenceBoundaryState == EvidenceState.SupportedButUncertain)
             .ToArray();
@@ -1432,9 +1439,10 @@ public sealed class OperationalCausalTracer
 
     private sealed class WorkingState
     {
-        public WorkingState(CandidateWarpState source)
+        public WorkingState(CandidateWarpState source, bool temporallyPartitioned)
         {
             Source = source;
+            TemporallyPartitioned = temporallyPartitioned;
             OriginalRegions = source.RegionIds.ToArray();
             Preferred = new SortedSet<string>(source.RegionIds, StringComparer.Ordinal);
             Outer = new SortedSet<string>(source.RegionIds, StringComparer.Ordinal);
@@ -1447,6 +1455,8 @@ public sealed class OperationalCausalTracer
         }
 
         public CandidateWarpState Source { get; }
+
+        public bool TemporallyPartitioned { get; }
 
         public IReadOnlyList<string> OriginalRegions { get; }
 

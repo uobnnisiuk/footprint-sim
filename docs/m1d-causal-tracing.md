@@ -49,13 +49,16 @@ disjoint locations at the **same** exact tick can still produce a conflict;
 different ticks alone cannot.
 
 An inclusive interval observation means *somewhere in the interval*, not
-residence at every tick. When a narrower time interpretation is not established,
-tracing keeps its outer candidates and emits a non-applied audit step rather
-than silently claiming Applied or Preferred. A positive published path may
-supply support, but a missing/unpublished path does not refute a received fact.
-This is a conservative finite implementation rule, not a complete temporal
-logic, route reconstruction, or general safety proof. The synthetic S4/S5
-evaluation and exact-tick regression checks remain necessary.
+residence at every tick. In an interval that was split by independently received
+exact Confirmed observations, other broad or weak witnesses are left as
+non-applied audit steps rather than broadcast over every new time slice.
+Unsplit legacy intervals keep their existing treatment; the complete semantics
+of overlapping inclusive evidence remains an open limitation, not a proof of
+continuous residence. A positive published path may supply support, but a
+missing/unpublished path does not refute a received fact. This is a conservative
+finite correction, not complete temporal logic, route reconstruction, or a
+general safety proof. The synthetic S4/S5 evaluation and exact-tick regression
+checks remain necessary.
 
 
 - `Confirmed + Confirmed`: narrow when consistent; preserve candidates and mark conflict on empty intersection.

@@ -3973,8 +3973,14 @@ public sealed class CandidateWarpTests
         Assert.Contains(result.Steps, step => step.ConstraintId == later.ConstraintId &&
             step.Disposition == TracingStepDisposition.Applied &&
             step.TimeWindow == InteractionTimeWindow.At(1));
-        var atA = Assert.Single(result.SupportLineage, item => item.RegionId == "a");
-        Assert.DoesNotContain(later.ConstraintId, atA.ConstraintIds);
+        // A later witness may support an earlier possible published predecessor.
+        // It must not be applied directly to that predecessor's different tick.
+        var earlyStep = Assert.Single(result.Steps, step =>
+            step.ConstraintId == earlier.ConstraintId &&
+            step.Disposition == TracingStepDisposition.Applied);
+        Assert.DoesNotContain(result.Steps, step =>
+            step.ConstraintId == later.ConstraintId &&
+            step.SourceStateId == earlyStep.SourceStateId);
         Assert.Equal(JsonDefaults.Serialize(result),
             JsonDefaults.Serialize(tracer.Trace(input, [later, earlier, earlier],
                 access, envelope)));
