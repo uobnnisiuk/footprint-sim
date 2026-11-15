@@ -74,11 +74,8 @@ public sealed class OperationalCausalTracer
             .OrderBy(warp => warp.Standing)
             .ThenBy(warp => warp.WarpId, StringComparer.Ordinal)
             .First();
-        var states = sourceWarp.States
-            .Select(state => new WorkingState(state))
-            .OrderBy(state => state.Source.TimeWindow.StartTick)
-            .ThenBy(state => state.Source.TimeWindow.EndTick)
-            .ThenBy(state => state.Source.StateId, StringComparer.Ordinal)
+        var states = PartitionSourceStates(sourceWarp, canonical, candidateWarps)
+            .Select(item => new WorkingState(item.State, item.TemporallyPartitioned))
             .ToArray();
         var steps = new List<CausalTracingStepAudit>();
         foreach (var state in states)
@@ -159,6 +156,83 @@ public sealed class OperationalCausalTracer
         };
     }
 
+    // This is also used by M1-E local telemetry. Partition each original
+    // source state independently: windows from another overlapping source
+    // state are not evidence that this state was actually split there.
+    internal static IReadOnlyList<(CandidateWarpState State, bool TemporallyPartitioned)>
+        PartitionSourceStates(
+            CandidateWarp sourceWarp,
+            IReadOnlyList<CausalTracingConstraint> constraints,
+            CandidateWarpSet warps) =>
+        sourceWarp.States
+            .SelectMany(state =>
+            {
+                var slices = SplitAtReceivedExactPersonEvidence(
+                    state, constraints, warps).ToArray();
+                return slices.Select(slice =>
+                    (State: slice, TemporallyPartitioned: slices.Length > 1));
+            })
+            .OrderBy(item => item.State.TimeWindow.StartTick)
+            .ThenBy(item => item.State.TimeWindow.EndTick)
+            .ThenBy(item => item.State.StateId, StringComparer.Ordinal)
+            .ToArray();
+
+    // StateInterval expresses a time window, not continuous residence in one region.
+    // Split at exact received Confirmed or Conflicting Person observations. This
+    // retains the actual conflict tick even if another observation comes later.
+    // Untouched portions retain
+    // the original outer possibilities; no missing public path becomes a negative fact.
+    private static IEnumerable<CandidateWarpState> SplitAtReceivedExactPersonEvidence(
+        CandidateWarpState state,
+        IReadOnlyList<CausalTracingConstraint> constraints,
+        CandidateWarpSet warps)
+    {
+        var window = state.TimeWindow;
+        if (state.TemporalKind != CandidateWarpTemporalKind.StateInterval ||
+            window.StartTick == window.EndTick)
+        {
+            yield return state;
+            yield break;
+        }
+
+        var exactEvidenceTicks = constraints
+            .Where(item => item.IsPersonEvidence && !item.IsDeviceOnlyEvidence)
+            .Where(item => item.EvidenceBoundaryState is
+                (EvidenceState.Confirmed or EvidenceState.Conflicting))
+            .Where(item => item.ConstrainedTimeWindow.StartTick ==
+                           item.ConstrainedTimeWindow.EndTick)
+            .Select(item => item.ConstrainedTimeWindow.StartTick)
+            .Where(tick => window.StartTick <= tick && tick <= window.EndTick)
+            .Distinct()
+            .OrderBy(tick => tick)
+            .ToArray();
+        if (exactEvidenceTicks.Length == 0)
+        {
+            yield return state;
+            yield break;
+        }
+
+        CandidateWarpState Slice(InteractionTimeWindow part) =>
+            CandidateWarpNormalization.CreateState(
+                warps.ScenarioId, warps.Seed, warps.TargetEntityId,
+                part, state.TemporalKind, state.RegionIds,
+                state.EvidenceBoundaryState, state.Provenance);
+
+        var start = window.StartTick;
+        foreach (var tick in exactEvidenceTicks)
+        {
+            if (start < tick)
+                yield return Slice(new InteractionTimeWindow(start, tick - 1));
+            yield return Slice(InteractionTimeWindow.At(tick));
+            if (tick == window.EndTick)
+                yield break;
+            start = tick + 1;
+        }
+
+        if (start <= window.EndTick)
+            yield return Slice(new InteractionTimeWindow(start, window.EndTick));
+    }
+
     private static void ApplyAtState(
         WorkingState state,
         IReadOnlyList<CausalTracingConstraint> constraints,
@@ -171,6 +245,33 @@ public sealed class OperationalCausalTracer
             .Where(item => Overlaps(state.Source.TimeWindow, item.ConstrainedTimeWindow))
             .ToArray();
         var unique = overlapping;
+        // A region witnessed somewhere in an interval cannot be imposed at
+        // every tick, nor can two different exact ticks be intersected as one
+        // position. Only a received exact fact at this exact state can narrow.
+        // Keep the pre-existing treatment of an unsplit (legacy) interval.
+        // When exact receipts force a split, a broad existential witness must
+        // not be broadcast to each of the resulting time slices.
+        var applicable = state.TemporallyPartitioned
+            ? unique.Where(item => state.Source.TimeWindow.StartTick ==
+                                   state.Source.TimeWindow.EndTick &&
+                                   item.ConstrainedTimeWindow.StartTick ==
+                                   item.ConstrainedTimeWindow.EndTick &&
+                                   item.ConstrainedTimeWindow.StartTick ==
+                                   state.Source.TimeWindow.StartTick).ToArray()
+            : unique;
+        foreach (var item in unique.Except(applicable).Where(item =>
+            item.IsPersonEvidence && !item.IsDeviceOnlyEvidence &&
+            item.EvidenceBoundaryState is (EvidenceState.Confirmed or
+                EvidenceState.SupportedButUncertain)))
+        {
+            // Existing audit vocabulary has no "temporally unresolved" reason.
+            // A NoOp is safer than fabricating an Applied/Preferred result.
+            steps.Add(CreateConstraintStep(item, groupByConstraint[item.ConstraintId],
+                sessionId, accessContext, state, TracingStepDisposition.NoOp,
+                TracingStepReason.EvidenceStateDoesNotConstrain, state.Preferred,
+                alternativesRetained: true, conflictDetected: false));
+        }
+
         foreach (var item in unique.Where(IsNoOp))
         {
             var reason = !item.IsPersonEvidence || item.IsDeviceOnlyEvidence
@@ -189,7 +290,30 @@ public sealed class OperationalCausalTracer
                 conflictDetected: false));
         }
 
-        var conflicts = unique
+        // An inclusive Conflicting source has no established contradiction
+        // at every slice of a partitioned interval. Keep its competing
+        // ancestry and a non-applied audit, without manufacturing per-tick
+        // Conflicted standing or ConflictDetected.
+        if (state.TemporallyPartitioned)
+        {
+            foreach (var item in unique.Except(applicable).Where(item =>
+                item.IsPersonEvidence && !item.IsDeviceOnlyEvidence &&
+                item.EvidenceBoundaryState == EvidenceState.Conflicting))
+            {
+                var sourceGroup = groupByConstraint[item.ConstraintId];
+                state.ConflictingSourceGroups.Add(sourceGroup.SourceGroupId);
+                steps.Add(CreateConstraintStep(
+                    item, sourceGroup, sessionId, accessContext, state,
+                    TracingStepDisposition.NoOp,
+                    TracingStepReason.EvidenceStateDoesNotConstrain,
+                    state.Preferred, alternativesRetained: true,
+                    conflictDetected: false));
+            }
+        }
+
+        // Only an exact-tick conflicting source may mark a partitioned tick
+        // as conflicted. Legacy unsplit windows retain their prior semantics.
+        var conflicts = applicable
             .Where(item => item.IsPersonEvidence && !item.IsDeviceOnlyEvidence)
             .Where(item => item.EvidenceBoundaryState == EvidenceState.Conflicting)
             .ToArray();
@@ -211,7 +335,7 @@ public sealed class OperationalCausalTracer
                 conflictDetected: true));
         }
 
-        var confirmed = unique
+        var confirmed = applicable
             .Where(item => item.IsPersonEvidence && !item.IsDeviceOnlyEvidence)
             .Where(item => item.EvidenceBoundaryState == EvidenceState.Confirmed)
             .ToArray();
@@ -277,7 +401,7 @@ public sealed class OperationalCausalTracer
             }
         }
 
-        var uncertain = unique
+        var uncertain = applicable
             .Where(item => item.IsPersonEvidence && !item.IsDeviceOnlyEvidence)
             .Where(item => item.EvidenceBoundaryState == EvidenceState.SupportedButUncertain)
             .ToArray();
@@ -1354,9 +1478,10 @@ public sealed class OperationalCausalTracer
 
     private sealed class WorkingState
     {
-        public WorkingState(CandidateWarpState source)
+        public WorkingState(CandidateWarpState source, bool temporallyPartitioned)
         {
             Source = source;
+            TemporallyPartitioned = temporallyPartitioned;
             OriginalRegions = source.RegionIds.ToArray();
             Preferred = new SortedSet<string>(source.RegionIds, StringComparer.Ordinal);
             Outer = new SortedSet<string>(source.RegionIds, StringComparer.Ordinal);
@@ -1369,6 +1494,8 @@ public sealed class OperationalCausalTracer
         }
 
         public CandidateWarpState Source { get; }
+
+        public bool TemporallyPartitioned { get; }
 
         public IReadOnlyList<string> OriginalRegions { get; }
 

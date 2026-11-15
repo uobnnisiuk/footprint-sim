@@ -570,6 +570,200 @@ public sealed class M1ETests
             item.AvailableAtTick == query.EvidenceAvailabilityCutoff);
     }
 
+    [Theory]
+    [InlineData(true, true, false, false, "a,b")]
+    [InlineData(true, true, false, true, "a,b")]
+    [InlineData(false, true, false, false, "a,b,c")]
+    [InlineData(true, true, true, false, "a,b")]
+    [InlineData(true, false, false, false, "a,b,c")]
+    public void Ar43WindowUnionKeepsEveryReceivedLocation(
+        bool atFive, bool atSix, bool eventPoints, bool publicEdge,
+        string expected)
+    {
+        var compared = Ar43WindowFixture(atFive, atSix, eventPoints, publicEdge);
+        var local = compared.Methods.Single(item =>
+            item.Method == PastStateMethod.ReconstructionWithLocalTraversal);
+        Assert.Equal(expected.Split(','), local.CandidateRegionIds);
+        Assert.Equal(["a", "b", "c"], local.CandidateRegionIdsBefore);
+    }
+
+    [Fact]
+    public void Ar43WindowUnionHonorsCutoffAndSourceCopies()
+    {
+        var before = Ar43WindowFixture(true, true, delayedB: true)
+            .Methods.Single(item =>
+                item.Method == PastStateMethod.ReconstructionWithLocalTraversal);
+        var after = Ar43WindowFixture(true, true)
+            .Methods.Single(item =>
+                item.Method == PastStateMethod.ReconstructionWithLocalTraversal);
+        var duplicated = Ar43WindowFixture(true, true, reverseCopy: true)
+            .Methods.Single(item =>
+                item.Method == PastStateMethod.ReconstructionWithLocalTraversal);
+        Assert.Equal(["a", "b", "c"], before.CandidateRegionIds);
+        Assert.Equal(["a", "b"], after.CandidateRegionIds);
+        Assert.Equal(after.CandidateRegionIds, duplicated.CandidateRegionIds);
+        Assert.Equal(JsonDefaults.Serialize(after.Diagnostics),
+            JsonDefaults.Serialize(duplicated.Diagnostics));
+        Assert.DoesNotContain(before.Diagnostics!.ConstraintUsages,
+            item => item.SourceObservationId == "ar43-obs-b");
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public void Ar43TraversalTelemetryResolvesPartitionedStateIds(
+        bool eventPoints, bool publishedMove)
+    {
+        var compared = Ar43WindowFixture(
+            atFive: true, atSix: true, eventPoints: eventPoints, edge: publishedMove);
+        var local = compared.Methods.Single(item =>
+            item.Method == PastStateMethod.ReconstructionWithLocalTraversal);
+        var diagnostics = local.Diagnostics!;
+        var memberships = diagnostics.LocalStates.ToDictionary(
+            item => item.StateId, StringComparer.Ordinal);
+
+        // The exact-tick evidence partitions [5,6] into two independently
+        // identifiable slices. The telemetry join must retain both.
+        Assert.Equal(
+            [InteractionTimeWindow.At(5), InteractionTimeWindow.At(6)],
+            diagnostics.LocalStates
+                .Where(item => item.IsTargetWindowState)
+                .Select(item => item.TimeWindow)
+                .Distinct()
+                .OrderBy(item => item.StartTick)
+                .ToArray());
+        var touched = diagnostics.TracingSteps
+            .Where(step => step.ConstraintId is not null)
+            .SelectMany(step => new[] { step.SourceStateId, step.DestinationStateId })
+            .Where(id => id is not null)
+            .Select(id => id!)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        Assert.NotEmpty(touched);
+        foreach (var id in touched)
+        {
+            Assert.True(memberships.TryGetValue(id, out var membership),
+                "Missing tracing state from M1-E local telemetry membership: " + id);
+            Assert.NotEmpty(membership!.CandidateIds);
+            Assert.All(membership.CandidateIds, candidateId =>
+                Assert.Contains(compared.Reconstruction.Candidates,
+                    candidate => candidate.CandidateId == candidateId));
+        }
+    }
+
+    [Fact]
+    public void Ar43OverlappingSourceWindowsDoNotInventLocalStateMembership()
+    {
+        const string scenario = "ar43-overlapping-source-windows";
+        const int seed = 43;
+        var exact = CausalTracingConstraint.Create(
+            scenario, seed, "ar43-overlap-observation", "ar43-overlap-source",
+            ["ar43-overlap-ancestry"], "person-a",
+            TracingConstraintSourceKind.CrossThreadObservation, "person-person",
+            [new InteractionParticipant("person-a", InteractionEntityKind.Person,
+                InteractionParticipantRole.EncounterParticipant)],
+            TracingConstraintRole.Local, InteractionTimeWindow.At(1),
+            InteractionTimeWindow.At(1), ["shared"], 1,
+            EvidenceState.Confirmed, true, false,
+            InteractionVisibility.PublicEvidence, "ar43-overlap-derivation",
+            [new InteractionProvenance(InteractionProvenanceKind.ExternalSource,
+                "ar43-overlap-ancestry")]);
+        var comparison = new PastStateReconstructor().Compare(
+            new PastStatePublicContext
+            {
+                Query = PastStateQuery.Create(scenario, seed, "person-a",
+                    new InteractionTimeWindow(0, 3), "ar43-overlap-query", 3),
+                PublicCandidateStates =
+                [
+                    PublicState(0, 3, ["a", "shared"]),
+                    PublicState(1, 2, ["b", "shared"])
+                ],
+                TraversalDirectSourceIds = ["ar43-overlap-source"],
+                AvailableObservationIds = ["ar43-overlap-observation"],
+                LocalTraversalWindowPaddingTicks = 0
+            },
+            new ObservationSet { ScenarioId = scenario, Seed = seed, Observations = [] },
+            new CausalTracingConstraintSet(scenario, seed, [exact]));
+        var diagnostics = comparison.Methods.Single(item =>
+            item.Method == PastStateMethod.ReconstructionWithLocalTraversal).Diagnostics!;
+        var memberships = diagnostics.LocalStates;
+        // BuildLocalStates intentionally expands both target states to the
+        // union of candidate regions. Their provenance and source identities
+        // still differ. Only A@[0], A@[1], A@[2,3], B@[1], B@[2] may exist:
+        // B@[2] must not create an extra A@[2] audit membership.
+        Assert.Equal(
+            [
+                "0-0",
+                "1-1",
+                "1-1",
+                "2-2",
+                "2-3"
+            ],
+            memberships
+                .Select(item => $"{item.TimeWindow.StartTick}-{item.TimeWindow.EndTick}")
+                .OrderBy(item => item, StringComparer.Ordinal)
+                .ToArray());
+        Assert.All(memberships, item =>
+            Assert.Equal(["a", "b", "shared"], item.RegionIds));
+        Assert.Equal(5, memberships.Select(item => item.StateId)
+            .Distinct(StringComparer.Ordinal).Count());
+        Assert.All(memberships, item => Assert.NotEmpty(item.CandidateIds));
+        var witnessedIds = diagnostics.TracingSteps
+            .Where(step => step.ConstraintId == exact.ConstraintId)
+            .SelectMany(step => new[] { step.SourceStateId, step.DestinationStateId })
+            .Where(id => id is not null)
+            .Select(id => id!)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        Assert.NotEmpty(witnessedIds);
+        Assert.All(witnessedIds, id =>
+            Assert.Contains(memberships, item => item.StateId == id));
+    }
+
+    [Fact]
+    public void Ar43RecreatedCopiesAreIdempotentAcrossPublicComparison()
+    {
+        var original = Ar43WindowFixture(true, true);
+        var reproduced = Ar43WindowFixture(true, true, recreatedCopy: true);
+
+        Assert.Equal(JsonDefaults.Serialize(original), JsonDefaults.Serialize(reproduced));
+        Assert.Equal(2, reproduced.Reconstruction.EvidenceSet.Constraints.Count);
+        Assert.Equal(2, reproduced.EvidenceUsage.Count);
+        foreach (var method in reproduced.Methods)
+        {
+            var baselineMethod = original.Methods.Single(item => item.Method == method.Method);
+            Assert.Equal(JsonDefaults.Serialize(baselineMethod.Diagnostics),
+                JsonDefaults.Serialize(method.Diagnostics));
+            Assert.Equal(method.Diagnostics!.ConstraintUsages.Count,
+                method.Diagnostics.ConstraintUsages
+                    .Select(item => item.ConstraintId)
+                    .Distinct(StringComparer.Ordinal)
+                    .Count());
+        }
+    }
+
+    [Fact]
+    public void Ar43SameSourceCanSupplyDifferentValidClaims()
+    {
+        var compared = Ar43WindowFixture(true, false, sameSourceSecondClaim: true);
+        var evidence = compared.Reconstruction.EvidenceSet.Constraints;
+
+        Assert.Equal(2, evidence.Count);
+        Assert.Equal(2, evidence.Select(item => item.ConstraintId)
+            .Distinct(StringComparer.Ordinal).Count());
+        Assert.All(evidence, item =>
+        {
+            Assert.Equal("ar43-source-a", item.DirectSourceId);
+            Assert.Contains("ar43-origin-a", item.SourceAncestryIds);
+        });
+        Assert.Equal(2, compared.EvidenceUsage.Count);
+        var local = compared.Methods.Single(item =>
+            item.Method == PastStateMethod.ReconstructionWithLocalTraversal);
+        Assert.Equal(2, local.Diagnostics!.ConstraintUsages.Count);
+        Assert.Equal(["a"], local.CandidateRegionIds);
+    }
+
     [Fact]
     public void LocalNeighborhoodSelectionIsChronologicalAndDeterministic()
     {
@@ -782,6 +976,73 @@ public sealed class M1ETests
 
     private static PastStateRunEvaluation RunBySeed(int seed) =>
         MethodCompositionBatch.Value.PastStateReconstruction!.Runs.Single(item => item.Seed == seed);
+
+    private static PastStateComparisonResult Ar43WindowFixture(
+        bool atFive, bool atSix, bool eventPoints = false, bool edge = false,
+        bool reverseCopy = false, bool delayedB = false,
+        bool recreatedCopy = false, bool sameSourceSecondClaim = false)
+    {
+        const string scenario = "ar43-query-window";
+        const int seed = 43;
+        CausalTracingConstraint Evidence(string region, long tick) =>
+            CausalTracingConstraint.Create(
+                scenario, seed, "ar43-obs-" + region, "ar43-source-" + region,
+                ["ar43-origin-" + region], "person-a",
+                TracingConstraintSourceKind.CrossThreadObservation, "person-person",
+                [new InteractionParticipant("person-a", InteractionEntityKind.Person,
+                    InteractionParticipantRole.EncounterParticipant)],
+                TracingConstraintRole.Local, InteractionTimeWindow.At(tick),
+                InteractionTimeWindow.At(tick), [region],
+                region == "b" && delayedB ? 7 : tick,
+                EvidenceState.Confirmed, true, false,
+                InteractionVisibility.PublicEvidence, "ar43-evidence",
+                [new InteractionProvenance(InteractionProvenanceKind.ExternalSource,
+                    "ar43-origin-" + region)]);
+        var facts = new List<CausalTracingConstraint>();
+        if (atFive) facts.Add(Evidence("a", 5));
+        if (atSix) facts.Add(Evidence("b", 6));
+        if (sameSourceSecondClaim) facts.Add(Evidence("a", 6));
+        if (recreatedCopy) facts.Add(Evidence("a", 5));
+        if (reverseCopy)
+        {
+            facts.Reverse();
+            if (facts.Count > 0) facts.Add(facts[0]);
+        }
+
+        return new PastStateReconstructor().Compare(
+            new PastStatePublicContext
+            {
+                Query = PastStateQuery.Create(scenario, seed, "person-a",
+                    new InteractionTimeWindow(5, 6), "ar43-query", 6),
+                PublicCandidateStates = eventPoints
+                    ? [PublicState(5, ["a", "b", "c"]),
+                       PublicState(6, ["a", "b", "c"])]
+                    : [PublicState(5, 6, ["a", "b", "c"])],
+                TraversalDirectSourceIds = ["ar43-source-a", "ar43-source-b"],
+                AvailableObservationIds = ["ar43-obs-a", "ar43-obs-b"],
+                LocalTraversalWindowPaddingTicks = 0,
+                PublicHazardEnvelope = edge
+                    ? new FootprintSim.Hazards.PublicHazardEnvelope
+                    {
+                        HazardId = "ar43-published-move",
+                        SourceRegionId = "a",
+                        PublishedAtTick = 0,
+                        Branches =
+                        [
+                            new FootprintSim.Hazards.PublicHazardBranch
+                            {
+                                SourceRegionId = "a", DestinationRegionId = "b",
+                                MinimumTravelTicks = 1, MaximumTravelTicks = 1,
+                                TransportType = FootprintSim.Hazards.HazardTransportType.HazardDriven,
+                                ProvenanceId = "ar43-public-a-b", PublishedAtTick = 0
+                            }
+                        ]
+                    }
+                    : null
+            },
+            new ObservationSet { ScenarioId = scenario, Seed = seed, Observations = [] },
+            new CausalTracingConstraintSet(scenario, seed, facts));
+    }
 
     private static PastStateComparisonResult VerificationOnlyFixture(
         bool sourceObservationResolved = true)

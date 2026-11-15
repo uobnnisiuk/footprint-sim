@@ -38,6 +38,42 @@ Surviving candidates retain supporting source groups, constraint IDs, relation k
 
 ## Evidence-state working semantics
 
+### AR-43: tracing one interval with differently timed observations
+
+Rev1: Exact Person Conflicting evidence also causes an exact-tick partition,
+so later Confirmed evidence cannot erase a known earlier conflict. Inclusive
+Conflicting evidence still cannot establish a conflict at every tick. M1-E's
+interval-query traversal now takes a conservative union of outer-plausible
+regions from all tracer states overlapping the query. This is a "possible at
+some point in the window" candidate set, **not** a TargetEndTick prediction
+or a rescue-time inference; evaluation using end-tick truth has a different
+interpretation. A missing published path is never proof that a path is impossible.
+
+A multi-tick `StateInterval` is **not** a stationary location. For public, received,
+person-specific exact Confirmed observations, operational tracing now divides the
+interval at the observed ticks, retains the original outer possibilities in
+unobserved portions, and narrows only the corresponding exact tick. A later
+confirmed location never proves the same location at an earlier tick. Two
+disjoint locations at the **same** exact tick can still produce a conflict;
+different ticks alone cannot.
+
+An inclusive interval observation means *somewhere in the interval*, not
+residence at every tick. In an interval that was split by independently received
+exact Confirmed observations, other broad or weak witnesses are left as
+non-applied audit steps rather than broadcast over every new time slice.
+In split windows, an inclusive Conflicting witness retains its source
+ancestry and competing-region lineage and emits a non-applied, alternatives-
+retained audit for each overlapping slice. It does **not** mark a contradiction
+or create a Conflicted candidate at any unverified exact tick. Exact-tick
+Conflicting witnesses can still mark that tick as conflicted. Unsplit legacy intervals keep their
+existing treatment; the complete semantics of overlapping inclusive evidence
+remains an open limitation, not a proof of continuous residence. A positive published path may supply support, but a
+missing/unpublished path does not refute a received fact. This is a conservative
+finite correction, not complete temporal logic, route reconstruction, or a
+general safety proof. The synthetic S4/S5 evaluation and exact-tick regression
+checks remain necessary.
+
+
 - `Confirmed + Confirmed`: narrow when consistent; preserve candidates and mark conflict on empty intersection.
 - `Confirmed + SupportedButUncertain`: confirmed evidence may bound the outer set; uncertain evidence may affect preferred candidates without hard outer exclusion.
 - `SupportedButUncertain + SupportedButUncertain`: retain alternatives; no hard exclusion.

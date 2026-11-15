@@ -120,6 +120,10 @@ public sealed class PastStateReconstructor
             .OrderBy(item => item.AvailableAtTick)
             .ThenBy(item => item.ConstrainedTimeWindow.StartTick)
             .ThenBy(item => item.ConstraintId, StringComparer.Ordinal)
+            // The same normalized claim can arrive as separately allocated copies.
+            // Identity is the ConstraintId, not its collection object references
+            // or the shared source ancestry of other, distinct valid claims.
+            .DistinctBy(item => item.ConstraintId, StringComparer.Ordinal)
             .ToArray();
         var access = AccessContext(query);
         var sourceGroups = new OperationalCausalTracer().GroupSources(constraints, access);
@@ -431,6 +435,9 @@ public sealed class PastStateReconstructor
             .Where(item => states.Any(state => Overlaps(item.ConstrainedTimeWindow, state.TimeWindow)))
             .Where(item => method != PastStateMethod.BackwardTraversal ||
                 !Overlaps(item.ConstrainedTimeWindow, context.Query.TargetTimeWindow))
+            // A re-created copy has different collection references but the
+            // same canonical claim identity; distinct claims remain visible.
+            .DistinctBy(item => item.ConstraintId, StringComparer.Ordinal)
             .OrderBy(item => item.ConstraintId, StringComparer.Ordinal)
             .ToArray();
         var sourceWarp = warps.Warps
@@ -441,31 +448,42 @@ public sealed class PastStateReconstructor
             item => item.RegionId,
             item => item.CandidateId,
             StringComparer.Ordinal);
-        var localStateMembership = sourceWarp.States
-            .OrderBy(item => item.TimeWindow.StartTick)
-            .ThenBy(item => item.TimeWindow.EndTick)
-            .ThenBy(item => item.StateId, StringComparer.Ordinal)
-            .Select(item => new PastStateLocalStateMembership
-            {
-                StateId = item.StateId,
-                TimeWindow = item.TimeWindow,
-                IsTargetWindowState = Overlaps(item.TimeWindow, context.Query.TargetTimeWindow),
-                RegionIds = item.RegionIds,
-                CandidateIds = Overlaps(item.TimeWindow, context.Query.TargetTimeWindow)
-                    ? item.RegionIds
-                        .Where(candidateIdsByRegion.ContainsKey)
-                        .Select(region => candidateIdsByRegion[region])
-                        .Distinct(StringComparer.Ordinal)
-                        .OrderBy(item => item, StringComparer.Ordinal)
-                        .ToArray()
-                    : []
-            })
-            .ToArray();
         var tracing = new OperationalCausalTracer().Trace(
             warps,
             selectedConstraints,
             AccessContext(context.Query),
             context.PublicHazardEnvelope);
+        // Tracer step IDs refer to partitioned source states. Reuse the
+        // exact source-by-source partition instead of applying all output
+        // windows to every overlapping original state: that would invent
+        // state IDs absent from the actual trace and misattribute candidates.
+        var acceptedConstraintIds = tracing.SourceGroups
+            .SelectMany(group => group.ConstraintIds)
+            .ToHashSet(StringComparer.Ordinal);
+        var tracingConstraints = selectedConstraints
+            .Where(item => acceptedConstraintIds.Contains(item.ConstraintId))
+            .ToArray();
+        var localStateMembership = OperationalCausalTracer
+            .PartitionSourceStates(sourceWarp, tracingConstraints, warps)
+            .Select(item => item.State)
+            .DistinctBy(item => item.StateId, StringComparer.Ordinal)
+            .Select(slice => new PastStateLocalStateMembership
+            {
+                StateId = slice.StateId,
+                TimeWindow = slice.TimeWindow,
+                IsTargetWindowState = Overlaps(
+                    slice.TimeWindow, context.Query.TargetTimeWindow),
+                RegionIds = slice.RegionIds,
+                CandidateIds = Overlaps(slice.TimeWindow, context.Query.TargetTimeWindow)
+                    ? slice.RegionIds
+                        .Where(candidateIdsByRegion.ContainsKey)
+                        .Select(region => candidateIdsByRegion[region])
+                        .Distinct(StringComparer.Ordinal)
+                        .OrderBy(id => id, StringComparer.Ordinal)
+                        .ToArray()
+                    : []
+            })
+            .ToArray();
         var forwardTransitionSteps = tracing.Steps.Count(item =>
             item.Direction == CausalTracingDirection.Forward &&
             item.RealTransitionTraversalOccurred);
@@ -492,8 +510,17 @@ public sealed class PastStateReconstructor
                 .Distinct(StringComparer.Ordinal)
                 .OrderBy(item => item, StringComparer.Ordinal)
                 .ToArray(),
-            CandidateRegionIds = tracing.CandidateWarps
-                .OuterPlausibleRegionIdsAt(context.Query.TargetTimeWindow.StartTick),
+            // This window asks where the person may have been at ANY overlapping
+            // state time; it is not a prediction of the end tick. Do not
+            // collapse differently timed outer sets onto the first tick.
+            CandidateRegionIds = tracing.CandidateWarps.Warps
+                .Where(warp => warp.Standing == CandidateWarpStanding.OuterPlausible)
+                .SelectMany(warp => warp.States)
+                .Where(state => Overlaps(state.TimeWindow, context.Query.TargetTimeWindow))
+                .SelectMany(state => state.RegionIds)
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(region => region, StringComparer.Ordinal)
+                .ToArray(),
             Steps = method == PastStateMethod.BackwardTraversal
                 ? tracing.Steps.Count(item => item.Direction == CausalTracingDirection.Backward)
                 : tracing.Steps.Count,
