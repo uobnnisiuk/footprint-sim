@@ -1,38 +1,70 @@
 # Footprint Sim
 
-Footprint Sim は、災害前・災害中に分散して残る証拠から、救助側が行方不明者の捜索範囲をどこまで絞れるかを再現可能に評価する、ヘッドレスな研究用シミュレーターです。既存の実端末プロジェクト `footprint` の姉妹プロジェクトであり、実端末アプリを置き換えるものではありません。
+**日本語** | [English](README.en.md)
 
-M0 は建物内に限定しません。建物、道路、斜面、河川、屋外、地下を共通の region/connection モデルで表し、自力移動、乗り物による移動、災害による受動輸送、堆積・拘束、二次輸送を区別します。
+**足取りが途切れたとき、残された証拠から「どこを探すべきか」を、どこまで安全に絞れるだろうか。**
 
-Person と Device は別の物理エンティティです。端末の落下、流出、回収後も両者が同じ位置にいると仮定すると捜索範囲を誤るため、分離後は独立した位置履歴を持ちます。
+Footprint Sim は、この問いを**数理・シミュレーション・実データの検証**から調べる研究用シミュレーターです。災害時の行方不明者探索を題材に、本人の記録が途切れていても、他者との遭遇、端末の観測、環境の変化などの情報を組み合わせて候補を絞れる条件と、その限界を調べています。
 
-## 研究の三本柱：数理・シミュレーション・実データ
+これは実際の救助に使うシステムではありません。**合成データに基づく研究基盤**であり、現実の所在、危険度、生存可能性、救助成功率を予測・保証しません。実端末を扱う姉妹プロジェクト `footprint` の代替でもありません。
 
-Footprintでは、救助者が**受領した証拠だけ**から何を安全に絞れるかを、(1) 数理：情報の識別限界・安全な候補縮約・横糸の相補性の条件、(2) シミュレーション：同じ公開情報を複数方法で扱う再現可能な比較、(3) 実データ：移動・観測・地域対応などの仮定が実際に成り立つかの反証、の三方向で検討します。
+## 何を解こうとしているのか
 
-数理側の定義・条件付き命題・反例と次の比較設計は [横糸の情報価値・識別限界・安全性の数理ノート](docs/weft-mathematical-foundations.md) を参照してください（[#142](https://github.com/uobnnisiuk/footprint-sim/issues/142)）。**文書の作成は証明の独立合格や現場有効性の実証を意味しません**。既存のM1-D/E/F、F21/F22の成果と未評価部分は維持します。24縁・未知関係は未評価の研究対象であり、未実装を棄却としません。
+例えば、ある人の最後の確認位置が分かっていても、その後の記録がなければ、現在地を一つに特定できません。携帯端末が見つかっても、途中で本人と端末が離れていれば、端末の位置を本人の位置とみなすことはできません。
 
-## 必要環境
+一方、別の人との遭遇記録や、後から届いた観測が、途切れた移動履歴を制約することがあります。Footprint では本人の移動履歴を**経糸**、他者・端末・環境との関係から得られる証拠を**横糸**に見立てています。
 
-- Linux/macOS/Windows 上の .NET 8 SDK（Runtime だけでは不足）
-- このリポジトリは `global.json` により 8.0 feature band 内の利用可能な SDK を選択します
+研究の焦点は、単に「候補が減った」ことではなく、次の区別にあります。
 
-確認:
+- **何を使えたか**：その時点までに受領した証拠だけを推論に使う。未来の情報やシミュレーターだけが知る真値は使わない。
+- **何を区別できるか**：同じ情報と公開モデルで説明できる複数の履歴が残るなら、根拠なく一つに決めない。
+- **どこまで絞ってよいか**：優先して確認する候補と、安全側に残す候補を分け、未解決・矛盾・不明を「候補なし」と扱わない。
+- **本当に役立つ差か**：同じ入力を複数の方法へ渡し、真値の誤除外、候補削減、情報の遅延、計算量などを別々に比較する。
+
+```text
+合成世界（真の移動・出来事）
+    │
+    ├─ 観測・受領済み情報 ──> 公開モデルと制約 ──> 推論手法 ──> 探索候補
+    │                                                      │
+    └─ 真値（推論には渡さない） ──────────────────────> 事後評価
+```
+
+## 研究で分かっていること・まだ分からないこと
+
+| テーマ | 現在の到達点 | 解釈の限界 |
+| --- | --- | --- |
+| **観測と移動の合成実験** | 徒歩、災害輸送、人物と端末の分離、遭遇、受領遅延などを再現可能なシナリオで扱う | 合成世界の条件は現実の災害を再現・校正したものではない |
+| **横糸を用いた過去候補の検討** | 受領済み制約の履歴への適用、公開関係の追跡、過去候補の生成と出所を分けた検証などを実装・比較 | 完全な未知関係発見や因果網の網羅を実現したものではない |
+| **公開情報から確認場所への対応** | 地域・候補・確認単位の対応を明示し、未対応や不確かさを区別する限定的な仕組みを検討 | 現場で実際にかかる捜索時間・費用に換算できるわけではない |
+| **有限モデル内の到達範囲** | F21で、宣言済みの小さな閉モデルについて1,944通りの照会を独立した参照計算と照合 | 現実の移動経路を網羅するという証明ではない |
+| **数理的な情報価値** | 同じ公開情報では区別できない世界、条件付きの安全な縮約、複数証拠の相補性を整理 | 数理ノートは条件付きの論証であり、現行推論方式の優位性や実地有効性を証明していない |
+| **実際の徒歩記録との照合** | 限定的な研究と前提条件の確認を進めている | 実災害における安全性、探索効率、救命効果は未検証 |
+
+**複数の証拠は、組み合わせて初めて役立つことがあります。** 数理ノートでは、4つの可能な履歴が2つの確認単位 `{U1, U2}` に対応する例を扱います。証拠 `e1` だけでも `e2` だけでも候補は変わりませんが、両方を同時に満たす正当な制約として採用できると `{U1}` に絞れます。これは**手計算可能な理論例**であり、現在の実装や現場で同じ効果が確認されたという意味ではありません。
+
+根拠と残件は [数理ノート](docs/weft-mathematical-foundations.md)、[F21の有限検証](docs/m1f21-public-transition-coverage-results.md)、[徒歩記録の研究Issue #65](https://github.com/uobnnisiuk/footprint-sim/issues/65) を参照してください。各課題の最新状況はIssue・PRに記録しています。
+
+## 試してみる
+
+### 必要環境
+
+- .NET **8 SDK**（Windows / Linux / macOS。Runtimeだけではビルドできません）
+- リポジトリの `global.json` に適合する SDK
 
 ```bash
 ./scripts/check-environment.sh
 ```
 
-.NET 8 SDK がない Linux/macOS 環境では、Microsoft 公式 `dotnet-install.sh` を使う冪等なスクリプトを source してください。SDK は既定で `$HOME/.dotnet` に入り、リポジトリには入りません。
+Linux/macOSでSDKが未導入なら、公式の導入スクリプトを使う補助スクリプトがあります。
 
 ```bash
 source scripts/setup-dotnet.sh
 ./scripts/check-environment.sh
 ```
 
-Windows では Microsoft 公式 `dotnet-install.ps1` または公式インストーラーで .NET 8 SDK を導入してください。
+WindowsではMicrosoft公式の.NET 8 SDKインストーラーまたは `dotnet-install.ps1` を利用してください。
 
-## Build and test
+### ビルドとテスト
 
 ```bash
 dotnet restore FootprintSim.sln
@@ -40,18 +72,9 @@ dotnet build FootprintSim.sln --no-restore
 dotnet test FootprintSim.sln --no-build
 ```
 
-## シナリオ実行
+### 1つのシナリオを実行
 
-S0（徒歩ベースライン）:
-
-```bash
-dotnet run --project src/FootprintSim.Cli -- \
-  --scenario scenarios/s0_walking_baseline/scenario.json \
-  --seed 42 \
-  --output results/s0
-```
-
-S1（土砂による輸送と person/device 分離）:
+次は、災害輸送と**人物・端末の分離**を含む合成シナリオ `S1` の例です。
 
 ```bash
 dotnet run --project src/FootprintSim.Cli -- \
@@ -60,354 +83,60 @@ dotnet run --project src/FootprintSim.Cli -- \
   --output results/s1
 ```
 
-S2（合成的な確率分岐・二次輸送）:
+主な出力は次の4つです。
 
-```bash
-dotnet run --project src/FootprintSim.Cli -- \
-  --scenario scenarios/s2_branching_debris_transport/scenario.json \
-  --seed 42 \
-  --output results/s2
-```
+| ファイル | 内容 |
+| --- | --- |
+| `ground-truth.events.json` | シミュレーターが知る真値。**推論入力には使わない** |
+| `observations.json` | 救助側に渡せる観測記録 |
+| `search-zone.summary.json` | 観測と公開モデルに基づく候補領域の要約 |
+| `run.metadata.json` | シナリオ、seed、入力ハッシュなどの再現情報 |
 
-各出力ディレクトリには次が作られます。
+同じシナリオファイルとseedでの決定的な再実行を前提としています。出力先の `results/` はGit管理の対象外です。
 
-- `ground-truth.events.json`: シミュレーターだけが保持する真値イベント
-- `observations.json`: 救助側へ渡せる観測契約だけのログ
-- `search-zone.summary.json`: 最終確認位置、通常移動範囲、災害輸送 envelope、根拠付き優先候補領域の要約
-- `run.metadata.json`: scenario ID、seed、入力ハッシュ、件数
+### 複数の推論方法を比較
 
-同じ scenario ファイルと seed の出力は byte-for-byte で再現できます。たとえば別ディレクトリへ再実行して比較できます。
-
-```bash
-dotnet run --project src/FootprintSim.Cli -- \
-  --scenario scenarios/s1_debris_transport/scenario.json \
-  --seed 42 --output results/s1-repeat
-diff -r results/s1 results/s1-repeat
-```
-
-`results/` は生成物なので Git 管理外です。
-
-## 複数 run 評価（M1-A / M1-B）
-
-すべてのscenario、seed 0..19、全8戦略をまとめて比較する例です。
+例えば `S3` は、本人自身の証拠だけを扱う方法と、受領済みの他者との関係（横糸）を使う方法を、**同じ合成世界・同じseed**で比較するためのシナリオです。
 
 ```bash
 dotnet run --project src/FootprintSim.Cli -- evaluate \
-  --scenarios scenarios \
+  --scenario scenarios/s3_cross_thread_encounter/scenario.json \
   --seeds 0..19 \
   --strategies all \
-  --output results/evaluation
+  --output results/s3-comparison
 ```
 
-`--scenarios` には単一の scenario JSON または `scenario.json` を再帰検索するディレクトリ、`--seeds` には単一値・包含範囲（`0..19`）・カンマ区切り、`--strategies` には `all` または strategy ID のカンマ区切りを指定できます。
-
-旧F18では上の一括コマンドがS4の`cross-thread-constrained`で`person-b-home`の
-評価領域エラーになりました。Issue #47の統合修正では、固定scenarioが宣言する公開探索範囲を
-推論入力へ明示し、全地形・観測・因果構造を維持したまま最終結果の範囲を揃えます。
-評価分母11、半径24、登録済みscenarioは変更しません。範囲外は証拠による否定ではなく
-当該queryの対象外です。旧版での再現と限定修正の検証は研究再接続の記録に分離します。
-
-S2だけを200 seedで評価する例です。`--scenario` は単一ファイル用の別名です。
-
-```bash
-dotnet run --project src/FootprintSim.Cli -- evaluate \
-  --scenario scenarios/s2_branching_debris_transport/scenario.json \
-  --seeds 0..199 \
-  --strategies all \
-  --output results/m1b-s2
-```
-
-出力は、1 strategy/run につき1行の `runs.jsonl` と `runs.csv`、scenario・strategy 別の `aggregate.json` と `aggregate.csv`、condition別の`conditions.csv`、paired deltaの`paired.csv`、入力条件とschemaを固定する`manifest.json`です。`GroundTruthContainment`、`SearchSpaceFraction`、`FalseExclusion`などschema version 2までの意味は維持します。M1-C3のschema version 3はpreferred/outer plausible、condition、cross-thread audit、paired deltaを別fieldとして追加します。算出不能値は `available: false` と `null` で表し、実測値 0 と区別します。
-
-同じ入力とsource状態では既存7ファイルすべてがbyte-for-byteで再現されます。S4では追加の`causal-tracing.json`と`causal-tracing.csv`、S5では`past-state-reconstruction.json`と`past-state-reconstruction.csv`も再現性対象です。M1-Aの評価定義は [M1-A evaluation harness](docs/m1a-evaluation.md)、確率伝播と公開境界は [M1-B stochastic hazard](docs/m1b-stochastic-hazard.md)、S3比較は [M1-C3 weft evaluation](docs/m1c3-weft-evaluation.md) を参照してください。数値は合成scenario内の比較値であり、現実の災害・救助性能を示しません。
-
-## Cross-entity interaction（M1-C1）
-
-M1-C1は因果の横糸を、private truthの`InteractionOccurrence`、観測されたevidenceの`InteractionObservation`、観測だけから導出される`CrossThreadConstraint`へ分離します。最初のrelationはperson-person encounterだけです。constraintはまだsearch strategyへ渡さず、candidate regionや既存評価結果を変更しません。型、available-at境界、provenance、決定的IDの詳細は [M1-C1 interaction model](docs/m1c1-interaction-model.md) を参照してください。
-
-## Historical cross-thread constraint（M1-C2）
-
-M1-C2は、publicに利用可能になった`CrossThreadConstraint`を最終regionへ直接intersectionせず、`CandidateWarp`の対応するhistorical tickまたはinclusive intervalへ適用します。`Confirmed`、uncertain alternative、conflict、NoOpを区別し、生き残った候補は`PublicHazardEnvelope`だけで評価tickへ前方伝播します。exact tick、interval、relation kind、participant、source observation、provenanceはapplication auditへ保持します。
-
-これはconstraint意味論のfixture実装であり、M1-C2時点の既存4 strategyや評価schemaは変更しません。Causal Nexus / Causal Nexus Resolutionは将来仮説であり、M1-C2はformal schemaやscoreを実装しません。詳細は [M1-C2 cross-thread constraints](docs/m1c2-cross-thread-constraints.md) を参照してください。
-
-## Paired weft evaluation（M1-C3）
-
-M1-C3は正式な合成S3を追加し、同じscenario/seed/truthに対して`own-evidence-constrained`と`cross-thread-constrained`をpaired比較します。後者だけが利用可能なcross-thread constraintをhistorical warpへ適用します。preferred縮約とouter-safe containment、遅延、uncertain alternative、conflict、unavailable、device-only境界をschema version 3で別々に評価します。
-
-```bash
-dotnet run --project src/FootprintSim.Cli -- evaluate \
-  --scenario scenarios/s3_cross_thread_encounter/scenario.json \
-  --seeds 0..199 \
-  --strategies all \
-  --output results/m1c3-s3
-```
-
-## Neutral telemetry（M1-T0）
-
-評価へ`--telemetry`を付けると、既存評価ファイルを変えずに、private truth、public/evidence、evaluation transitionを分離した決定的JSONLを`telemetry/`以下へ追加します。telemetry schema version 4はversion 3までの意味を維持し、M1-E method ID、evidence usage、source-observation resolution、local state、実際のforward/backward transitionとpublic transition referenceを追加します。past-state query、candidate、verification、method workは引き続き別recordです。event/interval、relation、support/conflict lineage、candidate before/after、provenanceとsource ancestryを中立記録として保持し、Good/Bad、Causal Shadow、Indexability、Nexus Resolution、救助優先度などのscoreは含めません。
-
-```bash
-dotnet run --project src/FootprintSim.Cli -- evaluate \
-  --scenario scenarios/s3_cross_thread_encounter/scenario.json \
-  --seeds 0..199 \
-  --strategies all \
-  --output results/m1t0-s3 \
-  --telemetry
-```
-
-S0〜S4で利用でき、未指定時は`telemetry/`を作りません。stream境界、schema、再現性、cross-domain SARの将来検証範囲は [M1-T0 neutral telemetry](docs/m1t0-neutral-telemetry.md) を参照してください。
-
-## Operational Causal Tracing（M1-D）
-
-S4では同じsynthetic truthに対し、own evidenceのみ、単一weft、複数weftのOperational Causal Tracingを比較します。複数制約はsource ancestryでgroup化し、forward/backward traversal、upstream/local/downstreamの接続（M1-Dでは`causal sandwich`というlegacy working label）、support/conflict lineageを保持します。これはknown public structureのtraversalであり、past candidate reconstructionではありません。
-
-```bash
-dotnet run --project src/FootprintSim.Cli -- evaluate \
-  --scenario scenarios/s4_multi_weft_tracing/scenario.json \
-  --seeds 0..199 \
-  --strategies own-evidence-constrained,single-weft,multi-weft-tracing \
-  --output results/m1d-s4 \
-  --telemetry
-```
-
-詳細は [M1-D Operational Causal Tracing](docs/m1d-causal-tracing.md) を参照してください。
-
-## Past-state reconstruction（M1-E）
-
-S5では、target entity/window/cutoffを明示したqueryに対し、cutoffまでに利用可能なpublic evidenceとconstraintからhistorical candidateを構築します。candidate生成、stable machine-readable IDによるaddressing、別source lineageによるverification、既存M1-D tracerによるbackward/local traversalは別操作です。同じsource ancestryをindependent verificationへ再利用せず、future/private evidence、truth occurrence、realized path、truth parentをpublic comparisonへ渡しません。
-
-```bash
-dotnet run --project src/FootprintSim.Cli -- evaluate \
-  --scenario scenarios/s5_distributed_past_evidence/scenario.json \
-  --seeds 0..199 \
-  --strategies all \
-  --output results/m1e-s5 \
-  --telemetry
-```
-
-出力はbackward traversal、constraint-based reconstruction、reconstruction後のlocal traversalを同じseed/query/public inputで比較します。Addressabilityはtruth likelihoodではなく、Verifiabilityはgenerationとは別のlineage検査です。設計、preregistration、仏教方法論との限定的比較、命名監査は [M1-E past-state reconstruction](docs/m1e-past-state-reconstruction.md)、verificationとtraversalの用途分離および修正版比較は [M1-E method-composition correction](docs/m1e-method-composition-fix.md)、S5の観測lineage・時間・局所state・公開topologyの前提監査は [M1-E2 synthetic-world representation validity](docs/m1e2-world-representation-validity.md) を参照してください。
-
-S5 defaultを変えずにpublic observation familyだけを同一truth world上で増減するM1-F評価は、次で実行します。Full、None、single-family removal/presence、事前選定した3組を比較し、raw observationとderived constraintを同時に利用不能化します。
-
-```bash
-dotnet run --project src/FootprintSim.Cli -- evaluate-observation-ablation \
-  --experiment experiments/m1f_observation_ablation/experiment.json \
-  --seeds 0..199 \
-  --output results/m1f-s5
-```
-
-これは現実の最小観測集合を確定する実験ではありません。設計、事前登録条件、結果と解釈境界は [M1-F observation-family ablation](docs/m1f-observation-ablation.md) を参照してください。
-
-M1-Fで候補削減への寄与が最も明確だった`later-trace-a`について、subject / time / location / relationの情報availabilityを分けて監査するM1-F1評価は次で実行します。現行のscenario-declared transformationは4 fieldを一体として要求するため、不足fieldを隠れたscenario値で補わず、導出不能を結果として記録します。
-
-```bash
-dotnet run --project src/FootprintSim.Cli -- evaluate-later-trace-field-ablation \
-  --experiment experiments/m1f1_later_trace_field_ablation/experiment.json \
-  --seeds 0..199 \
-  --output results/m1f1-s5
-```
-
-これはfieldごとの現実的価値を確定する実験ではありません。事前登録条件、atomic derivationの境界、結果の識別可能性は [M1-F1 later-trace field ablation](docs/m1f1-later-trace-field-ablation.md) を参照してください。
-
-M1-F2ではsubject/time/relationを固定したまま、`later-trace-a`のlocation Region集合だけを現行fork集合、target-window全候補、S5 searchable全域、unknownへ段階的に粗くします。finite levelではobservation payloadとderived allowed regionsを一致させ、unknownからexact locationを補完しません。
-
-```bash
-dotnet run --project src/FootprintSim.Cli -- evaluate-location-resolution \
-  --experiment experiments/m1f2_location_resolution/experiment.json \
-  --seeds 0..199 \
-  --output results/m1f2-s5
-```
-
-これは現実距離やsensor精度を決める実験ではありません。location level、partial-observation semantics、事前登録、結果の表現依存性は [M1-F2 location resolution](docs/m1f2-location-resolution.md) を参照してください。
-
-M1-F3ではlocation/subject/relation/availabilityを固定し、`later-trace-a`のobserved-timeだけをS5の既存state境界に沿って段階的に広げます。広いwindowはrelationの持続ではなく、区間内のどこか1 tickで観測されたという不確実性です。現在のscenario-declared historical windowがobserved tickを実際に使用するかも明示的に監査します。
-
-```bash
-dotnet run --project src/FootprintSim.Cli -- evaluate-time-resolution \
-  --experiment experiments/m1f3_time_resolution/experiment.json \
-  --seeds 0..199 \
-  --output results/m1f3-s5
-```
-
-これは現実の時間精度要件を決める実験ではありません。time level、occurrence uncertainty、既存transformationの境界、事前登録と結果は [M1-F3 time resolution](docs/m1f3-time-resolution.md) を参照してください。
-
-M1-F8ではS5を変更せず、観測されたlater-eventのoccurrence-time windowとpublic dependencyのduration boundから、predecessor windowを計算する最小vertical sliceを実行します。fixtureは決定論的であり、200回の同一seed反復は行いません。
-
-```bash
-dotnet run --project src/FootprintSim.Cli -- evaluate-observation-constraint-derivation \
-  --fixture experiments/m1f8_observation_constraint_derivation/fixture.json \
-  --output results/m1f8-derivation
-```
-
-式、provenance、unknown-time failure、CandidateGeneration用途境界、受入結果とS5未移行理由は [M1-F8 observation-to-constraint derivation](docs/m1f8-observation-constraint-derivation.md) を参照してください。
-
-M1-F9ではF8 ruleを変更せず、seedごとにcandidate layer、later tick、duration bound、truth candidateを生成し、Exact / Medium / Broad / Unknownを同一world上でpaired評価します。登録seedは`0..199`に固定されています。
-
-```bash
-dotnet run --project src/FootprintSim.Cli -- evaluate-time-resolution-paired \
-  --experiment experiments/m1f9_time_resolution_paired/experiment.json \
-  --seeds 0..199 \
-  --output results/m1f9-time-resolution
-```
-
-generator範囲、per-seed set inclusion、candidate plateau、結果と解釈境界は [M1-F9 paired time-resolution evaluation](docs/m1f9-time-resolution-paired-evaluation.md) を参照してください。
-
-M1-F10ではS5を変更せず、exact / finite alternatives / identity unknownのother-participant情報と、各possible personのpublicなsame-time Region evidenceから、targetのencounter Region constraintを保守的unionで生成する最小vertical sliceを実行します。fixtureはPerson-onlyかつ決定論的であり、200-seed評価は次工程へ残します。
-
-```bash
-dotnet run --project src/FootprintSim.Cli -- evaluate-participant-ambiguity-derivation \
-  --fixture experiments/m1f10_participant_ambiguity_derivation/fixture.json \
-  --output results/m1f10-participant-derivation
-```
-
-same-time co-locationのsemantic basis、missing-evidence failure、source independence、受入結果とS5未移行理由は [M1-F10 participant ambiguity derivation](docs/m1f10-participant-ambiguity-derivation.md) を参照してください。
-
-M1-F11ではF10 ruleを変更せず、candidate/Region/participant poolとparticipantごとのpublic Region evidenceをseedで変化させます。同一world上のExact / Narrow / Broad / Unknownをpaired評価し、participant→Region→candidateのどの層でprecision差がplateauになるかをper-seed set inclusionで監査します。
-
-```bash
-dotnet run --project src/FootprintSim.Cli -- evaluate-participant-ambiguity-paired \
-  --experiment experiments/m1f11_participant_ambiguity_paired/experiment.json \
-  --seeds 0..199 \
-  --output results/m1f11-participant-ambiguity
-```
-
-generator事前登録、overlap分類、source independence、200-world結果と解釈境界は [M1-F11 paired participant-ambiguity evaluation](docs/m1f11-participant-ambiguity-paired-evaluation.md) を参照してください。
-
-M1-F12ではS5を変更せず、relation informationをExact `PersonPersonEncounter`と
-「relationは存在するがkind不明」に分離します。Exact時のみ既存same-time co-location
-ruleを適用し、kind不明時はrelation observationを保持したままrelation-derived constraintを
-安全側に保留する決定的vertical sliceです。正当なsecond relation/taxonomyがないため2 profileに
-限定します。
-
-```bash
-dotnet run --project src/FootprintSim.Cli -- evaluate-relation-dependent-derivation \
-  --fixture experiments/m1f12_relation_dependent_derivation/fixture.json \
-  --output results/m1f12-relation-derivation
-```
-
-formal/free-text relationの区別、applicability dispatch、Exact/Unknown結果、truth/source/usage
-境界と次工程判断は [M1-F12 relation-dependent derivation](docs/m1f12-relation-dependent-derivation.md) を参照してください。
-
-M1-F13ではF2/F9/F11/F12を統合し、単独軸の測定可能性と同一world上の組合せ可能性を
-分離して監査します。既存の小型reconstructorは複数derived constraintsを受け取らず、S5の
-source-group合成もjoint fieldsとalternativesを区別できないため、multi-axis実験の前に最小の
-source-aware constraint-composition contractを置く判断です。新ruleや200-seed組合せ実験は
-追加しません。詳細は [M1-F13 observation-axis integration](docs/m1f13-observation-axis-integration.md) を参照してください。
-
-M1-F14は、source ancestryとlogical composition roleを分離し、すでに正当化されたpublicな
-CandidateGeneration constraintを`JointRequirement` / `Alternative` / `EquivalentSupport` /
-`NonRestricting`として合成する最小contractを追加します。deterministicな6-candidate fixtureで
-None、L、T、Pと4つのjoint profileを機能確認できます。
-
-```bash
-dotnet run --project src/FootprintSim.Cli -- evaluate-constraint-composition \
-  --fixture experiments/m1f14_constraint_composition/fixture.json \
-  --output results/m1f14-constraint-composition
-```
-
-設計、8-profile結果、source/logical境界、conflictの未決定policyは
-[M1-F14 constraint-composition contract](docs/m1f14-constraint-composition-contract.md) を参照してください。
-
-M1-F15はF14 composerを変更せず、一つのpurified common worldのraw public observationsから
-LocationはF2直写像、Timeは`bounded-duration-predecessor-window-v1`、Participantは
-`encounter-participant-location-union-v1`を実行してL/T/P constraintsを生成します。その出力を
-同一candidate universeへ選択的に投入し、None/L/T/Pと4つのJoint組合せを機能確認します。
-axis OFFは観測やworld factの不在ではなく、この評価でconstraintを選択しないことを意味します。
-
-```bash
-dotnet run --project src/FootprintSim.Cli -- evaluate-common-world-observation \
-  --fixture experiments/m1f15_common_world_observation/fixture.json \
-  --output results/m1f15-common-world-observation
-```
-
-common world、source graph、各derivation、8条件結果、truth isolation、plateau、次の200-world
-generator要件は [M1-F15 common-world observation vertical slice](docs/m1f15-common-world-observation-vertical-slice.md) を参照してください。
-
-M1-F16はF15の3 derivationとF14 composerを変更せず、事前登録した200のpurified common
-worldそれぞれでNone/L/T/P/L+T/L+P/T+P/L+T+Pをpaired評価します。平均値でaxisを順位付け
-せず、per-worldのset inclusion、追加縮約、profile equivalence、plateauの発生層を監査します。
-
-```bash
-dotnet run --project src/FootprintSim.Cli -- evaluate-common-world-field-combination \
-  --experiment experiments/m1f16_common_world_field_combination/experiment.json \
-  --seeds 0..199 \
-  --output results/m1f16-common-world-field-combination
-```
-
-generator事前登録、primary invariants、failure conditions、結果と解釈境界は
-[M1-F16 common-world field-combination paired evaluation](docs/m1f16-common-world-field-combination-paired.md) を参照してください。
-
-M1-F17ではF16のplateau診断を監査します。旧Region含意判定は候補のあるRegionだけを使い、
-未使用Regionによるplateauの一部を制約の重なりに分類していました。F16の推論・旧出力は保持し、
-宣言済みRegion全域での修正分類と、診断領域だけを変える2つの対照を別出力で記録します。
-
-```bash
-dotnet run --project src/FootprintSim.Cli -- audit-common-world-plateau-domain \
-  --experiment experiments/m1f17_plateau_domain_audit/experiment.json \
-  --baseline-experiment experiments/m1f16_common_world_field_combination/experiment.json \
-  --seeds 0..199 \
-  --output results/m1f17-plateau-domain-audit
-```
-
-事前登録、探索的な事前結果閲覧の開示、分類修正、対照比較と次の研究判断は
-[M1-F17 plateau domain audit](docs/m1f17-plateau-domain-audit.md) を参照してください。
-この比較は診断ラベルの領域依存性を調べるもので、物理的な空間粒度や救助性能の実験ではありません。
-
-M1-F18は同じF16 world・raw evidenceに対して、候補の元intervalと既存startへのpoint化を
-paired比較します。観測時刻のprecisionは変えません。候補のnative IDは既存factoryで再生成し、
-original candidate keyとの全単射を保存して集合比較します。元worldとtruthは変更せず、
-推論後に固定のtruth keyから各表現の評価住所を解決します。
-
-```bash
-dotnet run --project src/FootprintSim.Cli -- evaluate-candidate-interval-width \
-  --experiment experiments/m1f18_candidate_interval_width/experiment.json \
-  --baseline-experiment experiments/m1f16_common_world_field_combination/experiment.json \
-  --seeds 0..199 \
-  --output results/m1f18-candidate-interval-width
-```
-
-集合の等号/包含、境界を跨ぐinterval、F17修正分類によるplateau遷移、最小profileへの影響と
-解釈境界は [M1-F18 candidate interval-width sensitivity](docs/m1f18-candidate-interval-width-paired.md) を参照してください。
-
-M1-F19はF18のpoint表現を全armで固定し、公開された7 start ticks × 登録Regionの
-空きセルを半分・全部と段階的に埋めます。各armは基準のpoint候補とnative IDを保持し、
-L/T/P evidenceと制約を共有します。densityはこの有限supportの占有率です。
-元のmixed intervalを保った密度実験や、物理的な探索場所の増加とは解釈しません。
-
-```bash
-dotnet run --project src/FootprintSim.Cli -- evaluate-candidate-density \
-  --experiment experiments/m1f19_nested_point_support_density/experiment.json \
-  --baseline-experiment experiments/m1f16_common_world_field_combination/experiment.json \
-  --seeds 0..199 \
-  --output results/m1f19-candidate-density
-```
-
-集合の入れ子、追加された制約差のwitness、plateau・最小profileへの影響と次の研究判断は
-[M1-F19 nested point-support density](docs/m1f19-nested-point-support-density.md) を参照してください。
-
-Issue #47の再接続で既存F19実装を保全・再利用し、登録済み200世界の全実験を同じclean版で2回実行、
-6成果物の完全一致と独立検証、F16〜F18再現を確認しました。
-[検証済み結果・CI成果物](docs/m1f19-reconciliation-verification.md) と
-[自動担当への引継ぎ状態](docs/research-autodev-state.json) を参照してください。
-F19の未完了実装はありません。次の研究は歴史候補から現在位置・行動範囲への公開mapping契約の別途登録であり、
-この完了記録だけで新規研究や失敗Issueの再試行を開始しません。
-
-## 構成
-
-- `src/FootprintSim.Core`: world/event/observation/interaction/inference/evaluation の契約と決定論エンジン
-- `src/FootprintSim.Cli`: 単一 run と複数 run 評価の入出力
-- `tests/FootprintSim.Core.Tests`: 決定性、truth 境界、S0/S1回帰、S2、評価 schema の自動テスト
-- `scenarios`: 小さく明示的な合成scenario
-- `docs`: アーキテクチャとモデル
-- `scripts`: SDK の準備・実測
-
-詳細は [architecture](docs/architecture.md) と [model](docs/model.md) を参照してください。
-
-## 現段階の制限
-
-S0/S1 の経路はscenarioに明示した抽象イベントです。S2〜S5の重み・evidence conditionも研究用の合成値であり、校正済み確率ではありません。M1-C3〜M1-Eは境界付きpublic evidenceの合成比較であり、formal Causal Weave、Causal Nexus、24縁engine、belief engineではありません。流体・土砂・建物倒壊の物理解析、観測チャネル校正、実時間処理、GUI、完全なEBPC、救助優先順位ポリシーは実装していません。特定の実災害を再現するものでも、現実の位置・生存・危険度を予測できるものでもありません。
-
-## 次のマイルストーン
-
-M1-Aは複数run評価、M1-Bは確率分岐する経糸、M1-C1は横糸の表現境界、M1-C2はhistorical constraint意味論、M1-C3は正式S3 paired比較、M1-T0は意味付け前の中立telemetryです。複数weftのoperational tracingはM1-D、public evidenceからのpast-state candidate reconstructionはM1-Eです。観測チャネル校正、動的index、24縁とのprimitive relation照合、深いEBPC統合は将来へ送り、`ObservationSet` / `IRescueInference` 境界を維持します。
+集計には `runs.csv`、`aggregate.csv`、`conditions.csv`、`paired.csv`、`manifest.json` などを用います。観測と推論の過程を追いたいときは `--telemetry` を付けられます。**候補が小さいことだけを成功とせず、真値の誤除外や未確定の扱いも確認してください。**
+
+## シナリオと主要な研究テーマ
+
+| シナリオ | 調べること |
+| --- | --- |
+| **S0** | 徒歩移動と最後の観測（基準ケース） |
+| **S1** | 災害による移動、端末との分離、欠落・衝突する観測 |
+| **S2** | 確率分岐、堆積・拘束、二次輸送 |
+| **S3** | 他者との遭遇情報による履歴制約と手法の比較 |
+| **S4** | 複数の横糸による公開関係の因果追跡 |
+| **S5** | 分散した証拠からの過去状態候補の再構成 |
+
+S5を基礎とするM1-F系列では、証拠の種類、位置・時刻の精度、関係する人物の曖昧さ、制約の組合せ、候補表現などを条件を固定して比較しています。個別の実験コマンド・前提・結果は各研究文書に記録しています。
+
+### 詳細資料
+
+- [全体構成と真値の隔離](docs/architecture.md) / [シナリオ・移動モデル](docs/model.md)
+- [横糸の履歴制約](docs/m1c2-cross-thread-constraints.md) / [複数横糸の追跡](docs/m1d-causal-tracing.md)
+- [過去候補の再構成](docs/m1e-past-state-reconstruction.md) / [観測情報を減らす比較](docs/m1f-observation-ablation.md)
+- [証拠の出所と論理的な組合せ](docs/m1f14-constraint-composition-contract.md)
+- [候補・地域・確認単位の対応](docs/m1f20-public-search-mapping.md) / [有限到達範囲の検証](docs/m1f21-public-transition-coverage-results.md)
+- [横糸の情報価値に関する数理ノート](docs/weft-mathematical-foundations.md)
+- [開発・検証時のルール](AGENTS.md)
+
+## 設計上の約束と研究の限界
+
+- **真値と観測を混ぜない**：真の移動経路、実際に選ばれた災害分岐、乱数の結果などは推論手法へ渡しません。真値は結果を出した後の採点にのみ用います。
+- **人物と端末を混同しない**：両者が分離した場合、それぞれ別の位置履歴を持ちます。
+- **不明を勝手に否定に変えない**：未受領の証拠、未公開の経路、未対応の地域、矛盾は別々に扱います。情報不足のときに「捜索対象は存在しない」と結論しません。
+- **比較条件を揃える**：方式間で使える公開情報を揃え、出力はscenario・seedで再現できる形にします。合成データでの比較値を現実の性能に読み替えません。
+- **実際の探索への転用を前提にしない**：災害の物理シミュレーション、観測装置の精度校正、リアルタイムの現場運用、24縁全体の実装、救助判断の最適化などは未完成・未評価です。
+
+**Footprint Sim の目的は、分からないことを隠さずに、残された情報から言えることを一つずつ増やすことです。**
