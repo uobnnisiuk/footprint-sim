@@ -7579,9 +7579,10 @@ public sealed class RescuerEvidenceBoundaryTests
 
     private static string[] Ar41Exact(
         IReadOnlyList<string[]> ps, IReadOnlyList<string[]> qs) =>
-        Ar41Sorted(from p in ps from q in qs
-            where p[0] == "a" && p[0] == q[0] && p[^1] == q[^1]
-            select p[^1]);
+        Ar41Sorted(from p in ps
+                   from q in qs
+                   where p[0] == "a" && p[0] == q[0] && p[^1] == q[^1]
+                   select p[^1]);
 
     // Correct forward filter for a RELAXED (P_k,Q_k) pair-state model:
     // the union of Q's adjacent edges loses long-range Q0->Q2 correlation.
@@ -7590,9 +7591,9 @@ public sealed class RescuerEvidenceBoundaryTests
     {
         var states = new HashSet<(string P, string Q)>();
         foreach (var p in ps)
-        foreach (var q in qs)
-            if (p[0] == "a" && p[0] == q[0])
-                states.Add((p[0], q[0]));
+            foreach (var q in qs)
+                if (p[0] == "a" && p[0] == q[0])
+                    states.Add((p[0], q[0]));
         for (var tick = 0; tick < ps[0].Length - 1; tick++)
         {
             var t = tick;
@@ -7602,9 +7603,9 @@ public sealed class RescuerEvidenceBoundaryTests
                 .Distinct().ToArray();
             var next = new HashSet<(string P, string Q)>();
             foreach (var state in states)
-            foreach (var pEdge in pe.Where(x => x.From == state.P))
-            foreach (var qEdge in qe.Where(x => x.From == state.Q))
-                next.Add((pEdge.To, qEdge.To));
+                foreach (var pEdge in pe.Where(x => x.From == state.P))
+                    foreach (var qEdge in qe.Where(x => x.From == state.Q))
+                        next.Add((pEdge.To, qEdge.To));
             states = next;
         }
         return Ar41Sorted(states.Where(s => s.P == s.Q).Select(s => s.P));
@@ -7617,9 +7618,9 @@ public sealed class RescuerEvidenceBoundaryTests
     {
         var states = new HashSet<(string P, string Q, string Q0)>();
         foreach (var p in ps)
-        foreach (var q in qs)
-            if (p[0] == "a" && p[0] == q[0])
-                states.Add((p[0], q[0], q[0]));
+            foreach (var q in qs)
+                if (p[0] == "a" && p[0] == q[0])
+                    states.Add((p[0], q[0], q[0]));
         for (var tick = 0; tick < ps[0].Length - 1; tick++)
         {
             var t = tick;
@@ -7630,10 +7631,10 @@ public sealed class RescuerEvidenceBoundaryTests
                 .Distinct().ToArray();
             var next = new HashSet<(string P, string Q, string Q0)>();
             foreach (var state in states)
-            foreach (var pEdge in pe.Where(x => x.From == state.P))
-            foreach (var qEdge in qe.Where(x =>
-                x.Q0 == state.Q0 && x.From == state.Q))
-                next.Add((pEdge.To, qEdge.To, state.Q0));
+                foreach (var pEdge in pe.Where(x => x.From == state.P))
+                    foreach (var qEdge in qe.Where(x =>
+                        x.Q0 == state.Q0 && x.From == state.Q))
+                        next.Add((pEdge.To, qEdge.To, state.Q0));
             states = next;
         }
         return Ar41Sorted(states.Where(s => s.P == s.Q).Select(s => s.P));
@@ -7691,9 +7692,10 @@ public sealed class RescuerEvidenceBoundaryTests
         Assert.Equal(2, qs.Length);
         Assert.Equal(4, ps.Length * qs.Length);
         // Adjacent-edge closure admits a,b,f despite its absence from H_Q.
-        var closure = (from early in qs from late in qs
-            where early[1] == late[1]
-            select $"{early[0]},{early[1]},{late[2]}")
+        var closure = (from early in qs
+                       from late in qs
+                       where early[1] == late[1]
+                       select $"{early[0]},{early[1]},{late[2]}")
             .Distinct(StringComparer.Ordinal).ToArray();
         Assert.Equal(4, closure.Length);
         Assert.Contains("a,b,f", closure);
