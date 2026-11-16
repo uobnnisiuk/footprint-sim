@@ -2832,3 +2832,33 @@ of four-method/AR-32 work, or a physical movement/rescue-time claim.
 AR-33 concerns a separate propagator; AR-37 remains for a distinct
 method-comparison design. No evidence source or previously merged
 mathematical note is altered.
+
+## #157 — query-time direct Confirmed and unpublished movement (AR-53)
+
+A received exact **Person** confirmation at the query tick is independent
+evidence for that current region. If an earlier distinct confirmed source
+places the same Person at `a@0` and the new direct confirmation says `b@2`,
+the lack of a cutoff-available public `a→b` path is **unknown movement**,
+not a same-tick logical contradiction or proof that `b@2` did not happen.
+A projected earlier stay must not erase that directly received current point.
+The historical `a@0` source, ancestry and its unverified continuation stay
+on an **outer-only** alternative. A separate current-only preferred anchor
+may represent `b@2`, without promoting the history's unverified link.
+Published movements are positive evidence only when their travel time and
+publication time satisfy the cutoff.
+
+Distinct, disjoint exact Confirmed sources **at the same tick** remain a true
+conflict; neither is selected by majority vote. Inclusive windows are
+existential witnesses, not residence at every tick. Receipts arriving after
+the query cutoff, Device-only evidence, weak or Alternative observations and
+unresolved Person identity do not create a direct current Confirmed anchor.
+Original-source copies are deduplicated; separate valid observations are not
+assumed statistically independent. These are bounded synthetic safety
+conditions, not a new travel model, general proof or rescue-performance
+estimate. The fixed regression includes initial StateInterval/EventPoint,
+unknown/future-published/public positive control, query projection, source
+order/copies, same-tick conflict, later receipt and weak negative control.
+Successful PR-head CI and independent review remain required before counting
+this scope as implemented. AR-65/39/32/33, #142/#148/#154's limited findings,
+unknown-relation discovery and the 24-edge lens remain separate.
+
