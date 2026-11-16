@@ -2847,6 +2847,21 @@ may represent `b@2`, without promoting the history's unverified link.
 Published movements are positive evidence only when their travel time and
 publication time satisfy the cutoff.
 
+**Known delayed-query limit (AR-53 derivative, not fixed by #157):**
+The new current-only preferred anchor applies only when the exact Person
+confirmation's observation tick equals the query tick. With distinct received
+`a@0` and `b@2`, no published `a→b` route and a Preferred initial
+StateInterval warp, querying at tick 3 retains `b` in outer-safe candidates
+at ticks 2 and 3, but the old branch still marks `b@2` as
+`MarkConflict/NoRegionOverlap`, emits a Conflicted `a` alternative and
+leaves preferred empty. Advancing the query from 2 to 3 without adding
+evidence can therefore change the audit and historical candidates.
+That diagnostic conflict does **not** prove an actual same-tick contradiction.
+The delayed-query fixed regression characterizes the *existing limitation*,
+not an approved target behavior. Extending preferred reconstruction for past
+exact confirmations requires a separately reviewed scope; it must not be
+silently inferred from this query-tick-only change.
+
 Distinct, disjoint exact Confirmed sources **at the same tick** remain a true
 conflict; neither is selected by majority vote. Inclusive windows are
 existential witnesses, not residence at every tick. Receipts arriving after

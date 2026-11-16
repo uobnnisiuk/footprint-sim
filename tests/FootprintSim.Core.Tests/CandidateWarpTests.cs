@@ -490,6 +490,40 @@ public sealed class CandidateWarpTests
                 [previous, current, current], 2, envelope).CandidateWarps));
     }
 
+    // AR-53 delayed-query characterization, not desired final semantics:
+    // the old Preferred interval still emits a conflict one tick after b@2.
+    // Keep the outer-safe b candidate visible and make this limit explicit.
+    [Fact]
+    public void Ar53DelayedQueryKeepsConfirmedOuterButFlagsKnownConflictLimit()
+    {
+        var initial = Warp(new InteractionTimeWindow(0, 3),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b", "c"]);
+        var earlier = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 2, "ar53-delayed-a0");
+        var later = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(2), ["b"], 2, "ar53-delayed-b2");
+        var result = Apply(initial, [earlier, later], 3);
+        var projected = PublicCandidateWarpProjection.ForwardTo(
+            result.CandidateWarps, 3, null);
+
+        Assert.Contains("b", result.CandidateWarps.CandidateRegionIdsAt(2));
+        Assert.Contains("b", projected.CandidateRegionIdsAt(2));
+        Assert.Contains("b", projected.CandidateRegionIdsAt(3));
+        // Characterize the existing undesirable audit/standing boundary;
+        // correcting it needs a separately reviewed behavioral scope.
+        Assert.Empty(projected.PreferredRegionIdsAt(2));
+        Assert.Empty(projected.PreferredRegionIdsAt(3));
+        Assert.Contains(result.CandidateWarps.Warps,
+            warp => warp.Standing == CandidateWarpStanding.Conflicted);
+        Assert.Contains(result.Audits, audit =>
+            audit.SourceObservationId == later.SourceObservationId &&
+            audit.Disposition == ConstraintApplicationDisposition.MarkConflict &&
+            audit.Reason == ConstraintApplicationReason.NoRegionOverlap &&
+            audit.ConflictDetected);
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(Apply(initial, [later, earlier], 3)));
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(3)]
