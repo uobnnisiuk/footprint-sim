@@ -7570,4 +7570,234 @@ public sealed class RescuerEvidenceBoundaryTests
         // therefore neither this test nor the reference above may hard-drop U2.
     }
 
+
+    // AR-41 / AR-71: FOUR separate finite reference algorithms, not an
+    // operational Joint API or a comparison against a real rescue runtime.
+    private static string[] Ar41Sorted(IEnumerable<string> xs) =>
+        xs.Distinct(StringComparer.Ordinal)
+            .OrderBy(x => x, StringComparer.Ordinal).ToArray();
+
+    private static string[] Ar41Exact(
+        IReadOnlyList<string[]> ps, IReadOnlyList<string[]> qs) =>
+        Ar41Sorted(from p in ps
+                   from q in qs
+                   where p[0] == "a" && p[0] == q[0] && p[^1] == q[^1]
+                   select p[^1]);
+
+    // Correct forward filter for a RELAXED (P_k,Q_k) pair-state model:
+    // the union of Q's adjacent edges loses long-range Q0->Q2 correlation.
+    private static string[] Ar41PairMarkov(
+        IReadOnlyList<string[]> ps, IReadOnlyList<string[]> qs)
+    {
+        var states = new HashSet<(string P, string Q)>();
+        foreach (var p in ps)
+            foreach (var q in qs)
+                if (p[0] == "a" && p[0] == q[0])
+                    states.Add((p[0], q[0]));
+        for (var tick = 0; tick < ps[0].Length - 1; tick++)
+        {
+            var t = tick;
+            var pe = ps.Select(p => (From: p[t], To: p[t + 1]))
+                .Distinct().ToArray();
+            var qe = qs.Select(q => (From: q[t], To: q[t + 1]))
+                .Distinct().ToArray();
+            var next = new HashSet<(string P, string Q)>();
+            foreach (var state in states)
+                foreach (var pEdge in pe.Where(x => x.From == state.P))
+                    foreach (var qEdge in qe.Where(x => x.From == state.Q))
+                        next.Add((pEdge.To, qEdge.To));
+            states = next;
+        }
+        return Ar41Sorted(states.Where(s => s.P == s.Q).Select(s => s.P));
+    }
+
+    // Augmented FIRST-ORDER Markov dynamic program: Q0 is sufficient to
+    // retain the H_Q correlation for this one fixed three-tick fixture.
+    private static string[] Ar41AugmentedMarkov(
+        IReadOnlyList<string[]> ps, IReadOnlyList<string[]> qs)
+    {
+        var states = new HashSet<(string P, string Q, string Q0)>();
+        foreach (var p in ps)
+            foreach (var q in qs)
+                if (p[0] == "a" && p[0] == q[0])
+                    states.Add((p[0], q[0], q[0]));
+        for (var tick = 0; tick < ps[0].Length - 1; tick++)
+        {
+            var t = tick;
+            var pe = ps.Select(p => (From: p[t], To: p[t + 1]))
+                .Distinct().ToArray();
+            var qe = qs.Select(q => (
+                Q0: q[0], From: q[t], To: q[t + 1]))
+                .Distinct().ToArray();
+            var next = new HashSet<(string P, string Q, string Q0)>();
+            foreach (var state in states)
+                foreach (var pEdge in pe.Where(x => x.From == state.P))
+                    foreach (var qEdge in qe.Where(x =>
+                        x.Q0 == state.Q0 && x.From == state.Q))
+                        next.Add((pEdge.To, qEdge.To, state.Q0));
+            states = next;
+        }
+        return Ar41Sorted(states.Where(s => s.P == s.Q).Select(s => s.P));
+    }
+
+    // Q marginal sets are applied independently; no Q state survives a tick.
+    private static string[] Ar41Unary(
+        IReadOnlyList<string[]> ps, IReadOnlyList<string[]> qs)
+    {
+        var qStart = qs.Select(q => q[0]).ToHashSet(StringComparer.Ordinal);
+        var qEnd = qs.Select(q => q[^1]).ToHashSet(StringComparer.Ordinal);
+        var states = ps.Where(p => p[0] == "a" && qStart.Contains(p[0]))
+            .Select(p => p[0]).ToHashSet(StringComparer.Ordinal);
+        for (var tick = 0; tick < ps[0].Length - 1; tick++)
+        {
+            var t = tick;
+            var edges = ps.Select(p => (From: p[t], To: p[t + 1]))
+                .Distinct().ToArray();
+            states = states.SelectMany(region => edges
+                    .Where(edge => edge.From == region)
+                    .Select(edge => edge.To))
+                .ToHashSet(StringComparer.Ordinal);
+        }
+        return Ar41Sorted(states.Where(qEnd.Contains));
+    }
+
+    private sealed record Ar41Gate(
+        long FirstObserved, long LastObserved, long Receipt,
+        long CorrelationAvailable, long Cutoff, long Target,
+        bool SamePerson, bool ConfirmedPersonRelation,
+        bool CorrelationAncestryVerified, bool CompleteHistory,
+        bool DistinctPropositions, bool Conflict = false);
+
+    // Conditional REFERENCE presentation, not a production exclusion rule.
+    private static (string[] Regions, bool Unknown, bool Conflict)
+        Ar41SafeReference(string[] exact, string[] outer, Ar41Gate g)
+    {
+        var admissible = g.FirstObserved == 0 && g.LastObserved == 2 &&
+            g.Target == 2 && g.Cutoff >= g.Receipt &&
+            g.Cutoff >= g.CorrelationAvailable && g.SamePerson &&
+            g.ConfirmedPersonRelation && g.CorrelationAncestryVerified &&
+            g.CompleteHistory && g.DistinctPropositions && !g.Conflict;
+        return admissible ? (exact, false, false) : (outer, true, g.Conflict);
+    }
+
+    [Fact]
+    public void SharedQThreeTickNonMarkovReferenceSeparatesInformationFromAlgorithm()
+    {
+        var qs = new[] {
+            new[] { "a", "b", "e" }, new[] { "c", "b", "f" }
+        };
+        var ps = new[] {
+            new[] { "a", "b", "e" }, new[] { "a", "b", "f" }
+        };
+        Assert.Equal(2, qs.Length);
+        Assert.Equal(4, ps.Length * qs.Length);
+        // Adjacent-edge closure admits a,b,f despite its absence from H_Q.
+        var closure = (from early in qs
+                       from late in qs
+                       where early[1] == late[1]
+                       select $"{early[0]},{early[1]},{late[2]}")
+            .Distinct(StringComparer.Ordinal).ToArray();
+        Assert.Equal(4, closure.Length);
+        Assert.Contains("a,b,f", closure);
+        Assert.DoesNotContain(qs, q => string.Join(",", q) == "a,b,f");
+        var exact = Ar41Exact(ps, qs);
+        var pair = Ar41PairMarkov(ps, qs);
+        var augmented = Ar41AugmentedMarkov(ps, qs);
+        var unary = Ar41Unary(ps, qs);
+        Assert.Equal(["e"], exact);
+        Assert.Equal(["e", "f"], pair);
+        Assert.Equal(exact, augmented);
+        Assert.Equal(pair, unary);
+        string[] Units(IEnumerable<string> xs) =>
+            Ar41Sorted(xs.Select(x => x == "e" ? "U1" : "U2"));
+        Assert.Equal(["U1"], Units(exact));
+        Assert.Equal(["U1", "U2"], Units(pair));
+        // This distinguishes correlation information, NOT an algorithm
+        // ranking or a real-world exclusion of U2.
+    }
+
+    [Fact]
+    public void SharedQMarkovClosedAndTwoTickControlsSeparateTheAlgorithms()
+    {
+        var p3 = new[] {
+            new[] { "a", "b", "e" }, new[] { "a", "b", "f" }
+        };
+        var q3 = new[] {
+            new[] { "a", "b", "e" }, new[] { "a", "b", "f" },
+            new[] { "c", "b", "e" }, new[] { "c", "b", "f" }
+        };
+        Assert.Equal(["e", "f"], Ar41Exact(p3, q3));
+        Assert.Equal(["e", "f"], Ar41PairMarkov(p3, q3));
+        Assert.Equal(["e", "f"], Ar41AugmentedMarkov(p3, q3));
+        Assert.Equal(["e", "f"], Ar41Unary(p3, q3));
+
+        // Mandatory #148-style negative control: pair filtering and P-only
+        // unary filtering MUST differ even when the 3-tick closure does not.
+        var p2 = new[] {
+            new[] { "a", "b" }, new[] { "a", "d" }
+        };
+        var q2 = new[] {
+            new[] { "a", "b" }, new[] { "c", "d" }
+        };
+        Assert.Equal(["b"], Ar41Exact(p2, q2));
+        Assert.Equal(["b"], Ar41PairMarkov(p2, q2));
+        Assert.Equal(["b"], Ar41AugmentedMarkov(p2, q2));
+        Assert.Equal(["b", "d"], Ar41Unary(p2, q2));
+    }
+
+    [Fact]
+    public void SharedQReferenceDoesNotPromoteUnreceivedOrUnprovenCorrelation()
+    {
+        var exact = new[] { "e" };
+        var outer = new[] { "e", "f" };
+        var valid = new Ar41Gate(
+            FirstObserved: 0, LastObserved: 2, Receipt: 3,
+            CorrelationAvailable: 3, Cutoff: 3, Target: 2,
+            SamePerson: true, ConfirmedPersonRelation: true,
+            CorrelationAncestryVerified: true, CompleteHistory: true,
+            DistinctPropositions: true);
+        Assert.Equal(exact, Ar41SafeReference(exact, outer, valid).Regions);
+        var preReceipt = Ar41SafeReference(
+            exact, outer, valid with { Cutoff = 2 });
+        Assert.True(preReceipt.Unknown);
+        Assert.Equal(outer, preReceipt.Regions);
+        var lateCorrelation = Ar41SafeReference(
+            exact, outer, valid with { CorrelationAvailable = 4 });
+        Assert.True(lateCorrelation.Unknown);
+        Assert.Equal(outer, lateCorrelation.Regions);
+        Assert.Equal(outer, Ar41SafeReference(
+            exact, outer, valid with { SamePerson = false }).Regions);
+        Assert.Equal(outer, Ar41SafeReference(
+            exact, outer, valid with { ConfirmedPersonRelation = false }).Regions);
+        Assert.Equal(outer, Ar41SafeReference(
+            exact, outer, valid with { CorrelationAncestryVerified = false }).Regions);
+        Assert.Equal(outer, Ar41SafeReference(
+            exact, outer, valid with { CompleteHistory = false }).Regions);
+        Assert.Equal(outer, Ar41SafeReference(
+            exact, outer, valid with { DistinctPropositions = false }).Regions);
+        var conflict = Ar41SafeReference(
+            exact, outer, valid with { Conflict = true });
+        Assert.True(conflict.Unknown);
+        Assert.True(conflict.Conflict);
+        Assert.Equal(outer, conflict.Regions);
+        // Same original may support two distinct valid logical statements,
+        // while a retransmission of the SAME fact remains one fact.
+        var facts = new[] {
+            (Id: "p0", Source: "p-observation", Role: "anchor"),
+            (Id: "co0", Source: "same-q-origin", Role: "joint-0"),
+            (Id: "co2", Source: "same-q-origin", Role: "joint-2"),
+            (Id: "co2", Source: "same-q-origin", Role: "joint-2")
+        };
+        Assert.Equal(3, facts.Select(f => f.Id).Distinct().Count());
+        Assert.Equal(2, facts.Where(f => f.Source == "same-q-origin")
+            .Select(f => f.Role).Distinct().Count());
+        // Synthetic truth f is for post-hoc evaluation only. An incorrect
+        // claimed relation would wrongly exclude f; the reference cannot
+        // verify the correctness of its own hypothetical premises.
+        const string truth = "f";
+        Assert.DoesNotContain(truth, exact);
+        Assert.Contains(truth, outer);
+        // No F20 target<cutoff or production shared-Joint call is made.
+    }
+
 }
