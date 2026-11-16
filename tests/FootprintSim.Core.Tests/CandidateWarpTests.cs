@@ -490,6 +490,71 @@ public sealed class CandidateWarpTests
                 [previous, current, current], 2, envelope).CandidateWarps));
     }
 
+    // AR-53 API-level limitation, not the desired policy: an initial
+    // PersonObservation alone does not trigger the cross-thread historical
+    // reanchor. A redundant distinct cross-thread a@0 changes b@2's outcome.
+    // Validated S3 fixtures cannot create this shape; retain it as a
+    // characterization pending separately reviewed behavioral changes.
+    [Fact]
+    public void Ar53PersonOnlyHistoricalProvenanceHasKnownReceiptGap()
+    {
+        var ownObservation = CandidateWarpProvenance.Create(
+            CandidateWarpSourceKind.PersonObservation,
+            "ar53-own-observation-a0",
+            availableAtTick: 0,
+            isPersonEvidence: true,
+            isDeviceOnlyEvidence: false,
+            EvidenceState.Confirmed,
+            ["a"],
+            sourceTimeWindow: InteractionTimeWindow.At(0));
+        var initial = PublicCandidateWarpFactory.Create(
+            ScenarioId, Seed, TargetPersonId,
+            [
+                new PublicCandidateWarpStateDefinition
+                {
+                    TimeWindow = InteractionTimeWindow.At(0),
+                    TemporalKind = CandidateWarpTemporalKind.EventPoint,
+                    RegionIds = ["a"],
+                    EvidenceBoundaryState = EvidenceState.Confirmed,
+                    Provenance = [ownObservation]
+                }
+            ],
+            CandidateWarpStanding.Preferred);
+        var b2 = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(2), ["b"], 2, "ar53-own-gap-b2");
+        var redundantA0 = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 2, "ar53-own-gap-a0");
+
+        var onlyB2 = Apply(initial, [b2], 2);
+        var withA0 = Apply(initial, [redundantA0, b2], 2);
+        var onlyB2Projected = PublicCandidateWarpProjection.ForwardTo(
+            onlyB2.CandidateWarps, 2, null);
+        var withA0Projected = PublicCandidateWarpProjection.ForwardTo(
+            withA0.CandidateWarps, 2, null);
+
+        // Current undesirable behavior: the received b is ignored and
+        // old a remains preferred without a conflict in the API-level case.
+        Assert.Equal(["a"], onlyB2Projected.CandidateRegionIdsAt(2));
+        Assert.Equal(["a"], onlyB2Projected.PreferredRegionIdsAt(2));
+        Assert.DoesNotContain("b", onlyB2Projected.CandidateRegionIdsAt(2));
+        Assert.Contains(onlyB2.Audits, audit =>
+            audit.SourceObservationId == b2.SourceObservationId &&
+            audit.Disposition == ConstraintApplicationDisposition.NoOp &&
+            audit.Reason == ConstraintApplicationReason.NoTemporalOverlap &&
+            !audit.ConflictDetected);
+
+        // Adding a separately received but substantively redundant a@0
+        // causes the existing CrossThreadObservation-only path to reanchor.
+        Assert.Equal(["b"], withA0Projected.CandidateRegionIdsAt(2));
+        Assert.Equal(["b"], withA0Projected.PreferredRegionIdsAt(2));
+        Assert.Contains(withA0.Audits, audit =>
+            audit.SourceObservationId == b2.SourceObservationId &&
+            audit.Reason == ConstraintApplicationReason.Applied &&
+            !audit.ConflictDetected);
+        Assert.Equal(JsonDefaults.Serialize(withA0),
+            JsonDefaults.Serialize(Apply(initial, [b2, redundantA0], 2)));
+    }
+
     // AR-53 delayed-query characterization, not desired final semantics:
     // the old Preferred interval still emits a conflict one tick after b@2.
     // Keep the outer-safe b candidate visible and make this limit explicit.

@@ -2847,6 +2847,28 @@ may represent `b@2`, without promoting the history's unverified link.
 Published movements are positive evidence only when their travel time and
 publication time satisfy the cutoff.
 
+**Known own-observation provenance limit (AR-53 derivative, not fixed by
+#157):** The current query-tick reanchor requires an earlier exact Confirmed
+source with `SourceKind == CrossThreadObservation`; an earlier
+`PersonObservation` inside the initial Preferred warp is not interchangeable
+with it. With only the PersonObservation `a@0` and a separately received
+weft `b@2` (cutoff/query tick 2, no public route), an initial Preferred
+EventPoint `a@0` currently produces `NoOp/NoTemporalOverlap` for `b@2`:
+the projected candidate and preferred remain `{a}`, excluding the received
+`b` without a conflict mark. Adding a separate, substantively redundant
+CrossThreadObservation `a@0` to the received constraints changes the
+projected candidate and preferred to `{b}`. If the old interval covers the
+later tick but the regions are disjoint, the same missing reanchor may instead
+produce `MarkConflict/NoRegionOverlap`. These are **undesirable API-level
+characteristics, not approved semantics**; duplicated facts must not be taken
+as independent corroboration. Current validated S3 scenarios constrain the
+encounter tick and region within the historical window, so they cannot
+produce this particular mismatch; that does not establish safety for future
+multi-receipt use. The paired fixed regression records the provenance
+asymmetry and deterministic input order. Generalizing the reanchor to
+PersonObservation or outside-window receipts would change preferred semantics
+and requires a new Scope Revision and independent review.
+
 **Known delayed-query limit (AR-53 derivative, not fixed by #157):**
 The new current-only preferred anchor applies only when the exact Person
 confirmation's observation tick equals the query tick. With distinct received
