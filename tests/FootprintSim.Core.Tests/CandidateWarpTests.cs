@@ -438,6 +438,240 @@ public sealed class CandidateWarpTests
                 envelope).CandidateWarps));
     }
 
+    // AR-53: a directly received current exact is not disproven by the
+    // absence of a published transition from a different earlier exact.
+    // Exercise the actual applicator and subsequent query projection.
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public void Ar53UnpublishedRouteRetainsCurrentConfirmedAndPastUnknown(
+        bool initialIsInterval, bool futurePublishedRoute)
+    {
+        var initial = Warp(
+            initialIsInterval ? new InteractionTimeWindow(0, 2)
+                : InteractionTimeWindow.At(0),
+            initialIsInterval ? CandidateWarpTemporalKind.StateInterval
+                : CandidateWarpTemporalKind.EventPoint, ["a"]);
+        var previous = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 2, "ar53-confirmed-a0");
+        var current = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(2), ["b"], 2, "ar53-confirmed-b2");
+        var envelope = futurePublishedRoute ? Ar53Envelope(3) : null;
+        var result = Apply(initial, [previous, current], 2, envelope);
+        var projected = PublicCandidateWarpProjection.ForwardTo(
+            result.CandidateWarps, 2, envelope);
+
+        Assert.Contains("b", result.CandidateWarps.CandidateRegionIdsAt(2));
+        Assert.Contains("b", projected.OuterPlausibleRegionIdsAt(2));
+        Assert.Contains("b", projected.PreferredRegionIdsAt(2));
+        Assert.DoesNotContain("a", projected.PreferredRegionIdsAt(2));
+        Assert.Contains("a", result.CandidateWarps.CandidateRegionIdsAt(0));
+        Assert.Contains(result.CandidateWarps.Warps, warp =>
+            warp.Standing == CandidateWarpStanding.Preferred &&
+            warp.States.Count == 1 &&
+            warp.States[0].TimeWindow == InteractionTimeWindow.At(2) &&
+            warp.States[0].Provenance.Any(source =>
+                source.SourceObservationId == current.SourceObservationId));
+        Assert.Contains(result.CandidateWarps.Warps, warp =>
+            warp.Standing == CandidateWarpStanding.OuterPlausible &&
+            warp.CandidateRegionIdsAt(0).Contains("a", StringComparer.Ordinal) &&
+            warp.States.SelectMany(state => state.Provenance).Any(source =>
+                source.SourceObservationId == previous.SourceObservationId));
+        Assert.Contains(result.Audits, audit =>
+            audit.SourceObservationId == current.SourceObservationId &&
+            audit.Reason == ConstraintApplicationReason.Applied &&
+            !audit.ConflictDetected);
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(Apply(initial, [current, previous], 2, envelope)));
+        Assert.Equal(JsonDefaults.Serialize(result.CandidateWarps),
+            JsonDefaults.Serialize(Apply(initial,
+                [previous, current, current], 2, envelope).CandidateWarps));
+    }
+
+    // AR-53 API-level limitation, not the desired policy: an initial
+    // PersonObservation alone does not trigger the cross-thread historical
+    // reanchor. A redundant distinct cross-thread a@0 changes b@2's outcome.
+    // Validated S3 fixtures cannot create this shape; retain it as a
+    // characterization pending separately reviewed behavioral changes.
+    [Fact]
+    public void Ar53PersonOnlyHistoricalProvenanceHasKnownReceiptGap()
+    {
+        var ownObservation = CandidateWarpProvenance.Create(
+            CandidateWarpSourceKind.PersonObservation,
+            "ar53-own-observation-a0",
+            availableAtTick: 0,
+            isPersonEvidence: true,
+            isDeviceOnlyEvidence: false,
+            EvidenceState.Confirmed,
+            ["a"],
+            sourceTimeWindow: InteractionTimeWindow.At(0));
+        var initial = PublicCandidateWarpFactory.Create(
+            ScenarioId, Seed, TargetPersonId,
+            [
+                new PublicCandidateWarpStateDefinition
+                {
+                    TimeWindow = InteractionTimeWindow.At(0),
+                    TemporalKind = CandidateWarpTemporalKind.EventPoint,
+                    RegionIds = ["a"],
+                    EvidenceBoundaryState = EvidenceState.Confirmed,
+                    Provenance = [ownObservation]
+                }
+            ],
+            CandidateWarpStanding.Preferred);
+        var b2 = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(2), ["b"], 2, "ar53-own-gap-b2");
+        var redundantA0 = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 2, "ar53-own-gap-a0");
+
+        var onlyB2 = Apply(initial, [b2], 2);
+        var withA0 = Apply(initial, [redundantA0, b2], 2);
+        var onlyB2Projected = PublicCandidateWarpProjection.ForwardTo(
+            onlyB2.CandidateWarps, 2, null);
+        var withA0Projected = PublicCandidateWarpProjection.ForwardTo(
+            withA0.CandidateWarps, 2, null);
+
+        // Current undesirable behavior: the received b is ignored and
+        // old a remains preferred without a conflict in the API-level case.
+        Assert.Equal(["a"], onlyB2Projected.CandidateRegionIdsAt(2));
+        Assert.Equal(["a"], onlyB2Projected.PreferredRegionIdsAt(2));
+        Assert.DoesNotContain("b", onlyB2Projected.CandidateRegionIdsAt(2));
+        Assert.Contains(onlyB2.Audits, audit =>
+            audit.SourceObservationId == b2.SourceObservationId &&
+            audit.Disposition == ConstraintApplicationDisposition.NoOp &&
+            audit.Reason == ConstraintApplicationReason.NoTemporalOverlap &&
+            !audit.ConflictDetected);
+
+        // Adding a separately received but substantively redundant a@0
+        // causes the existing CrossThreadObservation-only path to reanchor.
+        Assert.Equal(["b"], withA0Projected.CandidateRegionIdsAt(2));
+        Assert.Equal(["b"], withA0Projected.PreferredRegionIdsAt(2));
+        Assert.Contains(withA0.Audits, audit =>
+            audit.SourceObservationId == b2.SourceObservationId &&
+            audit.Reason == ConstraintApplicationReason.Applied &&
+            !audit.ConflictDetected);
+        Assert.Equal(JsonDefaults.Serialize(withA0),
+            JsonDefaults.Serialize(Apply(initial, [b2, redundantA0], 2)));
+    }
+
+    // AR-53 delayed-query characterization, not desired final semantics:
+    // the old Preferred interval still emits a conflict one tick after b@2.
+    // Keep the outer-safe b candidate visible and make this limit explicit.
+    [Fact]
+    public void Ar53DelayedQueryKeepsConfirmedOuterButFlagsKnownConflictLimit()
+    {
+        var initial = Warp(new InteractionTimeWindow(0, 3),
+            CandidateWarpTemporalKind.StateInterval, ["a", "b", "c"]);
+        var earlier = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 2, "ar53-delayed-a0");
+        var later = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(2), ["b"], 2, "ar53-delayed-b2");
+        var result = Apply(initial, [earlier, later], 3);
+        var projected = PublicCandidateWarpProjection.ForwardTo(
+            result.CandidateWarps, 3, null);
+
+        Assert.Contains("b", result.CandidateWarps.CandidateRegionIdsAt(2));
+        Assert.Contains("b", projected.CandidateRegionIdsAt(2));
+        Assert.Contains("b", projected.CandidateRegionIdsAt(3));
+        // Characterize the existing undesirable audit/standing boundary;
+        // correcting it needs a separately reviewed behavioral scope.
+        Assert.Empty(projected.PreferredRegionIdsAt(2));
+        Assert.Empty(projected.PreferredRegionIdsAt(3));
+        Assert.Contains(result.CandidateWarps.Warps,
+            warp => warp.Standing == CandidateWarpStanding.Conflicted);
+        Assert.Contains(result.Audits, audit =>
+            audit.SourceObservationId == later.SourceObservationId &&
+            audit.Disposition == ConstraintApplicationDisposition.MarkConflict &&
+            audit.Reason == ConstraintApplicationReason.NoRegionOverlap &&
+            audit.ConflictDetected);
+        Assert.Equal(JsonDefaults.Serialize(result),
+            JsonDefaults.Serialize(Apply(initial, [later, earlier], 3)));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(3)]
+    public void Ar53PublishedRouteAndPublicationCutoffRemainDistinct(
+        long publishedAt)
+    {
+        var initial = Warp(InteractionTimeWindow.At(0),
+            CandidateWarpTemporalKind.EventPoint, ["a"]);
+        var previous = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 2, "ar53-route-a0");
+        var current = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(2), ["b"], 2, "ar53-route-b2");
+        var envelope = Ar53Envelope(publishedAt);
+        var result = Apply(initial, [previous, current], 2, envelope);
+        var projected = PublicCandidateWarpProjection.ForwardTo(
+            result.CandidateWarps, 2, envelope);
+
+        Assert.Contains("b", projected.CandidateRegionIdsAt(2));
+        Assert.Contains("b", projected.PreferredRegionIdsAt(2));
+        Assert.DoesNotContain(result.Audits, audit =>
+            audit.SourceObservationId == current.SourceObservationId &&
+            audit.ConflictDetected);
+        if (publishedAt > 2)
+        {
+            var onlyPast = Apply(initial, [previous], 2, envelope);
+            Assert.DoesNotContain("b",
+                onlyPast.CandidateWarps.CandidateRegionIdsAt(2));
+        }
+    }
+
+    [Fact]
+    public void Ar53SameTickConflictAndLateOrWeakReceiptsDoNotInventPreferred()
+    {
+        var initial = Warp(InteractionTimeWindow.At(0),
+            CandidateWarpTemporalKind.EventPoint, ["a"]);
+        var previous = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(0), ["a"], 2, "ar53-conflict-a0");
+        var current = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(2), ["b"], 2, "ar53-conflict-b2");
+        var opposing = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(2), ["c"], 2, "ar53-conflict-c2");
+        var conflict = Apply(initial, [previous, current, opposing], 2);
+
+        Assert.Contains("b", conflict.CandidateWarps.CandidateRegionIdsAt(2));
+        Assert.Contains("c", conflict.CandidateWarps.CandidateRegionIdsAt(2));
+        Assert.DoesNotContain("b", conflict.CandidateWarps.PreferredRegionIdsAt(2));
+        Assert.DoesNotContain("c", conflict.CandidateWarps.PreferredRegionIdsAt(2));
+        Assert.Contains(conflict.Audits, audit => audit.ConflictDetected);
+        Assert.Equal(JsonDefaults.Serialize(conflict),
+            JsonDefaults.Serialize(Apply(initial,
+                [opposing, current, previous], 2)));
+
+        var late = Constraint(EvidenceState.Confirmed,
+            InteractionTimeWindow.At(2), ["b"], 3, "ar53-late-b2");
+        var beforeReceipt = Apply(initial, [previous, late], 2);
+        Assert.DoesNotContain("b",
+            beforeReceipt.CandidateWarps.CandidateRegionIdsAt(2));
+
+        var weak = Constraint(EvidenceState.SupportedButUncertain,
+            InteractionTimeWindow.At(2), ["b"], 2, "ar53-weak-b2");
+        var withWeak = Apply(initial, [previous, weak], 2);
+        Assert.DoesNotContain("b",
+            withWeak.CandidateWarps.PreferredRegionIdsAt(2));
+    }
+
+    private static PublicHazardEnvelope Ar53Envelope(long publishedAt) => new()
+    {
+        HazardId = "ar53-public-route",
+        SourceRegionId = "a",
+        PublishedAtTick = publishedAt,
+        Branches =
+        [
+            new PublicHazardBranch
+            {
+                SourceRegionId = "a", DestinationRegionId = "b",
+                MinimumTravelTicks = 2, MaximumTravelTicks = 2,
+                TransportType = HazardTransportType.HazardDriven,
+                ProvenanceId = "ar53-a-to-b",
+                PublishedAtTick = publishedAt
+            }
+        ]
+    };
+
     // Ready-stage P2: an earlier existential interval does not demote an
     // independent exact Confirmed observation at the query tick. Only that
     // current anchor is preferred; the uncertain historical route stays outer.

@@ -2832,3 +2832,70 @@ of four-method/AR-32 work, or a physical movement/rescue-time claim.
 AR-33 concerns a separate propagator; AR-37 remains for a distinct
 method-comparison design. No evidence source or previously merged
 mathematical note is altered.
+
+## #157 — query-time direct Confirmed and unpublished movement (AR-53)
+
+A received exact **Person** confirmation at the query tick is independent
+evidence for that current region. If an earlier distinct confirmed source
+places the same Person at `a@0` and the new direct confirmation says `b@2`,
+the lack of a cutoff-available public `a→b` path is **unknown movement**,
+not a same-tick logical contradiction or proof that `b@2` did not happen.
+A projected earlier stay must not erase that directly received current point.
+The historical `a@0` source, ancestry and its unverified continuation stay
+on an **outer-only** alternative. A separate current-only preferred anchor
+may represent `b@2`, without promoting the history's unverified link.
+Published movements are positive evidence only when their travel time and
+publication time satisfy the cutoff.
+
+**Known own-observation provenance limit (AR-53 derivative, not fixed by
+#157):** The current query-tick reanchor requires an earlier exact Confirmed
+source with `SourceKind == CrossThreadObservation`; an earlier
+`PersonObservation` inside the initial Preferred warp is not interchangeable
+with it. With only the PersonObservation `a@0` and a separately received
+weft `b@2` (cutoff/query tick 2, no public route), an initial Preferred
+EventPoint `a@0` currently produces `NoOp/NoTemporalOverlap` for `b@2`:
+the projected candidate and preferred remain `{a}`, excluding the received
+`b` without a conflict mark. Adding a separate, substantively redundant
+CrossThreadObservation `a@0` to the received constraints changes the
+projected candidate and preferred to `{b}`. If the old interval covers the
+later tick but the regions are disjoint, the same missing reanchor may instead
+produce `MarkConflict/NoRegionOverlap`. These are **undesirable API-level
+characteristics, not approved semantics**; duplicated facts must not be taken
+as independent corroboration. Current validated S3 scenarios constrain the
+encounter tick and region within the historical window, so they cannot
+produce this particular mismatch; that does not establish safety for future
+multi-receipt use. The paired fixed regression records the provenance
+asymmetry and deterministic input order. Generalizing the reanchor to
+PersonObservation or outside-window receipts would change preferred semantics
+and requires a new Scope Revision and independent review.
+
+**Known delayed-query limit (AR-53 derivative, not fixed by #157):**
+The new current-only preferred anchor applies only when the exact Person
+confirmation's observation tick equals the query tick. With distinct received
+`a@0` and `b@2`, no published `a→b` route and a Preferred initial
+StateInterval warp, querying at tick 3 retains `b` in outer-safe candidates
+at ticks 2 and 3, but the old branch still marks `b@2` as
+`MarkConflict/NoRegionOverlap`, emits a Conflicted `a` alternative and
+leaves preferred empty. Advancing the query from 2 to 3 without adding
+evidence can therefore change the audit and historical candidates.
+That diagnostic conflict does **not** prove an actual same-tick contradiction.
+The delayed-query fixed regression characterizes the *existing limitation*,
+not an approved target behavior. Extending preferred reconstruction for past
+exact confirmations requires a separately reviewed scope; it must not be
+silently inferred from this query-tick-only change.
+
+Distinct, disjoint exact Confirmed sources **at the same tick** remain a true
+conflict; neither is selected by majority vote. Inclusive windows are
+existential witnesses, not residence at every tick. Receipts arriving after
+the query cutoff, Device-only evidence, weak or Alternative observations and
+unresolved Person identity do not create a direct current Confirmed anchor.
+Original-source copies are deduplicated; separate valid observations are not
+assumed statistically independent. These are bounded synthetic safety
+conditions, not a new travel model, general proof or rescue-performance
+estimate. The fixed regression includes initial StateInterval/EventPoint,
+unknown/future-published/public positive control, query projection, source
+order/copies, same-tick conflict, later receipt and weak negative control.
+Successful PR-head CI and independent review remain required before counting
+this scope as implemented. AR-65/39/32/33, #142/#148/#154's limited findings,
+unknown-relation discovery and the 24-edge lens remain separate.
+

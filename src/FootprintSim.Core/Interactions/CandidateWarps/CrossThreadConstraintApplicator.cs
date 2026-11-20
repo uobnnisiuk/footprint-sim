@@ -763,6 +763,30 @@ public sealed class CrossThreadConstraintApplicator
                     beforeCount);
             }
 
+            // AR-53: a stale projection of an earlier exact Confirmed is
+            // not a contradiction of a separately received Confirmed exact
+            // at the query tick. Re-anchor the unknown historical link as
+            // outer-only; only the past-free current witness is preferred.
+            // Same-tick independent conflicting exacts were checked above.
+            var directCurrentAfterHistoricalConfirmed =
+                exactReceipt &&
+                constraint.ConstrainedTimeWindow.StartTick ==
+                    accessContext.CurrentTick &&
+                constraint.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                !opposingExactConfirmed &&
+                warp.States.Any(state => state.Provenance.Any(source =>
+                    source.SourceKind ==
+                        CandidateWarpSourceKind.CrossThreadObservation &&
+                    source.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                    source.SourceTimeWindow is { } earlier &&
+                    earlier.EndTick < accessContext.CurrentTick));
+            if (directCurrentAfterHistoricalConfirmed)
+            {
+                return ReanchorOuterContinuationOnReceipt(
+                    warp, constraint, accessContext, publicHazardEnvelope,
+                    beforeCount);
+            }
+
             if (constraint.EvidenceBoundaryState == EvidenceState.Confirmed)
             {
                 // The union of outer alternatives can contain only a
