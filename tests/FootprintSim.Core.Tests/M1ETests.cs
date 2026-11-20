@@ -1356,6 +1356,19 @@ public sealed class M1ETests
                 },
                 run.Condition, 2);
             Assert.Equal(true, evaluated.TargetCandidateRepresented);
+            Assert.Equal(PastStateEvidenceCondition.ConflictingVerification, run.Condition);
+            // Generation-only containment cannot prove either method retains truth.
+            // Check the method-level safety outputs for interval, point and tick-split controls.
+            foreach (var method in new[]
+            {
+                PastStateMethod.ConstraintBasedReconstruction,
+                PastStateMethod.ReconstructionWithLocalTraversal
+            })
+            {
+                var metrics = evaluated.Methods.Single(item => item.Method == method);
+                Assert.Equal(true, metrics.ContainsTruth);
+                Assert.Equal(false, metrics.FalseExclusion);
+            }
         }
         finally
         {

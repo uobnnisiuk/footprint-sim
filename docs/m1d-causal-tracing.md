@@ -113,6 +113,17 @@ limitation, AR-78/80's missing-own-trace gate, and AR-74/75's historical
 evaluation corrections remain outside this limited M1-E fix. None of these
 finite checks proves a complete temporal theory or a real rescue outcome.
 
+**Known unresolved safety limit (AR-82 follow-up, outside this patch):**
+A received public Person `Confirmed` witness spanning multiple ticks is
+still omitted from time-slice conflict logic when exact-tick `Confirmed`
+witnesses narrow those slices. If they disagree, outer candidates can be
+incorrectly excluded (including a synthetic truth region), while the audit
+misses the conflict. The C1/C1p/C2/C3 and S5 `Confirmed`-interval contrasts
+are not repaired here; this limitation predates this PR and needs a separately
+reviewed scope. Passing the `Conflicting`-interval checks does **not** establish
+outer safety for all interval evidence. Do not cite affected runs'
+`CandidateReduction` as a validated search benefit.
+
 - `Confirmed + Confirmed`: narrow when consistent; preserve candidates and mark conflict on empty intersection.
 - `Confirmed + SupportedButUncertain`: confirmed evidence may bound the outer set; uncertain evidence may affect preferred candidates without hard outer exclusion.
 - `SupportedButUncertain + SupportedButUncertain`: retain alternatives; no hard exclusion.
