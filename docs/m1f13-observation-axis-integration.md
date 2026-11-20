@@ -219,7 +219,48 @@ S5 first filters public/cutoff-available constraints and then selects generation
 declared time windows overlap the query target window. It groups sources by transitive overlap among
 ancestry IDs, source observation IDs, and direct source IDs.
 
-For Confirmed Person generation constraints, the Region behavior is:
+#### AR-43 / Issue #159: distinct times and partial overlap
+
+When a Confirmed/Conflicting Person generation claim has a time window different from the query
+window, reconstruction now partitions the public candidate window at exact evidence times and
+public-state boundaries. It intersects source-group alternatives **within one exact tick** and
+unions the surviving regions across the query window. Unobserved portions retain the public base;
+a gap in declared states retains the available base as unknown rather than proving impossibility.
+The partition uses boundary points, not a loop over every integer tick.
+
+The fixed `[5,6]` cases distinguish safety from information loss. `X@5={a}, Y@6={b}` and
+`X@5={a}, Y@6={a,b}` produce `{a,b}`, including when the declared base is `{a,b,c,d}`. A single
+observation leaves the unobserved tick's base intact. For `X@6={a,c}, Y@6={b,c}`, a point query
+at 6 gives `{c}`; the window `[5,6]` retains `{a,b,c}`. Only `c` is supported in the latter case:
+`a` and `b` survive because tick 5 is unobserved, not because an incompatible tick-6 claim supports
+them. Candidate sets, disposition labels, and source/audit IDs are tested separately. Same-tick
+contradictions still retain the outer alternatives and their conflict lineage.
+
+Independent verification also compares exact claims at matching candidate times. Refuting a region
+at one tick does not refute its possible occurrence elsewhere in the window. `IndependentlyRefuted`
+requires a refutation at **every still-possible time slice**; supporting and refuting different ticks
+do not alone create `Conflicting`. Shared generation ancestry remains ineligible as independent
+verification. Verification does not change generation candidate identities or membership.
+
+Inclusive interval evidence in this temporal path is retained as unresolved audit material, rather
+than broadcast as continuous residence over every slice. In particular, the boundary witness
+`[12,13]={A}` cannot remove `B` from query `[10,12]`; T1 now requires `{A,B}` for generation-only
+Methods B/C while preserving the cutoff/boundary checks. A true location is only a post-inference
+test assertion, never an input to reconstruction.
+
+**Remaining limits:** the historical S5 mode in which all applicable claims refer to the same
+inclusive query layer retains its existing behavior below. Its interval-wide labels and exclusion
+do not become a general temporal-safety guarantee through this correction. Likewise, T1 with
+traversal enabled still has the unsplit-inclusive Tracer limitation described in
+`m1d-causal-tracing.md`; it is not counted as a successful generation-only correction. No public
+route, actual movement, or previously unknown relation is invented. Full inclusive-time semantics,
+the AR-74/75 research-number corrections, and the separate S3 missing-own-record problem remain
+outside this finite change.
+
+#### Legacy common-window S5 layer
+
+For Confirmed Person generation constraints all referring to the same inclusive query layer,
+the retained Region behavior is:
 
 ```text
 within each source group: union AllowedRegionIds
@@ -238,8 +279,8 @@ is not enough for the next study:
   observation may be jointly true and require conjunction;
 - different-source constraints are intersected if Confirmed, although source independence alone
   does not establish logical compatibility;
-- time windows choose whether a constraint applies to the fixed query layer; they do not filter a
-  multi-tick candidate tuple as F9 does; and
+- within this legacy common-window mode, time windows select the fixed query layer rather than
+  a multi-tick candidate tuple as F9 does; and
 - the result candidate is a target-window Region, not a common time-and-Region hypothesis.
 
 `OperationalCausalTracer` has a third behavior: at one overlapping state it directly intersects all
