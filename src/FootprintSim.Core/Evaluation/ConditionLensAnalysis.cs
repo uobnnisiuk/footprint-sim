@@ -114,7 +114,9 @@ public static class ConditionLensAnalysis
                 .OrderBy(x => x, StringComparer.Ordinal).ToArray(),
             PublicRegions = regions.Select((id, n) => new RegionDefinition
             {
-                Id = id, Type = RegionType.Outdoor, Center = new Position(n, 0, 0, id)
+                Id = id,
+                Type = RegionType.Outdoor,
+                Center = new Position(n, 0, 0, id)
             }).ToArray(),
             PublicCausalTracingModel = new PublicCausalTracingModel
             {
