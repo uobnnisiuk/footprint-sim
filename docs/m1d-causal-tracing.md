@@ -73,6 +73,15 @@ finite correction, not complete temporal logic, route reconstruction, or a
 general safety proof. The synthetic S4/S5 evaluation and exact-tick regression
 checks remain necessary.
 
+Issue #159 separately corrects M1-E generation and verification when evidence has
+distinct or partially overlapping times. Its generation-only `[10,12]` query with
+the inclusive `[12,13]={A}` witness retains `{A,B}` and does not mark the whole
+window as positively supported by that witness. This does not change the Tracer
+itself: enabling traversal for an unsplit inclusive StateInterval can still
+produce the earlier `{A}` result. That remains an open limitation. The corrected
+generation-only B/C cases, the legacy S5 common-window layer, and traversal-enabled
+inclusive behavior must not be reported as one fully repaired temporal method.
+
 
 - `Confirmed + Confirmed`: narrow when consistent; preserve candidates and mark conflict on empty intersection.
 - `Confirmed + SupportedButUncertain`: confirmed evidence may bound the outer set; uncertain evidence may affect preferred candidates without hard outer exclusion.

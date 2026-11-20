@@ -565,9 +565,182 @@ public sealed class M1ETests
             new ObservationSet { ScenarioId = scenarioId, Seed = seed, Observations = [] },
             new CausalTracingConstraintSet(scenarioId, seed, [atBoundary]));
 
-        Assert.Equal(["A"], comparison.Reconstruction.Candidates.Select(item => item.RegionId));
+        Assert.Equal(["A", "B"], comparison.Reconstruction.Candidates
+            .Select(item => item.RegionId).OrderBy(item => item, StringComparer.Ordinal));
+        Assert.Equal(["A", "B"], comparison.Methods.Single(item =>
+            item.Method == PastStateMethod.ReconstructionWithLocalTraversal).CandidateRegionIds);
+        Assert.All(comparison.Reconstruction.Candidates, item =>
+            Assert.DoesNotContain(atBoundary.ConstraintId, item.AppliedConstraintIds));
         Assert.Contains(comparison.Reconstruction.EvidenceSet.Constraints, item =>
             item.AvailableAtTick == query.EvidenceAvailabilityCutoff);
+    }
+
+    [Theory]
+    [InlineData("P1", false, "a,b,c", "a,b,c")]
+    [InlineData("P1", true, "a,b,c", "a,b,c")]
+    [InlineData("P3", false, "a,b", "a,b")]
+    [InlineData("P3", true, "a,b", "a,b")]
+    [InlineData("P4", false, "a,b", "a,b")]
+    [InlineData("P4", true, "a,b", "a,b")]
+    [InlineData("F1", false, "a,b", "a,b")]
+    [InlineData("S1", false, "a,b,c", "a")]
+    [InlineData("S1", true, "a,b,c", "a")]
+    [InlineData("S2", false, "a,b,c", "b")]
+    [InlineData("P5-window", false, "a,b,c", "c")]
+    [InlineData("P5-window", true, "a,b,c", "c")]
+    public void Ar43GenerationProjectsPossibleTimesWithoutInventingSupport(
+        string example, bool eventPoints, string expected, string supported)
+    {
+        var x = Ar43TemporalEvidence("x", 5, ["a"]);
+        var y = Ar43TemporalEvidence("y", 6, ["b"]);
+        CausalTracingConstraint[] facts = example switch
+        {
+            "P1" => [Ar43TemporalEvidence("x", 5, ["a", "c"]),
+                Ar43TemporalEvidence("y", 6, ["b", "c"])],
+            "P3" => [x, y],
+            "P4" or "F1" => [x, Ar43TemporalEvidence("y", 6, ["a", "b"])],
+            "S1" => [x],
+            "S2" => [y],
+            "P5-window" => [Ar43TemporalEvidence("x", 6, ["a", "c"]),
+                Ar43TemporalEvidence("y", 6, ["b", "c"])],
+            _ => throw new InvalidOperationException(example)
+        };
+        var comparison = Ar43TemporalFixture(facts, eventPoints: eventPoints,
+            regions: example == "F1" ? ["a", "b", "c", "d"] : null);
+        var candidates = comparison.Reconstruction.Candidates;
+        Assert.Equal(expected.Split(','), candidates.Select(item => item.RegionId)
+            .OrderBy(item => item, StringComparer.Ordinal));
+        Assert.Equal(expected.Split(','), comparison.Methods.Single(item =>
+            item.Method == PastStateMethod.ReconstructionWithLocalTraversal).CandidateRegionIds);
+        Assert.Equal(supported.Split(','), candidates
+            .Where(item => item.Disposition == PastStateCandidateDisposition.Supported)
+            .Select(item => item.RegionId).OrderBy(item => item, StringComparer.Ordinal));
+        Assert.All(candidates, candidate =>
+        {
+            Assert.Empty(candidate.ConflictingConstraintIds);
+            Assert.NotEmpty(candidate.GenerationEvidenceIds);
+            Assert.NotEmpty(candidate.SourceAncestryIds);
+            if (!supported.Split(',').Contains(candidate.RegionId, StringComparer.Ordinal))
+            {
+                Assert.Equal(PastStateCandidateDisposition.Unsupported, candidate.Disposition);
+                Assert.Empty(candidate.AppliedConstraintIds);
+                Assert.NotEmpty(candidate.UnresolvedConstraintIds);
+            }
+        });
+
+        // These are post-comparison synthetic truths, not inference inputs.
+        string[] possibleTruth = example == "P5-window" ? ["a", "c"] : ["a", "b"];
+        Assert.All(possibleTruth, region => Assert.Contains(candidates, item => item.RegionId == region));
+    }
+
+    [Fact]
+    public void Ar43PointIntersectionAndSameTickConflictsRemainDistinctFromWindowUnion()
+    {
+        var x = Ar43TemporalEvidence("x", 6, ["a", "c"]);
+        var y = Ar43TemporalEvidence("y", 6, ["b", "c"]);
+        var point = Ar43TemporalFixture([x, y], startTick: 6);
+        Assert.Equal(["c"], point.Reconstruction.Candidates.Select(item => item.RegionId));
+        var conflict = Ar43TemporalFixture([
+            Ar43TemporalEvidence("x", 6, ["a"]), Ar43TemporalEvidence("y", 6, ["b"])]);
+        Assert.Equal(["a", "b", "c"], conflict.Reconstruction.Candidates
+            .Select(item => item.RegionId).OrderBy(item => item, StringComparer.Ordinal));
+        Assert.All(conflict.Reconstruction.Candidates, candidate =>
+        {
+            Assert.Equal(PastStateCandidateDisposition.Conflicting, candidate.Disposition);
+            Assert.Equal(2, candidate.ConflictingConstraintIds.Count);
+        });
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void Ar43VerificationRequiresRefutationAtEveryPossibleTime(
+        bool eventPoints, bool generateAtFive)
+    {
+        var x = Ar43TemporalEvidence("x", 5, ["a"]);
+        var y = Ar43TemporalEvidence("y", 6, ["b"]);
+        var comparison = Ar43TemporalFixture(generateAtFive ? [x] : [], [y], eventPoints);
+        var a = comparison.Reconstruction.Candidates.Single(item => item.RegionId == "a");
+        var verification = comparison.Reconstruction.Verification.Single(item => item.CandidateId == a.CandidateId);
+        Assert.Equal(CandidateVerificationDisposition.Unresolved, verification.Disposition);
+        Assert.Empty(verification.RefutingConstraintIds);
+        Assert.Empty(verification.ConflictingConstraintIds);
+        Assert.Contains(y.SourceObservationId, verification.VerificationEvidenceIds);
+        var withoutVerification = Ar43TemporalFixture(generateAtFive ? [x] : [], eventPoints: eventPoints);
+        Assert.Equal(JsonDefaults.Serialize(withoutVerification.Reconstruction.Candidates),
+            JsonDefaults.Serialize(comparison.Reconstruction.Candidates));
+
+        var both = Ar43TemporalFixture([], [x, y], eventPoints);
+        foreach (var candidate in both.Reconstruction.Candidates)
+        {
+            var check = both.Reconstruction.Verification.Single(item => item.CandidateId == candidate.CandidateId);
+            Assert.Equal(candidate.RegionId == "c"
+                ? CandidateVerificationDisposition.IndependentlyRefuted
+                : CandidateVerificationDisposition.IndependentlySupported, check.Disposition);
+            Assert.Empty(check.ConflictingConstraintIds);
+            if (candidate.RegionId != "c") Assert.Empty(check.RefutingConstraintIds);
+        }
+    }
+
+    [Fact]
+    public void Ar43VerificationPreservesSameTickRefutationAndIndependentConflict()
+    {
+        var x = Ar43TemporalEvidence("x", 6, ["a"]);
+        var y = Ar43TemporalEvidence("y", 6, ["b"]);
+        var point = Ar43TemporalFixture([], [y], startTick: 6);
+        var a = point.Reconstruction.Candidates.Single(item => item.RegionId == "a");
+        Assert.Equal(CandidateVerificationDisposition.IndependentlyRefuted,
+            point.Reconstruction.Verification.Single(item => item.CandidateId == a.CandidateId).Disposition);
+        var generated = Ar43TemporalFixture([x], [y], startTick: 6);
+        Assert.Equal(CandidateVerificationDisposition.IndependentlyRefuted,
+            Assert.Single(generated.Reconstruction.Verification).Disposition);
+        var contradiction = Ar43TemporalFixture([], [x, y]);
+        foreach (var candidate in contradiction.Reconstruction.Candidates.Where(item => item.RegionId != "c"))
+        {
+            var check = contradiction.Reconstruction.Verification.Single(item => item.CandidateId == candidate.CandidateId);
+            Assert.Equal(CandidateVerificationDisposition.Conflicting, check.Disposition);
+            Assert.NotEmpty(check.ConflictingConstraintIds);
+        }
+    }
+
+    [Fact]
+    public void Ar43TemporalGenerationHonorsCopiesWeakDeviceCutoffAndSharedVerification()
+    {
+        var x = Ar43TemporalEvidence("x", 5, ["a"]);
+        var y = Ar43TemporalEvidence("y", 6, ["b"]);
+        var baseline = Ar43TemporalFixture([x, y]);
+        var copied = Ar43TemporalFixture([y, Ar43TemporalEvidence("x", 5, ["a"]), x]);
+        Assert.Equal(JsonDefaults.Serialize(baseline), JsonDefaults.Serialize(copied));
+        var sameSource = Ar43TemporalFixture([x, Ar43TemporalEvidence("x", 6, ["b"])]);
+        Assert.Equal(["a", "b"], sameSource.Reconstruction.Candidates
+            .Select(item => item.RegionId).OrderBy(item => item, StringComparer.Ordinal));
+        Assert.Single(sameSource.Reconstruction.Candidates.SelectMany(item => item.GenerationSourceGroupIds)
+            .Distinct(StringComparer.Ordinal));
+        foreach (var limited in new[]
+        {
+            Ar43TemporalEvidence("y", 6, ["b"], availableTick: 21),
+            Ar43TemporalEvidence("y", 6, ["b"], state: EvidenceState.SupportedButUncertain),
+            Ar43TemporalEvidence("y", 6, ["b"], deviceOnly: true)
+        })
+        {
+            var comparison = Ar43TemporalFixture([x, limited]);
+            Assert.Equal(["a", "b", "c"], comparison.Reconstruction.Candidates
+                .Select(item => item.RegionId).OrderBy(item => item, StringComparer.Ordinal));
+        }
+
+        var shared = Ar43TemporalFixture([x], [Ar43TemporalEvidence("y", 6, ["b"], ancestry: "origin-x")]);
+        Assert.All(shared.Reconstruction.Verification, item =>
+        {
+            Assert.Equal(CandidateVerificationDisposition.SharedAncestryOnly, item.Disposition);
+            Assert.Empty(item.RefutingConstraintIds);
+            Assert.Empty(item.SupportingConstraintIds);
+        });
+        var fewer = Ar43TemporalFixture([x]).Reconstruction.Candidates.Select(item => item.RegionId).ToHashSet();
+        var more = Ar43TemporalFixture([x, Ar43TemporalEvidence("y", 6, ["a", "b"])])
+            .Reconstruction.Candidates.Select(item => item.RegionId).ToHashSet();
+        Assert.True(more.IsSubsetOf(fewer));
     }
 
     [Theory]
@@ -976,6 +1149,47 @@ public sealed class M1ETests
 
     private static PastStateRunEvaluation RunBySeed(int seed) =>
         MethodCompositionBatch.Value.PastStateReconstruction!.Runs.Single(item => item.Seed == seed);
+
+    private static CausalTracingConstraint Ar43TemporalEvidence(
+        string source, long tick, IReadOnlyList<string> regions,
+        long availableTick = 20, EvidenceState state = EvidenceState.Confirmed,
+        bool deviceOnly = false, string? ancestry = null) => CausalTracingConstraint.Create(
+            "ar43-temporal-generation", 43, $"obs-{source}-{tick}", $"source-{source}",
+            [ancestry ?? $"origin-{source}"], "person-a",
+            deviceOnly ? TracingConstraintSourceKind.DeviceOnlyObservation : TracingConstraintSourceKind.CrossThreadObservation,
+            "person-person", [new InteractionParticipant("person-a", InteractionEntityKind.Person,
+                InteractionParticipantRole.EncounterParticipant)], TracingConstraintRole.Local,
+            InteractionTimeWindow.At(tick), InteractionTimeWindow.At(tick), regions,
+            availableTick, state, !deviceOnly, deviceOnly, InteractionVisibility.PublicEvidence,
+            "ar43-temporal-generation", [new InteractionProvenance(InteractionProvenanceKind.ExternalSource, source)]);
+
+    private static PastStateComparisonResult Ar43TemporalFixture(
+        IReadOnlyList<CausalTracingConstraint> generation,
+        IReadOnlyList<CausalTracingConstraint>? verification = null,
+        bool eventPoints = false, IReadOnlyList<string>? regions = null,
+        long startTick = 5)
+    {
+        verification ??= [];
+        regions ??= ["a", "b", "c"];
+        return new PastStateReconstructor().Compare(
+            new PastStatePublicContext
+            {
+                Query = PastStateQuery.Create("ar43-temporal-generation", 43, "person-a",
+                    new InteractionTimeWindow(startTick, 6), "ar43-temporal-generation-query", 20),
+                PublicCandidateStates = eventPoints && startTick < 6
+                    ? [PublicState(5, regions), PublicState(6, regions)]
+                    : [PublicState(startTick, 6, regions)],
+                GenerationDirectSourceIds = generation.Select(item => item.DirectSourceId)
+                    .Distinct(StringComparer.Ordinal).ToArray(),
+                VerificationDirectSourceIds = verification.Select(item => item.DirectSourceId)
+                    .Distinct(StringComparer.Ordinal).ToArray(),
+                AvailableObservationIds = generation.Concat(verification).Select(item => item.SourceObservationId)
+                    .Distinct(StringComparer.Ordinal).OrderBy(item => item, StringComparer.Ordinal).ToArray(),
+                LocalTraversalWindowPaddingTicks = 0
+            },
+            new ObservationSet { ScenarioId = "ar43-temporal-generation", Seed = 43, Observations = [] },
+            new CausalTracingConstraintSet("ar43-temporal-generation", 43, generation.Concat(verification).ToArray()));
+    }
 
     private static PastStateComparisonResult Ar43WindowFixture(
         bool atFive, bool atSix, bool eventPoints = false, bool edge = false,
