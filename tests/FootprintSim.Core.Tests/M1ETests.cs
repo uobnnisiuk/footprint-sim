@@ -1350,7 +1350,8 @@ public sealed class M1ETests
                 run.PublicComparison,
                 new PastStateTruthEvaluation
                 {
-                    PersonRegionId = "fork-west", DeviceRegionId = "fork-west",
+                    PersonRegionId = "fork-west",
+                    DeviceRegionId = "fork-west",
                     OutcomeIdentifier = "ar82-synthetic-truth-after-inference"
                 },
                 run.Condition, 2);
