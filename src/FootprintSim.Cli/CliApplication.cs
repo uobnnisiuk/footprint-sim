@@ -19,6 +19,12 @@ public static class CliApplication
         try
         {
             if (args.Length > 0 && string.Equals(
+                args[0], "evaluate-condition-lenses", StringComparison.Ordinal))
+            {
+                return await RunConditionLensesAsync(args[1..]);
+            }
+
+            if (args.Length > 0 && string.Equals(
                 args[0], "evaluate-rescuer-receipt-timeline", StringComparison.Ordinal))
             {
                 return await RunRescuerReceiptTimelineAsync(args[1..]);
@@ -160,6 +166,36 @@ public static class CliApplication
             Console.Error.WriteLine($"error: {exception.Message}");
             return 2;
         }
+    }
+
+    private static async Task<int> RunConditionLensesAsync(string[] args)
+    {
+        if (args.Length == 1 && string.Equals(args[0], "--help", StringComparison.Ordinal))
+        {
+            Console.WriteLine("Condition lenses: evaluate-condition-lenses --fixture <file> --output <directory>");
+            return 0;
+        }
+
+        var options = ParseOptions(args, new HashSet<string>(
+            ["--fixture", "--output"], StringComparer.Ordinal));
+        var fixturePath = Path.GetFullPath(Require(options, "--fixture"));
+        var outputDirectory = Path.GetFullPath(Require(options, "--output"));
+        // Validate and compare before writing any report.
+        var report = ConditionLensAnalysis.Run(await File.ReadAllBytesAsync(fixturePath));
+        Directory.CreateDirectory(outputDirectory);
+        var outputPath = Path.Combine(outputDirectory, "condition-lenses.json");
+        var temporaryPath = outputPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            await File.WriteAllTextAsync(temporaryPath, JsonDefaults.Serialize(report) + "\n");
+            File.Move(temporaryPath, outputPath, overwrite: true);
+        }
+        finally
+        {
+            File.Delete(temporaryPath);
+        }
+        Console.WriteLine("Condition-lens comparison completed: " + outputPath);
+        return 0;
     }
 
     private static async Task<int> RunRescuerReceiptTimelineAsync(string[] args)
