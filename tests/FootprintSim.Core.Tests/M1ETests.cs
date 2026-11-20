@@ -1202,10 +1202,51 @@ public sealed class M1ETests
             availableTick: 21, state: EvidenceState.Conflicting, endTick: 6);
         var device = Ar43TemporalEvidence("device", 5, ["b"],
             state: EvidenceState.Conflicting, deviceOnly: true, endTick: 6);
-        Assert.Equal(["a"], Ar43TemporalFixture([x, y, future, device])
-            .Reconstruction.Candidates.Select(item => item.RegionId));
+        var privateConflict = Ar43TemporalEvidence("private", 5, ["b"],
+            state: EvidenceState.Conflicting, endTick: 6,
+            visibility: InteractionVisibility.PrivateEvidence);
+        var otherPerson = Ar43TemporalEvidence("other", 5, ["b"],
+            state: EvidenceState.Conflicting, endTick: 6, targetEntityId: "person-b");
+        var outside = Ar43TemporalEvidence("outside", 7, ["b"],
+            state: EvidenceState.Conflicting, endTick: 8);
+        var excluded = Ar43TemporalFixture([x, y, future, device, privateConflict, otherPerson, outside]);
+        Assert.Equal(["a"], excluded.Reconstruction.Candidates.Select(item => item.RegionId));
+        Assert.DoesNotContain(excluded.Reconstruction.EvidenceSet.Constraints,
+            item => item.ConstraintId == privateConflict.ConstraintId ||
+                item.ConstraintId == future.ConstraintId);
         Assert.Equal(JsonDefaults.Serialize(widened),
             JsonDefaults.Serialize(Ar43TemporalFixture([interval, y, x, interval])));
+    }
+
+
+    [Theory]
+    [InlineData("G0")]
+    [InlineData("G1")]
+    [InlineData("G2")]
+    [InlineData("G3")]
+    public void Ar82GenerationRetainsIntervalConflictAcrossDistinctTemporalSlices(string example)
+    {
+        var z = example == "G2"
+            ? Ar43TemporalEvidence("z", 4, ["b"],
+                state: EvidenceState.Conflicting, endTick: 6)
+            : Ar43TemporalEvidence("z", 5, ["b"],
+                state: EvidenceState.Conflicting, endTick: 6);
+        CausalTracingConstraint[] constraints = example switch
+        {
+            "G0" => [z],
+            "G1" or "G2" => [Ar43TemporalEvidence("x", 5, ["a"]), z],
+            "G3" => [Ar43TemporalEvidence("y", 6, ["a"]), z],
+            _ => throw new InvalidOperationException(example)
+        };
+        var comparison = Ar43TemporalFixture(constraints);
+        Assert.Equal(["a", "b", "c"], comparison.Reconstruction.Candidates
+            .Select(item => item.RegionId).OrderBy(item => item, StringComparer.Ordinal));
+        Assert.All(comparison.Reconstruction.Candidates, candidate =>
+        {
+            Assert.Equal(PastStateCandidateDisposition.Conflicting, candidate.Disposition);
+            Assert.Contains(z.ConstraintId, candidate.ConflictingConstraintIds);
+            Assert.DoesNotContain(z.ConstraintId, candidate.UnresolvedConstraintIds);
+        });
     }
 
     [Fact]
@@ -1241,8 +1282,12 @@ public sealed class M1ETests
             Assert.NotEmpty(candidate.ConflictingConstraintIds));
     }
 
-    [Fact]
-    public void Ar82S5SyntheticReceiptPathKeepsConflictedTruthRegionInOuter()
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public void Ar82S5SyntheticReceiptPathKeepsConflictedTruthRegionInOuter(
+        bool conflictAtSingleTick, bool keepOriginalRegions)
     {
         var source = JsonNode.Parse(File.ReadAllText(Path.Combine(RepositoryRoot,
             "scenarios", "s5_distributed_past_evidence", "scenario.json")))!.AsObject();
@@ -1253,13 +1298,18 @@ public sealed class M1ETests
             var id = item["id"]?.GetValue<string>();
             if (id is "generation-a" or "generation-a-redundant")
             {
-                item["allowedRegionIds"] = new JsonArray("fork-east");
+                if (!keepOriginalRegions) item["allowedRegionIds"] = new JsonArray("fork-east");
                 item["constrainedStartTick"] = id == "generation-a" ? 14 : 13;
                 item["constrainedEndTick"] = id == "generation-a" ? 14 : 13;
             }
             else if (id == "generation-conflict")
             {
-                item["allowedRegionIds"] = new JsonArray("fork-west");
+                if (!keepOriginalRegions) item["allowedRegionIds"] = new JsonArray("fork-west");
+                if (conflictAtSingleTick)
+                {
+                    item["constrainedStartTick"] = 13;
+                    item["constrainedEndTick"] = 13;
+                }
             }
         }
 
@@ -1292,6 +1342,8 @@ public sealed class M1ETests
             var candidates = run.PublicComparison.Reconstruction.Candidates;
             Assert.Contains(candidates, item => item.RegionId == "fork-west");
             Assert.Contains(candidates, item => item.RegionId == "fork-east");
+            if (keepOriginalRegions)
+                Assert.Contains(candidates, item => item.RegionId == "alternate-route");
             Assert.True(run.ConflictedCandidateCount > 0);
             Assert.All(candidates, item => Assert.NotEmpty(item.ConflictingConstraintIds));
             var evaluated = PastStateReconstructionEvaluationBuilder.Evaluate(
@@ -1313,14 +1365,16 @@ public sealed class M1ETests
     private static CausalTracingConstraint Ar43TemporalEvidence(
         string source, long tick, IReadOnlyList<string> regions,
         long availableTick = 20, EvidenceState state = EvidenceState.Confirmed,
-        bool deviceOnly = false, string? ancestry = null, long? endTick = null) => CausalTracingConstraint.Create(
+        bool deviceOnly = false, string? ancestry = null, long? endTick = null,
+        string targetEntityId = "person-a",
+        InteractionVisibility visibility = InteractionVisibility.PublicEvidence) => CausalTracingConstraint.Create(
             "ar43-temporal-generation", 43, $"obs-{source}-{tick}", $"source-{source}",
-            [ancestry ?? $"origin-{source}"], "person-a",
+            [ancestry ?? $"origin-{source}"], targetEntityId,
             deviceOnly ? TracingConstraintSourceKind.DeviceOnlyObservation : TracingConstraintSourceKind.CrossThreadObservation,
-            "person-person", [new InteractionParticipant("person-a", InteractionEntityKind.Person,
+            "person-person", [new InteractionParticipant(targetEntityId, InteractionEntityKind.Person,
                 InteractionParticipantRole.EncounterParticipant)], TracingConstraintRole.Local,
             InteractionTimeWindow.At(tick), new InteractionTimeWindow(tick, endTick ?? tick), regions,
-            availableTick, state, !deviceOnly, deviceOnly, InteractionVisibility.PublicEvidence,
+            availableTick, state, !deviceOnly, deviceOnly, visibility,
             "ar43-temporal-generation", [new InteractionProvenance(InteractionProvenanceKind.ExternalSource, source)]);
 
     private static PastStateComparisonResult Ar43TemporalFixture(
