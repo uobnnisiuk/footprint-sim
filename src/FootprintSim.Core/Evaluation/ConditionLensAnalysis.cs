@@ -285,13 +285,23 @@ public static class ConditionLensAnalysis
 
         if (devices.Length > 0)
         {
+            // Person evidence can answer the missing-Person question, but it does not
+            // itself establish that this Device belongs to or locates the Person.
+            var hasPersonEvidence = persons.Length > 0;
+            IEnumerable<ReceivedInteractionRecord> relevant = hasPersonEvidence
+                ? devices.Concat(persons) : devices;
             questions.Add(new ConditionLensQuestion(
-                "subject-person-verification:" + tick, ["02"], "device-is-not-person",
-                target, tick, cutoff, RecordIds(devices), ObservationIds(devices),
-                Origins(devices), "separately-received-confirmed-person-evidence",
-                persons.Length == 0
-                    ? "Received device evidence cannot establish target Person; Person evidence is missing."
-                    : "Received device evidence cannot be promoted to target Person even when separate Person evidence exists."));
+                hasPersonEvidence ? "subject-device-person-link:" + tick
+                    : "subject-person-verification:" + tick,
+                ["02"],
+                hasPersonEvidence ? "unverified-device-person-association" : "device-is-not-person",
+                target, tick, cutoff, RecordIds(relevant), ObservationIds(relevant),
+                Origins(relevant),
+                hasPersonEvidence ? "independently-established-device-person-association"
+                    : "separately-received-confirmed-person-evidence",
+                hasPersonEvidence
+                    ? "Separate Person evidence is received, but does not establish that this Device is associated with the target Person."
+                    : "Received Device evidence cannot establish target Person; Person evidence is missing."));
         }
         var distinctPersonAncestry = persons.Select(r =>
             string.Join("|", r.OriginalObservation.Provenance

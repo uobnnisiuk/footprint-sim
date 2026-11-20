@@ -1,3 +1,4 @@
+using FootprintSim.Cli;
 using FootprintSim.Evaluation;
 using FootprintSim.Serialization;
 using Xunit;
@@ -6,15 +7,16 @@ namespace FootprintSim.Core.Tests;
 
 public sealed class ConditionLensTests
 {
-    private static byte[] Fixture()
+    private static string FixturePath()
     {
         var root = new DirectoryInfo(AppContext.BaseDirectory);
         while (root is not null && !File.Exists(Path.Combine(root.FullName, "FootprintSim.sln")))
             root = root.Parent;
         Assert.NotNull(root);
-        return File.ReadAllBytes(Path.Combine(root.FullName,
-            "experiments", "condition_lenses", "fixture.json"));
+        return Path.Combine(root.FullName, "experiments", "condition_lenses", "fixture.json");
     }
+
+    private static byte[] Fixture() => File.ReadAllBytes(FixturePath());
 
     [Fact]
     public void TwoDifferentQuestionsAreNotPublicPathDeclarations()
@@ -36,6 +38,69 @@ public sealed class ConditionLensTests
             .SelectMany(candidate => candidate.Questions));
         Assert.NotEqual(a.Modes[3].Questions[0].ReasonCode, b.Modes[3].Questions[0].ReasonCode);
         Assert.Equal("P", c.Modes[3].Questions[0].TargetPersonId);
+    }
+
+    [Fact]
+    public void ReceivedPersonEvidenceResolvesMissingPersonButNotDeviceAssociation()
+    {
+        var report = ConditionLensAnalysis.Run(Fixture());
+        var before = report.Cases.Single(c => c.Id == "A-none");
+        var after = report.Cases.Single(c => c.Id == "A-eligible");
+        var future = report.Cases.Single(c => c.Id == "A-future");
+        var c = report.Cases.Single(x => x.Id == "C-none");
+        var missing = Assert.Single(before.Modes[1].Questions);
+        Assert.Equal("subject-person-verification:5", missing.QuestionId);
+        Assert.Equal("separately-received-confirmed-person-evidence", missing.RequiredInformation);
+        Assert.Equal(JsonDefaults.Serialize(before.Modes[1].Questions),
+            JsonDefaults.Serialize(future.Modes[1].Questions));
+
+        var link = Assert.Single(after.Modes[1].Questions);
+        Assert.Equal("subject-device-person-link:5", link.QuestionId);
+        Assert.Equal("unverified-device-person-association", link.ReasonCode);
+        Assert.Equal("independently-established-device-person-association",
+            link.RequiredInformation);
+        Assert.Equal(["a-device", "a-person"], link.ReceivedOriginalIds);
+        Assert.DoesNotContain(missing.QuestionId, after.Modes[3].Questions.Select(q => q.QuestionId));
+        var difference = report.AnswerDifferences.Single(d =>
+            d.FromCase == "A-none" && d.ToCase == "A-eligible");
+        Assert.Contains(missing.QuestionId, difference.ResolvedQuestionIds);
+        Assert.Contains(link.QuestionId, difference.NewQuestionIds);
+
+        var cLink = Assert.Single(c.Modes[1].Questions);
+        Assert.Equal(link.QuestionId, cLink.QuestionId);
+        Assert.Equal(link.RequiredInformation, cLink.RequiredInformation);
+        var cCorroboration = Assert.Single(c.Modes[2].Questions);
+        Assert.Equal("same-tick-person-corroboration:5", cCorroboration.QuestionId);
+        Assert.NotEqual(cLink.ReasonCode, cCorroboration.ReasonCode);
+    }
+
+    [Fact]
+    public async Task CliCommandWritesTheCompleteFiniteComparison()
+    {
+        var output = Path.Combine(Path.GetTempPath(),
+            "footprint-condition-lens-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var exitCode = await CliApplication.RunAsync(
+                ["evaluate-condition-lenses", "--fixture", FixturePath(), "--output", output]);
+            Assert.Equal(0, exitCode);
+            var actual = await File.ReadAllTextAsync(Path.Combine(output, "condition-lenses.json"));
+            var expected = ConditionLensAnalysis.Run(Fixture());
+            Assert.Equal(JsonDefaults.Serialize(expected) + "\n", actual);
+            Assert.Equal(24, expected.Index.Count);
+            Assert.Equal(9, expected.Cases.Count);
+            Assert.All(expected.Cases, c => Assert.Equal(4, c.Modes.Count));
+            Assert.Equal(["b"], expected.Cases.Single(c => c.Id == "B-eligible")
+                .Modes[0].MethodComparison.Methods.Single(m =>
+                    m.Method == "distributed-reconstruction").OuterCandidateRegionIds);
+            Assert.Equal(JsonDefaults.Serialize(expected.Cases.Single(c => c.Id == "A-none").Modes),
+                JsonDefaults.Serialize(expected.Cases.Single(c => c.Id == "A-future").Modes));
+        }
+        finally
+        {
+            if (Directory.Exists(output))
+                Directory.Delete(output, recursive: true);
+        }
     }
 
     [Fact]
