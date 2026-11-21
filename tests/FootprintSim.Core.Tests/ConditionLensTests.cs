@@ -87,8 +87,28 @@ public sealed class ConditionLensTests
             var actual = await File.ReadAllTextAsync(Path.Combine(output, "condition-lenses.json"));
             var expected = ConditionLensAnalysis.Run(Fixture());
             Assert.Equal(JsonDefaults.Serialize(expected) + "\n", actual);
+            // Assert against bytes actually written by the public CLI, not only Run().
+            using var savedReport = System.Text.Json.JsonDocument.Parse(actual);
+            foreach (var caseName in new[] { "K2-conflict", "K3-conflict" })
+            {
+                var savedCase = savedReport.RootElement.GetProperty("cases")
+                    .EnumerateArray().Single(c =>
+                        c.GetProperty("id").GetString() == caseName);
+                var savedQuestion = savedCase.GetProperty("modes").EnumerateArray()
+                    .Single(m => m.GetProperty("mode").GetString() == "09")
+                    .GetProperty("questions").EnumerateArray().Single();
+                Assert.Equal("conflicted-outcome-depends-on-received-independent-person-root",
+                    savedQuestion.GetProperty("reasonCode").GetString());
+                Assert.Equal(2, savedQuestion.GetProperty("sourceAncestryIds").GetArrayLength());
+                Assert.Equal(2, savedCase.GetProperty("rootRemovals").GetArrayLength());
+                Assert.Equal(JsonDefaults.Serialize(savedCase.GetProperty("modes")
+                    .EnumerateArray().First().GetProperty("methodComparison")),
+                    JsonDefaults.Serialize(savedCase.GetProperty("modes")
+                    .EnumerateArray().Single(m => m.GetProperty("mode").GetString() == "09")
+                    .GetProperty("methodComparison")));
+            }
             Assert.Equal(24, expected.Index.Count);
-            Assert.Equal(23, expected.Cases.Count);
+            Assert.Equal(26, expected.Cases.Count);
             Assert.Equal(3, expected.SchemaVersion);
             Assert.All(expected.Cases, c => Assert.Equal(7, c.Modes.Count));
             Assert.Equal(["b"], expected.Cases.Single(c => c.Id == "B-eligible")
@@ -366,6 +386,68 @@ public sealed class ConditionLensTests
         }
         Assert.Equal(JsonDefaults.Serialize(report), JsonDefaults.Serialize(
             ConditionLensAnalysis.Run(Fixture())));
+    }
+
+    [Fact]
+    public void NinthLensQuestionsOnConflictingIndependentRootsWithoutChangingCandidates()
+    {
+        var report = ConditionLensAnalysis.Run(Fixture());
+        foreach (var (caseId, left, right) in new[]
+        {
+            ("K2-conflict", new[] { "a" }, new[] { "c" }),
+            ("K3-conflict", new[] { "a", "b" }, new[] { "c" })
+        })
+        {
+            var row = report.Cases.Single(c => c.Id == caseId);
+            var question = Assert.Single(row.Modes.Single(m => m.Mode == "09").Questions);
+            Assert.Equal("independent-person-root-dependence:5", question.QuestionId);
+            Assert.Equal("conflicted-outcome-depends-on-received-independent-person-root",
+                question.ReasonCode);
+            Assert.Equal("independent-confirmation-of-conflicting-person-source-roots",
+                question.RequiredInformation);
+            Assert.Equal([caseId == "K2-conflict" ? "k2-left" : "k3-left",
+                caseId == "K2-conflict" ? "k2-right" : "k3-right"], question.ReceivedOriginalIds);
+            Assert.Equal([caseId == "K2-conflict" ? "root-k2-left" : "root-k3-left",
+                caseId == "K2-conflict" ? "root-k2-right" : "root-k3-right"],
+                question.SourceAncestryIds);
+            Assert.Equal(2, row.RootRemovals.Count);
+            foreach (var root in row.RootRemovals)
+            {
+                Assert.Single(root.RemovedReceivedOriginalIds);
+                var method = root.Methods.Single(m => m.Method == "distributed-reconstruction");
+                Assert.Equal(["a", "b", "c"], method.BeforeOuter);
+                Assert.Equal(["a", "b", "c"], method.BeforeConflicted);
+                Assert.Equal(root.SourceRootId.EndsWith("-left", StringComparison.Ordinal)
+                    ? right : left, method.AfterOuter);
+                Assert.Empty(method.AfterConflicted ?? []);
+                Assert.Empty(method.AddedOuter);
+                Assert.NotEmpty(method.RemovedOuter);
+                Assert.Equal(2, method.BeforeAvailableSourceGroups);
+                Assert.Equal(1, method.AfterAvailableSourceGroups);
+            }
+            Assert.Equal(JsonDefaults.Serialize(row.Modes[0].MethodComparison),
+                JsonDefaults.Serialize(row.Modes.Single(m => m.Mode == "09").MethodComparison));
+            Assert.Equal(JsonDefaults.Serialize(row.Modes[0].MethodComparison),
+                JsonDefaults.Serialize(row.Modes.Single(m => m.Mode == "combined").MethodComparison));
+            Assert.Empty(row.Modes.Single(m => m.Mode == "06").Questions);
+        }
+
+        var widening = report.Cases.Single(c => c.Id == "B-eligible");
+        var nested = report.Cases.Single(c => c.Id == "K4-nested");
+        foreach (var row in new[] { widening, nested })
+        {
+            var question = Assert.Single(row.Modes.Single(m => m.Mode == "09").Questions);
+            Assert.Equal("independent-person-root-dependence:5", question.QuestionId);
+            Assert.Equal("outer-depends-on-received-independent-person-root", question.ReasonCode);
+            Assert.Equal("independent-confirmation-of-root-dependent-person-constraint",
+                question.RequiredInformation);
+        }
+        Assert.Empty(report.Cases.Single(c => c.Id == "R-redundant")
+            .Modes.Single(m => m.Mode == "09").Questions);
+        Assert.Empty(report.Cases.Single(c => c.Id == "S3")
+            .Modes.Single(m => m.Mode == "09").Questions);
+        Assert.Equal(JsonDefaults.Serialize(report),
+            JsonDefaults.Serialize(ConditionLensAnalysis.Run(Fixture())));
     }
 
 }

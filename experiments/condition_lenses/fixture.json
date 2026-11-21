@@ -695,6 +695,95 @@
           "receivedAtTick": null
         }
       ]
+    },
+    {
+      "id": "K2-conflict",
+      "group": "k2",
+      "answerCondition": "none",
+      "originals": [
+        {
+          "id": "k2-left",
+          "holderDeviceId": "D",
+          "evidenceKind": "person",
+          "observedTick": 5,
+          "regionIds": [
+            "a"
+          ],
+          "sourceAncestryId": "root-k2-left",
+          "receivedAtTick": 8
+        },
+        {
+          "id": "k2-right",
+          "holderDeviceId": "D2",
+          "evidenceKind": "person",
+          "observedTick": 5,
+          "regionIds": [
+            "c"
+          ],
+          "sourceAncestryId": "root-k2-right",
+          "receivedAtTick": 9
+        }
+      ]
+    },
+    {
+      "id": "K3-conflict",
+      "group": "k3",
+      "answerCondition": "none",
+      "originals": [
+        {
+          "id": "k3-left",
+          "holderDeviceId": "D",
+          "evidenceKind": "person",
+          "observedTick": 5,
+          "regionIds": [
+            "a",
+            "b"
+          ],
+          "sourceAncestryId": "root-k3-left",
+          "receivedAtTick": 8
+        },
+        {
+          "id": "k3-right",
+          "holderDeviceId": "D2",
+          "evidenceKind": "person",
+          "observedTick": 5,
+          "regionIds": [
+            "c"
+          ],
+          "sourceAncestryId": "root-k3-right",
+          "receivedAtTick": 9
+        }
+      ]
+    },
+    {
+      "id": "K4-nested",
+      "group": "k4",
+      "answerCondition": "none",
+      "originals": [
+        {
+          "id": "k4-left",
+          "holderDeviceId": "D",
+          "evidenceKind": "person",
+          "observedTick": 5,
+          "regionIds": [
+            "b"
+          ],
+          "sourceAncestryId": "root-k4-left",
+          "receivedAtTick": 8
+        },
+        {
+          "id": "k4-right",
+          "holderDeviceId": "D2",
+          "evidenceKind": "person",
+          "observedTick": 5,
+          "regionIds": [
+            "a",
+            "b"
+          ],
+          "sourceAncestryId": "root-k4-right",
+          "receivedAtTick": 9
+        }
+      ]
     }
   ]
 }

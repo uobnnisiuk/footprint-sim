@@ -449,24 +449,46 @@ public static class ConditionLensAnalysis
                     "Received Person evidence at the preceding tick is not direct evidence at the target tick. Verify target-tick Person evidence or declared forward public reachability; do not presume any transition."));
             }
         }
-        // 09 asks a different question from 06: even when two independent sources
-        // exist, does the conclusion depend on one of them? A strict widening
-        // after removing one source is evidence of model-internal dependence only.
-        if (rootRemovals.Count >= 2 && rootRemovals.Any(removal =>
-            removal.Methods.Any(m => m.AddedOuter.Count > 0 && m.RemovedOuter.Count == 0)))
+        // 09 diagnoses dependence on independently received Person roots.
+        // A strict widening is the original positive case. AR-88 also asks when
+        // removing one root strictly relieves a conflict and shrinks outer.
+        // Neither counterfactual changes the actual received evidence or methods.
+        static bool WidensOuter(ConditionLensRootRemovalMethod method) =>
+            method.AddedOuter.Count > 0 && method.RemovedOuter.Count == 0;
+        static bool RelievesConflict(ConditionLensRootRemovalMethod method) =>
+            method.BeforeConflicted is { Count: > 0 } before &&
+            method.AfterConflicted is not null &&
+            before.Except(method.AfterConflicted, StringComparer.Ordinal).Any() &&
+            !method.AfterConflicted.Except(before, StringComparer.Ordinal).Any() &&
+            method.RemovedOuter.Count > 0;
+
+        if (rootRemovals.Count >= 2)
         {
-            var dependentRoots = rootRemovals.Where(removal => removal.Methods.Any(m =>
-                m.AddedOuter.Count > 0 && m.RemovedOuter.Count == 0)).ToArray();
-            var relevant = persons.Where(p => dependentRoots.Any(root =>
-                root.RemovedReceivedOriginalIds.Contains(p.OriginalRecordId, StringComparer.Ordinal)))
-                .ToArray();
-            questions.Add(new ConditionLensQuestion(
-                "independent-person-root-dependence:" + tick, ["09"],
-                "outer-depends-on-received-independent-person-root",
-                target, tick, cutoff, RecordIds(relevant), ObservationIds(relevant),
-                Origins(relevant),
-                "independent-confirmation-of-root-dependent-person-constraint",
-                "Removing a received independent Person source root widens an existing method's outer candidates; verify the root-dependent constraint with independently received evidence. This is a diagnostic, not a rejection of the received source."));
+            var dependentRoots = rootRemovals.Where(removal =>
+                removal.Methods.Any(m => WidensOuter(m) || RelievesConflict(m))).ToArray();
+            if (dependentRoots.Length > 0)
+            {
+                // Preserve the old question ID, reason and explanation whenever
+                // widening exists; do not multiply questions for mixed results.
+                var hasWidening = dependentRoots.Any(root =>
+                    root.Methods.Any(WidensOuter));
+                var relevant = persons.Where(p => dependentRoots.Any(root =>
+                    root.RemovedReceivedOriginalIds.Contains(
+                        p.OriginalRecordId, StringComparer.Ordinal))).ToArray();
+                questions.Add(new ConditionLensQuestion(
+                    "independent-person-root-dependence:" + tick, ["09"],
+                    hasWidening
+                        ? "outer-depends-on-received-independent-person-root"
+                        : "conflicted-outcome-depends-on-received-independent-person-root",
+                    target, tick, cutoff, RecordIds(relevant), ObservationIds(relevant),
+                    Origins(relevant),
+                    hasWidening
+                        ? "independent-confirmation-of-root-dependent-person-constraint"
+                        : "independent-confirmation-of-conflicting-person-source-roots",
+                    hasWidening
+                        ? "Removing a received independent Person source root widens an existing method's outer candidates; verify the root-dependent constraint with independently received evidence. This is a diagnostic, not a rejection of the received source."
+                        : "Removing a received independent Person source root strictly reduces conflicting candidates and shrinks outer candidates in an existing method; independently confirm the conflicting roots. This is a diagnostic, not a rejection of any received source."));
+            }
         }
         return questions.OrderBy(q => q.QuestionId, StringComparer.Ordinal).ToArray();
     }
