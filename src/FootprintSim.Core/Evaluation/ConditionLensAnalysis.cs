@@ -55,7 +55,7 @@ public sealed record ConditionLensOriginalSpec(
     IReadOnlyList<string> RegionIds, string SourceAncestryId, long? ReceivedAtTick);
 
 /// <summary>
-/// Two bounded, source-backed question lenses on the existing receipt bridge.
+/// Three bounded, source-backed question lenses on the existing receipt bridge.
 /// Neither a lens nor a proposed answer is an additional inference constraint.
 /// Every reported candidate comes from the unmodified M1-D/E comparison.
 /// </summary>
@@ -74,8 +74,9 @@ public static class ConditionLensAnalysis
         Names.Select((name, index) => new ConditionLensIndexEntry(
             (index + 1).ToString("D2", System.Globalization.CultureInfo.InvariantCulture),
             name, PaliSource,
-            index is 1 or 5 ? "limited-analogy-implemented" : "unimplemented-unassessed",
+            index is 1 or 3 or 5 ? "limited-analogy-implemented" : "unimplemented-unassessed",
             index == 1 ? "received-device-subject-check" :
+            index == 3 ? "received-adjacent-tick-person-check" :
             index == 5 ? "received-same-tick-person-evidence-check" :
             "no-validated-footprint-mapping")).ToArray();
 
@@ -197,11 +198,12 @@ public static class ConditionLensAnalysis
             var comparison = RescuerEvidenceMethodComparison.Compare(received, window);
             var existing = RescuerEvidenceMethodComparison.AnalyzeMissingDeclaredPathQuestions(
                 received, window);
-            var detected = Questions(received, comparison, fixture.TargetTick);
+            var detected = Questions(received, fixture.TargetTick);
             var modes = new[]
             {
                 new ConditionLensModeResult("none", [], comparison),
                 new ConditionLensModeResult("02", detected.Where(q => q.LensIds.Contains("02")).ToArray(), comparison),
+                new ConditionLensModeResult("04", detected.Where(q => q.LensIds.Contains("04")).ToArray(), comparison),
                 new ConditionLensModeResult("06", detected.Where(q => q.LensIds.Contains("06")).ToArray(), comparison),
                 new ConditionLensModeResult("combined", detected, comparison)
             };
@@ -253,7 +255,7 @@ public static class ConditionLensAnalysis
     }
 
     private static IReadOnlyList<ConditionLensQuestion> Questions(
-        RescuerEvidenceInput received, RescuerEvidenceMethodQueryRow comparison, long tick)
+        RescuerEvidenceInput received, long tick)
     {
         // Never inspect held-but-unreceived observations or the synthetic answer label.
         var visible = received.ReceivedRecords
@@ -308,9 +310,7 @@ public static class ConditionLensAnalysis
                 .Where(p => p.Kind == InteractionProvenanceKind.ExternalSource)
                 .Select(p => p.SourceIdentifier).OrderBy(x => x, StringComparer.Ordinal)))
             .Distinct(StringComparer.Ordinal).Count();
-        var candidate = comparison.Methods.Single(m =>
-            m.Method == "distributed-reconstruction");
-        if (persons.Length > 0 && distinctPersonAncestry == 1 && candidate.CandidateCount > 1)
+        if (persons.Length > 0 && distinctPersonAncestry == 1)
         {
             questions.Add(new ConditionLensQuestion(
                 "same-tick-person-corroboration:" + tick, ["06"],
@@ -318,6 +318,31 @@ public static class ConditionLensAnalysis
                 target, tick, cutoff, RecordIds(persons), ObservationIds(persons),
                 Origins(persons), "additional-independent-received-person-evidence-at-the-same-tick",
                 "A second independently sourced Person constraint at this tick is not established; mere coincidence or a copied receipt is insufficient."));
+        }
+
+        // 04 is a question about missing direct evidence at t, not a reverse
+        // movement rule. Read only received, eligible Person originals at t+1.
+        if (persons.Length == 0 && tick < long.MaxValue)
+        {
+            var adjacent = received.ReceivedRecords.Where(r =>
+                r.OriginalObservation.ObservedTimeWindow.StartTick == tick + 1 &&
+                r.OriginalObservation.ObservedTimeWindow.EndTick == tick + 1 &&
+                r.OriginalObservation.IsPersonEvidence &&
+                !r.OriginalObservation.IsDeviceOnlyEvidence &&
+                r.OriginalObservation.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                r.OriginalObservation.ObservedParticipants.Any(p =>
+                    p.EntityId == target && p.EntityKind == InteractionEntityKind.Person))
+                .OrderBy(r => r.OriginalRecordId, StringComparer.Ordinal).ToArray();
+            if (adjacent.Length > 0)
+            {
+                questions.Add(new ConditionLensQuestion(
+                    "adjacent-followup-person-evidence:" + tick, ["04"],
+                    "received-adjacent-tick-not-target-tick",
+                    target, tick, cutoff, RecordIds(adjacent), ObservationIds(adjacent),
+                    Origins(adjacent),
+                    "received-person-evidence-at-target-tick-or-declared-public-transition",
+                    "Person evidence was received for the following tick, but does not establish the target tick. Verify direct target-tick Person evidence or a declared public transition."));
+            }
         }
         return questions.OrderBy(q => q.QuestionId, StringComparer.Ordinal).ToArray();
     }
