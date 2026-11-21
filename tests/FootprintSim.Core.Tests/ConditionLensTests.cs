@@ -133,12 +133,23 @@ public sealed class ConditionLensTests
             Assert.Equal(2, savedEightQuestion.GetProperty("receivedOriginalIds").GetArrayLength());
             Assert.Equal(2, savedEightQuestion.GetProperty("receivedObservationIds").GetArrayLength());
             Assert.Equal(2, savedEightQuestion.GetProperty("sourceAncestryIds").GetArrayLength());
-            Assert.Equal(2, savedRedundant.GetProperty("rootRemovals").GetArrayLength());
-            foreach (var removal in savedRedundant.GetProperty("rootRemovals").EnumerateArray())
-                foreach (var method in removal.GetProperty("methods").EnumerateArray())
+            var savedRemovals = savedRedundant.GetProperty("rootRemovals")
+                .EnumerateArray().ToArray();
+            Assert.Equal(["root-n-left", "root-n-right"],
+                savedRemovals.Select(r => r.GetProperty("sourceRootId").GetString()));
+            foreach (var removal in savedRemovals)
+            {
+                var savedMethods = removal.GetProperty("methods").EnumerateArray().ToArray();
+                Assert.Equal(4, savedMethods.Length);
+                foreach (var method in savedMethods)
+                {
+                    Assert.Equal(2, method.GetProperty("beforeAvailableSourceGroups").GetInt32());
+                    Assert.Equal(1, method.GetProperty("afterAvailableSourceGroups").GetInt32());
                     foreach (var name in new[] { "Outer", "Preferred", "Uncertain", "Conflicted" })
                         Assert.Equal(JsonDefaults.Serialize(method.GetProperty("before" + name)),
                             JsonDefaults.Serialize(method.GetProperty("after" + name)));
+                }
+            }
             Assert.Equal(JsonDefaults.Serialize(savedRedundant.GetProperty("modes")
                 .EnumerateArray().First().GetProperty("methodComparison")),
                 JsonDefaults.Serialize(savedEight.GetProperty("methodComparison")));
@@ -550,6 +561,44 @@ public sealed class ConditionLensTests
             JsonDefaults.Serialize(ConditionLensAnalysis.Run(Fixture())));
     }
 
+
+    [Fact]
+    public void EighthLensDocumentsExistingRedundantRootCasesAndSixToEightQuestionHandoff()
+    {
+        var report = ConditionLensAnalysis.Run(Fixture());
+        foreach (var (id, originalIds, rootIds) in new[]
+        {
+            ("S4", new[] { "s-first", "s-second" },
+                new[] { "root-s-first", "root-s-second" }),
+            ("R-redundant", new[] { "r-first", "r-second" },
+                new[] { "root-r-first", "root-r-second" })
+        })
+        {
+            var row = report.Cases.Single(c => c.Id == id);
+            var eight = Assert.Single(row.Modes.Single(m => m.Mode == "08").Questions);
+            Assert.Equal("apparently-redundant-person-roots-upstream-check:5", eight.QuestionId);
+            Assert.Equal("received-distinct-roots-upstream-provenance-unverified-despite-redundant-outcome",
+                eight.ReasonCode);
+            Assert.Equal(originalIds, eight.ReceivedOriginalIds);
+            Assert.Equal(rootIds, eight.SourceAncestryIds);
+            Assert.Empty(row.Modes.Single(m => m.Mode == "none").Questions);
+            Assert.Empty(row.Modes.Single(m => m.Mode == "06").Questions);
+            Assert.Empty(row.Modes.Single(m => m.Mode == "09").Questions);
+            var combined = Assert.Single(row.Modes.Single(m => m.Mode == "combined").Questions);
+            Assert.Equal(JsonDefaults.Serialize(eight), JsonDefaults.Serialize(combined));
+            Assert.Equal(JsonDefaults.Serialize(row.Modes[0].MethodComparison),
+                JsonDefaults.Serialize(row.Modes.Single(m => m.Mode == "combined").MethodComparison));
+        }
+
+        // Receiving a second claimed root resolves the 06 question, but does not
+        // establish upstream independence: the distinct 08 question becomes visible.
+        var difference = report.AnswerDifferences.Single(d =>
+            d.FromCase == "S1" && d.ToCase == "S4");
+        Assert.Equal(["same-tick-person-corroboration:5"], difference.ResolvedQuestionIds);
+        Assert.Equal(["apparently-redundant-person-roots-upstream-check:5"],
+            difference.NewQuestionIds);
+    }
+
     [Fact]
     public void EighthLensAsksAboutUnknownUpstreamOnlyForRedundantDistinctReceivedRoots()
     {
@@ -564,14 +613,18 @@ public sealed class ConditionLensTests
         Assert.Equal(["n-left", "n-right"], q.ReceivedOriginalIds);
         Assert.Equal(2, q.ReceivedObservationIds.Distinct(StringComparer.Ordinal).Count());
         Assert.Equal(["root-n-left", "root-n-right"], q.SourceAncestryIds);
-        Assert.Equal(2, redundant.RootRemovals.Count);
+        Assert.Equal(["root-n-left", "root-n-right"],
+            redundant.RootRemovals.Select(r => r.SourceRootId));
         Assert.Empty(redundant.Modes.Single(m => m.Mode == "06").Questions);
         Assert.Empty(redundant.Modes.Single(m => m.Mode == "09").Questions);
         foreach (var removal in redundant.RootRemovals)
         {
             Assert.Single(removal.RemovedReceivedOriginalIds);
+            Assert.Equal(4, removal.Methods.Count);
             foreach (var method in removal.Methods)
             {
+                Assert.Equal(2, method.BeforeAvailableSourceGroups);
+                Assert.Equal(1, method.AfterAvailableSourceGroups);
                 Assert.Equal(JsonDefaults.Serialize(method.BeforeOuter),
                     JsonDefaults.Serialize(method.AfterOuter));
                 Assert.Equal(JsonDefaults.Serialize(method.BeforePreferred),
