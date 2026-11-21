@@ -67,7 +67,7 @@ public sealed record ConditionLensOriginalSpec(
     IReadOnlyList<string> RegionIds, string SourceAncestryId, long? ReceivedAtTick);
 
 /// <summary>
-/// Four bounded, source-backed question lenses on the existing receipt bridge.
+/// Five bounded, source-backed question lenses on the existing receipt bridge.
 /// Neither a lens nor a proposed answer is an additional inference constraint.
 /// Every reported candidate comes from the unmodified M1-D/E comparison.
 /// </summary>
@@ -86,11 +86,12 @@ public static class ConditionLensAnalysis
         Names.Select((name, index) => new ConditionLensIndexEntry(
             (index + 1).ToString("D2", System.Globalization.CultureInfo.InvariantCulture),
             name, PaliSource,
-            index is 1 or 3 or 5 or 8 ? "limited-analogy-implemented" : "unimplemented-unassessed",
+            index is 1 or 3 or 5 or 8 or 9 ? "limited-analogy-implemented" : "unimplemented-unassessed",
             index == 1 ? "received-device-subject-check" :
             index == 3 ? "received-adjacent-tick-person-check" :
             index == 5 ? "received-same-tick-person-evidence-check" :
             index == 8 ? "received-person-source-root-removal-dependence" :
+            index == 9 ? "received-prior-tick-person-support-check" :
             "no-validated-footprint-mapping")).ToArray();
 
     public static ConditionLensReport Run(byte[] fixtureBytes)
@@ -281,6 +282,7 @@ public static class ConditionLensAnalysis
                 new ConditionLensModeResult("04", detected.Where(q => q.LensIds.Contains("04")).ToArray(), comparison),
                 new ConditionLensModeResult("06", detected.Where(q => q.LensIds.Contains("06")).ToArray(), comparison),
                 new ConditionLensModeResult("09", detected.Where(q => q.LensIds.Contains("09")).ToArray(), comparison),
+                new ConditionLensModeResult("10", detected.Where(q => q.LensIds.Contains("10")).ToArray(), comparison),
                 new ConditionLensModeResult("combined", detected, comparison)
             };
             results.Add(new ConditionLensCaseResult(
@@ -326,7 +328,7 @@ public static class ConditionLensAnalysis
             }
         }
         return new ConditionLensReport(
-            2, fixture.ScenarioId, fixture.Seed, fixture.TargetPersonId,
+            3, fixture.ScenarioId, fixture.Seed, fixture.TargetPersonId,
             fixture.TargetTick, fixture.ReceiptCutoffTick, Index, results, differences);
     }
 
@@ -419,6 +421,32 @@ public static class ConditionLensAnalysis
                     Origins(adjacent),
                     "received-person-evidence-at-target-tick-or-declared-public-transition",
                     "Person evidence was received for the following tick, but does not establish the target tick. Verify direct target-tick Person evidence or a declared public transition."));
+            }
+        }
+
+        // 10 contrasts with 04: received Person evidence at t-1 is NOT direct
+        // evidence at target t. Never infer a forward transition from this fact.
+        // A target tick of zero has no valid preceding nonnegative tick.
+        if (persons.Length == 0 && tick > 0)
+        {
+            var prior = received.ReceivedRecords.Where(r =>
+                r.OriginalObservation.ObservedTimeWindow.StartTick == tick - 1 &&
+                r.OriginalObservation.ObservedTimeWindow.EndTick == tick - 1 &&
+                r.OriginalObservation.IsPersonEvidence &&
+                !r.OriginalObservation.IsDeviceOnlyEvidence &&
+                r.OriginalObservation.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                r.OriginalObservation.ObservedParticipants.Any(p =>
+                    p.EntityId == target && p.EntityKind == InteractionEntityKind.Person))
+                .OrderBy(r => r.OriginalRecordId, StringComparer.Ordinal).ToArray();
+            if (prior.Length > 0)
+            {
+                questions.Add(new ConditionLensQuestion(
+                    "prior-tick-person-support:" + tick, ["10"],
+                    "received-prior-tick-not-target-tick",
+                    target, tick, cutoff, RecordIds(prior), ObservationIds(prior),
+                    Origins(prior),
+                    "received-person-evidence-at-target-tick-or-declared-forward-public-reachability",
+                    "Received Person evidence at the preceding tick is not direct evidence at the target tick. Verify target-tick Person evidence or declared forward public reachability; do not presume any transition."));
             }
         }
         // 09 asks a different question from 06: even when two independent sources
