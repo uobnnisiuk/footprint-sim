@@ -269,9 +269,10 @@ public sealed class PastStateReconstructor
                             !item.AllowedRegionIds.Contains(region, StringComparer.Ordinal))
                     : temporalSlices.Any(slice => slice.HasConflict &&
                         slice.RegionIds.Contains(region, StringComparer.Ordinal) &&
-                        slice.Constraints.Any(constraint => constraint.ConstraintId == item.ConstraintId) &&
-                        (IsConfirmedPersonEvidence(item) ||
-                            item.EvidenceBoundaryState == EvidenceState.Conflicting)))
+                        ((slice.Constraints.Any(constraint => constraint.ConstraintId == item.ConstraintId) &&
+                            (IsConfirmedPersonEvidence(item) ||
+                                item.EvidenceBoundaryState == EvidenceState.Conflicting)) ||
+                         slice.OverlappingConflicts.Any(constraint => constraint.ConstraintId == item.ConstraintId))))
                 .Select(item => item.ConstraintId)
                 .Distinct(StringComparer.Ordinal)
                 .OrderBy(item => item, StringComparer.Ordinal)
@@ -749,7 +750,8 @@ public sealed class PastStateReconstructor
         InteractionTimeWindow TimeWindow,
         IReadOnlyList<string> RegionIds,
         IReadOnlyList<CausalTracingConstraint> Constraints,
-        bool HasConflict);
+        bool HasConflict,
+        IReadOnlyList<CausalTracingConstraint> OverlappingConflicts);
 
     private static bool RequiresTemporalProjection(
         PastStatePublicContext context,
@@ -828,9 +830,21 @@ public sealed class PastStateReconstructor
                 if (regions.Length > 0) narrowed.IntersectWith(regions);
             }
 
-            var conflict = exact.Any(item => item.EvidenceBoundaryState == EvidenceState.Conflicting) ||
-                narrowed.Count == 0;
-            return new TemporalSlice(window, conflict ? baseRegions : narrowed.ToArray(), exact, conflict);
+            // A Conflicting interval witnesses competing possibilities somewhere
+            // within its window; it cannot be broadcast as a confirmed location.
+            // Still, ignoring it during exact-tick projection could falsely remove
+            // outer regions. Preserve the overlapping interval as conflict audit
+            // and suspend narrowing only in slices it actually overlaps.
+            var overlappingConflicts = generation.Where(item =>
+                    item.IsPersonEvidence && !item.IsDeviceOnlyEvidence &&
+                    item.TargetEntityId == context.Query.TargetEntityId &&
+                    item.EvidenceBoundaryState == EvidenceState.Conflicting &&
+                    Overlaps(item.ConstrainedTimeWindow, window))
+                .OrderBy(item => item.ConstraintId, StringComparer.Ordinal)
+                .ToArray();
+            var conflict = overlappingConflicts.Length > 0 || narrowed.Count == 0;
+            return new TemporalSlice(window, conflict ? baseRegions : narrowed.ToArray(),
+                exact, conflict, overlappingConflicts);
         }).ToArray();
     }
 
@@ -864,7 +878,13 @@ public sealed class PastStateReconstructor
                 .SelectMany(group => group).Select(item => item.ConstraintId).ToArray();
             supporting.UnionWith(sliceSupporting);
             refuting.UnionWith(sliceRefuting);
-            conflicting.UnionWith(exact.Where(item => item.EvidenceBoundaryState == EvidenceState.Conflicting)
+            // Independent interval conflicts remain visible at possible times,
+            // without inventing an exact-tick refutation or continuous residence.
+            conflicting.UnionWith(independent.Where(item =>
+                    item.IsPersonEvidence && !item.IsDeviceOnlyEvidence &&
+                    item.TargetEntityId == candidate.TargetEntityId &&
+                    item.EvidenceBoundaryState == EvidenceState.Conflicting &&
+                    Overlaps(item.ConstrainedTimeWindow, slice.TimeWindow))
                 .Select(item => item.ConstraintId));
             if (sliceSupporting.Length > 0 && sliceRefuting.Length > 0)
             {

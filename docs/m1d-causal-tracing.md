@@ -83,6 +83,47 @@ generation-only B/C cases, the legacy S5 common-window layer, and traversal-enab
 inclusive behavior must not be reported as one fully repaired temporal method.
 
 
+
+### AR-82: interval conflicts in time-sliced past-state reconstruction
+
+When confirmed Person observations at different exact ticks split a query,
+an overlapping public and received Person **Conflicting** interval must not
+disappear from the reconstructed candidates or their independent-verification
+audit. Otherwise two point Confirmed observations can erase an interval conflict,
+incorrectly narrow the outer set, and even exclude a synthetic truth region.
+M1-E keeps the conflict's constraint and source ancestry visible, and restores
+the public outer alternatives **within overlapping slices**. Unaffected slices
+still permit legitimate exact-tick narrowing. Widening only the time window of
+an otherwise identical conflicting witness must not remove an outer possibility
+that its point counterpart retains.
+
+This is an *uncertain competing witness*, not a confirmed position, an
+all-ticks residence claim, or independent proof of a refutation at every time.
+Generation and independently sourced verification remain separate; shared
+ancestry cannot be counted as new verification. Private, future-received,
+device-only, wrong-Person and out-of-window evidence remain excluded from
+this Person inference. Stable candidate IDs, conflict/unresolved/source IDs,
+and the distinction between outer and preferred must survive the change.
+
+AR-82's finite P1/P3/P4/P5/P7/P8, G-series, V-series and S5 synthetic
+contrasts test candidate recovery and audit separately from end-tick
+performance. A reduced candidate count is not a benefit when truth is
+incorrectly excluded. Tracer's separately documented inclusive-interval T1
+limitation, AR-78/80's missing-own-trace gate, and AR-74/75's historical
+evaluation corrections remain outside this limited M1-E fix. None of these
+finite checks proves a complete temporal theory or a real rescue outcome.
+
+**Known unresolved safety limit (AR-82 follow-up, outside this patch):**
+A received public Person `Confirmed` witness spanning multiple ticks is
+still omitted from time-slice conflict logic when exact-tick `Confirmed`
+witnesses narrow those slices. If they disagree, outer candidates can be
+incorrectly excluded (including a synthetic truth region), while the audit
+misses the conflict. The C1/C1p/C2/C3 and S5 `Confirmed`-interval contrasts
+are not repaired here; this limitation predates this PR and needs a separately
+reviewed scope. Passing the `Conflicting`-interval checks does **not** establish
+outer safety for all interval evidence. Do not cite affected runs'
+`CandidateReduction` as a validated search benefit.
+
 - `Confirmed + Confirmed`: narrow when consistent; preserve candidates and mark conflict on empty intersection.
 - `Confirmed + SupportedButUncertain`: confirmed evidence may bound the outer set; uncertain evidence may affect preferred candidates without hard outer exclusion.
 - `SupportedButUncertain + SupportedButUncertain`: retain alternatives; no hard exclusion.
