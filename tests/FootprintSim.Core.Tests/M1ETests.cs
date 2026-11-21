@@ -909,7 +909,7 @@ public sealed class M1ETests
             Assert.Equal(JsonDefaults.Serialize(baselineMethod.Diagnostics),
                 JsonDefaults.Serialize(method.Diagnostics));
             Assert.Equal(method.Diagnostics!.ConstraintUsages.Count,
-                method.Diagnostics.ConstraintUsages
+                method.Diagnostics!.ConstraintUsages
                     .Select(item => item.ConstraintId)
                     .Distinct(StringComparer.Ordinal)
                     .Count());
@@ -1582,7 +1582,7 @@ public sealed class M1ETests
             var offQueryPoint = tick == 5 ? y : x;
             var method = narrowedQuery.Methods.Single(item =>
                 item.Method == PastStateMethod.ConstraintBasedReconstruction);
-            Assert.Contains(method.Diagnostics.ConstraintUsages, usage =>
+            Assert.Contains(method.Diagnostics!.ConstraintUsages, usage =>
                 usage.ConstraintId == offQueryPoint.ConstraintId);
             var proofUsage = narrowedQuery.EvidenceUsage.Single(item =>
                 item.ConstraintId == offQueryPoint.ConstraintId);
@@ -1596,7 +1596,8 @@ public sealed class M1ETests
                 Assert.DoesNotContain(w.ConstraintId, candidate.UnresolvedConstraintIds);
                 Assert.Contains(offQueryPoint.SourceObservationId, candidate.GenerationEvidenceIds);
                 Assert.Contains(proofUsage.SourceGroupId!, candidate.GenerationSourceGroupIds);
-                Assert.Contains(offQueryPoint.SourceAncestryIds.Single(), candidate.SourceAncestryIds);
+                Assert.All(offQueryPoint.SourceAncestryIds, ancestry =>
+                    Assert.Contains(ancestry, candidate.SourceAncestryIds));
                 Assert.Contains(offQueryPoint.ConstraintId, candidate.UnresolvedConstraintIds);
                 Assert.DoesNotContain(offQueryPoint.ConstraintId, candidate.AppliedConstraintIds);
                 Assert.DoesNotContain(offQueryPoint.ConstraintId, candidate.ConflictingConstraintIds);
@@ -1623,7 +1624,7 @@ public sealed class M1ETests
                 item.ConstrainedTimeWindow.StartTick == 6 &&
                 item.ConstrainedTimeWindow.EndTick == 6))
             {
-                Assert.DoesNotContain(method.Diagnostics.ConstraintUsages,
+                Assert.DoesNotContain(method.Diagnostics!.ConstraintUsages,
                     usage => usage.ConstraintId == offQuery.ConstraintId);
                 Assert.All(compatible.Reconstruction.Candidates, candidate =>
                     Assert.DoesNotContain(offQuery.SourceObservationId,
@@ -1650,12 +1651,13 @@ public sealed class M1ETests
             item.Method == PastStateMethod.ConstraintBasedReconstruction);
         foreach (var offQuery in new[] { z, v })
         {
-            Assert.Contains(t3Method.Diagnostics.ConstraintUsages, usage =>
+            Assert.Contains(t3Method.Diagnostics!.ConstraintUsages, usage =>
                 usage.ConstraintId == offQuery.ConstraintId);
             Assert.All(threeTicks.Reconstruction.Candidates, candidate =>
             {
                 Assert.Contains(offQuery.SourceObservationId, candidate.GenerationEvidenceIds);
-                Assert.Contains(offQuery.SourceAncestryIds.Single(), candidate.SourceAncestryIds);
+                Assert.All(offQuery.SourceAncestryIds, ancestry =>
+                    Assert.Contains(ancestry, candidate.SourceAncestryIds));
             });
         }
         Assert.All(threeTicks.Reconstruction.Candidates, candidate =>
