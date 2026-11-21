@@ -490,6 +490,37 @@
           "receivedAtTick": 9
         }
       ]
+    },
+    {
+      "id": "R-redundant",
+      "group": "R",
+      "answerCondition": "none",
+      "originals": [
+        {
+          "id": "r-first",
+          "holderDeviceId": "D",
+          "evidenceKind": "person",
+          "observedTick": 5,
+          "regionIds": [
+            "a",
+            "b"
+          ],
+          "sourceAncestryId": "root-r-first",
+          "receivedAtTick": 8
+        },
+        {
+          "id": "r-second",
+          "holderDeviceId": "D2",
+          "evidenceKind": "person",
+          "observedTick": 5,
+          "regionIds": [
+            "a",
+            "b"
+          ],
+          "sourceAncestryId": "root-r-second",
+          "receivedAtTick": 9
+        }
+      ]
     }
   ]
 }
