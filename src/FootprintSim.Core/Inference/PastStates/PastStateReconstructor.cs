@@ -45,8 +45,22 @@ public sealed class PastStateReconstructor
         var reconstructionMethodId = MethodId(context.Query, PastStateMethod.ConstraintBasedReconstruction);
         var generationSources = context.GenerationDirectSourceIds.ToHashSet(StringComparer.Ordinal);
         var verificationSources = context.VerificationDirectSourceIds.ToHashSet(StringComparer.Ordinal);
+        // Audit off-query exact points used only in an impossibility proof.
+        // Such points must not directly narrow the requested target tick.
+        var eligibleProofEvidence = evidenceSet.Constraints
+            .Where(item => generationSources.Contains(item.DirectSourceId) ||
+                verificationSources.Contains(item.DirectSourceId))
+            .ToArray();
+        var proofWitnessIds = OffQueryImpossibilityProofWitnesses(
+                context,
+                eligibleProofEvidence.Where(item =>
+                    Overlaps(item.ConstrainedTimeWindow, context.Query.TargetTimeWindow)).ToArray(),
+                eligibleProofEvidence)
+            .Select(item => item.ConstraintId)
+            .ToHashSet(StringComparer.Ordinal);
         var reconstructionUsages = evidenceSet.Constraints
-            .Where(item => Overlaps(item.ConstrainedTimeWindow, context.Query.TargetTimeWindow))
+            .Where(item => Overlaps(item.ConstrainedTimeWindow, context.Query.TargetTimeWindow) ||
+                proofWitnessIds.Contains(item.ConstraintId))
             .Where(item => generationSources.Contains(item.DirectSourceId) ||
                 verificationSources.Contains(item.DirectSourceId))
             .Select(item => CreateUsage(
@@ -200,6 +214,18 @@ public sealed class PastStateReconstructor
             .ToArray();
         var generationGroups = new OperationalCausalTracer()
             .GroupSources(generation, AccessContext(query));
+        var offQueryProof = OffQueryImpossibilityProofWitnesses(
+            context, generation,
+            evidenceSet.Constraints.Where(item =>
+                generationSources.Contains(item.DirectSourceId)).ToArray());
+        // Proof-only points affect ancestry audit, not target-tick narrowing.
+        var generationAudit = generation.Concat(offQueryProof)
+            .DistinctBy(item => item.ConstraintId, StringComparer.Ordinal)
+            .OrderBy(item => item.ConstraintId, StringComparer.Ordinal)
+            .ToArray();
+        var generationAuditGroups = offQueryProof.Length == 0
+            ? generationGroups
+            : new OperationalCausalTracer().GroupSources(generationAudit, AccessContext(query));
         var confirmedGroupRegions = generationGroups
             .Select(group => generation
                 .Where(item => group.ConstraintIds.Contains(item.ConstraintId, StringComparer.Ordinal))
@@ -239,16 +265,16 @@ public sealed class PastStateReconstructor
                 .OrderBy(item => item, StringComparer.Ordinal)
                 .ToArray();
         }
-        var generationEvidenceIds = generation
+        var generationEvidenceIds = generationAudit
             .Select(item => item.SourceObservationId)
             .Distinct(StringComparer.Ordinal)
             .OrderBy(item => item, StringComparer.Ordinal)
             .ToArray();
-        var generationGroupIds = generationGroups
+        var generationGroupIds = generationAuditGroups
             .Select(item => item.SourceGroupId)
             .OrderBy(item => item, StringComparer.Ordinal)
             .ToArray();
-        var generationAncestry = generationGroups
+        var generationAncestry = generationAuditGroups
             .SelectMany(item => item.SourceAncestryIds)
             .Distinct(StringComparer.Ordinal)
             .OrderBy(item => item, StringComparer.Ordinal)
@@ -280,13 +306,13 @@ public sealed class PastStateReconstructor
                 .Distinct(StringComparer.Ordinal)
                 .OrderBy(item => item, StringComparer.Ordinal)
                 .ToArray();
-            var unresolved = generation
+            var unresolved = generationAudit
                 .Where(item => !applied.Contains(item.ConstraintId, StringComparer.Ordinal) &&
                     !conflicts.Contains(item.ConstraintId, StringComparer.Ordinal))
                 .Select(item => item.ConstraintId)
                 .OrderBy(item => item, StringComparer.Ordinal)
                 .ToArray();
-            var relations = generation
+            var relations = generationAudit
                 .Select(item => $"{item.ConstraintId}:{item.RelationKind}")
                 .Distinct(StringComparer.Ordinal)
                 .OrderBy(item => item, StringComparer.Ordinal)
@@ -301,7 +327,7 @@ public sealed class PastStateReconstructor
                 region,
                 generationEvidenceIds,
                 generationGroupIds,
-                generation.Select(item => item.ConstraintId));
+                generationAudit.Select(item => item.ConstraintId));
             return new PastStateCandidate
             {
                 CandidateId = candidateId,
@@ -328,7 +354,7 @@ public sealed class PastStateReconstructor
             .SelectMany(item => item.VerificationSourceGroupIds.Concat(item.SharedAncestrySourceGroupIds))
             .Distinct(StringComparer.Ordinal)
             .Count();
-        var candidateGenerationSteps = 1 + generationGroups.Count + candidates.Length;
+        var candidateGenerationSteps = 1 + generationAuditGroups.Count + candidates.Length;
         var candidateVerificationSteps = verificationGroupsInspected;
         var reconstructionSteps = candidateGenerationSteps + candidateVerificationSteps;
         var reconstructionId = InteractionStableIdentifier.Create(
@@ -348,10 +374,10 @@ public sealed class PastStateReconstructor
             ReconstructionSteps = reconstructionSteps,
             CandidateGenerationSteps = candidateGenerationSteps,
             CandidateVerificationSteps = candidateVerificationSteps,
-            EvidenceRecordsInspected = evidenceSet.ObservationIds.Count + generation.Length +
+            EvidenceRecordsInspected = evidenceSet.ObservationIds.Count + generationAudit.Length +
                 availableVerificationConstraintCount,
-            SourceGroupsInspected = generationGroups.Count + verificationGroupsInspected,
-            PublicRelationsInspected = generation.Length + availableVerificationConstraintCount
+            SourceGroupsInspected = generationAuditGroups.Count + verificationGroupsInspected,
+            PublicRelationsInspected = generationAudit.Length + availableVerificationConstraintCount
         };
     }
 
@@ -874,6 +900,35 @@ public sealed class PastStateReconstructor
             return new TemporalSlice(window, conflict ? baseRegions : narrowed.ToArray(),
                 exact, conflict, overlappingConflicts, overlappingConfirmed);
         }).ToArray();
+    }
+
+    // A received exact Person point is a proof-only dependency when an
+    // overlapping broad Confirmed claim is impossible throughout its interval.
+    // Do not turn a proof dependency into a target-tick position constraint.
+    private static CausalTracingConstraint[] OffQueryImpossibilityProofWitnesses(
+        PastStatePublicContext context,
+        IReadOnlyList<CausalTracingConstraint> queryEvidence,
+        IReadOnlyList<CausalTracingConstraint> received)
+    {
+        var target = context.Query.TargetTimeWindow;
+        var incompatibleIntervals = queryEvidence
+            .Where(IsConfirmedPersonEvidence)
+            .Where(item => item.TargetEntityId == context.Query.TargetEntityId &&
+                item.ConstrainedTimeWindow.StartTick < item.ConstrainedTimeWindow.EndTick &&
+                Overlaps(item.ConstrainedTimeWindow, target))
+            .Where(item => IsImpossibleConfirmedInterval(context, item, received))
+            .ToArray();
+        return received.Where(item => IsConfirmedPersonEvidence(item) &&
+                item.TargetEntityId == context.Query.TargetEntityId &&
+                item.ConstrainedTimeWindow.StartTick == item.ConstrainedTimeWindow.EndTick &&
+                !Overlaps(item.ConstrainedTimeWindow, target))
+            .Where(item => incompatibleIntervals.Any(interval =>
+                item.ConstraintId != interval.ConstraintId &&
+                Overlaps(item.ConstrainedTimeWindow, interval.ConstrainedTimeWindow) &&
+                !item.AllowedRegionIds.Intersect(interval.AllowedRegionIds, StringComparer.Ordinal).Any()))
+            .DistinctBy(item => item.ConstraintId, StringComparer.Ordinal)
+            .OrderBy(item => item.ConstraintId, StringComparer.Ordinal)
+            .ToArray();
     }
 
     // This is a bounded, event-partitioned impossibility check: never expand a

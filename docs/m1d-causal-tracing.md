@@ -122,7 +122,12 @@ query window), the M1-E time-slice path preserves outer alternatives and
 records the incompatible interval's constraint/source lineage as conflicting.
 An off-query point is used only to check whether the broad interval is
 impossible; it does not narrow query candidates as though it occurred at
-the requested tick. Unreceived, private, device-only or out-of-target
+the requested tick. If that point participates in the proof, its received
+observation, source group and ancestry remain visible in candidate provenance,
+and its constraint appears as proof-only unresolved (not applied or conflicting
+at the requested tick) and as used in reconstruction method diagnostics.
+Compatible, unavailable, device-only and irrelevant off-query points do not
+gain this proof-use attribution. Unreceived, private, device-only or out-of-target
 observations cannot supply this proof. This bounded check does not establish
 full temporal consistency. It does not silently overwrite a conservative
 conflict result with an exact-tick union. Candidate verification marks a

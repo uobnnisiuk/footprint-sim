@@ -1579,11 +1579,27 @@ public sealed class M1ETests
                 startTick: tick, endTick: tick, publicStates: publicStates);
             Assert.Equal(["a", "b", "c"], narrowedQuery.Reconstruction.Candidates
                 .Select(item => item.RegionId).OrderBy(item => item, StringComparer.Ordinal));
+            var offQueryPoint = tick == 5 ? y : x;
+            var method = narrowedQuery.Methods.Single(item =>
+                item.Method == PastStateMethod.ConstraintBasedReconstruction);
+            Assert.Contains(method.Diagnostics.ConstraintUsages, usage =>
+                usage.ConstraintId == offQueryPoint.ConstraintId);
+            var proofUsage = narrowedQuery.EvidenceUsage.Single(item =>
+                item.ConstraintId == offQueryPoint.ConstraintId);
+            Assert.Equal(PastStateEvidenceUsageDisposition.Used, proofUsage.Disposition);
+            Assert.Contains(method.MethodId, proofUsage.MethodIds);
+            Assert.NotNull(proofUsage.SourceGroupId);
             Assert.All(narrowedQuery.Reconstruction.Candidates, candidate =>
             {
                 Assert.Equal(PastStateCandidateDisposition.Conflicting, candidate.Disposition);
                 Assert.Contains(w.ConstraintId, candidate.ConflictingConstraintIds);
                 Assert.DoesNotContain(w.ConstraintId, candidate.UnresolvedConstraintIds);
+                Assert.Contains(offQueryPoint.SourceObservationId, candidate.GenerationEvidenceIds);
+                Assert.Contains(proofUsage.SourceGroupId!, candidate.GenerationSourceGroupIds);
+                Assert.Contains(offQueryPoint.SourceAncestryIds.Single(), candidate.SourceAncestryIds);
+                Assert.Contains(offQueryPoint.ConstraintId, candidate.UnresolvedConstraintIds);
+                Assert.DoesNotContain(offQueryPoint.ConstraintId, candidate.AppliedConstraintIds);
+                Assert.DoesNotContain(offQueryPoint.ConstraintId, candidate.ConflictingConstraintIds);
             });
         }
 
@@ -1601,6 +1617,18 @@ public sealed class M1ETests
             var compatible = Ar43TemporalFixture(facts,
                 startTick: 5, endTick: 5, publicStates: publicStates);
             Assert.Equal(["a"], compatible.Reconstruction.Candidates.Select(item => item.RegionId));
+            var method = compatible.Methods.Single(item =>
+                item.Method == PastStateMethod.ConstraintBasedReconstruction);
+            foreach (var offQuery in facts.Where(item =>
+                item.ConstrainedTimeWindow.StartTick == 6 &&
+                item.ConstrainedTimeWindow.EndTick == 6))
+            {
+                Assert.DoesNotContain(method.Diagnostics.ConstraintUsages,
+                    usage => usage.ConstraintId == offQuery.ConstraintId);
+                Assert.All(compatible.Reconstruction.Candidates, candidate =>
+                    Assert.DoesNotContain(offQuery.SourceObservationId,
+                        candidate.GenerationEvidenceIds));
+            }
             Assert.All(compatible.Reconstruction.Candidates, candidate =>
             {
                 Assert.Equal(PastStateCandidateDisposition.Supported, candidate.Disposition);
@@ -1618,6 +1646,18 @@ public sealed class M1ETests
             publicStates: [PublicState(4, 6, ["a", "b", "c"])]);
         Assert.Equal(["a", "b", "c"], threeTicks.Reconstruction.Candidates
             .Select(item => item.RegionId).OrderBy(item => item, StringComparer.Ordinal));
+        var t3Method = threeTicks.Methods.Single(item =>
+            item.Method == PastStateMethod.ConstraintBasedReconstruction);
+        foreach (var offQuery in new[] { z, v })
+        {
+            Assert.Contains(t3Method.Diagnostics.ConstraintUsages, usage =>
+                usage.ConstraintId == offQuery.ConstraintId);
+            Assert.All(threeTicks.Reconstruction.Candidates, candidate =>
+            {
+                Assert.Contains(offQuery.SourceObservationId, candidate.GenerationEvidenceIds);
+                Assert.Contains(offQuery.SourceAncestryIds.Single(), candidate.SourceAncestryIds);
+            });
+        }
         Assert.All(threeTicks.Reconstruction.Candidates, candidate =>
             Assert.Contains(wLong.ConstraintId, candidate.ConflictingConstraintIds));
 
