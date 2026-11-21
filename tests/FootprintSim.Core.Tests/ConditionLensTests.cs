@@ -23,7 +23,7 @@ public sealed class ConditionLensTests
     {
         var report = ConditionLensAnalysis.Run(Fixture());
         Assert.Equal(24, report.Index.Count);
-        Assert.Equal(["02", "04", "06", "09", "10"], report.Index.Where(x =>
+        Assert.Equal(["02", "04", "06", "09", "10", "12"], report.Index.Where(x =>
             x.Status == "limited-analogy-implemented").Select(x => x.Id));
         var a = report.Cases.Single(x => x.Id == "A-none");
         var b = report.Cases.Single(x => x.Id == "B-none");
@@ -107,10 +107,32 @@ public sealed class ConditionLensTests
                     .EnumerateArray().Single(m => m.GetProperty("mode").GetString() == "09")
                     .GetProperty("methodComparison")));
             }
+
+            var savedRepeat = savedReport.RootElement.GetProperty("cases")
+                .EnumerateArray().Single(row =>
+                    row.GetProperty("id").GetString() == "T-repeat");
+            var savedTwelve = savedRepeat.GetProperty("modes").EnumerateArray()
+                .Single(mode => mode.GetProperty("mode").GetString() == "12");
+            var twelveQuestion = savedTwelve.GetProperty("questions").EnumerateArray().Single();
+            Assert.Equal("repeated-temporal-person-observations-share-source-root",
+                twelveQuestion.GetProperty("reasonCode").GetString());
+            Assert.Equal(2, twelveQuestion.GetProperty("receivedOriginalIds").GetArrayLength());
+            Assert.Equal(2, twelveQuestion.GetProperty("receivedObservationIds").GetArrayLength());
+            Assert.Equal("root-t-shared",
+                twelveQuestion.GetProperty("sourceAncestryIds")[0].GetString());
+            Assert.Equal(JsonDefaults.Serialize(savedRepeat.GetProperty("modes")
+                .EnumerateArray().First().GetProperty("methodComparison")),
+                JsonDefaults.Serialize(savedTwelve.GetProperty("methodComparison")));
+            Assert.Equal(4, savedReport.RootElement.GetProperty("schemaVersion").GetInt32());
+            var firstBytes = await File.ReadAllBytesAsync(Path.Combine(output, "condition-lenses.json"));
+            Assert.Equal(0, await CliApplication.RunAsync(
+                ["evaluate-condition-lenses", "--fixture", FixturePath(), "--output", output]));
+            Assert.Equal(firstBytes,
+                await File.ReadAllBytesAsync(Path.Combine(output, "condition-lenses.json")));
             Assert.Equal(24, expected.Index.Count);
-            Assert.Equal(26, expected.Cases.Count);
-            Assert.Equal(3, expected.SchemaVersion);
-            Assert.All(expected.Cases, c => Assert.Equal(7, c.Modes.Count));
+            Assert.Equal(35, expected.Cases.Count);
+            Assert.Equal(4, expected.SchemaVersion);
+            Assert.All(expected.Cases, c => Assert.Equal(8, c.Modes.Count));
             Assert.Equal(["b"], expected.Cases.Single(c => c.Id == "B-eligible")
                 .Modes[0].MethodComparison.Methods.Single(m =>
                     m.Method == "distributed-reconstruction").OuterCandidateRegionIds);
@@ -130,7 +152,7 @@ public sealed class ConditionLensTests
         var report = ConditionLensAnalysis.Run(Fixture());
         foreach (var row in report.Cases)
         {
-            Assert.Equal(["none", "02", "04", "06", "09", "10", "combined"], row.Modes.Select(x => x.Mode));
+            Assert.Equal(["none", "02", "04", "06", "09", "10", "12", "combined"], row.Modes.Select(x => x.Mode));
             Assert.Empty(row.Modes[0].Questions);
             foreach (var mode in row.Modes.Skip(1))
             {
@@ -258,7 +280,7 @@ public sealed class ConditionLensTests
             var saved = await File.ReadAllTextAsync(Path.Combine(output, "condition-lenses.json"));
             var report = ConditionLensAnalysis.Run(Fixture());
             Assert.Equal(JsonDefaults.Serialize(report) + "\n", saved);
-            Assert.Equal(3, report.SchemaVersion);
+            Assert.Equal(4, report.SchemaVersion);
             var eligible = report.Cases.Single(c => c.Id == "B-eligible");
             Assert.Empty(eligible.Modes.Single(m => m.Mode == "06").Questions);
             var question = Assert.Single(eligible.Modes.Single(m => m.Mode == "09").Questions);
@@ -446,6 +468,65 @@ public sealed class ConditionLensTests
             .Modes.Single(m => m.Mode == "09").Questions);
         Assert.Empty(report.Cases.Single(c => c.Id == "S3")
             .Modes.Single(m => m.Mode == "09").Questions);
+        Assert.Equal(JsonDefaults.Serialize(report),
+            JsonDefaults.Serialize(ConditionLensAnalysis.Run(Fixture())));
+    }
+
+
+    [Fact]
+    public void TwelfthLensSeparatesAdjacentPersonObservationsFromCopiesAndOtherRoots()
+    {
+        var report = ConditionLensAnalysis.Run(Fixture());
+        var repeated = report.Cases.Single(c => c.Id == "T-repeat");
+        var copied = report.Cases.Single(c => c.Id == "T-copy");
+        var cutoff = report.Cases.Single(c => c.Id == "T-cutoff");
+        var question = Assert.Single(repeated.Modes.Single(m => m.Mode == "12").Questions);
+        Assert.Equal("repeated-temporal-person-observations:5", question.QuestionId);
+        Assert.Equal("repeated-temporal-person-observations-share-source-root",
+            question.ReasonCode);
+        Assert.Equal("original-observation-generation-provenance-and-times-for-both-received-person-records",
+            question.RequiredInformation);
+        Assert.Equal(["t-current", "t-prior"], question.ReceivedOriginalIds);
+        Assert.Equal(2, question.ReceivedObservationIds.Count);
+        Assert.Equal(2, question.ReceivedObservationIds.Distinct(StringComparer.Ordinal).Count());
+        Assert.All(question.ReceivedObservationIds, id => Assert.False(string.IsNullOrWhiteSpace(id)));
+        Assert.Equal(["root-t-shared"], question.SourceAncestryIds);
+        Assert.Contains("ticks 4 and 5", question.Explanation, StringComparison.Ordinal);
+        Assert.Empty(repeated.Modes.Single(m => m.Mode == "10").Questions);
+        Assert.Single(repeated.Modes.Single(m => m.Mode == "06").Questions);
+        Assert.Equal(JsonDefaults.Serialize(repeated.Modes), JsonDefaults.Serialize(copied.Modes));
+        Assert.Equal(JsonDefaults.Serialize(repeated.Modes), JsonDefaults.Serialize(cutoff.Modes));
+        Assert.Equal(JsonDefaults.Serialize(repeated.ReceivedOriginalIds),
+            JsonDefaults.Serialize(copied.ReceivedOriginalIds));
+        Assert.Equal(JsonDefaults.Serialize(repeated.Modes[0].MethodComparison),
+            JsonDefaults.Serialize(copied.Modes[0].MethodComparison));
+
+        foreach (var id in new[] { "T-independent", "T-future-prior",
+            "T-future-current", "T-device", "T-gap", "T-sametick" })
+        {
+            var row = report.Cases.Single(c => c.Id == id);
+            Assert.Empty(row.Modes.Single(m => m.Mode == "12").Questions);
+            Assert.Equal(JsonDefaults.Serialize(row.Modes[0].MethodComparison),
+                JsonDefaults.Serialize(row.Modes.Single(m => m.Mode == "combined").MethodComparison));
+        }
+        var futurePrior = report.Cases.Single(c => c.Id == "T-future-prior");
+        var futureCurrent = report.Cases.Single(c => c.Id == "T-future-current");
+        Assert.DoesNotContain("t-prior", futurePrior.ReceivedOriginalIds);
+        Assert.DoesNotContain("t-current", futureCurrent.ReceivedOriginalIds);
+        Assert.Single(futureCurrent.Modes.Single(m => m.Mode == "10").Questions);
+        Assert.Single(report.Cases.Single(c => c.Id == "T-sametick")
+            .Modes.Single(m => m.Mode == "06").Questions);
+        Assert.Empty(report.Cases.Single(c => c.Id == "T-device")
+            .Modes.Single(m => m.Mode == "12").Questions);
+        Assert.All(report.Cases, row =>
+        {
+            Assert.Equal(8, row.Modes.Count);
+            Assert.Equal(JsonDefaults.Serialize(row.Modes[0].MethodComparison),
+                JsonDefaults.Serialize(row.Modes.Single(m => m.Mode == "12").MethodComparison));
+            Assert.All(row.Modes.SelectMany(m => m.Questions),
+                q => Assert.All(q.ReceivedOriginalIds,
+                    id => Assert.Contains(id, row.ReceivedOriginalIds)));
+        });
         Assert.Equal(JsonDefaults.Serialize(report),
             JsonDefaults.Serialize(ConditionLensAnalysis.Run(Fixture())));
     }

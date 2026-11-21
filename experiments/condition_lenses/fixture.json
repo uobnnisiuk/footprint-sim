@@ -784,6 +784,268 @@
           "receivedAtTick": 9
         }
       ]
+    },
+    {
+      "id": "T-repeat",
+      "group": "T-repeat",
+      "answerCondition": "none",
+      "originals": [
+        {
+          "id": "t-prior",
+          "holderDeviceId": "D",
+          "evidenceKind": "person",
+          "observedTick": 4,
+          "regionIds": [
+            "b"
+          ],
+          "sourceAncestryId": "root-t-shared",
+          "receivedAtTick": 8
+        },
+        {
+          "id": "t-current",
+          "holderDeviceId": "D2",
+          "evidenceKind": "person",
+          "observedTick": 5,
+          "regionIds": [
+            "b"
+          ],
+          "sourceAncestryId": "root-t-shared",
+          "receivedAtTick": 9
+        }
+      ]
+    },
+    {
+      "id": "T-copy",
+      "group": "T-repeat",
+      "answerCondition": "duplicate",
+      "originals": [
+        {
+          "id": "t-prior",
+          "holderDeviceId": "D",
+          "evidenceKind": "person",
+          "observedTick": 4,
+          "regionIds": [
+            "b"
+          ],
+          "sourceAncestryId": "root-t-shared",
+          "receivedAtTick": 8
+        },
+        {
+          "id": "t-current",
+          "holderDeviceId": "D2",
+          "evidenceKind": "person",
+          "observedTick": 5,
+          "regionIds": [
+            "b"
+          ],
+          "sourceAncestryId": "root-t-shared",
+          "receivedAtTick": 9
+        }
+      ],
+      "duplicateFirstReceipt": true
+    },
+    {
+      "id": "T-cutoff",
+      "group": "T-cutoff",
+      "answerCondition": "none",
+      "originals": [
+        {
+          "id": "t-prior",
+          "holderDeviceId": "D",
+          "evidenceKind": "person",
+          "observedTick": 4,
+          "regionIds": [
+            "b"
+          ],
+          "sourceAncestryId": "root-t-shared",
+          "receivedAtTick": 8
+        },
+        {
+          "id": "t-current",
+          "holderDeviceId": "D2",
+          "evidenceKind": "person",
+          "observedTick": 5,
+          "regionIds": [
+            "b"
+          ],
+          "sourceAncestryId": "root-t-shared",
+          "receivedAtTick": 10
+        }
+      ]
+    },
+    {
+      "id": "T-independent",
+      "group": "T-independent",
+      "answerCondition": "none",
+      "originals": [
+        {
+          "id": "t-prior",
+          "holderDeviceId": "D",
+          "evidenceKind": "person",
+          "observedTick": 4,
+          "regionIds": [
+            "b"
+          ],
+          "sourceAncestryId": "root-t-prior",
+          "receivedAtTick": 8
+        },
+        {
+          "id": "t-current",
+          "holderDeviceId": "D2",
+          "evidenceKind": "person",
+          "observedTick": 5,
+          "regionIds": [
+            "b"
+          ],
+          "sourceAncestryId": "root-t-current",
+          "receivedAtTick": 9
+        }
+      ]
+    },
+    {
+      "id": "T-future-prior",
+      "group": "T-future-prior",
+      "answerCondition": "none",
+      "originals": [
+        {
+          "id": "t-prior",
+          "holderDeviceId": "D",
+          "evidenceKind": "person",
+          "observedTick": 4,
+          "regionIds": [
+            "b"
+          ],
+          "sourceAncestryId": "root-t-shared",
+          "receivedAtTick": 11
+        },
+        {
+          "id": "t-current",
+          "holderDeviceId": "D2",
+          "evidenceKind": "person",
+          "observedTick": 5,
+          "regionIds": [
+            "b"
+          ],
+          "sourceAncestryId": "root-t-shared",
+          "receivedAtTick": 9
+        }
+      ]
+    },
+    {
+      "id": "T-future-current",
+      "group": "T-future-current",
+      "answerCondition": "none",
+      "originals": [
+        {
+          "id": "t-prior",
+          "holderDeviceId": "D",
+          "evidenceKind": "person",
+          "observedTick": 4,
+          "regionIds": [
+            "b"
+          ],
+          "sourceAncestryId": "root-t-shared",
+          "receivedAtTick": 8
+        },
+        {
+          "id": "t-current",
+          "holderDeviceId": "D2",
+          "evidenceKind": "person",
+          "observedTick": 5,
+          "regionIds": [
+            "b"
+          ],
+          "sourceAncestryId": "root-t-shared",
+          "receivedAtTick": 11
+        }
+      ]
+    },
+    {
+      "id": "T-device",
+      "group": "T-device",
+      "answerCondition": "none",
+      "originals": [
+        {
+          "id": "t-prior",
+          "holderDeviceId": "D",
+          "evidenceKind": "device",
+          "observedTick": 4,
+          "regionIds": [
+            "b"
+          ],
+          "sourceAncestryId": "root-t-shared",
+          "receivedAtTick": 8
+        },
+        {
+          "id": "t-current",
+          "holderDeviceId": "D2",
+          "evidenceKind": "person",
+          "observedTick": 5,
+          "regionIds": [
+            "b"
+          ],
+          "sourceAncestryId": "root-t-shared",
+          "receivedAtTick": 9
+        }
+      ]
+    },
+    {
+      "id": "T-gap",
+      "group": "T-gap",
+      "answerCondition": "none",
+      "originals": [
+        {
+          "id": "t-prior",
+          "holderDeviceId": "D",
+          "evidenceKind": "person",
+          "observedTick": 3,
+          "regionIds": [
+            "b"
+          ],
+          "sourceAncestryId": "root-t-shared",
+          "receivedAtTick": 8
+        },
+        {
+          "id": "t-current",
+          "holderDeviceId": "D2",
+          "evidenceKind": "person",
+          "observedTick": 5,
+          "regionIds": [
+            "b"
+          ],
+          "sourceAncestryId": "root-t-shared",
+          "receivedAtTick": 9
+        }
+      ]
+    },
+    {
+      "id": "T-sametick",
+      "group": "T-sametick",
+      "answerCondition": "none",
+      "originals": [
+        {
+          "id": "t-prior",
+          "holderDeviceId": "D",
+          "evidenceKind": "person",
+          "observedTick": 5,
+          "regionIds": [
+            "b"
+          ],
+          "sourceAncestryId": "root-t-shared",
+          "receivedAtTick": 8
+        },
+        {
+          "id": "t-current",
+          "holderDeviceId": "D2",
+          "evidenceKind": "person",
+          "observedTick": 5,
+          "regionIds": [
+            "b"
+          ],
+          "sourceAncestryId": "root-t-shared",
+          "receivedAtTick": 9
+        }
+      ]
     }
   ]
 }

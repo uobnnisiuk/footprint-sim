@@ -67,7 +67,7 @@ public sealed record ConditionLensOriginalSpec(
     IReadOnlyList<string> RegionIds, string SourceAncestryId, long? ReceivedAtTick);
 
 /// <summary>
-/// Five bounded, source-backed question lenses on the existing receipt bridge.
+/// Six bounded, source-backed question lenses on the existing receipt bridge.
 /// Neither a lens nor a proposed answer is an additional inference constraint.
 /// Every reported candidate comes from the unmodified M1-D/E comparison.
 /// </summary>
@@ -86,12 +86,13 @@ public static class ConditionLensAnalysis
         Names.Select((name, index) => new ConditionLensIndexEntry(
             (index + 1).ToString("D2", System.Globalization.CultureInfo.InvariantCulture),
             name, PaliSource,
-            index is 1 or 3 or 5 or 8 or 9 ? "limited-analogy-implemented" : "unimplemented-unassessed",
+            index is 1 or 3 or 5 or 8 or 9 or 11 ? "limited-analogy-implemented" : "unimplemented-unassessed",
             index == 1 ? "received-device-subject-check" :
             index == 3 ? "received-adjacent-tick-person-check" :
             index == 5 ? "received-same-tick-person-evidence-check" :
             index == 8 ? "received-person-source-root-removal-dependence" :
             index == 9 ? "received-prior-tick-person-support-check" :
+            index == 11 ? "received-adjacent-distinct-person-observations-shared-root-check" :
             "no-validated-footprint-mapping")).ToArray();
 
     public static ConditionLensReport Run(byte[] fixtureBytes)
@@ -283,6 +284,7 @@ public static class ConditionLensAnalysis
                 new ConditionLensModeResult("06", detected.Where(q => q.LensIds.Contains("06")).ToArray(), comparison),
                 new ConditionLensModeResult("09", detected.Where(q => q.LensIds.Contains("09")).ToArray(), comparison),
                 new ConditionLensModeResult("10", detected.Where(q => q.LensIds.Contains("10")).ToArray(), comparison),
+                new ConditionLensModeResult("12", detected.Where(q => q.LensIds.Contains("12")).ToArray(), comparison),
                 new ConditionLensModeResult("combined", detected, comparison)
             };
             results.Add(new ConditionLensCaseResult(
@@ -328,7 +330,7 @@ public static class ConditionLensAnalysis
             }
         }
         return new ConditionLensReport(
-            3, fixture.ScenarioId, fixture.Seed, fixture.TargetPersonId,
+            4, fixture.ScenarioId, fixture.Seed, fixture.TargetPersonId,
             fixture.TargetTick, fixture.ReceiptCutoffTick, Index, results, differences);
     }
 
@@ -447,6 +449,45 @@ public static class ConditionLensAnalysis
                     Origins(prior),
                     "received-person-evidence-at-target-tick-or-declared-forward-public-reachability",
                     "Received Person evidence at the preceding tick is not direct evidence at the target tick. Verify target-tick Person evidence or declared forward public reachability; do not presume any transition."));
+            }
+        }
+
+        // 12 is a question about provenance of two DIFFERENT, already-received
+        // Person observations on adjacent ticks, not a rule for movement or
+        // duplicate suppression. Same ExternalSource does not mean same fact.
+        if (tick > 0 && persons.Length > 0)
+        {
+            var preceding = received.ReceivedRecords.Where(r =>
+                r.OriginalObservation.ObservedTimeWindow.StartTick == tick - 1 &&
+                r.OriginalObservation.ObservedTimeWindow.EndTick == tick - 1 &&
+                r.OriginalObservation.IsPersonEvidence &&
+                !r.OriginalObservation.IsDeviceOnlyEvidence &&
+                r.OriginalObservation.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                r.OriginalObservation.ObservedParticipants.Any(p =>
+                    p.EntityId == target && p.EntityKind == InteractionEntityKind.Person))
+                .OrderBy(r => r.OriginalRecordId, StringComparer.Ordinal).ToArray();
+            foreach (var earlier in preceding)
+            {
+                var earlierRoots = Origins([earlier]);
+                if (earlierRoots.Length != 1)
+                    continue;
+                foreach (var current in persons)
+                {
+                    // Two distinct originals and observations, one known source root.
+                    // A duplicate receipt of an original is already removed by Builder.
+                    if (earlier.OriginalRecordId == current.OriginalRecordId ||
+                        earlier.OriginalObservationId == current.OriginalObservationId ||
+                        !Origins([current]).SequenceEqual(earlierRoots))
+                        continue;
+                    var relevant = new[] { earlier, current };
+                    questions.Add(new ConditionLensQuestion(
+                        "repeated-temporal-person-observations:" + tick, ["12"],
+                        "repeated-temporal-person-observations-share-source-root",
+                        target, tick, cutoff, RecordIds(relevant),
+                        ObservationIds(relevant), earlierRoots,
+                        "original-observation-generation-provenance-and-times-for-both-received-person-records",
+                        $"Received Person observations at ticks {tick - 1} and {tick} have distinct original and observation IDs but share one source root. Verify whether each is a separate original observation rather than a copy or re-timestamped record; do not infer continuous presence or independent sources."));
+                }
             }
         }
         // 09 diagnoses dependence on independently received Person roots.
