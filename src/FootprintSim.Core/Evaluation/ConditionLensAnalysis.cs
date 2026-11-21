@@ -237,7 +237,14 @@ public static class ConditionLensAnalysis
             var rootRemovals = new List<ConditionLensRootRemoval>();
             foreach (var rootGroup in rootGroups)
             {
-                var removedIds = rootGroup.Select(x => x.Record.OriginalRecordId)
+                // Determine the eligible Person roots from received Person records,
+                // but remove ALL already-received records sharing that same source
+                // root, including Device records. One root is one evidence source.
+                var removedIds = received.ReceivedRecords
+                    .Where(r => r.OriginalObservation.Provenance.Any(p =>
+                        p.Kind == InteractionProvenanceKind.ExternalSource &&
+                        p.SourceIdentifier == rootGroup.Key))
+                    .Select(r => r.OriginalRecordId)
                     .Distinct(StringComparer.Ordinal)
                     .OrderBy(x => x, StringComparer.Ordinal).ToArray();
                 var remainingReceipts = receipts
