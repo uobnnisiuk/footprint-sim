@@ -257,7 +257,7 @@ public sealed class ConditionLensTests
                 Assert.Empty(reconstruction.RemovedOuter);
                 Assert.Equal(2, reconstruction.BeforeAvailableSourceGroups);
                 Assert.Equal(1, reconstruction.AfterAvailableSourceGroups);
-                Assert.Equal(1, removed.RemovedReceivedOriginalIds.Count);
+                Assert.Single(removed.RemovedReceivedOriginalIds);
             }
             Assert.Equal(["b", "c"], eligible.RootRemovals.Single(r =>
                 r.SourceRootId == "root-first").Methods.Single(m =>
