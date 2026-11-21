@@ -1561,6 +1561,81 @@ public sealed class M1ETests
         }
     }
 
+
+    [Fact]
+    public void Ar85OffQueryExactWitnessesProtectBroadConfirmedWithoutFalseConflicts()
+    {
+        var x = Ar43TemporalEvidence("x", 5, ["a"]);
+        var y = Ar43TemporalEvidence("y", 6, ["a"]);
+        var w = Ar43TemporalEvidence("w", 5, ["b"], endTick: 6);
+        PublicCandidateWarpStateDefinition[] publicStates =
+            [PublicState(5, 6, ["a", "b", "c"])];
+
+        // C1q: querying only one tick must not hide another eligible point
+        // that rules out the broad witness's only remaining possible tick.
+        foreach (var tick in new long[] { 5, 6 })
+        {
+            var narrowedQuery = Ar43TemporalFixture([x, y, w],
+                startTick: tick, endTick: tick, publicStates: publicStates);
+            Assert.Equal(["a", "b", "c"], narrowedQuery.Reconstruction.Candidates
+                .Select(item => item.RegionId).OrderBy(item => item, StringComparer.Ordinal));
+            Assert.All(narrowedQuery.Reconstruction.Candidates, candidate =>
+            {
+                Assert.Equal(PastStateCandidateDisposition.Conflicting, candidate.Disposition);
+                Assert.Contains(w.ConstraintId, candidate.ConflictingConstraintIds);
+                Assert.DoesNotContain(w.ConstraintId, candidate.UnresolvedConstraintIds);
+            });
+        }
+
+        // A compatible point at tick 6, or no known point there, permits
+        // w at tick 6; the query at tick 5 remains legitimately narrowed.
+        var compatibleY = Ar43TemporalEvidence("y", 6, ["b"]);
+        foreach (var facts in new IReadOnlyList<CausalTracingConstraint>[]
+        {
+            [x, compatibleY, w],
+            [x, w],
+            [x, Ar43TemporalEvidence("future-y", 6, ["a"], availableTick: 21), w],
+            [x, Ar43TemporalEvidence("device-y", 6, ["a"], deviceOnly: true), w]
+        })
+        {
+            var compatible = Ar43TemporalFixture(facts,
+                startTick: 5, endTick: 5, publicStates: publicStates);
+            Assert.Equal(["a"], compatible.Reconstruction.Candidates.Select(item => item.RegionId));
+            Assert.All(compatible.Reconstruction.Candidates, candidate =>
+            {
+                Assert.Equal(PastStateCandidateDisposition.Supported, candidate.Disposition);
+                Assert.DoesNotContain(w.ConstraintId, candidate.ConflictingConstraintIds);
+            });
+        }
+
+        // T3q: the same condition applies when two off-query point witnesses
+        // bound the interval on both sides of the target tick.
+        var z = Ar43TemporalEvidence("z", 4, ["a"]);
+        var v = Ar43TemporalEvidence("v", 6, ["a"]);
+        var wLong = Ar43TemporalEvidence("wide", 4, ["b"], endTick: 6);
+        var threeTicks = Ar43TemporalFixture([z, x, v, wLong],
+            startTick: 5, endTick: 5,
+            publicStates: [PublicState(4, 6, ["a", "b", "c"])]);
+        Assert.Equal(["a", "b", "c"], threeTicks.Reconstruction.Candidates
+            .Select(item => item.RegionId).OrderBy(item => item, StringComparer.Ordinal));
+        Assert.All(threeTicks.Reconstruction.Candidates, candidate =>
+            Assert.Contains(wLong.ConstraintId, candidate.ConflictingConstraintIds));
+
+        // The same cross-window proof must reach independent verification,
+        // without treating a broad witness as an exact-tick refutation.
+        var verification = Ar43TemporalFixture([x, y], [w],
+            startTick: 5, endTick: 5, publicStates: publicStates);
+        Assert.All(verification.Reconstruction.Verification, check =>
+        {
+            Assert.Equal(CandidateVerificationDisposition.Conflicting, check.Disposition);
+            Assert.Contains(w.ConstraintId, check.ConflictingConstraintIds);
+            Assert.Empty(check.RefutingConstraintIds);
+        });
+        Assert.Equal(JsonDefaults.Serialize(verification),
+            JsonDefaults.Serialize(Ar43TemporalFixture([y, x], [w],
+                startTick: 5, endTick: 5, publicStates: publicStates)));
+    }
+
     private static CausalTracingConstraint Ar43TemporalEvidence(
         string source, long tick, IReadOnlyList<string> regions,
         long availableTick = 20, EvidenceState state = EvidenceState.Confirmed,

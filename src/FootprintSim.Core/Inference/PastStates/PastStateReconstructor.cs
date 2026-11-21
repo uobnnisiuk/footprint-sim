@@ -228,7 +228,9 @@ public sealed class PastStateReconstructor
         // location. Keep the legacy common-window layer separate from queries
         // whose evidence has distinct or only partially overlapping times.
         var temporalSlices = RequiresTemporalProjection(context, evidenceSet)
-            ? BuildTemporalSlices(context, generation, [])
+            ? BuildTemporalSlices(context, generation, [],
+                evidenceSet.Constraints.Where(item =>
+                    generationSources.Contains(item.DirectSourceId)).ToArray())
             : null;
         if (temporalSlices is not null)
         {
@@ -374,7 +376,10 @@ public sealed class PastStateReconstructor
             ? BuildTemporalSlices(context, evidenceSet.Constraints
                 .Where(item => generationSources.Contains(item.DirectSourceId))
                 .Where(item => Overlaps(item.ConstrainedTimeWindow, context.Query.TargetTimeWindow))
-                .ToArray(), constraints)
+                .ToArray(), constraints,
+                evidenceSet.Constraints.Where(item =>
+                    generationSources.Contains(item.DirectSourceId) ||
+                    verificationSources.Contains(item.DirectSourceId)).ToArray())
             : null;
 
         return candidates.Select(candidate =>
@@ -776,7 +781,8 @@ public sealed class PastStateReconstructor
     private static IReadOnlyList<TemporalSlice> BuildTemporalSlices(
         PastStatePublicContext context,
         IReadOnlyList<CausalTracingConstraint> generation,
-        IReadOnlyList<CausalTracingConstraint> verification)
+        IReadOnlyList<CausalTracingConstraint> verification,
+        IReadOnlyList<CausalTracingConstraint> eligibleReceived)
     {
         var target = context.Query.TargetTimeWindow;
         var starts = new SortedSet<long> { target.StartTick };
@@ -804,14 +810,17 @@ public sealed class PastStateReconstructor
         // A broad Confirmed witness conflicts with point/public constraints only
         // when every possible tick in its entire interval is ruled out. Partial
         // overlap (including unmodelled ticks) is not proof of contradiction.
-        var allReceived = generation.Concat(verification)
-            .DistinctBy(item => item.ConstraintId, StringComparer.Ordinal).ToArray();
-        var incompatibleConfirmed = allReceived
+        // Candidate generation and verification remain scoped to the query.
+        // Only the impossibility proof may inspect otherwise eligible exact
+        // observations elsewhere in the broad witness's interval. This can
+        // suspend unsafe narrowing; it must never narrow at an off-query tick.
+        var incompatibleConfirmed = generation.Concat(verification)
+            .DistinctBy(item => item.ConstraintId, StringComparer.Ordinal)
             .Where(IsConfirmedPersonEvidence)
             .Where(item => item.TargetEntityId == context.Query.TargetEntityId &&
                 item.ConstrainedTimeWindow.StartTick < item.ConstrainedTimeWindow.EndTick &&
                 Overlaps(item.ConstrainedTimeWindow, target))
-            .Where(item => IsImpossibleConfirmedInterval(context, item, allReceived))
+            .Where(item => IsImpossibleConfirmedInterval(context, item, eligibleReceived))
             .OrderBy(item => item.ConstraintId, StringComparer.Ordinal)
             .ToArray();
         var boundaries = starts.ToArray();

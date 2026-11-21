@@ -116,10 +116,15 @@ finite checks proves a complete temporal theory or a real rescue outcome.
 **AR-84: Confirmed intervals versus exact Confirmed / public regions.**
 A received public Person `Confirmed` interval represents one occurrence at
 *some* tick, never continuous residence. When **every** tick within its
-entire interval is ruled out by known public states and independently
-applicable exact-time evidence, the M1-E time-slice path now preserves outer
-alternatives and records the incompatible interval's constraint/source
-lineage as conflicting. It does not silently overwrite a conservative
+entire interval is ruled out by known public states and eligible exact-time
+evidence received by the cutoff (including points outside the requested
+query window), the M1-E time-slice path preserves outer alternatives and
+records the incompatible interval's constraint/source lineage as conflicting.
+An off-query point is used only to check whether the broad interval is
+impossible; it does not narrow query candidates as though it occurred at
+the requested tick. Unreceived, private, device-only or out-of-target
+observations cannot supply this proof. This bounded check does not establish
+full temporal consistency. It does not silently overwrite a conservative
 conflict result with an exact-tick union. Candidate verification marks a
 truly incompatible independent interval as conflicting without using it as
 an exact-tick, every-possible-time refutation; shared ancestry remains
