@@ -1376,6 +1376,191 @@ public sealed class M1ETests
         }
     }
 
+
+    [Fact]
+    public void Ar84ConfirmedIntervalsConflictOnlyWhenEveryPossibleTickIsExcluded()
+    {
+        var x = Ar43TemporalEvidence("x", 5, ["a"]);
+        var y = Ar43TemporalEvidence("y", 6, ["a"]);
+        var broad = Ar43TemporalEvidence("w", 5, ["b"], endTick: 6);
+        var point = Ar43TemporalEvidence("w", 5, ["b"]);
+        var clear = Ar43TemporalFixture([x, y]);
+        Assert.Equal(["a"], clear.Reconstruction.Candidates.Select(item => item.RegionId));
+
+        // C1/C1p: neither tick admits b, but the broad witness is not
+        // equivalent to observing b at both ticks.
+        var conflict = Ar43TemporalFixture([x, y, broad]);
+        var pointConflict = Ar43TemporalFixture([x, y, point]);
+        Assert.Equal(["a", "b", "c"], conflict.Reconstruction.Candidates
+            .Select(item => item.RegionId).OrderBy(item => item, StringComparer.Ordinal));
+        Assert.Equal(pointConflict.Reconstruction.Candidates.Select(item => item.RegionId)
+                .OrderBy(item => item, StringComparer.Ordinal),
+            conflict.Reconstruction.Candidates.Select(item => item.RegionId)
+                .OrderBy(item => item, StringComparer.Ordinal));
+        Assert.All(conflict.Reconstruction.Candidates, candidate =>
+        {
+            Assert.Equal(PastStateCandidateDisposition.Conflicting, candidate.Disposition);
+            Assert.Contains(broad.ConstraintId, candidate.ConflictingConstraintIds);
+            Assert.DoesNotContain(broad.ConstraintId, candidate.UnresolvedConstraintIds);
+            Assert.Contains("origin-w", candidate.SourceAncestryIds);
+        });
+
+        // C2: [4,6] could have happened at 4 or 6. Do not invent a conflict
+        // or undo the valid exact-tick narrowing at 5.
+        var wide = Ar43TemporalEvidence("wide", 4, ["b"], endTick: 6);
+        var compatible = Ar43TemporalFixture([x, wide], startTick: 5, endTick: 5);
+        Assert.Equal(["a"], compatible.Reconstruction.Candidates.Select(item => item.RegionId));
+        Assert.All(compatible.Reconstruction.Candidates, candidate =>
+        {
+            Assert.DoesNotContain(wide.ConstraintId, candidate.ConflictingConstraintIds);
+            Assert.Equal(PastStateCandidateDisposition.Supported, candidate.Disposition);
+        });
+        var c2Point = Ar43TemporalFixture([x, Ar43TemporalEvidence("wide", 5, ["b"])],
+            startTick: 5, endTick: 5);
+        Assert.Contains(c2Point.Reconstruction.Candidates, candidate =>
+            candidate.RegionId == "b" && candidate.Disposition == PastStateCandidateDisposition.Conflicting);
+
+        // C2t / C2wide: an interval can be compatible at a different tick,
+        // and unknown public time cannot be used as an impossibility proof.
+        var c2t = Ar43TemporalFixture([x, Ar43TemporalEvidence("next", 6, ["b"]), wide]);
+        Assert.Equal(["a", "b"], c2t.Reconstruction.Candidates
+            .Select(item => item.RegionId).OrderBy(item => item, StringComparer.Ordinal));
+        Assert.All(c2t.Reconstruction.Candidates, candidate =>
+            Assert.DoesNotContain(wide.ConstraintId, candidate.ConflictingConstraintIds));
+        var c2wide = Ar43TemporalFixture([x, wide]);
+        Assert.All(c2wide.Reconstruction.Candidates, candidate =>
+            Assert.DoesNotContain(wide.ConstraintId, candidate.ConflictingConstraintIds));
+
+        // C3: at 5 the exact record excludes b; at 6 the declared public
+        // model excludes b. No unmodelled alternative tick remains.
+        PublicCandidateWarpStateDefinition[] publicStates =
+            [PublicState(5, ["a", "b", "c"]), PublicState(6, ["a"])];
+        var c3 = Ar43TemporalFixture([x, broad], publicStates: publicStates);
+        Assert.Contains(c3.Reconstruction.Candidates, candidate => candidate.RegionId == "b");
+        Assert.All(c3.Reconstruction.Candidates, candidate =>
+            Assert.Contains(broad.ConstraintId, candidate.ConflictingConstraintIds));
+
+        Assert.Equal(JsonDefaults.Serialize(conflict),
+            JsonDefaults.Serialize(Ar43TemporalFixture([broad, y, x, broad])));
+    }
+
+    [Fact]
+    public void Ar84IndependentConfirmedIntervalConflictRespectsReceiptAndAncestry()
+    {
+        var x = Ar43TemporalEvidence("x", 5, ["a"]);
+        var y = Ar43TemporalEvidence("y", 6, ["a"]);
+        var w = Ar43TemporalEvidence("w", 5, ["b"], endTick: 6);
+        var verified = Ar43TemporalFixture([x, y], [w]);
+        Assert.All(verified.Reconstruction.Verification, check =>
+        {
+            Assert.Equal(CandidateVerificationDisposition.Conflicting, check.Disposition);
+            Assert.Contains(w.ConstraintId, check.ConflictingConstraintIds);
+            Assert.Empty(check.RefutingConstraintIds);
+        });
+
+        var shared = Ar43TemporalFixture([x, y],
+            [Ar43TemporalEvidence("w", 5, ["b"], ancestry: "origin-x", endTick: 6)]);
+        Assert.All(shared.Reconstruction.Verification, check =>
+            Assert.Empty(check.ConflictingConstraintIds));
+
+        var ineligible = new[]
+        {
+            Ar43TemporalEvidence("future", 5, ["b"], availableTick: 21, endTick: 6),
+            Ar43TemporalEvidence("device", 5, ["b"], deviceOnly: true, endTick: 6),
+            Ar43TemporalEvidence("private", 5, ["b"],
+                endTick: 6, visibility: InteractionVisibility.PrivateEvidence),
+            Ar43TemporalEvidence("other", 5, ["b"],
+                endTick: 6, targetEntityId: "person-b"),
+            Ar43TemporalEvidence("outside", 7, ["b"], endTick: 8)
+        };
+        var excluded = Ar43TemporalFixture([x, y, .. ineligible]);
+        Assert.Equal(["a"], excluded.Reconstruction.Candidates.Select(item => item.RegionId));
+        Assert.All(excluded.Reconstruction.Candidates, candidate =>
+            Assert.Empty(candidate.ConflictingConstraintIds));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Ar84S5ConfirmedIntervalAndPointContrastsKeepTruthForBothMethods(bool pointConflict)
+    {
+        var source = JsonNode.Parse(File.ReadAllText(Path.Combine(RepositoryRoot,
+            "scenarios", "s5_distributed_past_evidence", "scenario.json")))!.AsObject();
+        foreach (var node in source["pastStateReconstruction"]!["constraints"]!.AsArray())
+        {
+            if (node is not JsonObject item) continue;
+            var id = item["id"]?.GetValue<string>();
+            if (id is "generation-a" or "generation-a-redundant")
+            {
+                item["allowedRegionIds"] = new JsonArray("fork-east");
+                item["constrainedStartTick"] = id == "generation-a" ? 14 : 13;
+                item["constrainedEndTick"] = id == "generation-a" ? 14 : 13;
+            }
+            else if (id == "generation-conflict")
+            {
+                item["evidenceState"] = "confirmed";
+                item["allowedRegionIds"] = new JsonArray("fork-west");
+                item["constrainedStartTick"] = 13;
+                item["constrainedEndTick"] = pointConflict ? 13 : 14;
+            }
+        }
+
+        var path = Path.Combine(Path.GetTempPath(), $"ar84-s5-{Guid.NewGuid():N}.json");
+        try
+        {
+            File.WriteAllText(path, source.ToJsonString());
+            var scenario = ScenarioLoader.Load(path);
+            var batch = new BatchEvaluationRunner().Run(new BatchEvaluationRequest
+            {
+                Scenarios = [new EvaluationScenarioInput
+                {
+                    Scenario = scenario,
+                    ContentSha256 = "ar84-confirmed-interval-test"
+                }],
+                Seeds = [2],
+                Strategies =
+                [
+                    new OwnEvidenceConstrainedStrategy(),
+                    new SingleWeftStrategy(),
+                    new MultiWeftTracingStrategy()
+                ],
+                SourceCommitSha = "ar84-s5-synthetic-test",
+                DirtyWorkingTree = false,
+                CollectTelemetry = false
+            });
+            var run = Assert.Single(batch.PastStateReconstruction!.Runs);
+            var result = run.PublicComparison;
+            Assert.Contains(result.Reconstruction.Candidates, item =>
+                item.RegionId == "fork-west");
+            Assert.Contains(result.Reconstruction.Candidates, item =>
+                item.RegionId == "alternate-route");
+            Assert.Contains(result.Reconstruction.Candidates, item =>
+                item.ConflictingConstraintIds.Count > 0);
+            var evaluated = PastStateReconstructionEvaluationBuilder.Evaluate(
+                result, new PastStateTruthEvaluation
+                {
+                    PersonRegionId = "fork-west",
+                    DeviceRegionId = "fork-west",
+                    OutcomeIdentifier = "ar84-evaluation-only-truth"
+                }, run.Condition, 2);
+            Assert.Equal(true, evaluated.TargetCandidateRepresented);
+            foreach (var method in new[]
+            {
+                PastStateMethod.ConstraintBasedReconstruction,
+                PastStateMethod.ReconstructionWithLocalTraversal
+            })
+            {
+                var metrics = evaluated.Methods.Single(item => item.Method == method);
+                Assert.Equal(true, metrics.ContainsTruth);
+                Assert.Equal(false, metrics.FalseExclusion);
+            }
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
     private static CausalTracingConstraint Ar43TemporalEvidence(
         string source, long tick, IReadOnlyList<string> regions,
         long availableTick = 20, EvidenceState state = EvidenceState.Confirmed,

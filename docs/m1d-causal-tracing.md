@@ -113,16 +113,34 @@ limitation, AR-78/80's missing-own-trace gate, and AR-74/75's historical
 evaluation corrections remain outside this limited M1-E fix. None of these
 finite checks proves a complete temporal theory or a real rescue outcome.
 
-**Known unresolved safety limit (AR-82 follow-up, outside this patch):**
-A received public Person `Confirmed` witness spanning multiple ticks is
-still omitted from time-slice conflict logic when exact-tick `Confirmed`
-witnesses narrow those slices. If they disagree, outer candidates can be
-incorrectly excluded (including a synthetic truth region), while the audit
-misses the conflict. The C1/C1p/C2/C3 and S5 `Confirmed`-interval contrasts
-are not repaired here; this limitation predates this PR and needs a separately
-reviewed scope. Passing the `Conflicting`-interval checks does **not** establish
-outer safety for all interval evidence. Do not cite affected runs'
-`CandidateReduction` as a validated search benefit.
+**AR-84: Confirmed intervals versus exact Confirmed / public regions.**
+A received public Person `Confirmed` interval represents one occurrence at
+*some* tick, never continuous residence. When **every** tick within its
+entire interval is ruled out by known public states and independently
+applicable exact-time evidence, the M1-E time-slice path now preserves outer
+alternatives and records the incompatible interval's constraint/source
+lineage as conflicting. It does not silently overwrite a conservative
+conflict result with an exact-tick union. Candidate verification marks a
+truly incompatible independent interval as conflicting without using it as
+an exact-tick, every-possible-time refutation; shared ancestry remains
+shared, not a new independent witness.
+
+C1/C1p and C3 require conflicting evidence and outer retention. The
+C2/C2t controls instead allow `Confirmed[4,6]={b}` and
+`Confirmed@5={a}` to coexist: the first can occur at tick 4 or 6.
+This legitimately retains the point query's narrowed `{a}`; it is
+*not* a conflict. Broadening a Confirmed point into an interval is
+therefore **not** generally monotonic in outer size. Uncovered public
+ticks and internally conflicting point evidence must not be taken as
+proof of incompatibility. The comparison also includes public S5
+synthetic variants with truth used only after inference to test both
+reconstruction methods' false-exclusion results.
+
+This is a bounded correction for the reviewed C1/C2/C3/S5 contrasts,
+not a complete temporal consistency solver or proof of real rescue
+accuracy. Other interval, traversal and historical evaluation limits
+remain open. Do not cite a smaller candidate set alone as a search
+benefit when the truth is excluded.
 
 - `Confirmed + Confirmed`: narrow when consistent; preserve candidates and mark conflict on empty intersection.
 - `Confirmed + SupportedButUncertain`: confirmed evidence may bound the outer set; uncertain evidence may affect preferred candidates without hard outer exclusion.
