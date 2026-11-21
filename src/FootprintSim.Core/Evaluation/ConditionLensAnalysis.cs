@@ -67,7 +67,7 @@ public sealed record ConditionLensOriginalSpec(
     IReadOnlyList<string> RegionIds, string SourceAncestryId, long? ReceivedAtTick);
 
 /// <summary>
-/// Six bounded, source-backed question lenses on the existing receipt bridge.
+/// Seven bounded, source-backed question lenses on the existing receipt bridge.
 /// Neither a lens nor a proposed answer is an additional inference constraint.
 /// Every reported candidate comes from the unmodified M1-D/E comparison.
 /// </summary>
@@ -86,10 +86,11 @@ public static class ConditionLensAnalysis
         Names.Select((name, index) => new ConditionLensIndexEntry(
             (index + 1).ToString("D2", System.Globalization.CultureInfo.InvariantCulture),
             name, PaliSource,
-            index is 1 or 3 or 5 or 8 or 9 or 11 ? "limited-analogy-implemented" : "unimplemented-unassessed",
+            index is 1 or 3 or 5 or 7 or 8 or 9 or 11 ? "limited-analogy-implemented" : "unimplemented-unassessed",
             index == 1 ? "received-device-subject-check" :
             index == 3 ? "received-adjacent-tick-person-check" :
             index == 5 ? "received-same-tick-person-evidence-check" :
+            index == 7 ? "received-distinct-roots-upstream-provenance-check" :
             index == 8 ? "received-person-source-root-removal-dependence" :
             index == 9 ? "received-prior-tick-person-support-check" :
             index == 11 ? "received-adjacent-distinct-person-observations-shared-root-check" :
@@ -282,6 +283,7 @@ public static class ConditionLensAnalysis
                 new ConditionLensModeResult("02", detected.Where(q => q.LensIds.Contains("02")).ToArray(), comparison),
                 new ConditionLensModeResult("04", detected.Where(q => q.LensIds.Contains("04")).ToArray(), comparison),
                 new ConditionLensModeResult("06", detected.Where(q => q.LensIds.Contains("06")).ToArray(), comparison),
+                new ConditionLensModeResult("08", detected.Where(q => q.LensIds.Contains("08")).ToArray(), comparison),
                 new ConditionLensModeResult("09", detected.Where(q => q.LensIds.Contains("09")).ToArray(), comparison),
                 new ConditionLensModeResult("10", detected.Where(q => q.LensIds.Contains("10")).ToArray(), comparison),
                 new ConditionLensModeResult("12", detected.Where(q => q.LensIds.Contains("12")).ToArray(), comparison),
@@ -330,7 +332,7 @@ public static class ConditionLensAnalysis
             }
         }
         return new ConditionLensReport(
-            4, fixture.ScenarioId, fixture.Seed, fixture.TargetPersonId,
+            5, fixture.ScenarioId, fixture.Seed, fixture.TargetPersonId,
             fixture.TargetTick, fixture.ReceiptCutoffTick, Index, results, differences);
     }
 
@@ -490,6 +492,33 @@ public static class ConditionLensAnalysis
                 }
             }
         }
+        // 08 asks about unknown common upstream provenance of two distinct
+        // received, same-tick Person roots whose effects are region-redundant.
+        // Source-group changes are reported but are not candidate changes.
+        static bool SameRegions(IReadOnlyList<string>? before, IReadOnlyList<string>? after) =>
+            before is null ? after is null :
+            after is not null && before.SequenceEqual(after, StringComparer.Ordinal);
+        if (persons.Length == 2 &&
+            RecordIds(persons).Length == 2 &&
+            ObservationIds(persons).Length == 2 &&
+            persons.All(p => Origins([p]).Length == 1) &&
+            Origins(persons).Length == 2 &&
+            rootRemovals.Count == 2 &&
+            rootRemovals.All(removal => removal.Methods.All(method =>
+                SameRegions(method.BeforeOuter, method.AfterOuter) &&
+                SameRegions(method.BeforePreferred, method.AfterPreferred) &&
+                SameRegions(method.BeforeUncertain, method.AfterUncertain) &&
+                SameRegions(method.BeforeConflicted, method.AfterConflicted))))
+        {
+            questions.Add(new ConditionLensQuestion(
+                "apparently-redundant-person-roots-upstream-check:" + tick, ["08"],
+                "received-distinct-roots-upstream-provenance-unverified-despite-redundant-outcome",
+                target, tick, cutoff, RecordIds(persons), ObservationIds(persons),
+                Origins(persons),
+                "original-observation-generation-sources-forwarding-paths-and-possible-shared-upstream",
+                "Two received same-tick Person observations claim distinct ExternalSource roots, but removing either leaves all methods' outer, preferred, uncertain and conflicted regions unchanged. Verify whether the origins share an upstream observation or derive from separate original observations. Neither independence nor common origin is established; evidence and source groups are not changed."));
+        }
+
         // 09 diagnoses dependence on independently received Person roots.
         // A strict widening is the original positive case. AR-88 also asks when
         // removing one root strictly relieves a conflict and shrinks outer.
