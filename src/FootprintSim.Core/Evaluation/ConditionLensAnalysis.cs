@@ -237,8 +237,8 @@ public static class ConditionLensAnalysis
                         b.ConflictedCandidateRegionIds, a.ConflictedCandidateRegionIds,
                         b.AvailableSourceGroupCount, a.AvailableSourceGroupCount);
                 }).ToArray();
-                var priorQuestions = baseline.Modes[3].Questions.Select(q => q.QuestionId).ToArray();
-                var nextQuestions = condition.Modes[3].Questions.Select(q => q.QuestionId).ToArray();
+                var priorQuestions = baseline.Modes.Single(m => m.Mode == "combined").Questions.Select(q => q.QuestionId).ToArray();
+                var nextQuestions = condition.Modes.Single(m => m.Mode == "combined").Questions.Select(q => q.QuestionId).ToArray();
                 differences.Add(new ConditionLensAnswerDifference(
                     baseline.Group, baseline.Id, condition.Id, condition.AnswerCondition,
                     "different-received-information-not-method-superiority",
