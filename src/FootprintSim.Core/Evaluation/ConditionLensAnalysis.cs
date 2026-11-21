@@ -24,13 +24,25 @@ public sealed record ConditionLensCaseResult(
     string Id, string Group, string AnswerCondition,
     IReadOnlyList<string> ReceivedOriginalIds,
     RescuerMissingDeclaredPathReport ExistingDeclaredPathDiagnostic,
-    IReadOnlyList<ConditionLensModeResult> Modes);
+    IReadOnlyList<ConditionLensModeResult> Modes,
+    IReadOnlyList<ConditionLensRootRemoval> RootRemovals);
 public sealed record ConditionLensMethodDifference(
     string Method, IReadOnlyList<string> BeforeOuter, IReadOnlyList<string> AfterOuter,
     IReadOnlyList<string> RemovedOuter, IReadOnlyList<string> AddedOuter,
     IReadOnlyList<string>? BeforeUncertain, IReadOnlyList<string>? AfterUncertain,
     IReadOnlyList<string>? BeforeConflicted, IReadOnlyList<string>? AfterConflicted,
     int BeforeAvailableSourceGroups, int AfterAvailableSourceGroups);
+// A counterfactual diagnostic, never a change to the rescuer's actual received evidence.
+public sealed record ConditionLensRootRemovalMethod(
+    string Method, IReadOnlyList<string> BeforeOuter, IReadOnlyList<string> AfterOuter,
+    IReadOnlyList<string> AddedOuter, IReadOnlyList<string> RemovedOuter,
+    IReadOnlyList<string>? BeforePreferred, IReadOnlyList<string>? AfterPreferred,
+    IReadOnlyList<string>? BeforeUncertain, IReadOnlyList<string>? AfterUncertain,
+    IReadOnlyList<string>? BeforeConflicted, IReadOnlyList<string>? AfterConflicted,
+    int BeforeAvailableSourceGroups, int AfterAvailableSourceGroups);
+public sealed record ConditionLensRootRemoval(
+    string SourceRootId, IReadOnlyList<string> RemovedReceivedOriginalIds,
+    IReadOnlyList<ConditionLensRootRemovalMethod> Methods);
 public sealed record ConditionLensAnswerDifference(
     string Group, string FromCase, string ToCase, string AnswerCondition,
     string Interpretation, IReadOnlyList<ConditionLensMethodDifference> Methods,
@@ -55,7 +67,7 @@ public sealed record ConditionLensOriginalSpec(
     IReadOnlyList<string> RegionIds, string SourceAncestryId, long? ReceivedAtTick);
 
 /// <summary>
-/// Three bounded, source-backed question lenses on the existing receipt bridge.
+/// Four bounded, source-backed question lenses on the existing receipt bridge.
 /// Neither a lens nor a proposed answer is an additional inference constraint.
 /// Every reported candidate comes from the unmodified M1-D/E comparison.
 /// </summary>
@@ -74,10 +86,11 @@ public static class ConditionLensAnalysis
         Names.Select((name, index) => new ConditionLensIndexEntry(
             (index + 1).ToString("D2", System.Globalization.CultureInfo.InvariantCulture),
             name, PaliSource,
-            index is 1 or 3 or 5 ? "limited-analogy-implemented" : "unimplemented-unassessed",
+            index is 1 or 3 or 5 or 8 ? "limited-analogy-implemented" : "unimplemented-unassessed",
             index == 1 ? "received-device-subject-check" :
             index == 3 ? "received-adjacent-tick-person-check" :
             index == 5 ? "received-same-tick-person-evidence-check" :
+            index == 8 ? "received-person-source-root-removal-dependence" :
             "no-validated-footprint-mapping")).ToArray();
 
     public static ConditionLensReport Run(byte[] fixtureBytes)
@@ -198,20 +211,76 @@ public static class ConditionLensAnalysis
             var comparison = RescuerEvidenceMethodComparison.Compare(received, window);
             var existing = RescuerEvidenceMethodComparison.AnalyzeMissingDeclaredPathQuestions(
                 received, window);
-            var detected = Questions(received, fixture.TargetTick);
+            // Only roots exposed by already received, eligible target-tick Person records
+            // are candidates for diagnostic removal. No held-only ID is consulted here.
+            var rootGroups = received.ReceivedRecords
+                .Where(r => r.OriginalObservation.IsPersonEvidence &&
+                    !r.OriginalObservation.IsDeviceOnlyEvidence &&
+                    r.OriginalObservation.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                    r.OriginalObservation.ObservedTimeWindow.StartTick == fixture.TargetTick &&
+                    r.OriginalObservation.ObservedTimeWindow.EndTick == fixture.TargetTick &&
+                    r.OriginalObservation.ObservedParticipants.Any(p =>
+                        p.EntityId == fixture.TargetPersonId &&
+                        p.EntityKind == InteractionEntityKind.Person))
+                .Select(r => new
+                {
+                    Record = r,
+                    Roots = r.OriginalObservation.Provenance
+                        .Where(p => p.Kind == InteractionProvenanceKind.ExternalSource)
+                        .Select(p => p.SourceIdentifier)
+                        .Distinct(StringComparer.Ordinal).ToArray()
+                })
+                .Where(x => x.Roots.Length == 1)
+                .GroupBy(x => x.Roots[0], StringComparer.Ordinal)
+                .OrderBy(g => g.Key, StringComparer.Ordinal).ToArray();
+
+            var rootRemovals = new List<ConditionLensRootRemoval>();
+            foreach (var rootGroup in rootGroups)
+            {
+                var removedIds = rootGroup.Select(x => x.Record.OriginalRecordId)
+                    .Distinct(StringComparer.Ordinal)
+                    .OrderBy(x => x, StringComparer.Ordinal).ToArray();
+                var remainingReceipts = receipts
+                    .Where(r => !removedIds.Contains(r.OriginalRecordId, StringComparer.Ordinal))
+                    .ToArray();
+                // Keep the same two held originals, public world, seed, cutoff and query.
+                // Remove all receipts of the chosen root, not just one original.
+                var counterfactual = builder.BuildDistinctOriginals(
+                    publicWorld, fixture.Seed, fixture.ReceiptCutoffTick,
+                    fixture.RescuerId, held, remainingReceipts, regions);
+                var withoutRoot = RescuerEvidenceMethodComparison.Compare(counterfactual, window);
+                var methodResults = comparison.Methods.Select(before =>
+                {
+                    var after = withoutRoot.Methods.Single(m => m.Method == before.Method);
+                    return new ConditionLensRootRemovalMethod(
+                        before.Method, before.OuterCandidateRegionIds, after.OuterCandidateRegionIds,
+                        after.OuterCandidateRegionIds.Except(before.OuterCandidateRegionIds, StringComparer.Ordinal)
+                            .OrderBy(x => x, StringComparer.Ordinal).ToArray(),
+                        before.OuterCandidateRegionIds.Except(after.OuterCandidateRegionIds, StringComparer.Ordinal)
+                            .OrderBy(x => x, StringComparer.Ordinal).ToArray(),
+                        before.PreferredCandidateRegionIds, after.PreferredCandidateRegionIds,
+                        before.UncertainCandidateRegionIds, after.UncertainCandidateRegionIds,
+                        before.ConflictedCandidateRegionIds, after.ConflictedCandidateRegionIds,
+                        before.AvailableSourceGroupCount, after.AvailableSourceGroupCount);
+                }).ToArray();
+                rootRemovals.Add(new ConditionLensRootRemoval(
+                    rootGroup.Key, removedIds, methodResults));
+            }
+            var detected = Questions(received, fixture.TargetTick, rootRemovals);
             var modes = new[]
             {
                 new ConditionLensModeResult("none", [], comparison),
                 new ConditionLensModeResult("02", detected.Where(q => q.LensIds.Contains("02")).ToArray(), comparison),
                 new ConditionLensModeResult("04", detected.Where(q => q.LensIds.Contains("04")).ToArray(), comparison),
                 new ConditionLensModeResult("06", detected.Where(q => q.LensIds.Contains("06")).ToArray(), comparison),
+                new ConditionLensModeResult("09", detected.Where(q => q.LensIds.Contains("09")).ToArray(), comparison),
                 new ConditionLensModeResult("combined", detected, comparison)
             };
             results.Add(new ConditionLensCaseResult(
                 item.Id, item.Group, item.AnswerCondition,
                 received.ReceivedRecords.Select(r => r.OriginalRecordId)
                     .OrderBy(x => x, StringComparer.Ordinal).ToArray(),
-                existing, modes));
+                existing, modes, rootRemovals));
         }
 
         var differences = new List<ConditionLensAnswerDifference>();
@@ -250,12 +319,13 @@ public static class ConditionLensAnalysis
             }
         }
         return new ConditionLensReport(
-            1, fixture.ScenarioId, fixture.Seed, fixture.TargetPersonId,
+            2, fixture.ScenarioId, fixture.Seed, fixture.TargetPersonId,
             fixture.TargetTick, fixture.ReceiptCutoffTick, Index, results, differences);
     }
 
     private static IReadOnlyList<ConditionLensQuestion> Questions(
-        RescuerEvidenceInput received, long tick)
+        RescuerEvidenceInput received, long tick,
+        IReadOnlyList<ConditionLensRootRemoval> rootRemovals)
     {
         // Never inspect held-but-unreceived observations or the synthetic answer label.
         var visible = received.ReceivedRecords
@@ -343,6 +413,25 @@ public static class ConditionLensAnalysis
                     "received-person-evidence-at-target-tick-or-declared-public-transition",
                     "Person evidence was received for the following tick, but does not establish the target tick. Verify direct target-tick Person evidence or a declared public transition."));
             }
+        }
+        // 09 asks a different question from 06: even when two independent sources
+        // exist, does the conclusion depend on one of them? A strict widening
+        // after removing one source is evidence of model-internal dependence only.
+        if (rootRemovals.Count >= 2 && rootRemovals.Any(removal =>
+            removal.Methods.Any(m => m.AddedOuter.Count > 0 && m.RemovedOuter.Count == 0)))
+        {
+            var dependentRoots = rootRemovals.Where(removal => removal.Methods.Any(m =>
+                m.AddedOuter.Count > 0 && m.RemovedOuter.Count == 0)).ToArray();
+            var relevant = persons.Where(p => dependentRoots.Any(root =>
+                root.RemovedReceivedOriginalIds.Contains(p.OriginalRecordId, StringComparer.Ordinal)))
+                .ToArray();
+            questions.Add(new ConditionLensQuestion(
+                "independent-person-root-dependence:" + tick, ["09"],
+                "outer-depends-on-received-independent-person-root",
+                target, tick, cutoff, RecordIds(relevant), ObservationIds(relevant),
+                Origins(relevant),
+                "independent-confirmation-of-root-dependent-person-constraint",
+                "Removing a received independent Person source root widens an existing method's outer candidates; verify the root-dependent constraint with independently received evidence. This is a diagnostic, not a rejection of the received source."));
         }
         return questions.OrderBy(q => q.QuestionId, StringComparer.Ordinal).ToArray();
     }

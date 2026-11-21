@@ -23,21 +23,21 @@ public sealed class ConditionLensTests
     {
         var report = ConditionLensAnalysis.Run(Fixture());
         Assert.Equal(24, report.Index.Count);
-        Assert.Equal(["02", "04", "06"], report.Index.Where(x =>
+        Assert.Equal(["02", "04", "06", "09"], report.Index.Where(x =>
             x.Status == "limited-analogy-implemented").Select(x => x.Id));
         var a = report.Cases.Single(x => x.Id == "A-none");
         var b = report.Cases.Single(x => x.Id == "B-none");
         var c = report.Cases.Single(x => x.Id == "C-none");
-        Assert.Equal(["02"], a.Modes[4].Questions.SelectMany(q => q.LensIds));
-        Assert.Equal(["06"], b.Modes[4].Questions.SelectMany(q => q.LensIds));
-        Assert.Equal(["02", "06"], c.Modes[4].Questions.SelectMany(q => q.LensIds)
+        Assert.Equal(["02"], a.Modes.Single(m => m.Mode == "combined").Questions.SelectMany(q => q.LensIds));
+        Assert.Equal(["06"], b.Modes.Single(m => m.Mode == "combined").Questions.SelectMany(q => q.LensIds));
+        Assert.Equal(["02", "06"], c.Modes.Single(m => m.Mode == "combined").Questions.SelectMany(q => q.LensIds)
             .OrderBy(x => x, StringComparer.Ordinal));
         Assert.Empty(a.ExistingDeclaredPathDiagnostic.Candidates
             .SelectMany(candidate => candidate.Questions));
         Assert.Empty(b.ExistingDeclaredPathDiagnostic.Candidates
             .SelectMany(candidate => candidate.Questions));
-        Assert.NotEqual(a.Modes[4].Questions[0].ReasonCode, b.Modes[4].Questions[0].ReasonCode);
-        Assert.Equal("P", c.Modes[4].Questions[0].TargetPersonId);
+        Assert.NotEqual(a.Modes.Single(m => m.Mode == "combined").Questions[0].ReasonCode, b.Modes.Single(m => m.Mode == "combined").Questions[0].ReasonCode);
+        Assert.Equal("P", c.Modes.Single(m => m.Mode == "combined").Questions[0].TargetPersonId);
     }
 
     [Fact]
@@ -60,7 +60,7 @@ public sealed class ConditionLensTests
         Assert.Equal("independently-established-device-person-association",
             link.RequiredInformation);
         Assert.Equal(["a-device", "a-person"], link.ReceivedOriginalIds);
-        Assert.DoesNotContain(missing.QuestionId, after.Modes[4].Questions.Select(q => q.QuestionId));
+        Assert.DoesNotContain(missing.QuestionId, after.Modes.Single(m => m.Mode == "combined").Questions.Select(q => q.QuestionId));
         var difference = report.AnswerDifferences.Single(d =>
             d.FromCase == "A-none" && d.ToCase == "A-eligible");
         Assert.Contains(missing.QuestionId, difference.ResolvedQuestionIds);
@@ -88,8 +88,9 @@ public sealed class ConditionLensTests
             var expected = ConditionLensAnalysis.Run(Fixture());
             Assert.Equal(JsonDefaults.Serialize(expected) + "\n", actual);
             Assert.Equal(24, expected.Index.Count);
-            Assert.Equal(16, expected.Cases.Count);
-            Assert.All(expected.Cases, c => Assert.Equal(5, c.Modes.Count));
+            Assert.Equal(17, expected.Cases.Count);
+            Assert.Equal(2, expected.SchemaVersion);
+            Assert.All(expected.Cases, c => Assert.Equal(6, c.Modes.Count));
             Assert.Equal(["b"], expected.Cases.Single(c => c.Id == "B-eligible")
                 .Modes[0].MethodComparison.Methods.Single(m =>
                     m.Method == "distributed-reconstruction").OuterCandidateRegionIds);
@@ -109,7 +110,7 @@ public sealed class ConditionLensTests
         var report = ConditionLensAnalysis.Run(Fixture());
         foreach (var row in report.Cases)
         {
-            Assert.Equal(["none", "02", "04", "06", "combined"], row.Modes.Select(x => x.Mode));
+            Assert.Equal(["none", "02", "04", "06", "09", "combined"], row.Modes.Select(x => x.Mode));
             Assert.Empty(row.Modes[0].Questions);
             foreach (var mode in row.Modes.Skip(1))
             {
@@ -132,10 +133,10 @@ public sealed class ConditionLensTests
         var aFuture = report.Cases.Single(c => c.Id == "A-future");
         var bNone = report.Cases.Single(c => c.Id == "B-none");
         var bFuture = report.Cases.Single(c => c.Id == "B-future");
-        Assert.Equal(JsonDefaults.Serialize(aNone.Modes[4].Questions),
-            JsonDefaults.Serialize(aFuture.Modes[4].Questions));
-        Assert.Equal(JsonDefaults.Serialize(bNone.Modes[4].Questions),
-            JsonDefaults.Serialize(bFuture.Modes[4].Questions));
+        Assert.Equal(JsonDefaults.Serialize(aNone.Modes.Single(m => m.Mode == "combined").Questions),
+            JsonDefaults.Serialize(aFuture.Modes.Single(m => m.Mode == "combined").Questions));
+        Assert.Equal(JsonDefaults.Serialize(bNone.Modes.Single(m => m.Mode == "combined").Questions),
+            JsonDefaults.Serialize(bFuture.Modes.Single(m => m.Mode == "combined").Questions));
         Assert.DoesNotContain("a-person", aFuture.ReceivedOriginalIds);
         Assert.DoesNotContain("b-second", bFuture.ReceivedOriginalIds);
         Assert.Empty(report.AnswerDifferences.Single(d =>
@@ -222,6 +223,84 @@ public sealed class ConditionLensTests
         Assert.Empty(independent.Modes[3].Questions);
         Assert.Contains(first.QuestionId, report.AnswerDifferences.Single(d =>
             d.FromCase == "S1" && d.ToCase == "S4").ResolvedQuestionIds);
+    }
+
+    [Fact]
+    public async Task NinthLensAblatesReceivedRootsAndWritesActualMethodDifferences()
+    {
+        var output = Path.Combine(Path.GetTempPath(),
+            "footprint-root-ablation-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var exit = await CliApplication.RunAsync(
+                ["evaluate-condition-lenses", "--fixture", FixturePath(), "--output", output]);
+            Assert.Equal(0, exit);
+            var saved = await File.ReadAllTextAsync(Path.Combine(output, "condition-lenses.json"));
+            var report = ConditionLensAnalysis.Run(Fixture());
+            Assert.Equal(JsonDefaults.Serialize(report) + "\n", saved);
+            Assert.Equal(2, report.SchemaVersion);
+            var eligible = report.Cases.Single(c => c.Id == "B-eligible");
+            Assert.Empty(eligible.Modes.Single(m => m.Mode == "06").Questions);
+            var question = Assert.Single(eligible.Modes.Single(m => m.Mode == "09").Questions);
+            Assert.Equal("independent-person-root-dependence:5", question.QuestionId);
+            Assert.Equal("outer-depends-on-received-independent-person-root", question.ReasonCode);
+            Assert.Equal(["b-first", "b-second"], question.ReceivedOriginalIds);
+            Assert.Equal(["root-first", "root-second"], question.SourceAncestryIds);
+            Assert.Equal(["root-first", "root-second"],
+                eligible.RootRemovals.Select(r => r.SourceRootId));
+            foreach (var removed in eligible.RootRemovals)
+            {
+                var reconstruction = removed.Methods.Single(m =>
+                    m.Method == "distributed-reconstruction");
+                Assert.Equal(["b"], reconstruction.BeforeOuter);
+                Assert.Single(reconstruction.AddedOuter);
+                Assert.Empty(reconstruction.RemovedOuter);
+                Assert.Equal(2, reconstruction.BeforeAvailableSourceGroups);
+                Assert.Equal(1, reconstruction.AfterAvailableSourceGroups);
+                Assert.Equal(1, removed.RemovedReceivedOriginalIds.Count);
+            }
+            Assert.Equal(["b", "c"], eligible.RootRemovals.Single(r =>
+                r.SourceRootId == "root-first").Methods.Single(m =>
+                    m.Method == "distributed-reconstruction").AfterOuter);
+            Assert.Equal(["a", "b"], eligible.RootRemovals.Single(r =>
+                r.SourceRootId == "root-second").Methods.Single(m =>
+                    m.Method == "distributed-reconstruction").AfterOuter);
+            Assert.Equal(["b"], eligible.Modes[0].MethodComparison.Methods.Single(m =>
+                m.Method == "distributed-reconstruction").OuterCandidateRegionIds);
+        }
+        finally
+        {
+            if (Directory.Exists(output))
+                Directory.Delete(output, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void NinthLensRejectsNonIndependentAndNonApplicableEvidence()
+    {
+        var report = ConditionLensAnalysis.Run(Fixture());
+        foreach (var id in new[]
+        {
+            "B-none", "B-future", "B-other-tick", "S1", "S3", "S4",
+            "A-none", "A-eligible", "C-none", "D-none", "R-redundant"
+        })
+        {
+            var row = report.Cases.Single(c => c.Id == id);
+            Assert.Empty(row.Modes.Single(m => m.Mode == "09").Questions);
+            Assert.Equal(JsonDefaults.Serialize(row.Modes[0].MethodComparison),
+                JsonDefaults.Serialize(row.Modes.Single(m => m.Mode == "combined").MethodComparison));
+        }
+        var copied = report.Cases.Single(c => c.Id == "S3");
+        var singleRoot = Assert.Single(copied.RootRemovals);
+        Assert.Equal("root-s-first", singleRoot.SourceRootId);
+        Assert.Equal(["s-first", "s-second"], singleRoot.RemovedReceivedOriginalIds);
+        Assert.All(singleRoot.Methods, m => Assert.Equal(0, m.AfterAvailableSourceGroups));
+        var redundant = report.Cases.Single(c => c.Id == "R-redundant");
+        Assert.Equal(2, redundant.RootRemovals.Count);
+        Assert.All(redundant.RootRemovals, removal =>
+            Assert.All(removal.Methods, method => Assert.Empty(method.AddedOuter)));
+        Assert.Equal(JsonDefaults.Serialize(report), JsonDefaults.Serialize(
+            ConditionLensAnalysis.Run(Fixture())));
     }
 
 }
