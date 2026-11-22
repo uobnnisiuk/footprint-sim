@@ -196,14 +196,16 @@ public static class ConditionLensAnalysis
                     entry.Id, entry.Status,
                     "doctrinal-correspondence-unassessed", "search-effect-unverified",
                     "predominant desire effort consciousness investigation or object",
-                    "associated mental phenomena conditioned by that predominance",
-                    "dominant-mental-factor-or-object-to-associated-phenomena",
+                    "mental-factor predominance: associated mental phenomena and the material phenomena they produce; object predominance: consciousness and mental factors arising with that outstanding object",
+                    "dominant-mental-factor-to-associated-mental-and-produced-material;predominant-object-to-consciousness-and-mental-factors",
                     "co-arising-or-object-predominance-conditionality",
                     entry.Source,
                     "unimplemented; K4-nested/N-redund/S4; candidate impact or distinct-root redundancy cannot measure mental predominance or evidence trust",
                     ["received-external-source-root", "root-removal-candidate-delta",
                      "received-distinct-source-roots", "receipt-cutoff"],
                     ["dominant-mental-factor-or-object", "conditioned-mental-phenomena",
+                     "mental-factor-to-produced-material-conditional-link",
+                     "predominant-object-to-mental-phenomena-conditional-link",
                      "predominance-conditional-link"])
             : entry.Id == "19"
                 ? new ConditionLensCorrespondenceAudit(

@@ -174,10 +174,10 @@ public sealed class ConditionLensTests
             "received-external-source-root",
             "mental-root-and-conditioned-phenomena-pair"),
         ("03",
-            "dominant-mental-factor-or-object-to-associated-phenomena",
+            "dominant-mental-factor-to-associated-mental-and-produced-material;predominant-object-to-consciousness-and-mental-factors",
             "co-arising-or-object-predominance-conditionality",
             "predominant desire effort",
-            "associated mental phenomena",
+            "mental-factor predominance: associated mental phenomena",
             "K4-nested/N-redund/S4",
             "root-removal-candidate-delta",
             "predominance-conditional-link"),
@@ -225,6 +225,19 @@ public sealed class ConditionLensTests
         }
         Assert.Equal(4, Rev15Audits.Select(x => x.Direction).Distinct().Count());
         Assert.Equal(4, Rev15Audits.Select(x => x.Time).Distinct().Count());
+        var three = report.CorrespondenceAudits.Single(x => x.LensId == "03");
+        Assert.Contains("associated mental phenomena and the material phenomena they produce",
+            three.ConditionedPhenomena);
+        Assert.Contains("object predominance: consciousness and mental factors",
+            three.ConditionedPhenomena);
+        Assert.Contains("dominant-mental-factor-to-associated-mental-and-produced-material",
+            three.ConditioningDirection);
+        Assert.Contains("predominant-object-to-consciousness-and-mental-factors",
+            three.ConditioningDirection);
+        Assert.Contains("mental-factor-to-produced-material-conditional-link",
+            three.UnrepresentedDoctrinalRelations);
+        Assert.Contains("predominant-object-to-mental-phenomena-conditional-link",
+            three.UnrepresentedDoctrinalRelations);
         Assert.Contains("mental-to-material-conditional-link",
             report.CorrespondenceAudits.Single(x => x.LensId == "20").UnrepresentedDoctrinalRelations);
         Assert.Contains("material-to-mental-conditional-link",
@@ -402,6 +415,22 @@ public sealed class ConditionLensTests
                 Assert.Contains(entry.Missing, saved.GetProperty("unrepresentedDoctrinalRelations")
                     .EnumerateArray().Select(v => v.GetString()));
             }
+            var savedThree = savedAudits.Single(x =>
+                x.GetProperty("lensId").GetString() == "03");
+            Assert.Contains("associated mental phenomena and the material phenomena they produce",
+                savedThree.GetProperty("conditionedPhenomena").GetString());
+            Assert.Contains("object predominance: consciousness and mental factors",
+                savedThree.GetProperty("conditionedPhenomena").GetString());
+            Assert.Contains("dominant-mental-factor-to-associated-mental-and-produced-material",
+                savedThree.GetProperty("conditioningDirection").GetString());
+            Assert.Contains("predominant-object-to-consciousness-and-mental-factors",
+                savedThree.GetProperty("conditioningDirection").GetString());
+            Assert.Contains("mental-factor-to-produced-material-conditional-link",
+                savedThree.GetProperty("unrepresentedDoctrinalRelations")
+                    .EnumerateArray().Select(v => v.GetString()));
+            Assert.Contains("predominant-object-to-mental-phenomena-conditional-link",
+                savedThree.GetProperty("unrepresentedDoctrinalRelations")
+                    .EnumerateArray().Select(v => v.GetString()));
             var savedTwenty = savedAudits.Single(x =>
                 x.GetProperty("lensId").GetString() == "20");
             Assert.Contains("mental-to-material-conditional-link",
