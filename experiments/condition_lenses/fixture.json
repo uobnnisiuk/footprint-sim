@@ -1339,6 +1339,210 @@
           "receivedAtTick": 8
         }
       ]
+    },
+    {
+      "id": "U-none",
+      "group": "U",
+      "answerCondition": "none",
+      "originals": [
+        {
+          "id": "u-person",
+          "holderDeviceId": "U-D1",
+          "evidenceKind": "person",
+          "observedTick": 5,
+          "regionIds": [
+            "b"
+          ],
+          "sourceAncestryId": "root-u-person",
+          "receivedAtTick": null
+        },
+        {
+          "id": "u-held",
+          "holderDeviceId": "U-D1",
+          "evidenceKind": "person",
+          "observedTick": 5,
+          "regionIds": [
+            "c"
+          ],
+          "sourceAncestryId": "root-u-held",
+          "receivedAtTick": null
+        }
+      ]
+    },
+    {
+      "id": "U-eligible",
+      "group": "U",
+      "answerCondition": "eligible",
+      "originals": [
+        {
+          "id": "u-person",
+          "holderDeviceId": "U-D1",
+          "evidenceKind": "person",
+          "observedTick": 5,
+          "regionIds": [
+            "b"
+          ],
+          "sourceAncestryId": "root-u-person",
+          "receivedAtTick": 8
+        },
+        {
+          "id": "u-held",
+          "holderDeviceId": "U-D1",
+          "evidenceKind": "person",
+          "observedTick": 5,
+          "regionIds": [
+            "c"
+          ],
+          "sourceAncestryId": "root-u-held",
+          "receivedAtTick": null
+        }
+      ]
+    },
+    {
+      "id": "U-future",
+      "group": "U",
+      "answerCondition": "future",
+      "originals": [
+        {
+          "id": "u-person",
+          "holderDeviceId": "U-D1",
+          "evidenceKind": "person",
+          "observedTick": 5,
+          "regionIds": [
+            "b"
+          ],
+          "sourceAncestryId": "root-u-person",
+          "receivedAtTick": 11
+        },
+        {
+          "id": "u-held",
+          "holderDeviceId": "U-D1",
+          "evidenceKind": "person",
+          "observedTick": 5,
+          "regionIds": [
+            "c"
+          ],
+          "sourceAncestryId": "root-u-held",
+          "receivedAtTick": null
+        }
+      ]
+    },
+    {
+      "id": "U-device",
+      "group": "U",
+      "answerCondition": "other-tick",
+      "originals": [
+        {
+          "id": "u-device",
+          "holderDeviceId": "U-D2",
+          "evidenceKind": "device",
+          "observedTick": 5,
+          "regionIds": [
+            "a"
+          ],
+          "sourceAncestryId": "root-u-device",
+          "receivedAtTick": 8
+        },
+        {
+          "id": "u-held",
+          "holderDeviceId": "U-D1",
+          "evidenceKind": "person",
+          "observedTick": 5,
+          "regionIds": [
+            "c"
+          ],
+          "sourceAncestryId": "root-u-held",
+          "receivedAtTick": null
+        }
+      ]
+    },
+    {
+      "id": "U-followup",
+      "group": "U",
+      "answerCondition": "other-tick",
+      "originals": [
+        {
+          "id": "u-followup",
+          "holderDeviceId": "U-D1",
+          "evidenceKind": "person",
+          "observedTick": 6,
+          "regionIds": [
+            "b"
+          ],
+          "sourceAncestryId": "root-u-person",
+          "receivedAtTick": 8
+        },
+        {
+          "id": "u-held",
+          "holderDeviceId": "U-D1",
+          "evidenceKind": "person",
+          "observedTick": 5,
+          "regionIds": [
+            "c"
+          ],
+          "sourceAncestryId": "root-u-held",
+          "receivedAtTick": null
+        }
+      ]
+    },
+    {
+      "id": "U-prior",
+      "group": "U",
+      "answerCondition": "other-tick",
+      "originals": [
+        {
+          "id": "u-prior",
+          "holderDeviceId": "U-D1",
+          "evidenceKind": "person",
+          "observedTick": 4,
+          "regionIds": [
+            "b"
+          ],
+          "sourceAncestryId": "root-u-person",
+          "receivedAtTick": 8
+        },
+        {
+          "id": "u-held",
+          "holderDeviceId": "U-D1",
+          "evidenceKind": "person",
+          "observedTick": 5,
+          "regionIds": [
+            "c"
+          ],
+          "sourceAncestryId": "root-u-held",
+          "receivedAtTick": null
+        }
+      ]
+    },
+    {
+      "id": "U-duplicate",
+      "group": "U",
+      "answerCondition": "duplicate",
+      "originals": [
+        {
+          "id": "u-person",
+          "holderDeviceId": "U-D1",
+          "evidenceKind": "person",
+          "observedTick": 5,
+          "regionIds": [
+            "b"
+          ],
+          "sourceAncestryId": "root-u-person",
+          "receivedAtTick": 8
+        },
+        {
+          "id": "u-held",
+          "holderDeviceId": "U-D1",
+          "evidenceKind": "person",
+          "observedTick": 5,
+          "regionIds": [
+            "c"
+          ],
+          "sourceAncestryId": "root-u-held",
+          "receivedAtTick": null
+        }
+      ],
+      "duplicateFirstReceipt": true
     }
   ]
 }
