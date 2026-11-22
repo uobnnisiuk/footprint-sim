@@ -659,7 +659,7 @@ public sealed class ConditionLensTests
         Assert.Single(report.Cases.Single(c => c.Id == "N-cutoff")
             .Modes.Single(m => m.Mode == "08").Questions);
         Assert.Equal(52, report.Cases.Count);
-        Assert.All(report.Cases, row => Assert.Equal(9, row.Modes.Count));
+        Assert.All(report.Cases, row => Assert.Equal(10, row.Modes.Count));
         Assert.Equal(JsonDefaults.Serialize(report), JsonDefaults.Serialize(
             ConditionLensAnalysis.Run(Fixture())));
     }
