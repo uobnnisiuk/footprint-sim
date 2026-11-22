@@ -176,6 +176,63 @@ public static class ConditionLensAnalysis
                     "unimplemented; H-none/H-eligible; distant received Person observation is not persistence or a new 21 question",
                     ["received-distant-person-observation", "observed-exact-tick", "receipt-cutoff"],
                     ["verified-persistence-or-non-cessation", "conditioning-and-conditioned-phenomena-pair", "persistence-conditional-link"])
+
+            : entry.Id == "01"
+                ? new ConditionLensCorrespondenceAudit(
+                    entry.Id, entry.Status,
+                    "doctrinal-correspondence-unassessed", "search-effect-unverified",
+                    "six mental roots including greed hatred delusion and their opposites",
+                    "associated mental phenomena and root-produced material phenomena",
+                    "mental-root-to-associated-mental-and-produced-material",
+                    "co-arising-root-conditionality",
+                    entry.Source,
+                    "unimplemented; K4-nested/B-eligible; ExternalSource ancestry roots and root removal show provenance sensitivity, not original mental roots",
+                    ["received-confirmed-person-observation", "received-external-source-root",
+                     "root-removal-method-differences", "receipt-cutoff"],
+                    ["mental-root-and-conditioned-phenomena-pair",
+                     "mental-root-classification", "root-to-conditioned-phenomena-conditional-link"])
+            : entry.Id == "03"
+                ? new ConditionLensCorrespondenceAudit(
+                    entry.Id, entry.Status,
+                    "doctrinal-correspondence-unassessed", "search-effect-unverified",
+                    "predominant desire effort consciousness investigation or object",
+                    "associated mental phenomena conditioned by that predominance",
+                    "dominant-mental-factor-or-object-to-associated-phenomena",
+                    "co-arising-or-object-predominance-conditionality",
+                    entry.Source,
+                    "unimplemented; K4-nested/N-redund/S4; candidate impact or distinct-root redundancy cannot measure mental predominance or evidence trust",
+                    ["received-external-source-root", "root-removal-candidate-delta",
+                     "received-distinct-source-roots", "receipt-cutoff"],
+                    ["dominant-mental-factor-or-object", "conditioned-mental-phenomena",
+                     "predominance-conditional-link"])
+            : entry.Id == "19"
+                ? new ConditionLensCorrespondenceAudit(
+                    entry.Id, entry.Status,
+                    "doctrinal-correspondence-unassessed", "search-effect-unverified",
+                    "associated immaterial aggregates",
+                    "other associated immaterial aggregates",
+                    "mutual-association-between-immaterial-aggregates",
+                    "co-arising-associated-mental-phenomena",
+                    entry.Source,
+                    "unimplemented; S1/S4/N-redund; same-tick Person observations or distinct provenance roots do not establish associated mental aggregates",
+                    ["received-person-observation-at-target-exact-tick",
+                     "received-external-source-root", "receipt-cutoff"],
+                    ["mutually-associated-immaterial-aggregates-pair",
+                     "mutual-mental-association-links", "original-associated-mental-phenomena"])
+            : entry.Id == "20"
+                ? new ConditionLensCorrespondenceAudit(
+                    entry.Id, entry.Status,
+                    "doctrinal-correspondence-unassessed", "search-effect-unverified",
+                    "mental or material phenomena as non-associated conditioning side",
+                    "opposite material or mental phenomena being conditioned",
+                    "mental-to-material-and-material-to-mental-distinct",
+                    "context-dependent-mental-material-conditionality",
+                    entry.Source,
+                    "unimplemented; A-none/A-eligible; Device-only and Person evidence are physical entity kinds, not original mental-material non-association",
+                    ["received-device-only-observation", "received-person-observation",
+                     "entity-kind-person-device-distinction", "receipt-cutoff"],
+                    ["directed-mental-material-conditional-relations",
+                     "mental-to-material-conditional-link", "material-to-mental-conditional-link"])
             : new ConditionLensCorrespondenceAudit(
                 entry.Id, entry.Status,
                 "doctrinal-correspondence-unassessed", "search-effect-unverified",
@@ -425,7 +482,7 @@ public static class ConditionLensAnalysis
             }
         }
         return new ConditionLensReport(
-            9, fixture.ScenarioId, fixture.Seed, fixture.TargetPersonId,
+            10, fixture.ScenarioId, fixture.Seed, fixture.TargetPersonId,
             fixture.TargetTick, fixture.ReceiptCutoffTick, Index, results, differences,
             CorrespondenceAudits);
     }
