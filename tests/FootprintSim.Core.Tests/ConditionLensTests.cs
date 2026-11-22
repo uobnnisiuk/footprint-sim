@@ -188,7 +188,7 @@ public sealed class ConditionLensTests
         var report = ConditionLensAnalysis.Run(Fixture());
         foreach (var row in report.Cases)
         {
-            Assert.Equal(["none", "02", "04", "06", "08", "09", "10", "12", "22", "combined"], row.Modes.Select(x => x.Mode));
+            Assert.Equal(["none", "02", "04", "06", "08", "09", "10", "12", "21", "22", "combined"], row.Modes.Select(x => x.Mode));
             Assert.Empty(row.Modes[0].Questions);
             foreach (var mode in row.Modes.Skip(1))
             {
