@@ -1345,4 +1345,193 @@ public sealed class ConditionLensTests
         }
     }
 
+
+    [Fact]
+    public void OffTickDeviceReceiptCreatesOnlyTheMissingPersonQuestion()
+    {
+        var report = ConditionLensAnalysis.Run(Fixture());
+        var fixture = System.Text.Json.JsonSerializer.Deserialize<ConditionLensFixture>(
+            Fixture(), new System.Text.Json.JsonSerializerOptions(
+                System.Text.Json.JsonSerializerDefaults.Web));
+        Assert.NotNull(fixture);
+        // Independently inventory every frozen case, rather than checking only
+        // the known counterexample. Synthetic observations are exact/Confirmed.
+        var matching = fixture.Cases.Where(c =>
+        {
+            var legal = c.Originals.Where(o => o.ReceivedAtTick is not null &&
+                o.ReceivedAtTick.Value <= fixture.ReceiptCutoffTick).ToArray();
+            return legal.Length > 0 && legal.All(o =>
+                o.EvidenceKind == "device" && o.ObservedTick != fixture.TargetTick);
+        }).Select(c => c.Id).OrderBy(id => id, StringComparer.Ordinal).ToArray();
+        Assert.Equal(["G-device"], matching);
+        Assert.Equal(56, report.Cases.Count);
+        foreach (var row in report.Cases)
+        {
+            var questions = row.Modes.Single(m => m.Mode == "22").Questions
+                .Where(q => q.QuestionId == "off-tick-device-only-person-availability:5")
+                .ToArray();
+            Assert.Equal(row.Id == "G-device" ? 1 : 0, questions.Length);
+            Assert.Equal(11, row.Modes.Count);
+            foreach (var mode in row.Modes)
+            {
+                // Verify every method's outer/preferred/uncertain/conflicted/source
+                // group values, not just a candidate count.
+                Assert.Equal(JsonDefaults.Serialize(row.Modes[0].MethodComparison),
+                    JsonDefaults.Serialize(mode.MethodComparison));
+            }
+        }
+        var device = report.Cases.Single(c => c.Id == "G-device");
+        Assert.Equal(["g-device"], device.ReceivedOriginalIds);
+        var q = Assert.Single(device.Modes.Single(m => m.Mode == "22").Questions);
+        Assert.Equal(["22"], q.LensIds);
+        Assert.Equal("received-offtick-device-without-target-person-evidence", q.ReasonCode);
+        Assert.Equal("legitimately-received-target-person-evidence-or-availability-check",
+            q.RequiredInformation);
+        Assert.Equal("P", q.TargetPersonId);
+        Assert.Equal(5, q.TargetTick);
+        Assert.Equal(10, q.ReceiptCutoffTick);
+        Assert.Equal(["g-device"], q.ReceivedOriginalIds);
+        Assert.Single(q.ReceivedObservationIds);
+        Assert.Equal(["root-g-device"], q.SourceAncestryIds);
+        Assert.Contains("tick(s) 4", q.Explanation, StringComparison.Ordinal);
+        Assert.Contains("cutoff 10", q.Explanation, StringComparison.Ordinal);
+        Assert.DoesNotContain("g-target", JsonDefaults.Serialize(q), StringComparison.Ordinal);
+        Assert.DoesNotContain("root-g-target", JsonDefaults.Serialize(q), StringComparison.Ordinal);
+        Assert.Empty(device.Modes.Single(m => m.Mode == "02").Questions);
+        Assert.Equal(JsonDefaults.Serialize(device.Modes.Single(m => m.Mode == "22").Questions),
+            JsonDefaults.Serialize(device.Modes.Single(m => m.Mode == "combined").Questions));
+        Assert.All(device.Modes[0].MethodComparison.Methods, m =>
+            Assert.Equal(["a", "b", "c"], m.OuterCandidateRegionIds));
+
+        foreach (var id in new[] { "U-none", "U-future" })
+        {
+            var row = report.Cases.Single(c => c.Id == id);
+            var old = Assert.Single(row.Modes.Single(m => m.Mode == "22").Questions);
+            Assert.Equal("no-received-records-person-availability:5", old.QuestionId);
+            Assert.Empty(old.ReceivedOriginalIds);
+            Assert.Empty(old.ReceivedObservationIds);
+            Assert.Empty(old.SourceAncestryIds);
+        }
+        foreach (var (id, mode) in new[]
+        {
+            ("U-device", "02"), ("A-none", "02"),
+            ("G-offtick", "21"), ("U-followup", "04"),
+            ("U-prior", "10"), ("U-eligible", "06")
+        })
+        {
+            var row = report.Cases.Single(c => c.Id == id);
+            Assert.Single(row.Modes.Single(m => m.Mode == mode).Questions);
+            Assert.Empty(row.Modes.Single(m => m.Mode == "22").Questions);
+        }
+        Assert.Equal(JsonDefaults.Serialize(report),
+            JsonDefaults.Serialize(ConditionLensAnalysis.Run(Fixture())));
+    }
+
+    [Fact]
+    public async Task OffTickDeviceQuestionIsDirectlyCheckedInCliSavedJson()
+    {
+        var output = Path.Combine(Path.GetTempPath(),
+            "footprint-rev13-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Assert.Equal(0, await CliApplication.RunAsync(
+                ["evaluate-condition-lenses", "--fixture", FixturePath(), "--output", output]));
+            var path = Path.Combine(output, "condition-lenses.json");
+            var bytes = await File.ReadAllBytesAsync(path);
+            using var saved = System.Text.Json.JsonDocument.Parse(bytes);
+            var root = saved.RootElement;
+            Assert.Equal(8, root.GetProperty("schemaVersion").GetInt32());
+            Assert.Equal(24, root.GetProperty("index").GetArrayLength());
+            Assert.Equal(24, root.GetProperty("correspondenceAudits").GetArrayLength());
+            var cases = root.GetProperty("cases").EnumerateArray().ToArray();
+            Assert.Equal(56, cases.Length);
+            System.Text.Json.JsonElement Case(string id) => cases.Single(c =>
+                c.GetProperty("id").GetString() == id);
+            System.Text.Json.JsonElement Mode(System.Text.Json.JsonElement c, string mode) =>
+                c.GetProperty("modes").EnumerateArray().Single(m =>
+                    m.GetProperty("mode").GetString() == mode);
+            var g = Case("G-device");
+            Assert.Equal("g-device", g.GetProperty("receivedOriginalIds")[0].GetString());
+            var q = Mode(g, "22").GetProperty("questions").EnumerateArray().Single();
+            Assert.Equal("off-tick-device-only-person-availability:5",
+                q.GetProperty("questionId").GetString());
+            Assert.Equal("received-offtick-device-without-target-person-evidence",
+                q.GetProperty("reasonCode").GetString());
+            Assert.Equal("legitimately-received-target-person-evidence-or-availability-check",
+                q.GetProperty("requiredInformation").GetString());
+            Assert.Equal("P", q.GetProperty("targetPersonId").GetString());
+            Assert.Equal(5, q.GetProperty("targetTick").GetInt64());
+            Assert.Equal(10, q.GetProperty("receiptCutoffTick").GetInt64());
+            Assert.Equal(["g-device"], q.GetProperty("receivedOriginalIds")
+                .EnumerateArray().Select(x => x.GetString()));
+            Assert.Single(q.GetProperty("receivedObservationIds").EnumerateArray());
+            Assert.Equal(["root-g-device"], q.GetProperty("sourceAncestryIds")
+                .EnumerateArray().Select(x => x.GetString()));
+            Assert.Contains("tick(s) 4", q.GetProperty("explanation").GetString());
+            Assert.DoesNotContain("g-target", q.GetRawText());
+            Assert.DoesNotContain("root-g-target", q.GetRawText());
+            Assert.Equal(0, Mode(g, "02").GetProperty("questions").GetArrayLength());
+            Assert.Equal(1, Mode(g, "combined").GetProperty("questions").GetArrayLength());
+
+            // Full frozen-case scan verifies there is no unintended new 22 question.
+            foreach (var row in cases)
+            {
+                var id = row.GetProperty("id").GetString();
+                var modes = row.GetProperty("modes").EnumerateArray().ToArray();
+                Assert.Equal(11, modes.Length);
+                var extra = Mode(row, "22").GetProperty("questions").EnumerateArray()
+                    .Count(x => x.GetProperty("questionId").GetString() ==
+                        "off-tick-device-only-person-availability:5");
+                Assert.Equal(id == "G-device" ? 1 : 0, extra);
+                var baseline = Mode(row, "none").GetProperty("methodComparison")
+                    .GetProperty("methods").EnumerateArray().ToArray();
+                Assert.Equal(4, baseline.Length);
+                foreach (var mode in modes)
+                {
+                    var current = mode.GetProperty("methodComparison")
+                        .GetProperty("methods").EnumerateArray().ToArray();
+                    Assert.Equal(4, current.Length);
+                    for (var i = 0; i < 4; i++)
+                    {
+                        Assert.Equal(baseline[i].GetProperty("method").GetString(),
+                            current[i].GetProperty("method").GetString());
+                        foreach (var field in new[] { "outerCandidateRegionIds",
+                            "preferredCandidateRegionIds", "uncertainCandidateRegionIds",
+                            "conflictedCandidateRegionIds", "availableSourceGroupCount" })
+                            Assert.Equal(baseline[i].GetProperty(field).GetRawText(),
+                                current[i].GetProperty(field).GetRawText());
+                    }
+                }
+            }
+            foreach (var id in new[] { "U-none", "U-future" })
+            {
+                var original = Mode(Case(id), "22").GetProperty("questions")
+                    .EnumerateArray().Single();
+                Assert.Equal("no-received-records-person-availability:5",
+                    original.GetProperty("questionId").GetString());
+                Assert.Empty(original.GetProperty("receivedOriginalIds").EnumerateArray());
+                Assert.Empty(original.GetProperty("receivedObservationIds").EnumerateArray());
+                Assert.Empty(original.GetProperty("sourceAncestryIds").EnumerateArray());
+            }
+            foreach (var (id, expectedMode) in new[]
+            {
+                ("U-device", "02"), ("A-none", "02"),
+                ("G-offtick", "21"), ("U-followup", "04"),
+                ("U-prior", "10"), ("U-eligible", "06")
+            })
+            {
+                Assert.Single(Mode(Case(id), expectedMode).GetProperty("questions")
+                    .EnumerateArray());
+                Assert.Empty(Mode(Case(id), "22").GetProperty("questions").EnumerateArray());
+            }
+            Assert.Equal(0, await CliApplication.RunAsync(
+                ["evaluate-condition-lenses", "--fixture", FixturePath(), "--output", output]));
+            Assert.Equal(bytes, await File.ReadAllBytesAsync(path));
+        }
+        finally
+        {
+            if (Directory.Exists(output))
+                Directory.Delete(output, recursive: true);
+        }
+    }
 }
