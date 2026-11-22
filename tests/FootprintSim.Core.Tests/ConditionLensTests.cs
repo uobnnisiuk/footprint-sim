@@ -29,7 +29,7 @@ public sealed class ConditionLensTests
     {
         var report = ConditionLensAnalysis.Run(Fixture());
         Assert.Equal(24, report.Index.Count);
-        Assert.Equal(["02", "04", "06", "08", "09", "10", "12", "22"], report.Index.Where(x =>
+        Assert.Equal(["02", "04", "06", "08", "09", "10", "12", "21", "22"], report.Index.Where(x =>
             x.Status == "limited-analogy-implemented").Select(x => x.Id));
         var a = report.Cases.Single(x => x.Id == "A-none");
         var b = report.Cases.Single(x => x.Id == "B-none");
@@ -159,16 +159,16 @@ public sealed class ConditionLensTests
             Assert.Equal(JsonDefaults.Serialize(savedRedundant.GetProperty("modes")
                 .EnumerateArray().First().GetProperty("methodComparison")),
                 JsonDefaults.Serialize(savedEight.GetProperty("methodComparison")));
-            Assert.Equal(6, savedReport.RootElement.GetProperty("schemaVersion").GetInt32());
+            Assert.Equal(7, savedReport.RootElement.GetProperty("schemaVersion").GetInt32());
             var firstBytes = await File.ReadAllBytesAsync(Path.Combine(output, "condition-lenses.json"));
             Assert.Equal(0, await CliApplication.RunAsync(
                 ["evaluate-condition-lenses", "--fixture", FixturePath(), "--output", output]));
             Assert.Equal(firstBytes,
                 await File.ReadAllBytesAsync(Path.Combine(output, "condition-lenses.json")));
             Assert.Equal(24, expected.Index.Count);
-            Assert.Equal(52, expected.Cases.Count);
-            Assert.Equal(6, expected.SchemaVersion);
-            Assert.All(expected.Cases, c => Assert.Equal(10, c.Modes.Count));
+            Assert.Equal(56, expected.Cases.Count);
+            Assert.Equal(7, expected.SchemaVersion);
+            Assert.All(expected.Cases, c => Assert.Equal(11, c.Modes.Count));
             Assert.Equal(["b"], expected.Cases.Single(c => c.Id == "B-eligible")
                 .Modes[0].MethodComparison.Methods.Single(m =>
                     m.Method == "distributed-reconstruction").OuterCandidateRegionIds);
@@ -188,7 +188,7 @@ public sealed class ConditionLensTests
         var report = ConditionLensAnalysis.Run(Fixture());
         foreach (var row in report.Cases)
         {
-            Assert.Equal(["none", "02", "04", "06", "08", "09", "10", "12", "22", "combined"], row.Modes.Select(x => x.Mode));
+            Assert.Equal(["none", "02", "04", "06", "08", "09", "10", "12", "21", "22", "combined"], row.Modes.Select(x => x.Mode));
             Assert.Empty(row.Modes[0].Questions);
             foreach (var mode in row.Modes.Skip(1))
             {
@@ -316,7 +316,7 @@ public sealed class ConditionLensTests
             var saved = await File.ReadAllTextAsync(Path.Combine(output, "condition-lenses.json"));
             var report = ConditionLensAnalysis.Run(Fixture());
             Assert.Equal(JsonDefaults.Serialize(report) + "\n", saved);
-            Assert.Equal(6, report.SchemaVersion);
+            Assert.Equal(7, report.SchemaVersion);
             var eligible = report.Cases.Single(c => c.Id == "B-eligible");
             Assert.Empty(eligible.Modes.Single(m => m.Mode == "06").Questions);
             var question = Assert.Single(eligible.Modes.Single(m => m.Mode == "09").Questions);
@@ -556,7 +556,7 @@ public sealed class ConditionLensTests
             .Modes.Single(m => m.Mode == "12").Questions);
         Assert.All(report.Cases, row =>
         {
-            Assert.Equal(10, row.Modes.Count);
+            Assert.Equal(11, row.Modes.Count);
             Assert.Equal(JsonDefaults.Serialize(row.Modes[0].MethodComparison),
                 JsonDefaults.Serialize(row.Modes.Single(m => m.Mode == "12").MethodComparison));
             Assert.All(row.Modes.SelectMany(m => m.Questions),
@@ -664,8 +664,8 @@ public sealed class ConditionLensTests
             .ReceivedOriginalIds);
         Assert.Single(report.Cases.Single(c => c.Id == "N-cutoff")
             .Modes.Single(m => m.Mode == "08").Questions);
-        Assert.Equal(52, report.Cases.Count);
-        Assert.All(report.Cases, row => Assert.Equal(10, row.Modes.Count));
+        Assert.Equal(56, report.Cases.Count);
+        Assert.All(report.Cases, row => Assert.Equal(11, row.Modes.Count));
         Assert.Equal(JsonDefaults.Serialize(report), JsonDefaults.Serialize(
             ConditionLensAnalysis.Run(Fixture())));
     }
@@ -762,8 +762,8 @@ public sealed class ConditionLensTests
     public void NoReceivedEvidenceDoesNotProvePersonAbsence()
     {
         var report = ConditionLensAnalysis.Run(Fixture());
-        Assert.Equal(52, report.Cases.Count);
-        Assert.Equal(45, report.Cases.Count(c =>
+        Assert.Equal(56, report.Cases.Count);
+        Assert.Equal(49, report.Cases.Count(c =>
             !c.Id.StartsWith("U-", StringComparison.Ordinal)));
         Assert.Equal("limited-analogy-implemented",
             report.Index.Single(x => x.Id == "22").Status);
@@ -843,8 +843,8 @@ public sealed class ConditionLensTests
             var bytes = await File.ReadAllBytesAsync(path);
             using var doc = System.Text.Json.JsonDocument.Parse(bytes);
             var root = doc.RootElement;
-            Assert.Equal(6, root.GetProperty("schemaVersion").GetInt32());
-            Assert.Equal(52, root.GetProperty("cases").GetArrayLength());
+            Assert.Equal(7, root.GetProperty("schemaVersion").GetInt32());
+            Assert.Equal(56, root.GetProperty("cases").GetArrayLength());
             var none = root.GetProperty("cases").EnumerateArray().Single(c =>
                 c.GetProperty("id").GetString() == "U-none");
             Assert.Equal(0, none.GetProperty("receivedOriginalIds").GetArrayLength());
@@ -929,6 +929,297 @@ public sealed class ConditionLensTests
                 .GetProperty("methodComparison");
             Assert.Equal(JsonDefaults.Serialize(noneMethods),
                 JsonDefaults.Serialize(futureMethods));
+            Assert.Equal(0, await CliApplication.RunAsync(
+                ["evaluate-condition-lenses", "--fixture", FixturePath(), "--output", output]));
+            Assert.Equal(bytes, await File.ReadAllBytesAsync(path));
+        }
+        finally
+        {
+            if (Directory.Exists(output))
+                Directory.Delete(output, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void DistantReceivedPersonLensSeparatesTemporalApplicabilityFromAdjacentEvidence()
+    {
+        var report = ConditionLensAnalysis.Run(Fixture());
+        Assert.Equal(56, report.Cases.Count);
+        Assert.Equal(7, report.SchemaVersion);
+        Assert.Equal("limited-analogy-implemented",
+            report.Index.Single(e => e.Id == "21").Status);
+        Assert.All(report.Cases, c => Assert.Equal(11, c.Modes.Count));
+
+        var none = report.Cases.Single(c => c.Id == "H-none");
+        var eligible = report.Cases.Single(c => c.Id == "H-eligible");
+        var future = report.Cases.Single(c => c.Id == "H-future");
+        var duplicate = report.Cases.Single(c => c.Id == "H-duplicate");
+        var question = Assert.Single(none.Modes.Single(m => m.Mode == "21").Questions);
+        Assert.Equal("distant-person-temporal-applicability:5", question.QuestionId);
+        Assert.Equal(["21"], question.LensIds);
+        Assert.Equal("received-distant-person-observation-not-target-tick", question.ReasonCode);
+        Assert.Equal("direct-target-tick-person-evidence-or-declared-temporal-applicability",
+            question.RequiredInformation);
+        Assert.Equal("P", question.TargetPersonId);
+        Assert.Equal(5, question.TargetTick);
+        Assert.Equal(10, question.ReceiptCutoffTick);
+        Assert.Equal(["h-distant"], question.ReceivedOriginalIds);
+        Assert.Single(question.ReceivedObservationIds);
+        Assert.All(question.ReceivedObservationIds, id => Assert.False(string.IsNullOrWhiteSpace(id)));
+        Assert.Equal(["root-h-distant"], question.SourceAncestryIds);
+        Assert.Contains("tick(s) 7", question.Explanation);
+        Assert.DoesNotContain("h-target", JsonDefaults.Serialize(question));
+        Assert.DoesNotContain("root-h-target", JsonDefaults.Serialize(question));
+        Assert.Equal(["h-distant"], none.ReceivedOriginalIds);
+        Assert.Empty(none.Modes.Single(m => m.Mode == "04").Questions);
+        Assert.Empty(none.Modes.Single(m => m.Mode == "10").Questions);
+        Assert.Empty(none.Modes.Single(m => m.Mode == "22").Questions);
+        Assert.Empty(none.ExistingDeclaredPathDiagnostic.Candidates
+            .SelectMany(candidate => candidate.Questions));
+
+        Assert.Equal(["h-distant", "h-target"], eligible.ReceivedOriginalIds);
+        Assert.Empty(eligible.Modes.Single(m => m.Mode == "21").Questions);
+        Assert.Single(eligible.Modes.Single(m => m.Mode == "06").Questions);
+        Assert.Equal(["h-distant"], future.ReceivedOriginalIds);
+        Assert.Equal(["h-distant"], duplicate.ReceivedOriginalIds);
+        Assert.Equal(JsonDefaults.Serialize(none.Modes), JsonDefaults.Serialize(future.Modes));
+        Assert.Equal(JsonDefaults.Serialize(none.Modes), JsonDefaults.Serialize(duplicate.Modes));
+        Assert.Equal(JsonDefaults.Serialize(none.ExistingDeclaredPathDiagnostic),
+            JsonDefaults.Serialize(future.ExistingDeclaredPathDiagnostic));
+
+        var diff = report.AnswerDifferences.Single(d =>
+            d.FromCase == "H-none" && d.ToCase == "H-eligible");
+        Assert.Contains(question.QuestionId, diff.ResolvedQuestionIds);
+        Assert.Contains("same-tick-person-corroboration:5", diff.NewQuestionIds);
+        Assert.Equal(4, diff.Methods.Count);
+        // A legal new receipt may change different methods differently. Verify
+        // every answer-difference field against the actual per-method Compare rows.
+        var baselineRows = none.Modes[0].MethodComparison.Methods;
+        var eligibleRows = eligible.Modes[0].MethodComparison.Methods;
+        Assert.Equal(baselineRows.Select(m => m.Method).OrderBy(id => id, StringComparer.Ordinal),
+            diff.Methods.Select(m => m.Method).OrderBy(id => id, StringComparer.Ordinal));
+        foreach (var delta in diff.Methods)
+        {
+            var original = baselineRows.Single(m => m.Method == delta.Method);
+            var received = eligibleRows.Single(m => m.Method == delta.Method);
+            Assert.Equal(original.OuterCandidateRegionIds, delta.BeforeOuter);
+            Assert.Equal(received.OuterCandidateRegionIds, delta.AfterOuter);
+            Assert.Equal(JsonDefaults.Serialize(original.UncertainCandidateRegionIds),
+                JsonDefaults.Serialize(delta.BeforeUncertain));
+            Assert.Equal(JsonDefaults.Serialize(received.UncertainCandidateRegionIds),
+                JsonDefaults.Serialize(delta.AfterUncertain));
+            Assert.Equal(JsonDefaults.Serialize(original.ConflictedCandidateRegionIds),
+                JsonDefaults.Serialize(delta.BeforeConflicted));
+            Assert.Equal(JsonDefaults.Serialize(received.ConflictedCandidateRegionIds),
+                JsonDefaults.Serialize(delta.AfterConflicted));
+            Assert.Equal(original.AvailableSourceGroupCount, delta.BeforeAvailableSourceGroups);
+            Assert.Equal(received.AvailableSourceGroupCount, delta.AfterAvailableSourceGroups);
+            Assert.Equal(original.OuterCandidateRegionIds.Except(received.OuterCandidateRegionIds,
+                StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal), delta.RemovedOuter);
+            Assert.Equal(received.OuterCandidateRegionIds.Except(original.OuterCandidateRegionIds,
+                StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal), delta.AddedOuter);
+        }
+        var before = none.Modes[0].MethodComparison.Methods.Single(m =>
+            m.Method == "distributed-reconstruction");
+        var after = eligible.Modes[0].MethodComparison.Methods.Single(m =>
+            m.Method == "distributed-reconstruction");
+        Assert.Equal(["a", "b", "c"], before.OuterCandidateRegionIds);
+        Assert.Equal(["b"], after.OuterCandidateRegionIds);
+        Assert.Contains(diff.Methods, m =>
+            !m.BeforeOuter.SequenceEqual(m.AfterOuter, StringComparer.Ordinal));
+        foreach (var condition in new[] { "H-future", "H-duplicate" })
+        {
+            var unchanged = report.AnswerDifferences.Single(d =>
+                d.FromCase == "H-none" && d.ToCase == condition);
+            Assert.Empty(unchanged.ResolvedQuestionIds);
+            Assert.Empty(unchanged.NewQuestionIds);
+            Assert.Equal(4, unchanged.Methods.Count);
+            Assert.All(unchanged.Methods, m =>
+            {
+                Assert.Equal(JsonDefaults.Serialize(m.BeforeOuter), JsonDefaults.Serialize(m.AfterOuter));
+                Assert.Equal(JsonDefaults.Serialize(m.BeforeUncertain), JsonDefaults.Serialize(m.AfterUncertain));
+                Assert.Equal(JsonDefaults.Serialize(m.BeforeConflicted), JsonDefaults.Serialize(m.AfterConflicted));
+                Assert.Equal(m.BeforeAvailableSourceGroups, m.AfterAvailableSourceGroups);
+                Assert.Empty(m.AddedOuter);
+                Assert.Empty(m.RemovedOuter);
+            });
+        }
+
+        // The two earlier distant observations acquire only the new 21 question.
+        // The old adjacent and same-tick modes remain independent of this lens.
+        foreach (var id in new[] { "D-offtick", "G-offtick" })
+        {
+            var row = report.Cases.Single(c => c.Id == id);
+            Assert.Single(row.Modes.Single(m => m.Mode == "21").Questions);
+            Assert.Empty(row.Modes.Single(m => m.Mode == "04").Questions);
+            Assert.Empty(row.Modes.Single(m => m.Mode == "10").Questions);
+        }
+        foreach (var id in new[] { "T-gap", "D-none", "E-prior-none",
+            "F-followup", "U-none", "U-device", "U-followup", "U-prior" })
+            Assert.Empty(report.Cases.Single(c => c.Id == id)
+                .Modes.Single(m => m.Mode == "21").Questions);
+        foreach (var row in report.Cases)
+        {
+            Assert.All(row.Modes, mode =>
+                Assert.Equal(JsonDefaults.Serialize(row.Modes[0].MethodComparison),
+                    JsonDefaults.Serialize(mode.MethodComparison)));
+            foreach (var oldMode in new[] { "none", "02", "04", "06", "08",
+                "09", "10", "12", "22" })
+                Assert.DoesNotContain(row.Modes.Single(m => m.Mode == oldMode).Questions,
+                    q => q.LensIds.Contains("21"));
+        }
+    }
+
+    [Fact]
+    public async Task AtthiQuestionAndFourMethodComparisonsAreVerifiedFromSavedCliJson()
+    {
+        var output = Path.Combine(Path.GetTempPath(),
+            "footprint-atthi-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Assert.Equal(0, await CliApplication.RunAsync(
+                ["evaluate-condition-lenses", "--fixture", FixturePath(), "--output", output]));
+            var path = Path.Combine(output, "condition-lenses.json");
+            var bytes = await File.ReadAllBytesAsync(path);
+            using var doc = System.Text.Json.JsonDocument.Parse(bytes);
+            var root = doc.RootElement;
+            Assert.Equal(7, root.GetProperty("schemaVersion").GetInt32());
+            Assert.Equal(56, root.GetProperty("cases").GetArrayLength());
+            var cases = root.GetProperty("cases").EnumerateArray().ToArray();
+            System.Text.Json.JsonElement Case(string id) => cases.Single(c =>
+                c.GetProperty("id").GetString() == id);
+            System.Text.Json.JsonElement Mode(System.Text.Json.JsonElement c, string id) =>
+                c.GetProperty("modes").EnumerateArray().Single(m =>
+                    m.GetProperty("mode").GetString() == id);
+            var none = Case("H-none");
+            var eligible = Case("H-eligible");
+            var future = Case("H-future");
+            var duplicate = Case("H-duplicate");
+            var q = Mode(none, "21").GetProperty("questions").EnumerateArray().Single();
+            Assert.Equal("distant-person-temporal-applicability:5",
+                q.GetProperty("questionId").GetString());
+            Assert.Equal("received-distant-person-observation-not-target-tick",
+                q.GetProperty("reasonCode").GetString());
+            Assert.Equal("direct-target-tick-person-evidence-or-declared-temporal-applicability",
+                q.GetProperty("requiredInformation").GetString());
+            Assert.Equal("h-distant", q.GetProperty("receivedOriginalIds")[0].GetString());
+            Assert.Single(q.GetProperty("receivedObservationIds").EnumerateArray());
+            Assert.Equal("root-h-distant", q.GetProperty("sourceAncestryIds")[0].GetString());
+            Assert.DoesNotContain("h-target", q.GetRawText());
+            Assert.DoesNotContain("root-h-target", q.GetRawText());
+            Assert.Equal(0, Mode(eligible, "21").GetProperty("questions").GetArrayLength());
+            Assert.Single(Mode(eligible, "06").GetProperty("questions").EnumerateArray());
+            Assert.Equal(JsonDefaults.Serialize(none.GetProperty("receivedOriginalIds")),
+                JsonDefaults.Serialize(future.GetProperty("receivedOriginalIds")));
+            Assert.Equal(JsonDefaults.Serialize(none.GetProperty("receivedOriginalIds")),
+                JsonDefaults.Serialize(duplicate.GetProperty("receivedOriginalIds")));
+            Assert.Equal(JsonDefaults.Serialize(none.GetProperty("modes")),
+                JsonDefaults.Serialize(future.GetProperty("modes")));
+            Assert.Equal(JsonDefaults.Serialize(none.GetProperty("modes")),
+                JsonDefaults.Serialize(duplicate.GetProperty("modes")));
+
+            var beforeMethods = Mode(none, "none").GetProperty("methodComparison")
+                .GetProperty("methods").EnumerateArray().ToArray();
+            var afterMethods = Mode(eligible, "none").GetProperty("methodComparison")
+                .GetProperty("methods").EnumerateArray().ToArray();
+            Assert.Equal(4, beforeMethods.Length);
+            Assert.Equal(4, afterMethods.Length);
+            foreach (var before in beforeMethods)
+            {
+                var method = before.GetProperty("method").GetString();
+                var after = afterMethods.Single(m => m.GetProperty("method").GetString() == method);
+                foreach (var prop in new[] { "outerCandidateRegionIds", "uncertainCandidateRegionIds",
+                    "conflictedCandidateRegionIds", "availableSourceGroupCount" })
+                {
+                    // Different values are permitted on a NEW legal receipt, never by a question alone.
+                    Assert.Equal(JsonDefaults.Serialize(before.GetProperty(prop)),
+                        JsonDefaults.Serialize(Mode(none, "21").GetProperty("methodComparison")
+                            .GetProperty("methods").EnumerateArray().Single(m =>
+                                m.GetProperty("method").GetString() == method).GetProperty(prop)));
+                    Assert.Equal(JsonDefaults.Serialize(before.GetProperty(prop)),
+                        JsonDefaults.Serialize(Mode(future, "none").GetProperty("methodComparison")
+                            .GetProperty("methods").EnumerateArray().Single(m =>
+                                m.GetProperty("method").GetString() == method).GetProperty(prop)));
+                    Assert.Equal(JsonDefaults.Serialize(before.GetProperty(prop)),
+                        JsonDefaults.Serialize(Mode(duplicate, "none").GetProperty("methodComparison")
+                            .GetProperty("methods").EnumerateArray().Single(m =>
+                                m.GetProperty("method").GetString() == method).GetProperty(prop)));
+                }
+                Assert.Equal(JsonDefaults.Serialize(after),
+                    JsonDefaults.Serialize(Mode(eligible, "21").GetProperty("methodComparison")
+                        .GetProperty("methods").EnumerateArray().Single(m =>
+                            m.GetProperty("method").GetString() == method)));
+            }
+            var differences = root.GetProperty("answerDifferences").EnumerateArray().ToArray();
+            var eligibleDifference = differences.Single(d =>
+                d.GetProperty("fromCase").GetString() == "H-none" &&
+                d.GetProperty("toCase").GetString() == "H-eligible");
+            Assert.Contains("distant-person-temporal-applicability:5",
+                eligibleDifference.GetProperty("resolvedQuestionIds").EnumerateArray()
+                    .Select(x => x.GetString()));
+            Assert.Contains("same-tick-person-corroboration:5",
+                eligibleDifference.GetProperty("newQuestionIds").EnumerateArray()
+                    .Select(x => x.GetString()));
+            var eligibleMethodDeltas = eligibleDifference.GetProperty("methods")
+                .EnumerateArray().ToArray();
+            Assert.Equal(4, eligibleMethodDeltas.Length);
+            Assert.Equal(beforeMethods.Select(m => m.GetProperty("method").GetString())
+                    .OrderBy(id => id, StringComparer.Ordinal),
+                eligibleMethodDeltas.Select(m => m.GetProperty("method").GetString())
+                    .OrderBy(id => id, StringComparer.Ordinal));
+            // Read the CLI-saved JSON itself: all four method deltas must match
+            // their own H-none and H-eligible Compare outputs, including no-change rows.
+            foreach (var delta in eligibleMethodDeltas)
+            {
+                var method = delta.GetProperty("method").GetString();
+                var original = beforeMethods.Single(m => m.GetProperty("method").GetString() == method);
+                var received = afterMethods.Single(m => m.GetProperty("method").GetString() == method);
+                foreach (var (rowField, deltaField) in new[]
+                {
+                    ("outerCandidateRegionIds", "Outer"),
+                    ("uncertainCandidateRegionIds", "Uncertain"),
+                    ("conflictedCandidateRegionIds", "Conflicted")
+                })
+                {
+                    Assert.Equal(JsonDefaults.Serialize(original.GetProperty(rowField)),
+                        JsonDefaults.Serialize(delta.GetProperty("before" + deltaField)));
+                    Assert.Equal(JsonDefaults.Serialize(received.GetProperty(rowField)),
+                        JsonDefaults.Serialize(delta.GetProperty("after" + deltaField)));
+                }
+                Assert.Equal(original.GetProperty("availableSourceGroupCount").GetInt32(),
+                    delta.GetProperty("beforeAvailableSourceGroups").GetInt32());
+                Assert.Equal(received.GetProperty("availableSourceGroupCount").GetInt32(),
+                    delta.GetProperty("afterAvailableSourceGroups").GetInt32());
+                var oldOuter = original.GetProperty("outerCandidateRegionIds").EnumerateArray()
+                    .Select(region => region.GetString()!).ToArray();
+                var newOuter = received.GetProperty("outerCandidateRegionIds").EnumerateArray()
+                    .Select(region => region.GetString()!).ToArray();
+                Assert.Equal(oldOuter.Except(newOuter, StringComparer.Ordinal)
+                        .OrderBy(id => id, StringComparer.Ordinal),
+                    delta.GetProperty("removedOuter").EnumerateArray().Select(region => region.GetString()));
+                Assert.Equal(newOuter.Except(oldOuter, StringComparer.Ordinal)
+                        .OrderBy(id => id, StringComparer.Ordinal),
+                    delta.GetProperty("addedOuter").EnumerateArray().Select(region => region.GetString()));
+            }
+            foreach (var id in new[] { "H-future", "H-duplicate" })
+            {
+                var diff = differences.Single(d =>
+                    d.GetProperty("fromCase").GetString() == "H-none" &&
+                    d.GetProperty("toCase").GetString() == id);
+                Assert.Empty(diff.GetProperty("resolvedQuestionIds").EnumerateArray());
+                Assert.Empty(diff.GetProperty("newQuestionIds").EnumerateArray());
+                Assert.Equal(4, diff.GetProperty("methods").GetArrayLength());
+                foreach (var method in diff.GetProperty("methods").EnumerateArray())
+                {
+                    Assert.Empty(method.GetProperty("addedOuter").EnumerateArray());
+                    Assert.Empty(method.GetProperty("removedOuter").EnumerateArray());
+                    foreach (var name in new[] { "Outer", "Uncertain", "Conflicted" })
+                        Assert.Equal(JsonDefaults.Serialize(method.GetProperty("before" + name)),
+                            JsonDefaults.Serialize(method.GetProperty("after" + name)));
+                    Assert.Equal(method.GetProperty("beforeAvailableSourceGroups").GetInt32(),
+                        method.GetProperty("afterAvailableSourceGroups").GetInt32());
+                }
+            }
             Assert.Equal(0, await CliApplication.RunAsync(
                 ["evaluate-condition-lenses", "--fixture", FixturePath(), "--output", output]));
             Assert.Equal(bytes, await File.ReadAllBytesAsync(path));

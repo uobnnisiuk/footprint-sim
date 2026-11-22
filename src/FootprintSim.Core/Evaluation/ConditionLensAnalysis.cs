@@ -67,7 +67,7 @@ public sealed record ConditionLensOriginalSpec(
     IReadOnlyList<string> RegionIds, string SourceAncestryId, long? ReceivedAtTick);
 
 /// <summary>
-/// Eight bounded, source-backed question lenses on the existing receipt bridge.
+/// Nine bounded, source-backed question lenses on the existing receipt bridge.
 /// Neither a lens nor a proposed answer is an additional inference constraint.
 /// Every reported candidate comes from the unmodified M1-D/E comparison.
 /// </summary>
@@ -86,7 +86,7 @@ public static class ConditionLensAnalysis
         Names.Select((name, index) => new ConditionLensIndexEntry(
             (index + 1).ToString("D2", System.Globalization.CultureInfo.InvariantCulture),
             name, PaliSource,
-            index is 1 or 3 or 5 or 7 or 8 or 9 or 11 or 21 ? "limited-analogy-implemented" : "unimplemented-unassessed",
+            index is 1 or 3 or 5 or 7 or 8 or 9 or 11 or 20 or 21 ? "limited-analogy-implemented" : "unimplemented-unassessed",
             index == 1 ? "received-device-subject-check" :
             index == 3 ? "received-adjacent-tick-person-check" :
             index == 5 ? "received-same-tick-person-evidence-check" :
@@ -94,6 +94,7 @@ public static class ConditionLensAnalysis
             index == 8 ? "received-person-source-root-removal-dependence" :
             index == 9 ? "received-prior-tick-person-support-check" :
             index == 11 ? "received-adjacent-distinct-person-observations-shared-root-check" :
+            index == 20 ? "received-distant-person-observation-temporal-applicability-check" :
             index == 21 ? "received-evidence-absence-is-not-person-absence" :
             "no-validated-footprint-mapping")).ToArray();
 
@@ -288,6 +289,7 @@ public static class ConditionLensAnalysis
                 new ConditionLensModeResult("09", detected.Where(q => q.LensIds.Contains("09")).ToArray(), comparison),
                 new ConditionLensModeResult("10", detected.Where(q => q.LensIds.Contains("10")).ToArray(), comparison),
                 new ConditionLensModeResult("12", detected.Where(q => q.LensIds.Contains("12")).ToArray(), comparison),
+                new ConditionLensModeResult("21", detected.Where(q => q.LensIds.Contains("21")).ToArray(), comparison),
                 new ConditionLensModeResult("22", detected.Where(q => q.LensIds.Contains("22")).ToArray(), comparison),
                 new ConditionLensModeResult("combined", detected, comparison)
             };
@@ -334,7 +336,7 @@ public static class ConditionLensAnalysis
             }
         }
         return new ConditionLensReport(
-            6, fixture.ScenarioId, fixture.Seed, fixture.TargetPersonId,
+            7, fixture.ScenarioId, fixture.Seed, fixture.TargetPersonId,
             fixture.TargetTick, fixture.ReceiptCutoffTick, Index, results, differences);
     }
 
@@ -465,6 +467,45 @@ public static class ConditionLensAnalysis
                     Origins(prior),
                     "received-person-evidence-at-target-tick-or-declared-forward-public-reachability",
                     "Received Person evidence at the preceding tick is not direct evidence at the target tick. Verify target-tick Person evidence or declared forward public reachability; do not presume any transition."));
+            }
+        }
+
+        // 21 (atthi) is a weak engineering question about temporal applicability,
+        // NOT a doctrinal or physical rule of presence or movement. Only received,
+        // Confirmed, exact-tick evidence for the target Person is eligible.
+        // The receipt gate already excludes held-only and future observations.
+        var receivedPersonAtExactTick = received.ReceivedRecords.Where(r =>
+            r.OriginalObservation.IsPersonEvidence &&
+            !r.OriginalObservation.IsDeviceOnlyEvidence &&
+            r.OriginalObservation.EvidenceBoundaryState == EvidenceState.Confirmed &&
+            r.OriginalObservation.ObservedTimeWindow.StartTick ==
+                r.OriginalObservation.ObservedTimeWindow.EndTick &&
+            r.OriginalObservation.ObservedParticipants.Any(p =>
+                p.EntityId == target && p.EntityKind == InteractionEntityKind.Person))
+            .OrderBy(r => r.OriginalRecordId, StringComparer.Ordinal).ToArray();
+        static bool IsAtOrAdjacent(long observedTick, long targetTick) =>
+            observedTick < targetTick
+                ? targetTick - observedTick <= 1
+                : observedTick - targetTick <= 1;
+        if (!receivedPersonAtExactTick.Any(r => IsAtOrAdjacent(
+            r.OriginalObservation.ObservedTimeWindow.StartTick, tick)))
+        {
+            var distant = receivedPersonAtExactTick.Where(r =>
+                !IsAtOrAdjacent(r.OriginalObservation.ObservedTimeWindow.StartTick, tick))
+                .ToArray();
+            if (distant.Length > 0)
+            {
+                var observedTicks = distant
+                    .Select(r => r.OriginalObservation.ObservedTimeWindow.StartTick)
+                    .Distinct().OrderBy(t => t)
+                    .Select(t => t.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                questions.Add(new ConditionLensQuestion(
+                    "distant-person-temporal-applicability:" + tick, ["21"],
+                    "received-distant-person-observation-not-target-tick",
+                    target, tick, cutoff, RecordIds(distant), ObservationIds(distant),
+                    Origins(distant),
+                    "direct-target-tick-person-evidence-or-declared-temporal-applicability",
+                    $"Received Confirmed Person evidence at tick(s) {string.Join(", ", observedTicks)} is at least two ticks away from target tick {tick}; receiving it does not establish applicability at the target tick. Ask for legitimately received direct Person evidence or a declared public temporal relation. Neither presence nor absence nor movement is inferred."));
             }
         }
 
