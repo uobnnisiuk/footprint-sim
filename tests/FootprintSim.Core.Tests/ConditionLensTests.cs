@@ -430,7 +430,7 @@ public sealed class ConditionLensTests
             var saved = await File.ReadAllTextAsync(Path.Combine(output, "condition-lenses.json"));
             var report = ConditionLensAnalysis.Run(Fixture());
             Assert.Equal(JsonDefaults.Serialize(report) + "\n", saved);
-            Assert.Equal(7, report.SchemaVersion);
+            Assert.Equal(8, report.SchemaVersion);
             var eligible = report.Cases.Single(c => c.Id == "B-eligible");
             Assert.Empty(eligible.Modes.Single(m => m.Mode == "06").Questions);
             var question = Assert.Single(eligible.Modes.Single(m => m.Mode == "09").Questions);
@@ -957,7 +957,7 @@ public sealed class ConditionLensTests
             var bytes = await File.ReadAllBytesAsync(path);
             using var doc = System.Text.Json.JsonDocument.Parse(bytes);
             var root = doc.RootElement;
-            Assert.Equal(7, root.GetProperty("schemaVersion").GetInt32());
+            Assert.Equal(8, root.GetProperty("schemaVersion").GetInt32());
             Assert.Equal(56, root.GetProperty("cases").GetArrayLength());
             var none = root.GetProperty("cases").EnumerateArray().Single(c =>
                 c.GetProperty("id").GetString() == "U-none");
@@ -1059,7 +1059,7 @@ public sealed class ConditionLensTests
     {
         var report = ConditionLensAnalysis.Run(Fixture());
         Assert.Equal(56, report.Cases.Count);
-        Assert.Equal(7, report.SchemaVersion);
+        Assert.Equal(8, report.SchemaVersion);
         Assert.Equal("limited-analogy-implemented",
             report.Index.Single(e => e.Id == "21").Status);
         Assert.All(report.Cases, c => Assert.Equal(11, c.Modes.Count));
@@ -1197,7 +1197,7 @@ public sealed class ConditionLensTests
             var bytes = await File.ReadAllBytesAsync(path);
             using var doc = System.Text.Json.JsonDocument.Parse(bytes);
             var root = doc.RootElement;
-            Assert.Equal(7, root.GetProperty("schemaVersion").GetInt32());
+            Assert.Equal(8, root.GetProperty("schemaVersion").GetInt32());
             Assert.Equal(56, root.GetProperty("cases").GetArrayLength());
             var cases = root.GetProperty("cases").EnumerateArray().ToArray();
             System.Text.Json.JsonElement Case(string id) => cases.Single(c =>
