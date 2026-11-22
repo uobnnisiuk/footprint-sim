@@ -1,5 +1,11 @@
 using FootprintSim.Cli;
 using FootprintSim.Evaluation;
+using FootprintSim.Evidence;
+using FootprintSim.Hazards;
+using FootprintSim.Inference;
+using FootprintSim.Interactions;
+using FootprintSim.Interactions.CandidateWarps;
+using FootprintSim.Model;
 using FootprintSim.Serialization;
 using Xunit;
 
@@ -665,6 +671,93 @@ public sealed class ConditionLensTests
     }
 
 
+    // Rev8 independent review: test the U-none receipt gate itself rather than
+    // inferring it only from the report's empty received-original ID array.
+    [Fact]
+    public void NatthiUNonePassesReceiptBuilderWithNoReceivedRecords()
+    {
+        var fixture = System.Text.Json.JsonSerializer.Deserialize<ConditionLensFixture>(
+            Fixture(), new System.Text.Json.JsonSerializerOptions(
+                System.Text.Json.JsonSerializerDefaults.Web));
+        Assert.NotNull(fixture);
+        var unreceived = fixture.Cases.Single(c => c.Id == "U-none");
+        Assert.Equal(2, unreceived.Originals.Count);
+        Assert.All(unreceived.Originals, original => Assert.Null(original.ReceivedAtTick));
+
+        var regions = fixture.PublicRegionIds.OrderBy(id => id, StringComparer.Ordinal).ToArray();
+        var publicWorld = new RescueContext
+        {
+            ScenarioId = fixture.ScenarioId,
+            TargetPersonId = fixture.TargetPersonId,
+            NormalWalkingRadius = 0,
+            PublicDeviceIds = fixture.Cases.SelectMany(c => c.Originals)
+                .Select(o => o.HolderDeviceId).Distinct(StringComparer.Ordinal)
+                .OrderBy(id => id, StringComparer.Ordinal).ToArray(),
+            PublicRegions = regions.Select((id, index) => new RegionDefinition
+            {
+                Id = id,
+                Type = RegionType.Outdoor,
+                Center = new Position(index, 0, 0, id)
+            }).ToArray(),
+            PublicCausalTracingModel = new PublicCausalTracingModel
+            {
+                CandidateStates =
+                [
+                    new PublicCandidateWarpStateDefinition
+                    {
+                        TimeWindow = InteractionTimeWindow.At(fixture.TargetTick),
+                        TemporalKind = CandidateWarpTemporalKind.EventPoint,
+                        RegionIds = regions,
+                        EvidenceBoundaryState = EvidenceState.SupportedButUncertain,
+                        Provenance =
+                        [
+                            CandidateWarpProvenance.Create(
+                                CandidateWarpSourceKind.PublicCausalModel,
+                                "condition-lens-public-prior", 0, false, false,
+                                EvidenceState.SupportedButUncertain, regions)
+                        ]
+                    }
+                ]
+            }
+        };
+        var held = unreceived.Originals.OrderBy(o => o.Id, StringComparer.Ordinal)
+            .Select(o =>
+            {
+                var person = o.EvidenceKind == "person";
+                var observation = InteractionObservation.Create(
+                    fixture.ScenarioId, fixture.Seed, o.Id, null,
+                    InteractionRelationKind.PersonPersonEncounter,
+                    [
+                        new InteractionParticipant(
+                            person ? fixture.TargetPersonId : o.HolderDeviceId,
+                            person ? InteractionEntityKind.Person : InteractionEntityKind.Device,
+                            InteractionParticipantRole.EncounterParticipant),
+                        new InteractionParticipant("synthetic-peer", InteractionEntityKind.Person,
+                            InteractionParticipantRole.EncounterParticipant)
+                    ],
+                    InteractionTimeWindow.At(o.ObservedTick),
+                    o.RegionIds, o.ObservedTick, EvidenceState.Confirmed,
+                    isPersonEvidence: person, isDeviceOnlyEvidence: !person,
+                    InteractionVisibility.PrivateEvidence,
+                    [new InteractionProvenance(
+                        InteractionProvenanceKind.ExternalSource, o.SourceAncestryId)]);
+                return new DeviceHeldInteractionRecord(
+                    o.HolderDeviceId, o.ObservedTick, observation);
+            }).ToArray();
+        var visible = new RescuerEvidenceInputBuilder().BuildDistinctOriginals(
+            publicWorld, fixture.Seed, fixture.ReceiptCutoffTick, fixture.RescuerId,
+            held, Array.Empty<InteractionRecordReceipt>(), regions);
+        Assert.Empty(visible.ReceivedRecords);
+        var methods = RescuerEvidenceMethodComparison.Compare(
+            visible, InteractionTimeWindow.At(fixture.TargetTick)).Methods;
+        Assert.Equal(4, methods.Count);
+        Assert.All(methods, method =>
+        {
+            Assert.Equal(["a", "b", "c"], method.OuterCandidateRegionIds);
+            Assert.Equal(0, method.AvailableSourceGroupCount);
+        });
+    }
+
     [Fact]
     public void NoReceivedEvidenceDoesNotProvePersonAbsence()
     {
@@ -773,6 +866,69 @@ public sealed class ConditionLensTests
                 c.GetProperty("id").GetString() == "U-eligible");
             Assert.Single(after.GetProperty("modes").EnumerateArray().Single(m =>
                 m.GetProperty("mode").GetString() == "06").GetProperty("questions").EnumerateArray());
+            // Assert the Rev8 answer transitions from the bytes saved by the CLI,
+            // independent of in-memory AnswerDifferences and serialization equality.
+            var noneMethods = none.GetProperty("modes").EnumerateArray()
+                .Single(m => m.GetProperty("mode").GetString() == "none")
+                .GetProperty("methodComparison");
+            Assert.Equal(4, noneMethods.GetProperty("methods").GetArrayLength());
+            foreach (var modeName in new[] { "none", "22", "combined" })
+            {
+                var methodRow = none.GetProperty("modes").EnumerateArray()
+                    .Single(m => m.GetProperty("mode").GetString() == modeName)
+                    .GetProperty("methodComparison");
+                Assert.Equal(JsonDefaults.Serialize(noneMethods),
+                    JsonDefaults.Serialize(methodRow));
+            }
+            foreach (var methodRow in noneMethods.GetProperty("methods").EnumerateArray())
+            {
+                Assert.Equal(["a", "b", "c"], methodRow
+                    .GetProperty("outerCandidateRegionIds").EnumerateArray()
+                    .Select(region => region.GetString()));
+                Assert.Equal(0, methodRow.GetProperty("availableSourceGroupCount").GetInt32());
+            }
+
+            var differences = root.GetProperty("answerDifferences").EnumerateArray().ToArray();
+            var eligibleDifference = differences.Single(d =>
+                d.GetProperty("fromCase").GetString() == "U-none" &&
+                d.GetProperty("toCase").GetString() == "U-eligible");
+            Assert.Contains("no-received-records-person-availability:5",
+                eligibleDifference.GetProperty("resolvedQuestionIds").EnumerateArray()
+                    .Select(id => id.GetString()));
+            Assert.Contains("same-tick-person-corroboration:5",
+                eligibleDifference.GetProperty("newQuestionIds").EnumerateArray()
+                    .Select(id => id.GetString()));
+            var eligibleMethodDiffs = eligibleDifference.GetProperty("methods")
+                .EnumerateArray().ToArray();
+            Assert.Equal(4, eligibleMethodDiffs.Length);
+            Assert.Contains(eligibleMethodDiffs, methodDiff =>
+                !JsonDefaults.Serialize(methodDiff.GetProperty("beforeOuter")).Equals(
+                    JsonDefaults.Serialize(methodDiff.GetProperty("afterOuter")),
+                    StringComparison.Ordinal));
+
+            var futureDifference = differences.Single(d =>
+                d.GetProperty("fromCase").GetString() == "U-none" &&
+                d.GetProperty("toCase").GetString() == "U-future");
+            Assert.Empty(futureDifference.GetProperty("resolvedQuestionIds").EnumerateArray());
+            Assert.Empty(futureDifference.GetProperty("newQuestionIds").EnumerateArray());
+            var futureMethodDiffs = futureDifference.GetProperty("methods")
+                .EnumerateArray().ToArray();
+            Assert.Equal(4, futureMethodDiffs.Length);
+            foreach (var methodDiff in futureMethodDiffs)
+            {
+                Assert.Empty(methodDiff.GetProperty("addedOuter").EnumerateArray());
+                Assert.Empty(methodDiff.GetProperty("removedOuter").EnumerateArray());
+                foreach (var part in new[] { "Outer", "Uncertain", "Conflicted" })
+                    Assert.Equal(JsonDefaults.Serialize(methodDiff.GetProperty("before" + part)),
+                        JsonDefaults.Serialize(methodDiff.GetProperty("after" + part)));
+                Assert.Equal(methodDiff.GetProperty("beforeAvailableSourceGroups").GetInt32(),
+                    methodDiff.GetProperty("afterAvailableSourceGroups").GetInt32());
+            }
+            var futureMethods = future.GetProperty("modes").EnumerateArray()
+                .Single(m => m.GetProperty("mode").GetString() == "none")
+                .GetProperty("methodComparison");
+            Assert.Equal(JsonDefaults.Serialize(noneMethods),
+                JsonDefaults.Serialize(futureMethods));
             Assert.Equal(0, await CliApplication.RunAsync(
                 ["evaluate-condition-lenses", "--fixture", FixturePath(), "--output", output]));
             Assert.Equal(bytes, await File.ReadAllBytesAsync(path));
