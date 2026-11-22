@@ -47,6 +47,72 @@ public sealed class ConditionLensTests
     }
 
     [Fact]
+    public void SahajataQuestionDoesNotCertifyDoctrinalCondition()
+    {
+        var report = ConditionLensAnalysis.Run(Fixture());
+        Assert.Equal(8, report.SchemaVersion);
+        Assert.Equal(24, report.CorrespondenceAudits.Count);
+        Assert.Equal(report.Index.Select(x => x.Id),
+            report.CorrespondenceAudits.Select(x => x.LensId));
+        var audit = report.CorrespondenceAudits.Single(x => x.LensId == "06");
+        Assert.Equal("limited-analogy-implemented", audit.QuestionImplementationStatus);
+        Assert.Equal("doctrinal-correspondence-unverified", audit.DoctrinalCorrespondenceStatus);
+        Assert.Equal("search-effect-unverified", audit.SearchEffectStatus);
+        Assert.Equal("co-arising", audit.TemporalRelation);
+        Assert.Contains("conditioning-to-conditioned", audit.ConditioningDirection);
+        Assert.Contains("conditioning-and-conditioned-phenomena-pair",
+            audit.UnrepresentedDoctrinalRelations);
+        Assert.Contains("directed-or-mutual-conditional-relation",
+            audit.UnrepresentedDoctrinalRelations);
+        Assert.Contains("received-external-source-root", audit.ReceivedEngineeringInputs);
+        Assert.Equal("https://www.aimwell.org/patthana.html", audit.DoctrinalSource);
+        Assert.All(report.CorrespondenceAudits.Where(x => x.LensId != "06"), x =>
+        {
+            Assert.Equal("doctrinal-correspondence-unassessed",
+                x.DoctrinalCorrespondenceStatus);
+            Assert.Equal("search-effect-unverified", x.SearchEffectStatus);
+        });
+
+        // The question toggles on valid receipt/source-root contrasts, while
+        // no conditioning/conditioned phenomena or mutual edge is represented.
+        foreach (var (name, expectedQuestion) in new[]
+        {
+            ("B-none", true), ("B-eligible", false),
+            ("S3", true), ("S4", false)
+        })
+        {
+            var row = report.Cases.Single(x => x.Id == name);
+            Assert.Equal(expectedQuestion,
+                row.Modes.Single(x => x.Mode == "06").Questions.Count != 0);
+            Assert.Equal(11, row.Modes.Count);
+            var baseline = row.Modes[0].MethodComparison.Methods;
+            Assert.Equal(4, baseline.Count);
+            foreach (var mode in row.Modes)
+            {
+                var actual = mode.MethodComparison.Methods;
+                Assert.Equal(4, actual.Count);
+                for (var i = 0; i < 4; i++)
+                {
+                    Assert.Equal(baseline[i].Method, actual[i].Method);
+                    Assert.Equal(baseline[i].OuterCandidateRegionIds,
+                        actual[i].OuterCandidateRegionIds);
+                    Assert.Equal(baseline[i].PreferredCandidateRegionIds,
+                        actual[i].PreferredCandidateRegionIds);
+                    Assert.Equal(baseline[i].UncertainCandidateRegionIds,
+                        actual[i].UncertainCandidateRegionIds);
+                    Assert.Equal(baseline[i].ConflictedCandidateRegionIds,
+                        actual[i].ConflictedCandidateRegionIds);
+                    Assert.Equal(baseline[i].AvailableSourceGroupCount,
+                        actual[i].AvailableSourceGroupCount);
+                }
+            }
+        }
+        Assert.Equal(["root-s-first"],
+            Assert.Single(report.Cases.Single(x => x.Id == "S3")
+                .Modes.Single(x => x.Mode == "06").Questions).SourceAncestryIds);
+    }
+
+    [Fact]
     public void ReceivedPersonEvidenceResolvesMissingPersonButNotDeviceAssociation()
     {
         var report = ConditionLensAnalysis.Run(Fixture());
@@ -159,7 +225,55 @@ public sealed class ConditionLensTests
             Assert.Equal(JsonDefaults.Serialize(savedRedundant.GetProperty("modes")
                 .EnumerateArray().First().GetProperty("methodComparison")),
                 JsonDefaults.Serialize(savedEight.GetProperty("methodComparison")));
-            Assert.Equal(7, savedReport.RootElement.GetProperty("schemaVersion").GetInt32());
+            Assert.Equal(8, savedReport.RootElement.GetProperty("schemaVersion").GetInt32());
+            // These values were read from the CLI's actual saved JSON.
+            var savedAudits = savedReport.RootElement.GetProperty("correspondenceAudits")
+                .EnumerateArray().ToArray();
+            Assert.Equal(24, savedAudits.Length);
+            var savedSix = savedAudits.Single(x => x.GetProperty("lensId").GetString() == "06");
+            Assert.Equal("limited-analogy-implemented",
+                savedSix.GetProperty("questionImplementationStatus").GetString());
+            Assert.Equal("doctrinal-correspondence-unverified",
+                savedSix.GetProperty("doctrinalCorrespondenceStatus").GetString());
+            Assert.Equal("search-effect-unverified",
+                savedSix.GetProperty("searchEffectStatus").GetString());
+            Assert.Equal("co-arising", savedSix.GetProperty("temporalRelation").GetString());
+            Assert.Contains("conditioning-and-conditioned-phenomena-pair",
+                savedSix.GetProperty("unrepresentedDoctrinalRelations").EnumerateArray()
+                    .Select(x => x.GetString()));
+            foreach (var (caseId, mustAsk) in new[]
+            {
+                ("B-none", true), ("B-eligible", false),
+                ("S3", true), ("S4", false)
+            })
+            {
+                var row = savedReport.RootElement.GetProperty("cases")
+                    .EnumerateArray().Single(x => x.GetProperty("id").GetString() == caseId);
+                var modes = row.GetProperty("modes").EnumerateArray().ToArray();
+                Assert.Equal(11, modes.Length);
+                var sixMode = modes.Single(x => x.GetProperty("mode").GetString() == "06");
+                Assert.Equal(mustAsk, sixMode.GetProperty("questions").GetArrayLength() != 0);
+                var baseline = modes[0].GetProperty("methodComparison")
+                    .GetProperty("methods").EnumerateArray().ToArray();
+                Assert.Equal(4, baseline.Length);
+                foreach (var mode in modes)
+                {
+                    var methods = mode.GetProperty("methodComparison")
+                        .GetProperty("methods").EnumerateArray().ToArray();
+                    Assert.Equal(4, methods.Length);
+                    for (var i = 0; i < 4; i++)
+                    {
+                        foreach (var field in new[]
+                        {
+                            "outerCandidateRegionIds", "preferredCandidateRegionIds",
+                            "uncertainCandidateRegionIds", "conflictedCandidateRegionIds",
+                            "availableSourceGroupCount"
+                        })
+                            Assert.Equal(baseline[i].GetProperty(field).GetRawText(),
+                                methods[i].GetProperty(field).GetRawText());
+                    }
+                }
+            }
             var firstBytes = await File.ReadAllBytesAsync(Path.Combine(output, "condition-lenses.json"));
             Assert.Equal(0, await CliApplication.RunAsync(
                 ["evaluate-condition-lenses", "--fixture", FixturePath(), "--output", output]));
@@ -167,7 +281,7 @@ public sealed class ConditionLensTests
                 await File.ReadAllBytesAsync(Path.Combine(output, "condition-lenses.json")));
             Assert.Equal(24, expected.Index.Count);
             Assert.Equal(56, expected.Cases.Count);
-            Assert.Equal(7, expected.SchemaVersion);
+            Assert.Equal(8, expected.SchemaVersion);
             Assert.All(expected.Cases, c => Assert.Equal(11, c.Modes.Count));
             Assert.Equal(["b"], expected.Cases.Single(c => c.Id == "B-eligible")
                 .Modes[0].MethodComparison.Methods.Single(m =>
@@ -316,7 +430,7 @@ public sealed class ConditionLensTests
             var saved = await File.ReadAllTextAsync(Path.Combine(output, "condition-lenses.json"));
             var report = ConditionLensAnalysis.Run(Fixture());
             Assert.Equal(JsonDefaults.Serialize(report) + "\n", saved);
-            Assert.Equal(7, report.SchemaVersion);
+            Assert.Equal(8, report.SchemaVersion);
             var eligible = report.Cases.Single(c => c.Id == "B-eligible");
             Assert.Empty(eligible.Modes.Single(m => m.Mode == "06").Questions);
             var question = Assert.Single(eligible.Modes.Single(m => m.Mode == "09").Questions);
@@ -843,7 +957,7 @@ public sealed class ConditionLensTests
             var bytes = await File.ReadAllBytesAsync(path);
             using var doc = System.Text.Json.JsonDocument.Parse(bytes);
             var root = doc.RootElement;
-            Assert.Equal(7, root.GetProperty("schemaVersion").GetInt32());
+            Assert.Equal(8, root.GetProperty("schemaVersion").GetInt32());
             Assert.Equal(56, root.GetProperty("cases").GetArrayLength());
             var none = root.GetProperty("cases").EnumerateArray().Single(c =>
                 c.GetProperty("id").GetString() == "U-none");
@@ -945,7 +1059,7 @@ public sealed class ConditionLensTests
     {
         var report = ConditionLensAnalysis.Run(Fixture());
         Assert.Equal(56, report.Cases.Count);
-        Assert.Equal(7, report.SchemaVersion);
+        Assert.Equal(8, report.SchemaVersion);
         Assert.Equal("limited-analogy-implemented",
             report.Index.Single(e => e.Id == "21").Status);
         Assert.All(report.Cases, c => Assert.Equal(11, c.Modes.Count));
@@ -1083,7 +1197,7 @@ public sealed class ConditionLensTests
             var bytes = await File.ReadAllBytesAsync(path);
             using var doc = System.Text.Json.JsonDocument.Parse(bytes);
             var root = doc.RootElement;
-            Assert.Equal(7, root.GetProperty("schemaVersion").GetInt32());
+            Assert.Equal(8, root.GetProperty("schemaVersion").GetInt32());
             Assert.Equal(56, root.GetProperty("cases").GetArrayLength());
             var cases = root.GetProperty("cases").EnumerateArray().ToArray();
             System.Text.Json.JsonElement Case(string id) => cases.Single(c =>

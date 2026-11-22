@@ -47,12 +47,22 @@ public sealed record ConditionLensAnswerDifference(
     string Group, string FromCase, string ToCase, string AnswerCondition,
     string Interpretation, IReadOnlyList<ConditionLensMethodDifference> Methods,
     IReadOnlyList<string> ResolvedQuestionIds, IReadOnlyList<string> NewQuestionIds);
+// Explicitly separates an implemented question from a verified conditional relation.
+public sealed record ConditionLensCorrespondenceAudit(
+    string LensId, string QuestionImplementationStatus,
+    string DoctrinalCorrespondenceStatus, string SearchEffectStatus,
+    string ConditioningPhenomena, string ConditionedPhenomena,
+    string ConditioningDirection, string TemporalRelation,
+    string DoctrinalSource, string EngineeringQuestionTrigger,
+    IReadOnlyList<string> ReceivedEngineeringInputs,
+    IReadOnlyList<string> UnrepresentedDoctrinalRelations);
 public sealed record ConditionLensReport(
     int SchemaVersion, string ScenarioId, int Seed, string TargetPersonId,
     long TargetTick, long ReceiptCutoffTick,
     IReadOnlyList<ConditionLensIndexEntry> Index,
     IReadOnlyList<ConditionLensCaseResult> Cases,
-    IReadOnlyList<ConditionLensAnswerDifference> AnswerDifferences);
+    IReadOnlyList<ConditionLensAnswerDifference> AnswerDifferences,
+    IReadOnlyList<ConditionLensCorrespondenceAudit> CorrespondenceAudits);
 
 // This is a finite public synthetic input; held originals are not rescuer knowledge.
 public sealed record ConditionLensFixture(
@@ -97,6 +107,35 @@ public static class ConditionLensAnalysis
             index == 20 ? "received-distant-person-observation-temporal-applicability-check" :
             index == 21 ? "received-evidence-absence-is-not-person-absence" :
             "no-validated-footprint-mapping")).ToArray();
+
+    // This source-to-model audit does not read held records or infer a new relation.
+    // Even a resolved 06 question does not establish the original sahajata condition.
+    private static readonly IReadOnlyList<ConditionLensCorrespondenceAudit> CorrespondenceAudits =
+        Index.Select(entry => entry.Id == "06"
+            ? new ConditionLensCorrespondenceAudit(
+                entry.Id, entry.Status,
+                "doctrinal-correspondence-unverified", "search-effect-unverified",
+                "co-arising conditioning mental-or-material phenomena",
+                "co-arising conditioned mental-or-material phenomena",
+                "conditioning-to-conditioned; source examples can be mutual",
+                "co-arising",
+                entry.Source,
+                "one-declared-external-source-root-among-received-confirmed-person-originals-at-target-exact-tick",
+                ["target-person", "received-original-id", "received-observation-id",
+                 "observed-exact-tick", "received-external-source-root", "receipt-cutoff"],
+                ["conditioning-and-conditioned-phenomena-pair",
+                 "directed-or-mutual-conditional-relation",
+                 "co-arising-conditional-link"])
+            : new ConditionLensCorrespondenceAudit(
+                entry.Id, entry.Status,
+                "doctrinal-correspondence-unassessed", "search-effect-unverified",
+                "not-assessed", "not-assessed", "not-assessed", "not-assessed",
+                entry.Source,
+                entry.Status == "limited-analogy-implemented"
+                    ? "existing-engineering-question-only"
+                    : "not-implemented",
+                [], ["doctrinal-conditional-relation-not-assessed"]))
+        .ToArray();
 
     public static ConditionLensReport Run(byte[] fixtureBytes)
     {
@@ -336,8 +375,9 @@ public static class ConditionLensAnalysis
             }
         }
         return new ConditionLensReport(
-            7, fixture.ScenarioId, fixture.Seed, fixture.TargetPersonId,
-            fixture.TargetTick, fixture.ReceiptCutoffTick, Index, results, differences);
+            8, fixture.ScenarioId, fixture.Seed, fixture.TargetPersonId,
+            fixture.TargetTick, fixture.ReceiptCutoffTick, Index, results, differences,
+            CorrespondenceAudits);
     }
 
     private static IReadOnlyList<ConditionLensQuestion> Questions(
