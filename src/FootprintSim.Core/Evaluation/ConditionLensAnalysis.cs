@@ -126,6 +126,56 @@ public static class ConditionLensAnalysis
                 ["conditioning-and-conditioned-phenomena-pair",
                  "directed-or-mutual-conditional-relation",
                  "co-arising-conditional-link"])
+            : entry.Id == "05"
+                ? new ConditionLensCorrespondenceAudit(
+                    entry.Id, entry.Status,
+                    "doctrinal-correspondence-unassessed", "search-effect-unverified",
+                    "preceding mental phenomenon", "immediately succeeding mental phenomenon",
+                    "preceding-to-immediately-succeeding", "immediately-successive-mental-moments",
+                    entry.Source,
+                    "unimplemented; E-prior-none/E-prior-future vs F-followup; received tick adjacency is not mental succession or a new 04/10 question",
+                    ["received-person-observation-at-tick-before-target", "received-person-observation-at-tick-after-target", "observed-exact-tick", "receipt-cutoff"],
+                    ["preceding-and-succeeding-mental-phenomena-pair", "immediate-mental-succession-conditional-link", "independent-question-distinct-from-04-and-10"])
+            : entry.Id == "07"
+                ? new ConditionLensCorrespondenceAudit(
+                    entry.Id, entry.Status,
+                    "doctrinal-correspondence-unassessed", "search-effect-unverified",
+                    "mutually conditioning mental aggregates or material elements", "counterpart mental aggregates or material elements in reciprocal dependence",
+                    "reciprocal-conditioning-in-both-directions", "simultaneous-mutual-conditioning",
+                    entry.Source,
+                    "unimplemented; S1/S3/S4/B-eligible; one/copy/two received roots do not establish original mutual condition or a new 06/08 question",
+                    ["received-person-observation-at-target-exact-tick", "received-original-id", "received-external-source-root", "receipt-cutoff"],
+                    ["two-conditioned-phenomena-with-reciprocal-roles", "bidirectional-mutual-conditional-links", "simultaneous-original-phenomena-relation"])
+            : entry.Id == "11"
+                ? new ConditionLensCorrespondenceAudit(
+                    entry.Id, entry.Status,
+                    "doctrinal-correspondence-unassessed", "search-effect-unverified",
+                    "later-arisen mental phenomena", "earlier-arisen material body phenomena",
+                    "later-mental-to-earlier-material", "later-arising-conditions-earlier-material",
+                    entry.Source,
+                    "unimplemented; D-none/D-eligible; a later observed or received Person record is not reverse conditioning or a new 04 question",
+                    ["received-person-observation-after-target-tick", "observed-exact-tick", "receipt-cutoff"],
+                    ["later-arisen-mental-phenomenon", "earlier-material-body-phenomenon", "later-to-earlier-conditional-effect"])
+            : entry.Id == "23"
+                ? new ConditionLensCorrespondenceAudit(
+                    entry.Id, entry.Status,
+                    "doctrinal-correspondence-unassessed", "search-effect-unverified",
+                    "just-ceased preceding mental phenomenon", "immediately succeeding mental phenomenon",
+                    "ceased-predecessor-to-successor", "cessation-just-before-succeeding-mental-moment",
+                    entry.Source,
+                    "unimplemented; U-none/U-future; no legally received original is not verified cessation or a new 22 question",
+                    ["received-original-count", "target-tick", "receipt-cutoff"],
+                    ["verified-cessation-of-preceding-mental-phenomenon", "preceding-and-succeeding-mental-phenomena-pair", "cessation-conditioning-link"])
+            : entry.Id == "24"
+                ? new ConditionLensCorrespondenceAudit(
+                    entry.Id, entry.Status,
+                    "doctrinal-correspondence-unassessed", "search-effect-unverified",
+                    "not-ceased persisting phenomena", "other phenomena conditioned by their continuance",
+                    "persisting-to-conditioned", "non-cessation-during-conditioning",
+                    entry.Source,
+                    "unimplemented; H-none/H-eligible; distant received Person observation is not persistence or a new 21 question",
+                    ["received-distant-person-observation", "observed-exact-tick", "receipt-cutoff"],
+                    ["verified-persistence-or-non-cessation", "conditioning-and-conditioned-phenomena-pair", "persistence-conditional-link"])
             : new ConditionLensCorrespondenceAudit(
                 entry.Id, entry.Status,
                 "doctrinal-correspondence-unassessed", "search-effect-unverified",
@@ -375,7 +425,7 @@ public static class ConditionLensAnalysis
             }
         }
         return new ConditionLensReport(
-            8, fixture.ScenarioId, fixture.Seed, fixture.TargetPersonId,
+            9, fixture.ScenarioId, fixture.Seed, fixture.TargetPersonId,
             fixture.TargetTick, fixture.ReceiptCutoffTick, Index, results, differences,
             CorrespondenceAudits);
     }
