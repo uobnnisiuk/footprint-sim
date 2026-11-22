@@ -416,6 +416,31 @@ public static class ConditionLensAnalysis
                 "legitimately-received-person-evidence-at-target-tick-or-availability-check",
                 "No evidence originals were received by the cutoff; that is not proof that the Person is absent. Ask what Person evidence could legitimately be obtained, without assuming knowledge of held or future records."));
         }
+        // AR-90 / Rev13: an off-tick Device receipt can silence all existing
+        // questions without providing ANY target-Person observation. This is a
+        // missing-information question only, never a Person/Device inference.
+        // The builder has already applied the receipt cutoff; inspect no held originals.
+        var offTickDeviceOnly = received.ReceivedRecords
+            .OrderBy(r => r.OriginalRecordId, StringComparer.Ordinal).ToArray();
+        if (offTickDeviceOnly.Length > 0 && offTickDeviceOnly.All(r =>
+            r.OriginalObservation.IsDeviceOnlyEvidence &&
+            r.OriginalObservation.EvidenceBoundaryState == EvidenceState.Confirmed &&
+            r.OriginalObservation.ObservedTimeWindow.StartTick ==
+                r.OriginalObservation.ObservedTimeWindow.EndTick &&
+            r.OriginalObservation.ObservedTimeWindow.StartTick != tick))
+        {
+            var observedTicks = offTickDeviceOnly.Select(r =>
+                    r.OriginalObservation.ObservedTimeWindow.StartTick)
+                .Distinct().OrderBy(t => t)
+                .Select(t => t.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            questions.Add(new ConditionLensQuestion(
+                "off-tick-device-only-person-availability:" + tick, ["22"],
+                "received-offtick-device-without-target-person-evidence",
+                target, tick, cutoff, RecordIds(offTickDeviceOnly),
+                ObservationIds(offTickDeviceOnly), Origins(offTickDeviceOnly),
+                "legitimately-received-target-person-evidence-or-availability-check",
+                $"Only Confirmed Device-only original(s) at tick(s) {string.Join(", ", observedTicks)} were received by cutoff {cutoff}, not target tick {tick}. These are not Person evidence, and their receipt cannot establish the Person's presence or absence. Ask whether target-Person evidence could legitimately be obtained; infer no location or physical relation."));
+        }
         var devices = visible.Where(r => r.OriginalObservation.IsDeviceOnlyEvidence).ToArray();
         var persons = visible.Where(r =>
             r.OriginalObservation.IsPersonEvidence &&
