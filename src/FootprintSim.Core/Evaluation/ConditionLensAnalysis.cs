@@ -67,7 +67,7 @@ public sealed record ConditionLensOriginalSpec(
     IReadOnlyList<string> RegionIds, string SourceAncestryId, long? ReceivedAtTick);
 
 /// <summary>
-/// Seven bounded, source-backed question lenses on the existing receipt bridge.
+/// Eight bounded, source-backed question lenses on the existing receipt bridge.
 /// Neither a lens nor a proposed answer is an additional inference constraint.
 /// Every reported candidate comes from the unmodified M1-D/E comparison.
 /// </summary>
@@ -86,7 +86,7 @@ public static class ConditionLensAnalysis
         Names.Select((name, index) => new ConditionLensIndexEntry(
             (index + 1).ToString("D2", System.Globalization.CultureInfo.InvariantCulture),
             name, PaliSource,
-            index is 1 or 3 or 5 or 7 or 8 or 9 or 11 ? "limited-analogy-implemented" : "unimplemented-unassessed",
+            index is 1 or 3 or 5 or 7 or 8 or 9 or 11 or 21 ? "limited-analogy-implemented" : "unimplemented-unassessed",
             index == 1 ? "received-device-subject-check" :
             index == 3 ? "received-adjacent-tick-person-check" :
             index == 5 ? "received-same-tick-person-evidence-check" :
@@ -94,6 +94,7 @@ public static class ConditionLensAnalysis
             index == 8 ? "received-person-source-root-removal-dependence" :
             index == 9 ? "received-prior-tick-person-support-check" :
             index == 11 ? "received-adjacent-distinct-person-observations-shared-root-check" :
+            index == 21 ? "received-evidence-absence-is-not-person-absence" :
             "no-validated-footprint-mapping")).ToArray();
 
     public static ConditionLensReport Run(byte[] fixtureBytes)
@@ -287,6 +288,7 @@ public static class ConditionLensAnalysis
                 new ConditionLensModeResult("09", detected.Where(q => q.LensIds.Contains("09")).ToArray(), comparison),
                 new ConditionLensModeResult("10", detected.Where(q => q.LensIds.Contains("10")).ToArray(), comparison),
                 new ConditionLensModeResult("12", detected.Where(q => q.LensIds.Contains("12")).ToArray(), comparison),
+                new ConditionLensModeResult("22", detected.Where(q => q.LensIds.Contains("22")).ToArray(), comparison),
                 new ConditionLensModeResult("combined", detected, comparison)
             };
             results.Add(new ConditionLensCaseResult(
@@ -332,7 +334,7 @@ public static class ConditionLensAnalysis
             }
         }
         return new ConditionLensReport(
-            5, fixture.ScenarioId, fixture.Seed, fixture.TargetPersonId,
+            6, fixture.ScenarioId, fixture.Seed, fixture.TargetPersonId,
             fixture.TargetTick, fixture.ReceiptCutoffTick, Index, results, differences);
     }
 
@@ -360,6 +362,18 @@ public static class ConditionLensAnalysis
         var target = received.Input.PublicContext.TargetPersonId;
         var cutoff = received.Input.CurrentTick;
         var questions = new List<ConditionLensQuestion>();
+        // 22 is a deliberately weak engineering question about receipt visibility,
+        // NOT the Paṭṭhāna's cessation condition or evidence of a Person's absence.
+        // Consult only the post-gate received set; never quote held/future originals.
+        if (received.ReceivedRecords.Count == 0)
+        {
+            questions.Add(new ConditionLensQuestion(
+                "no-received-records-person-availability:" + tick, ["22"],
+                "no-received-evidence-is-not-person-absence",
+                target, tick, cutoff, [], [], [],
+                "legitimately-received-person-evidence-at-target-tick-or-availability-check",
+                "No evidence originals were received by the cutoff; that is not proof that the Person is absent. Ask what Person evidence could legitimately be obtained, without assuming knowledge of held or future records."));
+        }
         var devices = visible.Where(r => r.OriginalObservation.IsDeviceOnlyEvidence).ToArray();
         var persons = visible.Where(r =>
             r.OriginalObservation.IsPersonEvidence &&
