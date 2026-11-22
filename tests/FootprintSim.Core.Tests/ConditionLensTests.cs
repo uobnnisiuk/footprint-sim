@@ -992,6 +992,33 @@ public sealed class ConditionLensTests
         Assert.Contains(question.QuestionId, diff.ResolvedQuestionIds);
         Assert.Contains("same-tick-person-corroboration:5", diff.NewQuestionIds);
         Assert.Equal(4, diff.Methods.Count);
+        // A legal new receipt may change different methods differently. Verify
+        // every answer-difference field against the actual per-method Compare rows.
+        var baselineRows = none.Modes[0].MethodComparison.Methods;
+        var eligibleRows = eligible.Modes[0].MethodComparison.Methods;
+        Assert.Equal(baselineRows.Select(m => m.Method).OrderBy(id => id, StringComparer.Ordinal),
+            diff.Methods.Select(m => m.Method).OrderBy(id => id, StringComparer.Ordinal));
+        foreach (var delta in diff.Methods)
+        {
+            var original = baselineRows.Single(m => m.Method == delta.Method);
+            var received = eligibleRows.Single(m => m.Method == delta.Method);
+            Assert.Equal(original.OuterCandidateRegionIds, delta.BeforeOuter);
+            Assert.Equal(received.OuterCandidateRegionIds, delta.AfterOuter);
+            Assert.Equal(JsonDefaults.Serialize(original.UncertainCandidateRegionIds),
+                JsonDefaults.Serialize(delta.BeforeUncertain));
+            Assert.Equal(JsonDefaults.Serialize(received.UncertainCandidateRegionIds),
+                JsonDefaults.Serialize(delta.AfterUncertain));
+            Assert.Equal(JsonDefaults.Serialize(original.ConflictedCandidateRegionIds),
+                JsonDefaults.Serialize(delta.BeforeConflicted));
+            Assert.Equal(JsonDefaults.Serialize(received.ConflictedCandidateRegionIds),
+                JsonDefaults.Serialize(delta.AfterConflicted));
+            Assert.Equal(original.AvailableSourceGroupCount, delta.BeforeAvailableSourceGroups);
+            Assert.Equal(received.AvailableSourceGroupCount, delta.AfterAvailableSourceGroups);
+            Assert.Equal(original.OuterCandidateRegionIds.Except(received.OuterCandidateRegionIds,
+                StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal), delta.RemovedOuter);
+            Assert.Equal(received.OuterCandidateRegionIds.Except(original.OuterCandidateRegionIds,
+                StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal), delta.AddedOuter);
+        }
         var before = none.Modes[0].MethodComparison.Methods.Single(m =>
             m.Method == "distributed-reconstruction");
         var after = eligible.Modes[0].MethodComparison.Methods.Single(m =>
@@ -1133,7 +1160,47 @@ public sealed class ConditionLensTests
             Assert.Contains("same-tick-person-corroboration:5",
                 eligibleDifference.GetProperty("newQuestionIds").EnumerateArray()
                     .Select(x => x.GetString()));
-            Assert.Equal(4, eligibleDifference.GetProperty("methods").GetArrayLength());
+            var eligibleMethodDeltas = eligibleDifference.GetProperty("methods")
+                .EnumerateArray().ToArray();
+            Assert.Equal(4, eligibleMethodDeltas.Length);
+            Assert.Equal(beforeMethods.Select(m => m.GetProperty("method").GetString())
+                    .OrderBy(id => id, StringComparer.Ordinal),
+                eligibleMethodDeltas.Select(m => m.GetProperty("method").GetString())
+                    .OrderBy(id => id, StringComparer.Ordinal));
+            // Read the CLI-saved JSON itself: all four method deltas must match
+            // their own H-none and H-eligible Compare outputs, including no-change rows.
+            foreach (var delta in eligibleMethodDeltas)
+            {
+                var method = delta.GetProperty("method").GetString();
+                var original = beforeMethods.Single(m => m.GetProperty("method").GetString() == method);
+                var received = afterMethods.Single(m => m.GetProperty("method").GetString() == method);
+                foreach (var (rowField, deltaField) in new[]
+                {
+                    ("outerCandidateRegionIds", "Outer"),
+                    ("uncertainCandidateRegionIds", "Uncertain"),
+                    ("conflictedCandidateRegionIds", "Conflicted")
+                })
+                {
+                    Assert.Equal(JsonDefaults.Serialize(original.GetProperty(rowField)),
+                        JsonDefaults.Serialize(delta.GetProperty("before" + deltaField)));
+                    Assert.Equal(JsonDefaults.Serialize(received.GetProperty(rowField)),
+                        JsonDefaults.Serialize(delta.GetProperty("after" + deltaField)));
+                }
+                Assert.Equal(original.GetProperty("availableSourceGroupCount").GetInt32(),
+                    delta.GetProperty("beforeAvailableSourceGroups").GetInt32());
+                Assert.Equal(received.GetProperty("availableSourceGroupCount").GetInt32(),
+                    delta.GetProperty("afterAvailableSourceGroups").GetInt32());
+                var oldOuter = original.GetProperty("outerCandidateRegionIds").EnumerateArray()
+                    .Select(region => region.GetString()!).ToArray();
+                var newOuter = received.GetProperty("outerCandidateRegionIds").EnumerateArray()
+                    .Select(region => region.GetString()!).ToArray();
+                Assert.Equal(oldOuter.Except(newOuter, StringComparer.Ordinal)
+                        .OrderBy(id => id, StringComparer.Ordinal),
+                    delta.GetProperty("removedOuter").EnumerateArray().Select(region => region.GetString()));
+                Assert.Equal(newOuter.Except(oldOuter, StringComparer.Ordinal)
+                        .OrderBy(id => id, StringComparer.Ordinal),
+                    delta.GetProperty("addedOuter").EnumerateArray().Select(region => region.GetString()));
+            }
             foreach (var id in new[] { "H-future", "H-duplicate" })
             {
                 var diff = differences.Single(d =>
