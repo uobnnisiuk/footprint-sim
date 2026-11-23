@@ -50,7 +50,7 @@ public sealed class ConditionLensTests
     public void SahajataQuestionDoesNotCertifyDoctrinalCondition()
     {
         var report = ConditionLensAnalysis.Run(Fixture());
-        Assert.Equal(11, report.SchemaVersion);
+        Assert.Equal(12, report.SchemaVersion);
         Assert.Equal(24, report.CorrespondenceAudits.Count);
         Assert.Equal(report.Index.Select(x => x.Id),
             report.CorrespondenceAudits.Select(x => x.LensId));
@@ -136,7 +136,7 @@ public sealed class ConditionLensTests
     public void FiveUnimplementedRelationsHaveDistinctOriginalRolesAndMissingLinks()
     {
         var report = ConditionLensAnalysis.Run(Fixture());
-        Assert.Equal(11, report.SchemaVersion);
+        Assert.Equal(12, report.SchemaVersion);
         Assert.Equal(24, report.CorrespondenceAudits.Count);
         foreach (var entry in Rev14Audits)
         {
@@ -203,7 +203,7 @@ public sealed class ConditionLensTests
     public void FourOriginalConditionsAreNotProvenByProvenanceOrPersonDeviceData()
     {
         var report = ConditionLensAnalysis.Run(Fixture());
-        Assert.Equal(11, report.SchemaVersion);
+        Assert.Equal(12, report.SchemaVersion);
         Assert.Equal(24, report.CorrespondenceAudits.Count);
         foreach (var entry in Rev15Audits)
         {
@@ -298,7 +298,7 @@ public sealed class ConditionLensTests
     public void SixDistinctOriginalConditionsAreNotEstablishedByReceivedRecords()
     {
         var report = ConditionLensAnalysis.Run(Fixture());
-        Assert.Equal(11, report.SchemaVersion);
+        Assert.Equal(12, report.SchemaVersion);
         Assert.Equal(24, report.CorrespondenceAudits.Count);
         foreach (var entry in Rev16Audits)
         {
@@ -350,6 +350,162 @@ public sealed class ConditionLensTests
         Assert.All(report.Cases, x => Assert.Equal(11, x.Modes.Count));
         Assert.All(report.Cases.SelectMany(x => x.Modes),
             x => Assert.Equal(4, x.MethodComparison.Methods.Count));
+    }
+
+    private static readonly (string Id, string Conditioning, string Conditioned,
+        string Direction, string Time, string Trigger, string Received,
+        string Missing, string Positive, string Negative)[] Rev17Audits =
+    [
+        ("02",
+         "context-a: visible-sound-odor-taste-touch-objects;context-b: other-objects-of-mind",
+         "context-a: corresponding-sense-consciousness-and-associated-mental-factors;context-b: mind-consciousness-and-mental-factors-taking-that-object",
+         "context-a-sense-object-to-corresponding-consciousness-and-factors;context-b-mind-object-to-mind-consciousness-and-factors",
+         "object-conditions-cognition-not-device-person-observation-tick",
+         "A-none/A-eligible/A-future/C-none; Device-only receipt prompts Person subject or association check, not sense-object conditioning",
+         "received-device-only-observation",
+         "sense-object-to-consciousness-conditional-link",
+         "A-none",
+         "A-eligible"),
+        ("04",
+         "preceding-consciousness-and-associated-mental-factors",
+         "immediately-succeeding-consciousness-and-associated-mental-factors",
+         "preceding-mental-moment-to-immediately-succeeding-mental-moment",
+         "immediate-mental-succession-not-target-tick-plus-one-observation",
+         "F-followup positive, E-prior-eligible negative; actual engineering question uses received Person at t+1 to ask about t without backward inference",
+         "received-person-observation-at-tick-after-target",
+         "preceding-and-succeeding-mental-phenomena-pair",
+         "F-followup",
+         "E-prior-eligible"),
+        ("08",
+         "context-a: four-immaterial-aggregates;context-b: four-great-elements;context-c: rebirth-mental-and-material;context-d: consciousness-and-mental-factors;context-e: four-great-elements;context-f: sense-bases-and-material-supports",
+         "context-a: mutually-supporting-immaterial-aggregates;context-b: mutually-supporting-great-elements;context-c: mutually-supporting-mental-and-material;context-d: mind-produced-material-phenomena;context-e: derived-material-phenomena;context-f: corresponding-consciousness-and-associated-mental-factors",
+         "context-a-mutual-immaterial-support;context-b-mutual-material-support;context-c-mutual-rebirth-support;context-d-consciousness-and-mental-factors-to-mind-born-matter;context-e-great-elements-to-derived-matter;context-f-material-bases-to-consciousness-and-factors",
+         "context-a-c-mutual-or-coexisting;context-d-consciousness-produced-materiality;context-e-f-support-material-to-mental-context",
+         "N-redundant/S4 distinct received roots and unchanged four-method outcome; N-overlap/N-same-root are negative, provenance not original support",
+         "received-confirmed-person-observation-at-target-exact-tick",
+         "mutual-mental-material-conditional-links",
+         "N-redundant",
+         "N-overlap"),
+        ("09",
+         "context-a: preceding-wholesome-unwholesome-or-neutral-mental-phenomena;context-b: weather-food-persons-and-dwellings-as-conditioners-in-pali",
+         "context-a: later-mental-phenomena-with-non-immediate-qualifications;context-b: conditioned-side-not-stated-in-pali-[to beings]-translator-supplement-only",
+         "context-a-prior-mental-phenomena-to-later-mental-phenomena;context-b-environmental-conditioners-with-no-explicit-pali-conditioned-side",
+         "context-a-prior-to-later-with-non-immediate-qualifications;context-b-environmental-support-not-observation-time-order",
+         "B-eligible/K2-conflict legal received Person root removal changes outer/conflict; B-none/B-future negative, not environmental support",
+         "received-external-source-root",
+         "prior-mental-phenomena-to-later-mental-phenomena-conditional-link",
+         "B-eligible",
+         "B-none"),
+        ("10",
+         "prior-arisen-material-sense-bases-and-visible-objects",
+         "subsequently-arising-sense-consciousness-and-associated-mental-factors",
+         "prior-material-phenomena-to-later-consciousness-and-associated-factors",
+         "prior-arisen-material-before-later-mental-phenomena;conditioning-applies-in-some-cases-not-others",
+         "E-prior-eligible received Person at t-1 asks for target-t evidence/declared forward reachability; E-prior-none/future negative, F-followup is not 10",
+         "received-person-observation-at-tick-before-target",
+         "prior-material-basis-and-subsequent-consciousness-pair",
+         "E-prior-eligible",
+         "E-prior-none"),
+        ("12",
+         "context-a: preceding-wholesome-mental-phenomena;context-b: preceding-unwholesome-mental-phenomena;context-c: preceding-functional-neutral-mental-phenomena",
+         "context-a: following-wholesome-mental-phenomena;context-b: following-unwholesome-mental-phenomena;context-c: following-functional-neutral-mental-phenomena",
+         "context-a-wholesome-to-wholesome;context-b-unwholesome-to-unwholesome;context-c-functional-neutral-to-functional-neutral",
+         "successive-same-kind-mental-repetition-not-record-retransmission",
+         "T-repeat distinct original observations at t-1/t with shared received source root; T-independent/T-copy/T-future-prior negatives, not mental repetition",
+         "received-distinct-original-observation-ids",
+         "wholesome-unwholesome-functional-neutral-classification",
+         "T-repeat",
+         "T-independent"),
+        ("21",
+         "context-a: four-immaterial-aggregates;context-b: four-great-elements;context-c: rebirth-mental-and-material;context-d: consciousness-and-mental-factors;context-e: four-great-elements;context-f: material-sense-bases-and-objects",
+         "context-a: mutually-present-immaterial-aggregates;context-b: mutually-present-great-elements;context-c: mutually-present-mental-and-material;context-d: mind-produced-material-phenomena;context-e: derived-material-phenomena;context-f: corresponding-consciousness-and-associated-mental-factors",
+         "context-a-mutual-present-immaterial;context-b-mutual-present-great-elements;context-c-mutual-present-rebirth;context-d-consciousness-and-mental-factors-to-mind-born-matter;context-e-great-elements-to-derived-matter;context-f-present-material-bases-to-consciousness-and-factors",
+         "present-conditioning-phenomena-not-distant-received-observation-or-current-person-presence",
+         "H-none distant received Person observation at tick 7 asks about applicability at target 5; H-eligible resolves, no evidence of presently existing original condition",
+         "received-distant-person-observation",
+         "present-mental-and-material-conditional-relations",
+         "H-none",
+         "H-eligible"),
+        ("22",
+         "immediately-ceased-preceding-consciousness-and-mental-factors",
+         "presently-arising-consciousness-and-associated-mental-factors",
+         "ceased-preceding-mental-phenomena-to-present-mental-phenomena",
+         "cessation-immediately-before-present-mental-arising-not-receipt-absence",
+         "U-none/U-future no legally received originals raises availability question, U-eligible/U-device negative for 22; no proof of Person or mental cessation",
+         "received-original-count",
+         "verified-cessation-of-preceding-consciousness-and-mental-factors",
+         "U-none",
+         "U-eligible")
+    ];
+
+    [Fact]
+    public void EightAlreadyRunningQuestionLensesHaveDistinctUnverifiedOriginalRoles()
+    {
+        var report = ConditionLensAnalysis.Run(Fixture());
+        Assert.Equal(12, report.SchemaVersion);
+        Assert.Equal(24, report.CorrespondenceAudits.Count);
+        Assert.Equal(8, Rev17Audits.Length);
+        Assert.Equal(24, report.CorrespondenceAudits.Count(x =>
+            x.ConditioningPhenomena != "not-assessed"));
+        foreach (var entry in Rev17Audits)
+        {
+            var audit = report.CorrespondenceAudits.Single(x => x.LensId == entry.Id);
+            Assert.Equal("limited-analogy-implemented", audit.QuestionImplementationStatus);
+            Assert.Equal("doctrinal-correspondence-unassessed", audit.DoctrinalCorrespondenceStatus);
+            Assert.Equal("search-effect-unverified", audit.SearchEffectStatus);
+            Assert.Equal(entry.Conditioning, audit.ConditioningPhenomena);
+            Assert.Equal(entry.Conditioned, audit.ConditionedPhenomena);
+            Assert.Equal(entry.Direction, audit.ConditioningDirection);
+            Assert.Equal(entry.Time, audit.TemporalRelation);
+            Assert.Equal(entry.Trigger, audit.EngineeringQuestionTrigger);
+            Assert.Contains(entry.Received, audit.ReceivedEngineeringInputs);
+            Assert.Contains(entry.Missing, audit.UnrepresentedDoctrinalRelations);
+            Assert.Equal("https://www.aimwell.org/patthana.html", audit.DoctrinalSource);
+            var positive = report.Cases.Single(x => x.Id == entry.Positive).Modes
+                .Single(x => x.Mode == entry.Id).Questions;
+            var negative = report.Cases.Single(x => x.Id == entry.Negative).Modes
+                .Single(x => x.Mode == entry.Id).Questions;
+            Assert.NotEmpty(positive);
+            if (entry.Id == "02")
+            {
+                // Both scenarios ask 02, but for a different *received* information condition.
+                Assert.NotEmpty(negative);
+                Assert.NotEqual(positive[0].ReasonCode, negative[0].ReasonCode);
+            }
+            else
+                Assert.Empty(negative);
+        }
+        foreach (var id in new[] { "08", "21" })
+        {
+            var audit = report.CorrespondenceAudits.Single(x => x.LensId == id);
+            Assert.Contains("context-d: consciousness-and-mental-factors", audit.ConditioningPhenomena);
+            Assert.Contains("context-d: mind-produced-material-phenomena", audit.ConditionedPhenomena);
+            Assert.Contains("context-d-consciousness-and-mental-factors-to-mind-born-matter", audit.ConditioningDirection);
+            Assert.Contains("consciousness-and-mental-factors-to-mind-born-matter-link",
+                audit.UnrepresentedDoctrinalRelations);
+            Assert.Equal(6, audit.ConditioningPhenomena.Split(';').Length);
+            Assert.Equal(6, audit.ConditionedPhenomena.Split(';').Length);
+            Assert.Equal(6, audit.ConditioningDirection.Split(';').Length);
+        }
+        var nine = report.CorrespondenceAudits.Single(x => x.LensId == "09");
+        Assert.Contains("weather-food-persons-and-dwellings-as-conditioners-in-pali",
+            nine.ConditioningPhenomena);
+        Assert.Contains("conditioned-side-not-stated-in-pali", nine.ConditionedPhenomena);
+        Assert.Contains("[to beings]-translator-supplement-only", nine.ConditionedPhenomena);
+        Assert.Contains("context-b-pali-conditioned-side-not-explicit", nine.UnrepresentedDoctrinalRelations);
+        Assert.Contains("translator-[to beings]-not-original-specified-conditioned-side",
+            nine.UnrepresentedDoctrinalRelations);
+        Assert.Equal(2, nine.ConditioningPhenomena.Split(';').Length);
+        Assert.Equal(2, nine.ConditionedPhenomena.Split(';').Length);
+        Assert.Equal(3, report.CorrespondenceAudits.Single(x => x.LensId == "12")
+            .ConditioningPhenomena.Split(';').Length);
+        Assert.Contains("conditioning-applies-in-some-cases-not-others",
+            report.CorrespondenceAudits.Single(x => x.LensId == "10").TemporalRelation);
+        Assert.Contains("immediately-ceased-preceding",
+            report.CorrespondenceAudits.Single(x => x.LensId == "22").ConditioningPhenomena);
+        Assert.Equal(56, report.Cases.Count);
+        Assert.All(report.Cases, c => Assert.Equal(11, c.Modes.Count));
+        Assert.Equal(9, report.Index.Count(x => x.Status == "limited-analogy-implemented"));
     }
 
     [Fact]
@@ -431,7 +587,7 @@ public sealed class ConditionLensTests
             Assert.Equal(JsonDefaults.Serialize(savedRedundant.GetProperty("modes")
                 .EnumerateArray().First().GetProperty("methodComparison")),
                 JsonDefaults.Serialize(savedEight.GetProperty("methodComparison")));
-            Assert.Equal(11, savedReport.RootElement.GetProperty("schemaVersion").GetInt32());
+            Assert.Equal(12, savedReport.RootElement.GetProperty("schemaVersion").GetInt32());
             // These values were read from the CLI's actual saved JSON.
             var savedAudits = savedReport.RootElement.GetProperty("correspondenceAudits")
                 .EnumerateArray().ToArray();
@@ -501,6 +657,52 @@ public sealed class ConditionLensTests
                 Assert.Contains(entry.Missing, saved.GetProperty("unrepresentedDoctrinalRelations")
                     .EnumerateArray().Select(x => x.GetString()));
             }
+            foreach (var entry in Rev17Audits)
+            {
+                var saved = savedAudits.Single(x => x.GetProperty("lensId").GetString() == entry.Id);
+                Assert.Equal("limited-analogy-implemented",
+                    saved.GetProperty("questionImplementationStatus").GetString());
+                Assert.Equal("doctrinal-correspondence-unassessed",
+                    saved.GetProperty("doctrinalCorrespondenceStatus").GetString());
+                Assert.Equal("search-effect-unverified", saved.GetProperty("searchEffectStatus").GetString());
+                Assert.Equal(entry.Conditioning, saved.GetProperty("conditioningPhenomena").GetString());
+                Assert.Equal(entry.Conditioned, saved.GetProperty("conditionedPhenomena").GetString());
+                Assert.Equal(entry.Direction, saved.GetProperty("conditioningDirection").GetString());
+                Assert.Equal(entry.Time, saved.GetProperty("temporalRelation").GetString());
+                Assert.Equal(entry.Trigger, saved.GetProperty("engineeringQuestionTrigger").GetString());
+                Assert.Contains(entry.Received, saved.GetProperty("receivedEngineeringInputs")
+                    .EnumerateArray().Select(x => x.GetString()));
+                Assert.Contains(entry.Missing, saved.GetProperty("unrepresentedDoctrinalRelations")
+                    .EnumerateArray().Select(x => x.GetString()));
+                Assert.Equal("https://www.aimwell.org/patthana.html",
+                    saved.GetProperty("doctrinalSource").GetString());
+            }
+            foreach (var id in new[] { "08", "21" })
+            {
+                var saved = savedAudits.Single(x => x.GetProperty("lensId").GetString() == id);
+                Assert.Contains("context-d: consciousness-and-mental-factors",
+                    saved.GetProperty("conditioningPhenomena").GetString());
+                Assert.Contains("context-d: mind-produced-material-phenomena",
+                    saved.GetProperty("conditionedPhenomena").GetString());
+                Assert.Contains("context-d-consciousness-and-mental-factors-to-mind-born-matter",
+                    saved.GetProperty("conditioningDirection").GetString());
+                Assert.Contains("consciousness-and-mental-factors-to-mind-born-matter-link",
+                    saved.GetProperty("unrepresentedDoctrinalRelations")
+                        .EnumerateArray().Select(x => x.GetString()));
+            }
+            var savedNine = savedAudits.Single(x => x.GetProperty("lensId").GetString() == "09");
+            Assert.Contains("weather-food-persons-and-dwellings-as-conditioners-in-pali",
+                savedNine.GetProperty("conditioningPhenomena").GetString());
+            Assert.Contains("conditioned-side-not-stated-in-pali",
+                savedNine.GetProperty("conditionedPhenomena").GetString());
+            Assert.Contains("[to beings]-translator-supplement-only",
+                savedNine.GetProperty("conditionedPhenomena").GetString());
+            Assert.Contains("context-b-pali-conditioned-side-not-explicit",
+                savedNine.GetProperty("unrepresentedDoctrinalRelations")
+                    .EnumerateArray().Select(x => x.GetString()));
+            Assert.Contains("translator-[to beings]-not-original-specified-conditioned-side",
+                savedNine.GetProperty("unrepresentedDoctrinalRelations")
+                    .EnumerateArray().Select(x => x.GetString()));
             var savedKamma = savedAudits.Single(x => x.GetProperty("lensId").GetString() == "13");
             Assert.Equal(["context-a: wholesome-or-unwholesome-kamma", "context-b: associated-volition-cetana"],
                 savedKamma.GetProperty("conditioningPhenomena").GetString()!.Split(';'));
@@ -595,7 +797,7 @@ public sealed class ConditionLensTests
                 await File.ReadAllBytesAsync(Path.Combine(output, "condition-lenses.json")));
             Assert.Equal(24, expected.Index.Count);
             Assert.Equal(56, expected.Cases.Count);
-            Assert.Equal(11, expected.SchemaVersion);
+            Assert.Equal(12, expected.SchemaVersion);
             Assert.All(expected.Cases, c => Assert.Equal(11, c.Modes.Count));
             Assert.Equal(["b"], expected.Cases.Single(c => c.Id == "B-eligible")
                 .Modes[0].MethodComparison.Methods.Single(m =>
@@ -744,7 +946,7 @@ public sealed class ConditionLensTests
             var saved = await File.ReadAllTextAsync(Path.Combine(output, "condition-lenses.json"));
             var report = ConditionLensAnalysis.Run(Fixture());
             Assert.Equal(JsonDefaults.Serialize(report) + "\n", saved);
-            Assert.Equal(11, report.SchemaVersion);
+            Assert.Equal(12, report.SchemaVersion);
             var eligible = report.Cases.Single(c => c.Id == "B-eligible");
             Assert.Empty(eligible.Modes.Single(m => m.Mode == "06").Questions);
             var question = Assert.Single(eligible.Modes.Single(m => m.Mode == "09").Questions);
@@ -1271,7 +1473,7 @@ public sealed class ConditionLensTests
             var bytes = await File.ReadAllBytesAsync(path);
             using var doc = System.Text.Json.JsonDocument.Parse(bytes);
             var root = doc.RootElement;
-            Assert.Equal(11, root.GetProperty("schemaVersion").GetInt32());
+            Assert.Equal(12, root.GetProperty("schemaVersion").GetInt32());
             Assert.Equal(56, root.GetProperty("cases").GetArrayLength());
             var none = root.GetProperty("cases").EnumerateArray().Single(c =>
                 c.GetProperty("id").GetString() == "U-none");
@@ -1373,7 +1575,7 @@ public sealed class ConditionLensTests
     {
         var report = ConditionLensAnalysis.Run(Fixture());
         Assert.Equal(56, report.Cases.Count);
-        Assert.Equal(11, report.SchemaVersion);
+        Assert.Equal(12, report.SchemaVersion);
         Assert.Equal("limited-analogy-implemented",
             report.Index.Single(e => e.Id == "21").Status);
         Assert.All(report.Cases, c => Assert.Equal(11, c.Modes.Count));
@@ -1511,7 +1713,7 @@ public sealed class ConditionLensTests
             var bytes = await File.ReadAllBytesAsync(path);
             using var doc = System.Text.Json.JsonDocument.Parse(bytes);
             var root = doc.RootElement;
-            Assert.Equal(11, root.GetProperty("schemaVersion").GetInt32());
+            Assert.Equal(12, root.GetProperty("schemaVersion").GetInt32());
             Assert.Equal(56, root.GetProperty("cases").GetArrayLength());
             var cases = root.GetProperty("cases").EnumerateArray().ToArray();
             System.Text.Json.JsonElement Case(string id) => cases.Single(c =>
@@ -1754,7 +1956,7 @@ public sealed class ConditionLensTests
             var bytes = await File.ReadAllBytesAsync(path);
             using var saved = System.Text.Json.JsonDocument.Parse(bytes);
             var root = saved.RootElement;
-            Assert.Equal(11, root.GetProperty("schemaVersion").GetInt32());
+            Assert.Equal(12, root.GetProperty("schemaVersion").GetInt32());
             Assert.Equal(24, root.GetProperty("index").GetArrayLength());
             Assert.Equal(24, root.GetProperty("correspondenceAudits").GetArrayLength());
             var cases = root.GetProperty("cases").EnumerateArray().ToArray();

@@ -313,6 +313,109 @@ public static class ConditionLensAnalysis
                     "unimplemented; existing #106 public-geographic-route question or geographic reachability cannot represent mental path factors",
                     ["public-declared-geographic-path", "public-region-reachability", "received-person-observation", "receipt-cutoff"],
                     ["mental-path-factors-conditioner", "path-associated-mental-phenomena", "path-factors-to-produced-material-conditional-link"])
+            : entry.Id == "02"
+                ? new ConditionLensCorrespondenceAudit(
+                    entry.Id, entry.Status,
+                    "doctrinal-correspondence-unassessed", "search-effect-unverified",
+                    "context-a: visible-sound-odor-taste-touch-objects;context-b: other-objects-of-mind",
+                    "context-a: corresponding-sense-consciousness-and-associated-mental-factors;context-b: mind-consciousness-and-mental-factors-taking-that-object",
+                    "context-a-sense-object-to-corresponding-consciousness-and-factors;context-b-mind-object-to-mind-consciousness-and-factors",
+                    "object-conditions-cognition-not-device-person-observation-tick",
+                    entry.Source,
+                    "A-none/A-eligible/A-future/C-none; Device-only receipt prompts Person subject or association check, not sense-object conditioning",
+                    ["received-device-only-observation", "received-person-observation", "entity-kind-person-device-distinction", "receipt-cutoff"],
+                    ["sense-object-to-consciousness-conditional-link", "object-and-mental-phenomena-pair", "device-record-is-not-sense-object"])
+
+            : entry.Id == "04"
+                ? new ConditionLensCorrespondenceAudit(
+                    entry.Id, entry.Status,
+                    "doctrinal-correspondence-unassessed", "search-effect-unverified",
+                    "preceding-consciousness-and-associated-mental-factors",
+                    "immediately-succeeding-consciousness-and-associated-mental-factors",
+                    "preceding-mental-moment-to-immediately-succeeding-mental-moment",
+                    "immediate-mental-succession-not-target-tick-plus-one-observation",
+                    entry.Source,
+                    "F-followup positive, E-prior-eligible negative; actual engineering question uses received Person at t+1 to ask about t without backward inference",
+                    ["received-person-observation-at-tick-after-target", "observed-exact-tick", "receipt-cutoff"],
+                    ["preceding-and-succeeding-mental-phenomena-pair", "original-mental-succession-conditional-link", "observation-t-plus-one-is-not-mental-moment"])
+
+            : entry.Id == "08"
+                ? new ConditionLensCorrespondenceAudit(
+                    entry.Id, entry.Status,
+                    "doctrinal-correspondence-unassessed", "search-effect-unverified",
+                    "context-a: four-immaterial-aggregates;context-b: four-great-elements;context-c: rebirth-mental-and-material;context-d: consciousness-and-mental-factors;context-e: four-great-elements;context-f: sense-bases-and-material-supports",
+                    "context-a: mutually-supporting-immaterial-aggregates;context-b: mutually-supporting-great-elements;context-c: mutually-supporting-mental-and-material;context-d: mind-produced-material-phenomena;context-e: derived-material-phenomena;context-f: corresponding-consciousness-and-associated-mental-factors",
+                    "context-a-mutual-immaterial-support;context-b-mutual-material-support;context-c-mutual-rebirth-support;context-d-consciousness-and-mental-factors-to-mind-born-matter;context-e-great-elements-to-derived-matter;context-f-material-bases-to-consciousness-and-factors",
+                    "context-a-c-mutual-or-coexisting;context-d-consciousness-produced-materiality;context-e-f-support-material-to-mental-context",
+                    entry.Source,
+                    "N-redundant/S4 distinct received roots and unchanged four-method outcome; N-overlap/N-same-root are negative, provenance not original support",
+                    ["received-confirmed-person-observation-at-target-exact-tick", "received-distinct-source-roots", "root-removal-method-differences", "receipt-cutoff"],
+                    ["mutual-mental-material-conditional-links", "consciousness-and-mental-factors-to-mind-born-matter-link", "material-sense-bases-to-consciousness-link", "upstream-generation-not-proven-by-root-labels"])
+
+            : entry.Id == "09"
+                ? new ConditionLensCorrespondenceAudit(
+                    entry.Id, entry.Status,
+                    "doctrinal-correspondence-unassessed", "search-effect-unverified",
+                    "context-a: preceding-wholesome-unwholesome-or-neutral-mental-phenomena;context-b: weather-food-persons-and-dwellings-as-conditioners-in-pali",
+                    "context-a: later-mental-phenomena-with-non-immediate-qualifications;context-b: conditioned-side-not-stated-in-pali-[to beings]-translator-supplement-only",
+                    "context-a-prior-mental-phenomena-to-later-mental-phenomena;context-b-environmental-conditioners-with-no-explicit-pali-conditioned-side",
+                    "context-a-prior-to-later-with-non-immediate-qualifications;context-b-environmental-support-not-observation-time-order",
+                    entry.Source,
+                    "B-eligible/K2-conflict legal received Person root removal changes outer/conflict; B-none/B-future negative, not environmental support",
+                    ["received-external-source-root", "received-person-observation", "root-removal-candidate-delta", "receipt-cutoff"],
+                    ["prior-mental-phenomena-to-later-mental-phenomena-conditional-link", "environmental-weather-food-person-dwelling-conditioning-link", "context-b-pali-conditioned-side-not-explicit", "translator-[to beings]-not-original-specified-conditioned-side"])
+
+            : entry.Id == "10"
+                ? new ConditionLensCorrespondenceAudit(
+                    entry.Id, entry.Status,
+                    "doctrinal-correspondence-unassessed", "search-effect-unverified",
+                    "prior-arisen-material-sense-bases-and-visible-objects",
+                    "subsequently-arising-sense-consciousness-and-associated-mental-factors",
+                    "prior-material-phenomena-to-later-consciousness-and-associated-factors",
+                    "prior-arisen-material-before-later-mental-phenomena;conditioning-applies-in-some-cases-not-others",
+                    entry.Source,
+                    "E-prior-eligible received Person at t-1 asks for target-t evidence/declared forward reachability; E-prior-none/future negative, F-followup is not 10",
+                    ["received-person-observation-at-tick-before-target", "observed-exact-tick", "receipt-cutoff"],
+                    ["prior-material-basis-and-subsequent-consciousness-pair", "material-to-mental-conditional-link", "original-conditional-and-nonconditional-cases"])
+
+            : entry.Id == "12"
+                ? new ConditionLensCorrespondenceAudit(
+                    entry.Id, entry.Status,
+                    "doctrinal-correspondence-unassessed", "search-effect-unverified",
+                    "context-a: preceding-wholesome-mental-phenomena;context-b: preceding-unwholesome-mental-phenomena;context-c: preceding-functional-neutral-mental-phenomena",
+                    "context-a: following-wholesome-mental-phenomena;context-b: following-unwholesome-mental-phenomena;context-c: following-functional-neutral-mental-phenomena",
+                    "context-a-wholesome-to-wholesome;context-b-unwholesome-to-unwholesome;context-c-functional-neutral-to-functional-neutral",
+                    "successive-same-kind-mental-repetition-not-record-retransmission",
+                    entry.Source,
+                    "T-repeat distinct original observations at t-1/t with shared received source root; T-independent/T-copy/T-future-prior negatives, not mental repetition",
+                    ["received-distinct-original-observation-ids", "observed-exact-tick", "received-external-source-root", "receipt-cutoff"],
+                    ["wholesome-unwholesome-functional-neutral-classification", "successive-mental-phenomena-pair", "same-kind-repetition-conditional-link"])
+
+            : entry.Id == "21"
+                ? new ConditionLensCorrespondenceAudit(
+                    entry.Id, entry.Status,
+                    "doctrinal-correspondence-unassessed", "search-effect-unverified",
+                    "context-a: four-immaterial-aggregates;context-b: four-great-elements;context-c: rebirth-mental-and-material;context-d: consciousness-and-mental-factors;context-e: four-great-elements;context-f: material-sense-bases-and-objects",
+                    "context-a: mutually-present-immaterial-aggregates;context-b: mutually-present-great-elements;context-c: mutually-present-mental-and-material;context-d: mind-produced-material-phenomena;context-e: derived-material-phenomena;context-f: corresponding-consciousness-and-associated-mental-factors",
+                    "context-a-mutual-present-immaterial;context-b-mutual-present-great-elements;context-c-mutual-present-rebirth;context-d-consciousness-and-mental-factors-to-mind-born-matter;context-e-great-elements-to-derived-matter;context-f-present-material-bases-to-consciousness-and-factors",
+                    "present-conditioning-phenomena-not-distant-received-observation-or-current-person-presence",
+                    entry.Source,
+                    "H-none distant received Person observation at tick 7 asks about applicability at target 5; H-eligible resolves, no evidence of presently existing original condition",
+                    ["received-distant-person-observation", "observed-exact-tick", "receipt-cutoff"],
+                    ["present-mental-and-material-conditional-relations", "consciousness-and-mental-factors-to-mind-born-matter-link", "actual-presence-of-conditioning-phenomena", "past-observation-is-not-present-condition"])
+
+            : entry.Id == "22"
+                ? new ConditionLensCorrespondenceAudit(
+                    entry.Id, entry.Status,
+                    "doctrinal-correspondence-unassessed", "search-effect-unverified",
+                    "immediately-ceased-preceding-consciousness-and-mental-factors",
+                    "presently-arising-consciousness-and-associated-mental-factors",
+                    "ceased-preceding-mental-phenomena-to-present-mental-phenomena",
+                    "cessation-immediately-before-present-mental-arising-not-receipt-absence",
+                    entry.Source,
+                    "U-none/U-future no legally received originals raises availability question, U-eligible/U-device negative for 22; no proof of Person or mental cessation",
+                    ["received-original-count", "receipt-cutoff", "entity-kind-person-device-distinction"],
+                    ["verified-cessation-of-preceding-consciousness-and-mental-factors", "preceding-and-current-mental-phenomena-pair", "cessation-to-present-conditional-link", "no-received-evidence-is-not-mental-cessation"])
             : new ConditionLensCorrespondenceAudit(
                 entry.Id, entry.Status,
                 "doctrinal-correspondence-unassessed", "search-effect-unverified",
@@ -562,7 +665,7 @@ public static class ConditionLensAnalysis
             }
         }
         return new ConditionLensReport(
-            11, fixture.ScenarioId, fixture.Seed, fixture.TargetPersonId,
+            12, fixture.ScenarioId, fixture.Seed, fixture.TargetPersonId,
             fixture.TargetTick, fixture.ReceiptCutoffTick, Index, results, differences,
             CorrespondenceAudits);
     }
