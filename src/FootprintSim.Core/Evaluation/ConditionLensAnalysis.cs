@@ -65,13 +65,24 @@ public sealed record ConditionLensCorrespondenceAudit(
     string DoctrinalSource, string EngineeringQuestionTrigger,
     IReadOnlyList<string> ReceivedEngineeringInputs,
     IReadOnlyList<string> UnrepresentedDoctrinalRelations);
+// Post-receipt audit only: an eligible information change is not method superiority.
+public sealed record ConditionLensQuestionOutcomeAudit(
+    string LensId, string FromCase, string ToCase, string? FutureControlCase,
+    IReadOnlyList<string> SupportingCaseIds,
+    IReadOnlyList<string> FromQuestionIds, IReadOnlyList<string> ToQuestionIds,
+    IReadOnlyList<string> ResolvedLensQuestionIds, IReadOnlyList<string> NewLensQuestionIds,
+    IReadOnlyList<string> NewOtherQuestionIds, IReadOnlyList<string> ResolvedOtherQuestionIds,
+    IReadOnlyList<string> NewlyReceivedOriginalIds,
+    string AnswerCondition, string AuditStatus, string FutureControlStatus,
+    IReadOnlyList<ConditionLensMethodDifference> MethodDifferences, string Limitation);
 public sealed record ConditionLensReport(
     int SchemaVersion, string ScenarioId, int Seed, string TargetPersonId,
     long TargetTick, long ReceiptCutoffTick,
     IReadOnlyList<ConditionLensIndexEntry> Index,
     IReadOnlyList<ConditionLensCaseResult> Cases,
     IReadOnlyList<ConditionLensAnswerDifference> AnswerDifferences,
-    IReadOnlyList<ConditionLensCorrespondenceAudit> CorrespondenceAudits);
+    IReadOnlyList<ConditionLensCorrespondenceAudit> CorrespondenceAudits,
+    IReadOnlyList<ConditionLensQuestionOutcomeAudit> QuestionOutcomeAudit);
 
 // This is a finite public synthetic input; held originals are not rescuer knowledge.
 public sealed record ConditionLensFixture(
@@ -711,10 +722,94 @@ public static class ConditionLensAnalysis
                         .OrderBy(x => x, StringComparer.Ordinal).ToArray()));
             }
         }
+        // This second pass can inspect synthetic case labels, but it must never
+        // feed them back into question generation, receipt building, or Compare.
+        var outcomeAudit = BuildQuestionOutcomeAudit(results, differences);
         return new ConditionLensReport(
-            13, fixture.ScenarioId, fixture.Seed, fixture.TargetPersonId,
+            14, fixture.ScenarioId, fixture.Seed, fixture.TargetPersonId,
             fixture.TargetTick, fixture.ReceiptCutoffTick, Index, results, differences,
-            CorrespondenceAudits);
+            CorrespondenceAudits, outcomeAudit);
+    }
+
+    private static IReadOnlyList<ConditionLensQuestionOutcomeAudit> BuildQuestionOutcomeAudit(
+        IReadOnlyList<ConditionLensCaseResult> cases,
+        IReadOnlyList<ConditionLensAnswerDifference> differences)
+    {
+        // Frozen, finite pairings; never infer that two different fixture groups
+        // represent the same rescuer answer or that a duplicate is a new answer.
+        var controls = new (string Lens, string Before, string After, string? Future,
+            string[] Supporting)[]
+        {
+            ("02", "A-none", "A-eligible", "A-future", []),
+            ("04", "D-none", "D-eligible", "D-future", []),
+            ("06", "B-none", "B-eligible", "B-future", ["S1", "S4"]),
+            ("08", "S1", "S4", null, []),
+            ("09", "B-none", "B-eligible", null, ["K2-conflict"]),
+            ("10", "E-prior-none", "E-prior-eligible", "E-prior-future", []),
+            ("12", "T-repeat", "T-copy", null, []),
+            ("21", "H-none", "H-eligible", "H-future", []),
+            ("22", "U-none", "U-eligible", "U-future", [])
+        };
+        return controls.Select(control =>
+        {
+            var before = cases.SingleOrDefault(c => c.Id == control.Before);
+            var after = cases.SingleOrDefault(c => c.Id == control.After);
+            var pair = differences.SingleOrDefault(d =>
+                d.FromCase == control.Before && d.ToCase == control.After);
+            var beforeQuestions = before?.Modes.Single(m => m.Mode == control.Lens)
+                .Questions.Select(q => q.QuestionId).OrderBy(x => x, StringComparer.Ordinal).ToArray()
+                ?? [];
+            var afterQuestions = after?.Modes.Single(m => m.Mode == control.Lens)
+                .Questions.Select(q => q.QuestionId).OrderBy(x => x, StringComparer.Ordinal).ToArray()
+                ?? [];
+            var resolved = beforeQuestions.Except(afterQuestions, StringComparer.Ordinal)
+                .OrderBy(x => x, StringComparer.Ordinal).ToArray();
+            var newlyAsked = afterQuestions.Except(beforeQuestions, StringComparer.Ordinal)
+                .OrderBy(x => x, StringComparer.Ordinal).ToArray();
+            var newOther = (pair?.NewQuestionIds ?? []).Except(newlyAsked, StringComparer.Ordinal)
+                .OrderBy(x => x, StringComparer.Ordinal).ToArray();
+            // A pair can resolve a different lens while this lens first appears.
+            // Never attribute a shared receipt-conditioned delta to either lens.
+            var resolvedOther = (pair?.ResolvedQuestionIds ?? [])
+                .Except(resolved, StringComparer.Ordinal)
+                .OrderBy(x => x, StringComparer.Ordinal).ToArray();
+            var newlyReceived = after is null || before is null ? [] :
+                after.ReceivedOriginalIds.Except(before.ReceivedOriginalIds, StringComparer.Ordinal)
+                    .OrderBy(x => x, StringComparer.Ordinal).ToArray();
+            var valid = before is not null && after is not null &&
+                before.Group == after.Group && pair?.AnswerCondition == "eligible" &&
+                newlyReceived.Length > 0;
+            var status = !valid ? "not-comparable-with-current-fixture"
+                : beforeQuestions.Length == 0 && newlyAsked.Length > 0
+                    ? "new-question-only" : "paired-eligible";
+            var future = control.Future is null ? null :
+                differences.SingleOrDefault(d =>
+                    d.FromCase == control.Before && d.ToCase == control.Future);
+            var futureCase = cases.SingleOrDefault(c => c.Id == control.Future);
+            var unchangedFuture = before is not null && futureCase is not null &&
+                future is not null &&
+                before.ReceivedOriginalIds.SequenceEqual(futureCase.ReceivedOriginalIds) &&
+                future.ResolvedQuestionIds.Count == 0 && future.NewQuestionIds.Count == 0 &&
+                future.Methods.All(m => m.RemovedOuter.Count == 0 && m.AddedOuter.Count == 0 &&
+                    m.BeforeAvailableSourceGroups == m.AfterAvailableSourceGroups);
+            var futureStatus = control.Future is null ? "no-future-control"
+                : unchangedFuture ? "future-not-received-no-observed-change"
+                : "future-control-not-equivalent-or-missing";
+            var limitation = control.Lens switch
+            {
+                "06" => "Different claimed roots and a resolved 06 question do not verify upstream independence or doctrinal co-arising.",
+                "08" => "S1 has no 08 question: the eligible S4 case first raises one; not a resolution of 08.",
+                "09" => "B-none has no 09 question; K2-conflict is a standalone other-group diagnostic, not an answer pair.",
+                "12" => "T-copy retransmits the same original evidence, not an independently eligible answer; utility is not comparable.",
+                _ => "A changed receipt condition is additional information, not method superiority, original-meaning validity or real rescue benefit."
+            };
+            return new ConditionLensQuestionOutcomeAudit(
+                control.Lens, control.Before, control.After, control.Future,
+                control.Supporting.Where(id => cases.Any(c => c.Id == id)).ToArray(),
+                beforeQuestions, afterQuestions, resolved, newlyAsked, newOther,
+                resolvedOther, newlyReceived, pair?.AnswerCondition ?? "unavailable", status,
+                futureStatus, valid ? pair!.Methods : [], limitation);
+        }).ToArray();
     }
 
     private static IReadOnlyList<ConditionLensQuestion> Questions(
