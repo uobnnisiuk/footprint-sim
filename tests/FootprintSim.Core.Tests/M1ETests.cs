@@ -1678,6 +1678,90 @@ public sealed class M1ETests
                 startTick: 5, endTick: 5, publicStates: publicStates)));
     }
 
+    [Fact]
+    public void Ar86ContradictoryOffQueryPointsDoNotRemoveIntervalSafetyGuard()
+    {
+        var x = Ar43TemporalEvidence("x", 5, ["a"]);
+        var x2 = Ar43TemporalEvidence("x2", 5, ["c"]);
+        var y = Ar43TemporalEvidence("y", 6, ["a"]);
+        var y2 = Ar43TemporalEvidence("y2", 6, ["c"]);
+        var w = Ar43TemporalEvidence("w", 5, ["b"], endTick: 6);
+        PublicCandidateWarpStateDefinition[] publicStates =
+            [PublicState(5, 6, ["a", "b", "c"])];
+
+        static void AssertGuarded(PastStateComparisonResult comparison, string intervalId)
+        {
+            Assert.Equal(["a", "b", "c"], comparison.Reconstruction.Candidates
+                .Select(item => item.RegionId).OrderBy(item => item, StringComparer.Ordinal));
+            Assert.All(comparison.Reconstruction.Candidates, candidate =>
+            {
+                Assert.NotEqual(PastStateCandidateDisposition.Supported, candidate.Disposition);
+                Assert.Contains(intervalId, candidate.ConflictingConstraintIds);
+            });
+            foreach (var method in new[]
+            {
+                PastStateMethod.ConstraintBasedReconstruction,
+                PastStateMethod.ReconstructionWithLocalTraversal
+            })
+            {
+                Assert.Contains("b", comparison.Methods.Single(item =>
+                    item.Method == method).CandidateRegionIds);
+            }
+        }
+
+        // D1: conflicting independent x/x2@5 both reject w, while the
+        // query at 6 sees y@6. D2 exchanges the queried and off-query ticks.
+        var d1 = Ar43TemporalFixture([x, x2, y, w],
+            startTick: 6, endTick: 6, publicStates: publicStates);
+        AssertGuarded(d1, w.ConstraintId);
+        AssertGuarded(Ar43TemporalFixture([x, y, y2, w],
+            startTick: 5, endTick: 5, publicStates: publicStates), w.ConstraintId);
+        AssertGuarded(Ar43TemporalFixture([x, x2, y, w],
+            startTick: 5, endTick: 6, publicStates: publicStates), w.ConstraintId);
+
+        // Sharing the ancestry of x does not create an independent witness.
+        var sameRoot = Ar43TemporalEvidence("x2-shared", 5, ["c"], ancestry: "origin-x");
+        AssertGuarded(Ar43TemporalFixture([x, sameRoot, y, w],
+            startTick: 6, endTick: 6, publicStates: publicStates), w.ConstraintId);
+
+        // T3q extension: an incompatible point pair at tick 6 does not
+        // make a [4,6] interval witness disappear at a query of tick 5.
+        var z = Ar43TemporalEvidence("z", 4, ["a"]);
+        var wLong = Ar43TemporalEvidence("wide", 4, ["b"], endTick: 6);
+        AssertGuarded(Ar43TemporalFixture([z, x, y, y2, wLong],
+            startTick: 5, endTick: 5,
+            publicStates: [PublicState(4, 6, ["a", "b", "c"])]), wLong.ConstraintId);
+
+        // A compatible point can still place w in its interval, so the
+        // query stays legitimately narrowed. No w means no new conflict.
+        var x2Compatible = Ar43TemporalEvidence("x2-compatible", 5, ["b"]);
+        foreach (var facts in new IReadOnlyList<CausalTracingConstraint>[]
+        {
+            [x, x2Compatible, y, w],
+            [x, x2, y]
+        })
+        {
+            var narrowed = Ar43TemporalFixture(facts,
+                startTick: 6, endTick: 6, publicStates: publicStates);
+            Assert.Equal(["a"], narrowed.Reconstruction.Candidates
+                .Select(item => item.RegionId));
+        }
+
+        // Independent verification must retain the same interval conflict.
+        var verification = Ar43TemporalFixture([x, y, y2], [w],
+            startTick: 5, endTick: 5, publicStates: publicStates);
+        Assert.All(verification.Reconstruction.Verification, check =>
+        {
+            Assert.Equal(CandidateVerificationDisposition.Conflicting, check.Disposition);
+            Assert.Contains(w.ConstraintId, check.ConflictingConstraintIds);
+        });
+
+        // Source order is not evidence and must not alter the result bytes.
+        Assert.Equal(JsonDefaults.Serialize(d1),
+            JsonDefaults.Serialize(Ar43TemporalFixture([w, y, x2, x],
+                startTick: 6, endTick: 6, publicStates: publicStates)));
+    }
+
     private static CausalTracingConstraint Ar43TemporalEvidence(
         string source, long tick, IReadOnlyList<string> regions,
         long availableTick = 20, EvidenceState state = EvidenceState.Confirmed,

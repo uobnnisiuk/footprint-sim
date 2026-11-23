@@ -141,10 +141,18 @@ C2/C2t controls instead allow `Confirmed[4,6]={b}` and
 This legitimately retains the point query's narrowed `{a}`; it is
 *not* a conflict. Broadening a Confirmed point into an interval is
 therefore **not** generally monotonic in outer size. Uncovered public
-ticks and internally conflicting point evidence must not be taken as
-proof of incompatibility. The comparison also includes public S5
-synthetic variants with truth used only after inference to test both
-reconstruction methods' false-exclusion results.
+ticks are never evidence of incompatibility. For the narrow AR-86
+safety guard, independently grouped exact points may disagree about a
+tick's location; nevertheless, if **every eligible source group** excludes
+the broad interval's regions at that modelled tick, the disagreement must
+not suppress the broad interval's conflict and allow unsafe outer narrowing.
+If any group permits the interval's location, or a public tick is unknown,
+its impossibility remains unproved. This is not a truth claim about which
+point is correct. Off-query points are proof-only and never directly narrow
+the queried tick. D1/D2/D3 and independent verification are checked against
+the compatible-point and missing-interval negative controls. The comparison
+also includes public S5 synthetic variants with truth used only after
+inference to test both reconstruction methods' false-exclusion results.
 
 This is a bounded correction for the reviewed C1/C2/C3/S5 contrasts,
 not a complete temporal consistency solver or proof of real rescue

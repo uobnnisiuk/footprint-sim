@@ -980,20 +980,32 @@ public sealed class PastStateReconstructor
 
             var point = exact.Where(item => item.ConstrainedTimeWindow.StartTick == tick)
                 .ToArray();
+            // For an impossibility proof, compare the broad witness to each
+            // independently grouped exact point, not to the intersection of
+            // potentially inconsistent points. A disagreement between exact
+            // points must never silently make the broad witness compatible.
+            // This proof may only suspend narrowing; off-query points never
+            // become exact constraints at the requested tick.
+            var compatibleRegions = publicRegions
+                .Intersect(interval.AllowedRegionIds, StringComparer.Ordinal)
+                .ToHashSet(StringComparer.Ordinal);
+            if (compatibleRegions.Count == 0)
+                continue; // Publicly modelled places already exclude this tick.
+
             var groups = new OperationalCausalTracer().GroupSources(point, AccessContext(context.Query));
+            if (groups.Count == 0)
+                return false; // No exact evidence excludes the broad witness here.
             foreach (var group in groups)
             {
                 var allowed = point.Where(item =>
                         group.ConstraintIds.Contains(item.ConstraintId, StringComparer.Ordinal))
                     .SelectMany(item => item.AllowedRegionIds)
                     .ToHashSet(StringComparer.Ordinal);
-                if (!publicRegions.Overlaps(allowed))
-                    return false; // Inconsistent points are not a proof against this interval.
-                publicRegions.IntersectWith(allowed);
+                if (compatibleRegions.Overlaps(allowed))
+                    return false; // This source group still permits the witness.
             }
-
-            if (publicRegions.Overlaps(interval.AllowedRegionIds))
-                return false; // At least one possible time/place is still compatible.
+            // Every eligible source group rejects the interval here, even if
+            // different groups disagree on the alternative exact location.
         }
 
         return true; // Every public, covered segment excludes the interval witness.
