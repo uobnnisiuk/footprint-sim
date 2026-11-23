@@ -235,6 +235,84 @@ public static class ConditionLensAnalysis
                      "entity-kind-person-device-distinction", "receipt-cutoff"],
                     ["directed-mental-material-conditional-relations",
                      "mental-to-material-conditional-link", "material-to-mental-conditional-link"])
+
+            : entry.Id == "13"
+                ? new ConditionLensCorrespondenceAudit(
+                    entry.Id, entry.Status,
+                    "doctrinal-correspondence-unassessed", "search-effect-unverified",
+                    "context-a: wholesome-or-unwholesome-kamma;context-b: associated-volition-cetana",
+                    "context-a: resultant-aggregates-and-kamma-produced-material-phenomena;context-b: associated-phenomena-and-material-phenomena-produced-by-them",
+                    "context-a-kamma-to-resultant-aggregates-and-kamma-produced-matter;context-b-volition-to-associated-phenomena-and-produced-matter",
+                    "context-a-kamma-result-conditioning-not-observation-tick-order;context-b-associated-volition-conditioning-not-receipt-order",
+                    entry.Source,
+                    "unimplemented; observed and received ticks plus source ancestry cannot establish either kamma causing resultant aggregates or volition conditioning associated mental and produced material phenomena",
+                    ["observed-exact-tick", "receipt-tick", "received-external-source-root", "receipt-cutoff"],
+                    ["context-a-kamma-conditioning-side", "context-a-resultant-aggregates-and-kamma-born-material-side", "context-a-kamma-to-resultant-conditional-link", "context-b-volition-conditioning-side", "context-b-associated-and-produced-material-side", "context-b-volition-to-associated-conditional-link"])
+
+            : entry.Id == "14"
+                ? new ConditionLensCorrespondenceAudit(
+                    entry.Id, entry.Status,
+                    "doctrinal-correspondence-unassessed", "search-effect-unverified",
+                    "mutually conditioning resultant immaterial aggregates",
+                    "other resultant immaterial aggregates in reciprocal dependence",
+                    "mutual-resultant-immaterial-aggregates-conditioning-in-both-directions",
+                    "co-arising-mutual-resultant-conditioning-not-algorithmic-outcome",
+                    entry.Source,
+                    "unimplemented; B-eligible/K2-conflict method outcomes and outer/preferred/uncertain/conflicted candidate sets are algorithmic results, not resultant aggregates",
+                    ["method-comparison-outer", "method-comparison-preferred", "method-comparison-uncertain", "method-comparison-conflicted", "receipt-cutoff"],
+                    ["resultant-immaterial-aggregates-on-both-sides", "mutual-resultant-aggregates-conditional-links"])
+
+            : entry.Id == "15"
+                ? new ConditionLensCorrespondenceAudit(
+                    entry.Id, entry.Status,
+                    "doctrinal-correspondence-unassessed", "search-effect-unverified",
+                    "context-a: physical-food-nutriment;context-b: immaterial-nutriments",
+                    "context-a: bodily-material-phenomena;context-b: associated-phenomena-and-material-phenomena-produced-by-them",
+                    "context-a-food-to-bodily-materiality;context-b-immaterial-nutriments-to-associated-phenomena-and-produced-matter",
+                    "context-a-material-nutrition;context-b-associated-immaterial-nutrition-not-evidence-receipt",
+                    entry.Source,
+                    "unimplemented; U-none/U-eligible received record counts and ticks do not show food sustaining bodily matter or immaterial nutriments conditioning associated phenomena",
+                    ["received-original-count", "observed-exact-tick", "receipt-cutoff"],
+                    ["context-a-food-and-bodily-material-conditioning-link", "context-b-immaterial-nutriment-and-associated-phenomena-link", "context-b-immaterial-nutriment-to-produced-material-link"])
+
+            : entry.Id == "16"
+                ? new ConditionLensCorrespondenceAudit(
+                    entry.Id, entry.Status,
+                    "doctrinal-correspondence-unassessed", "search-effect-unverified",
+                    "context-a: five-material-sense-faculties;context-b: material-life-faculty;context-c: immaterial-faculties",
+                    "context-a: corresponding-sense-consciousness-and-associated-phenomena;context-b: kamma-produced-material-phenomena;context-c: associated-phenomena-and-material-phenomena-produced-by-them",
+                    "context-a-sense-faculties-to-consciousness-and-associated-phenomena;context-b-material-life-faculty-to-kamma-born-matter;context-c-immaterial-faculties-to-associated-phenomena-and-produced-matter",
+                    "context-a-corresponding-sense-conditionality;context-b-life-faculty-material-conditionality;context-c-immaterial-faculty-conditionality",
+                    entry.Source,
+                    "unimplemented; A-none/A-eligible Person/Device entity kinds and source metadata do not identify sense faculties, material-life faculty or immaterial faculties",
+                    ["received-device-only-observation", "received-person-observation", "entity-kind-person-device-distinction", "receipt-cutoff"],
+                    ["context-a-five-sense-faculties-and-corresponding-consciousness-link", "context-b-material-life-faculty-and-kamma-born-matter-link", "context-c-immaterial-faculties-and-produced-material-link"])
+
+            : entry.Id == "17"
+                ? new ConditionLensCorrespondenceAudit(
+                    entry.Id, entry.Status,
+                    "doctrinal-correspondence-unassessed", "search-effect-unverified",
+                    "mental-jhana-factors",
+                    "jhana-associated-mental-phenomena-and-material-phenomena-produced-by-them",
+                    "jhana-factors-to-associated-phenomena-and-produced-matter",
+                    "jhana-factor-conditionality-not-same-tick-source-corroboration",
+                    entry.Source,
+                    "unimplemented; S1/S4 same-tick received Person roots and root-removal candidate changes do not establish jhana factors or their material results",
+                    ["received-person-observation-at-target-exact-tick", "received-external-source-root", "root-removal-candidate-delta", "receipt-cutoff"],
+                    ["jhana-factors-conditioner", "jhana-associated-mental-phenomena", "jhana-factors-to-produced-material-conditional-link"])
+
+            : entry.Id == "18"
+                ? new ConditionLensCorrespondenceAudit(
+                    entry.Id, entry.Status,
+                    "doctrinal-correspondence-unassessed", "search-effect-unverified",
+                    "mental-path-factors",
+                    "path-associated-mental-phenomena-and-material-phenomena-produced-by-them",
+                    "mental-path-factors-to-associated-phenomena-and-produced-matter",
+                    "path-factor-conditionality-not-public-geographic-path",
+                    entry.Source,
+                    "unimplemented; existing #106 public-geographic-route question or geographic reachability cannot represent mental path factors",
+                    ["public-declared-geographic-path", "public-region-reachability", "received-person-observation", "receipt-cutoff"],
+                    ["mental-path-factors-conditioner", "path-associated-mental-phenomena", "path-factors-to-produced-material-conditional-link"])
             : new ConditionLensCorrespondenceAudit(
                 entry.Id, entry.Status,
                 "doctrinal-correspondence-unassessed", "search-effect-unverified",
@@ -484,7 +562,7 @@ public static class ConditionLensAnalysis
             }
         }
         return new ConditionLensReport(
-            10, fixture.ScenarioId, fixture.Seed, fixture.TargetPersonId,
+            11, fixture.ScenarioId, fixture.Seed, fixture.TargetPersonId,
             fixture.TargetTick, fixture.ReceiptCutoffTick, Index, results, differences,
             CorrespondenceAudits);
     }
