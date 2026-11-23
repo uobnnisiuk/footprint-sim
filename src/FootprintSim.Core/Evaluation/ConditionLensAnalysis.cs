@@ -374,7 +374,7 @@ public static class ConditionLensAnalysis
                     "prior-material-phenomena-to-later-consciousness-and-associated-factors",
                     "prior-arisen-material-before-later-mental-phenomena;conditioning-applies-in-some-cases-not-others",
                     entry.Source,
-                    "E-prior-eligible received Person at t-1 asks for target-t evidence/declared forward reachability; E-prior-none/future negative, F-followup is not 10",
+                    "E-prior-none/E-prior-future already have received Person at t-1 without target-t confirmation and ask for target-t evidence or declared forward reachability; E-prior-eligible resolves the question, F-followup is not 10",
                     ["received-person-observation-at-tick-before-target", "observed-exact-tick", "receipt-cutoff"],
                     ["prior-material-basis-and-subsequent-consciousness-pair", "material-to-mental-conditional-link", "original-conditional-and-nonconditional-cases"])
 
