@@ -50,7 +50,7 @@ public sealed class ConditionLensTests
     public void SahajataQuestionDoesNotCertifyDoctrinalCondition()
     {
         var report = ConditionLensAnalysis.Run(Fixture());
-        Assert.Equal(13, report.SchemaVersion);
+        Assert.Equal(14, report.SchemaVersion);
         Assert.Equal(24, report.CorrespondenceAudits.Count);
         Assert.Equal(report.Index.Select(x => x.Id),
             report.CorrespondenceAudits.Select(x => x.LensId));
@@ -136,7 +136,7 @@ public sealed class ConditionLensTests
     public void FiveUnimplementedRelationsHaveDistinctOriginalRolesAndMissingLinks()
     {
         var report = ConditionLensAnalysis.Run(Fixture());
-        Assert.Equal(13, report.SchemaVersion);
+        Assert.Equal(14, report.SchemaVersion);
         Assert.Equal(24, report.CorrespondenceAudits.Count);
         foreach (var entry in Rev14Audits)
         {
@@ -203,7 +203,7 @@ public sealed class ConditionLensTests
     public void FourOriginalConditionsAreNotProvenByProvenanceOrPersonDeviceData()
     {
         var report = ConditionLensAnalysis.Run(Fixture());
-        Assert.Equal(13, report.SchemaVersion);
+        Assert.Equal(14, report.SchemaVersion);
         Assert.Equal(24, report.CorrespondenceAudits.Count);
         foreach (var entry in Rev15Audits)
         {
@@ -298,7 +298,7 @@ public sealed class ConditionLensTests
     public void SixDistinctOriginalConditionsAreNotEstablishedByReceivedRecords()
     {
         var report = ConditionLensAnalysis.Run(Fixture());
-        Assert.Equal(13, report.SchemaVersion);
+        Assert.Equal(14, report.SchemaVersion);
         Assert.Equal(24, report.CorrespondenceAudits.Count);
         foreach (var entry in Rev16Audits)
         {
@@ -442,7 +442,7 @@ public sealed class ConditionLensTests
     public void EightAlreadyRunningQuestionLensesHaveDistinctUnverifiedOriginalRoles()
     {
         var report = ConditionLensAnalysis.Run(Fixture());
-        Assert.Equal(13, report.SchemaVersion);
+        Assert.Equal(14, report.SchemaVersion);
         Assert.Equal(24, report.CorrespondenceAudits.Count);
         Assert.Equal(8, Rev17Audits.Length);
         Assert.Equal(24, report.CorrespondenceAudits.Count(x =>
@@ -587,7 +587,7 @@ public sealed class ConditionLensTests
             Assert.Equal(JsonDefaults.Serialize(savedRedundant.GetProperty("modes")
                 .EnumerateArray().First().GetProperty("methodComparison")),
                 JsonDefaults.Serialize(savedEight.GetProperty("methodComparison")));
-            Assert.Equal(13, savedReport.RootElement.GetProperty("schemaVersion").GetInt32());
+            Assert.Equal(14, savedReport.RootElement.GetProperty("schemaVersion").GetInt32());
             // These values were read from the CLI's actual saved JSON.
             var savedAudits = savedReport.RootElement.GetProperty("correspondenceAudits")
                 .EnumerateArray().ToArray();
@@ -797,7 +797,7 @@ public sealed class ConditionLensTests
                 await File.ReadAllBytesAsync(Path.Combine(output, "condition-lenses.json")));
             Assert.Equal(24, expected.Index.Count);
             Assert.Equal(56, expected.Cases.Count);
-            Assert.Equal(13, expected.SchemaVersion);
+            Assert.Equal(14, expected.SchemaVersion);
             Assert.All(expected.Cases, c => Assert.Equal(11, c.Modes.Count));
             Assert.Equal(["b"], expected.Cases.Single(c => c.Id == "B-eligible")
                 .Modes[0].MethodComparison.Methods.Single(m =>
@@ -946,7 +946,7 @@ public sealed class ConditionLensTests
             var saved = await File.ReadAllTextAsync(Path.Combine(output, "condition-lenses.json"));
             var report = ConditionLensAnalysis.Run(Fixture());
             Assert.Equal(JsonDefaults.Serialize(report) + "\n", saved);
-            Assert.Equal(13, report.SchemaVersion);
+            Assert.Equal(14, report.SchemaVersion);
             var eligible = report.Cases.Single(c => c.Id == "B-eligible");
             Assert.Empty(eligible.Modes.Single(m => m.Mode == "06").Questions);
             var question = Assert.Single(eligible.Modes.Single(m => m.Mode == "09").Questions);
@@ -1473,7 +1473,7 @@ public sealed class ConditionLensTests
             var bytes = await File.ReadAllBytesAsync(path);
             using var doc = System.Text.Json.JsonDocument.Parse(bytes);
             var root = doc.RootElement;
-            Assert.Equal(13, root.GetProperty("schemaVersion").GetInt32());
+            Assert.Equal(14, root.GetProperty("schemaVersion").GetInt32());
             Assert.Equal(56, root.GetProperty("cases").GetArrayLength());
             var none = root.GetProperty("cases").EnumerateArray().Single(c =>
                 c.GetProperty("id").GetString() == "U-none");
@@ -1575,7 +1575,7 @@ public sealed class ConditionLensTests
     {
         var report = ConditionLensAnalysis.Run(Fixture());
         Assert.Equal(56, report.Cases.Count);
-        Assert.Equal(13, report.SchemaVersion);
+        Assert.Equal(14, report.SchemaVersion);
         Assert.Equal("limited-analogy-implemented",
             report.Index.Single(e => e.Id == "21").Status);
         Assert.All(report.Cases, c => Assert.Equal(11, c.Modes.Count));
@@ -1713,7 +1713,7 @@ public sealed class ConditionLensTests
             var bytes = await File.ReadAllBytesAsync(path);
             using var doc = System.Text.Json.JsonDocument.Parse(bytes);
             var root = doc.RootElement;
-            Assert.Equal(13, root.GetProperty("schemaVersion").GetInt32());
+            Assert.Equal(14, root.GetProperty("schemaVersion").GetInt32());
             Assert.Equal(56, root.GetProperty("cases").GetArrayLength());
             var cases = root.GetProperty("cases").EnumerateArray().ToArray();
             System.Text.Json.JsonElement Case(string id) => cases.Single(c =>
@@ -1956,7 +1956,7 @@ public sealed class ConditionLensTests
             var bytes = await File.ReadAllBytesAsync(path);
             using var saved = System.Text.Json.JsonDocument.Parse(bytes);
             var root = saved.RootElement;
-            Assert.Equal(13, root.GetProperty("schemaVersion").GetInt32());
+            Assert.Equal(14, root.GetProperty("schemaVersion").GetInt32());
             Assert.Equal(24, root.GetProperty("index").GetArrayLength());
             Assert.Equal(24, root.GetProperty("correspondenceAudits").GetArrayLength());
             var cases = root.GetProperty("cases").EnumerateArray().ToArray();
@@ -2055,7 +2055,7 @@ public sealed class ConditionLensTests
     public void SahajataClaimedSourceSignaturesDoNotProveIndependentUpstream()
     {
         var report = ConditionLensAnalysis.Run(Fixture());
-        Assert.Equal(13, report.SchemaVersion);
+        Assert.Equal(14, report.SchemaVersion);
         Assert.Equal(56, report.Cases.Count);
         var controls = new[]
         {
@@ -2129,7 +2129,7 @@ public sealed class ConditionLensTests
             var firstBytes = await File.ReadAllBytesAsync(path);
             using var saved = System.Text.Json.JsonDocument.Parse(firstBytes);
             var root = saved.RootElement;
-            Assert.Equal(13, root.GetProperty("schemaVersion").GetInt32());
+            Assert.Equal(14, root.GetProperty("schemaVersion").GetInt32());
             Assert.Equal(56, root.GetProperty("cases").GetArrayLength());
             System.Text.Json.JsonElement Case(string id) =>
                 root.GetProperty("cases").EnumerateArray().Single(c =>
@@ -2177,6 +2177,124 @@ public sealed class ConditionLensTests
             Assert.Equal(0, await CliApplication.RunAsync(
                 ["evaluate-condition-lenses", "--fixture", FixturePath(), "--output", output]));
             Assert.Equal(firstBytes, await File.ReadAllBytesAsync(path));
+        }
+        finally
+        {
+            if (Directory.Exists(output))
+                Directory.Delete(output, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void QuestionOutcomeAuditLinksNineExistingQuestionsOnlyToActualReceivedPairs()
+    {
+        var report = ConditionLensAnalysis.Run(Fixture());
+        Assert.Equal(14, report.SchemaVersion);
+        Assert.Equal(["02", "04", "06", "08", "09", "10", "12", "21", "22"],
+            report.QuestionOutcomeAudit.Select(x => x.LensId));
+        foreach (var row in report.QuestionOutcomeAudit)
+        {
+            var before = report.Cases.Single(c => c.Id == row.FromCase);
+            var after = report.Cases.Single(c => c.Id == row.ToCase);
+            Assert.Equal(before.Modes.Single(m => m.Mode == row.LensId)
+                    .Questions.Select(q => q.QuestionId).OrderBy(x => x, StringComparer.Ordinal),
+                row.FromQuestionIds);
+            Assert.Equal(after.Modes.Single(m => m.Mode == row.LensId)
+                    .Questions.Select(q => q.QuestionId).OrderBy(x => x, StringComparer.Ordinal),
+                row.ToQuestionIds);
+            var pair = report.AnswerDifferences.Single(d =>
+                d.FromCase == row.FromCase && d.ToCase == row.ToCase);
+            if (row.AuditStatus == "not-comparable-with-current-fixture")
+            {
+                Assert.Empty(row.MethodDifferences);
+                Assert.Empty(row.NewlyReceivedOriginalIds);
+            }
+            else
+            {
+                Assert.Equal("eligible", row.AnswerCondition);
+                Assert.NotEmpty(row.NewlyReceivedOriginalIds);
+                Assert.Equal(JsonDefaults.Serialize(pair.Methods),
+                    JsonDefaults.Serialize(row.MethodDifferences));
+                Assert.Equal(4, row.MethodDifferences.Count);
+            }
+        }
+        foreach (var lens in new[] { "08", "09" })
+        {
+            var row = report.QuestionOutcomeAudit.Single(x => x.LensId == lens);
+            Assert.Equal("new-question-only", row.AuditStatus);
+            Assert.Empty(row.FromQuestionIds);
+            Assert.Empty(row.ResolvedLensQuestionIds);
+            Assert.NotEmpty(row.NewLensQuestionIds);
+        }
+        var six = report.QuestionOutcomeAudit.Single(x => x.LensId == "06");
+        Assert.Equal(["S1", "S4"], six.SupportingCaseIds);
+        Assert.Contains("same-tick-person-corroboration:5", six.ResolvedLensQuestionIds);
+        Assert.Equal("future-not-received-no-observed-change", six.FutureControlStatus);
+        var nine = report.QuestionOutcomeAudit.Single(x => x.LensId == "09");
+        Assert.Equal(["K2-conflict"], nine.SupportingCaseIds);
+        Assert.Contains("K2-conflict", nine.Limitation);
+        var twelve = report.QuestionOutcomeAudit.Single(x => x.LensId == "12");
+        Assert.Equal("not-comparable-with-current-fixture", twelve.AuditStatus);
+        Assert.Equal("duplicate", twelve.AnswerCondition);
+        Assert.Empty(twelve.MethodDifferences);
+        Assert.Empty(twelve.NewlyReceivedOriginalIds);
+        Assert.All(report.QuestionOutcomeAudit.Where(x => x.FutureControlCase is not null),
+            row => Assert.Equal("future-not-received-no-observed-change",
+                row.FutureControlStatus));
+        Assert.Equal(56, report.Cases.Count);
+        Assert.All(report.Cases, row => Assert.Equal(11, row.Modes.Count));
+    }
+
+    [Fact]
+    public async Task QuestionOutcomeAuditIsPreservedInCliJsonWithDeterministicBytes()
+    {
+        var output = Path.Combine(Path.GetTempPath(),
+            "footprint-rev19-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Assert.Equal(0, await CliApplication.RunAsync(
+                ["evaluate-condition-lenses", "--fixture", FixturePath(), "--output", output]));
+            var path = Path.Combine(output, "condition-lenses.json");
+            var bytes = await File.ReadAllBytesAsync(path);
+            using var saved = System.Text.Json.JsonDocument.Parse(bytes);
+            var root = saved.RootElement;
+            var coreReport = ConditionLensAnalysis.Run(Fixture());
+            Assert.Equal(14, root.GetProperty("schemaVersion").GetInt32());
+            var audit = root.GetProperty("questionOutcomeAudit").EnumerateArray().ToArray();
+            Assert.Equal(9, audit.Length);
+            Assert.Equal(JsonDefaults.Serialize(coreReport.QuestionOutcomeAudit),
+                JsonDefaults.Serialize(root.GetProperty("questionOutcomeAudit")));
+            foreach (var row in audit)
+            {
+                var lens = row.GetProperty("lensId").GetString();
+                var before = row.GetProperty("fromCase").GetString();
+                var after = row.GetProperty("toCase").GetString();
+                var original = root.GetProperty("answerDifferences").EnumerateArray()
+                    .Single(d => d.GetProperty("fromCase").GetString() == before &&
+                        d.GetProperty("toCase").GetString() == after);
+                var status = row.GetProperty("auditStatus").GetString();
+                if (status is "paired-eligible" or "new-question-only")
+                {
+                    Assert.Equal(original.GetProperty("methods").GetRawText(),
+                        row.GetProperty("methodDifferences").GetRawText());
+                    Assert.Equal(4, row.GetProperty("methodDifferences").GetArrayLength());
+                }
+                else
+                {
+                    Assert.Equal("12", lens);
+                    Assert.Equal(0, row.GetProperty("methodDifferences").GetArrayLength());
+                }
+                if (lens is "08" or "09")
+                    Assert.Equal(0, row.GetProperty("resolvedLensQuestionIds").GetArrayLength());
+                if (row.GetProperty("futureControlCase").ValueKind !=
+                    System.Text.Json.JsonValueKind.Null)
+                    Assert.Equal("future-not-received-no-observed-change",
+                        row.GetProperty("futureControlStatus").GetString());
+            }
+            Assert.Equal(56, root.GetProperty("cases").GetArrayLength());
+            Assert.Equal(0, await CliApplication.RunAsync(
+                ["evaluate-condition-lenses", "--fixture", FixturePath(), "--output", output]));
+            Assert.Equal(bytes, await File.ReadAllBytesAsync(path));
         }
         finally
         {
