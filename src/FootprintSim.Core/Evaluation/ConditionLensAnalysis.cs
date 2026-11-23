@@ -25,7 +25,16 @@ public sealed record ConditionLensCaseResult(
     IReadOnlyList<string> ReceivedOriginalIds,
     RescuerMissingDeclaredPathReport ExistingDeclaredPathDiagnostic,
     IReadOnlyList<ConditionLensModeResult> Modes,
-    IReadOnlyList<ConditionLensRootRemoval> RootRemovals);
+    IReadOnlyList<ConditionLensRootRemoval> RootRemovals,
+    ConditionLensSahajataSourceDiagnostic SahajataSourceDiagnostic);
+// This diagnostic reports CLAIMED source signatures, not independent generation.
+public sealed record ConditionLensSahajataSourceDiagnostic(
+    IReadOnlyList<string> EligibleReceivedPersonOriginalIds,
+    int DistinctClaimedSourceSignatureCount,
+    IReadOnlyList<string> ClaimedExternalSourceRootIds,
+    bool QuestionEmitted, string QuestionStateReason,
+    string UpstreamObservationIndependenceStatus,
+    string DoctrinalCorrespondenceStatus);
 public sealed record ConditionLensMethodDifference(
     string Method, IReadOnlyList<string> BeforeOuter, IReadOnlyList<string> AfterOuter,
     IReadOnlyList<string> RemovedOuter, IReadOnlyList<string> AddedOuter,
@@ -608,6 +617,44 @@ public static class ConditionLensAnalysis
                     rootGroup.Key, removedIds, methodResults));
             }
             var detected = Questions(received, fixture.TargetTick, rootRemovals);
+            // Diagnostic only. Match the existing 06 question's post-receipt
+            // Person/Confirmed/exact-tick filter and ExternalSource signature.
+            // Different claimed identifiers cannot establish independent
+            // original observation generation or the original co-arising relation.
+            var eligibleFor06 = received.ReceivedRecords.Where(r =>
+                r.OriginalObservation.IsPersonEvidence &&
+                !r.OriginalObservation.IsDeviceOnlyEvidence &&
+                r.OriginalObservation.EvidenceBoundaryState == EvidenceState.Confirmed &&
+                r.OriginalObservation.ObservedTimeWindow.StartTick == fixture.TargetTick &&
+                r.OriginalObservation.ObservedTimeWindow.EndTick == fixture.TargetTick &&
+                r.OriginalObservation.ObservedParticipants.Any(p =>
+                    p.EntityId == fixture.TargetPersonId &&
+                    p.EntityKind == InteractionEntityKind.Person))
+                .OrderBy(r => r.OriginalRecordId, StringComparer.Ordinal).ToArray();
+            var claimedSignatures = eligibleFor06.Select(r => string.Join("|",
+                    r.OriginalObservation.Provenance
+                        .Where(p => p.Kind == InteractionProvenanceKind.ExternalSource)
+                        .Select(p => p.SourceIdentifier)
+                        .OrderBy(id => id, StringComparer.Ordinal)))
+                .Distinct(StringComparer.Ordinal).Count();
+            var question06Emitted = detected.Any(q => q.LensIds.Contains("06"));
+            var sahajataDiagnostic = new ConditionLensSahajataSourceDiagnostic(
+                eligibleFor06.Select(r => r.OriginalRecordId)
+                    .Distinct(StringComparer.Ordinal)
+                    .OrderBy(id => id, StringComparer.Ordinal).ToArray(),
+                claimedSignatures,
+                eligibleFor06.SelectMany(r => r.OriginalObservation.Provenance
+                        .Where(p => p.Kind == InteractionProvenanceKind.ExternalSource)
+                        .Select(p => p.SourceIdentifier))
+                    .Distinct(StringComparer.Ordinal)
+                    .OrderBy(id => id, StringComparer.Ordinal).ToArray(),
+                question06Emitted,
+                question06Emitted ? "one-claimed-source-signature-question-emitted"
+                    : eligibleFor06.Length == 0 ? "no-eligible-received-person-original"
+                    : claimedSignatures == 0 ? "no-claimed-source-signature"
+                    : "multiple-claimed-source-signatures-question-not-emitted",
+                "unknown-not-verifiable-from-received-input",
+                "doctrinal-correspondence-unverified");
             var modes = new[]
             {
                 new ConditionLensModeResult("none", [], comparison),
@@ -626,7 +673,7 @@ public static class ConditionLensAnalysis
                 item.Id, item.Group, item.AnswerCondition,
                 received.ReceivedRecords.Select(r => r.OriginalRecordId)
                     .OrderBy(x => x, StringComparer.Ordinal).ToArray(),
-                existing, modes, rootRemovals));
+                existing, modes, rootRemovals, sahajataDiagnostic));
         }
 
         var differences = new List<ConditionLensAnswerDifference>();
@@ -665,7 +712,7 @@ public static class ConditionLensAnalysis
             }
         }
         return new ConditionLensReport(
-            12, fixture.ScenarioId, fixture.Seed, fixture.TargetPersonId,
+            13, fixture.ScenarioId, fixture.Seed, fixture.TargetPersonId,
             fixture.TargetTick, fixture.ReceiptCutoffTick, Index, results, differences,
             CorrespondenceAudits);
     }
