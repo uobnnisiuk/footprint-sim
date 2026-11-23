@@ -2226,12 +2226,43 @@ public sealed class ConditionLensTests
             Assert.Empty(row.ResolvedLensQuestionIds);
             Assert.NotEmpty(row.NewLensQuestionIds);
         }
+        foreach (var (lensId, expectedQuestionId) in new[]
+        {
+            ("02", "subject-person-verification:5"),
+            ("04", "adjacent-followup-person-evidence:5"),
+            ("10", "prior-tick-person-support:5"),
+            ("21", "distant-person-temporal-applicability:5"),
+            ("22", "no-received-records-person-availability:5")
+        })
+        {
+            var row = report.QuestionOutcomeAudit.Single(x => x.LensId == lensId);
+            Assert.Equal("paired-eligible", row.AuditStatus);
+            Assert.Equal([expectedQuestionId], row.ResolvedLensQuestionIds);
+            Assert.DoesNotContain(expectedQuestionId, row.ToQuestionIds);
+            Assert.NotEmpty(row.NewlyReceivedOriginalIds);
+        }
+        // Receipt eligibility alone is not proof that a question was answered.
+        foreach (var lens in new[] { "08", "09" })
+        {
+            var row = report.QuestionOutcomeAudit.Single(x => x.LensId == lens);
+            Assert.Equal(["same-tick-person-corroboration:5"],
+                row.ResolvedOtherQuestionIds);
+            Assert.Contains("same-tick-person-corroboration:5",
+                report.AnswerDifferences.Single(x =>
+                    x.FromCase == row.FromCase && x.ToCase == row.ToCase)
+                .ResolvedQuestionIds);
+        }
         var six = report.QuestionOutcomeAudit.Single(x => x.LensId == "06");
         Assert.Equal(["S1", "S4"], six.SupportingCaseIds);
         Assert.Contains("same-tick-person-corroboration:5", six.ResolvedLensQuestionIds);
         Assert.Equal("future-not-received-no-observed-change", six.FutureControlStatus);
         var nine = report.QuestionOutcomeAudit.Single(x => x.LensId == "09");
         Assert.Equal(["K2-conflict"], nine.SupportingCaseIds);
+        Assert.Equal(six.FromCase, nine.FromCase);
+        Assert.Equal(six.ToCase, nine.ToCase);
+        Assert.Equal(JsonDefaults.Serialize(six.MethodDifferences),
+            JsonDefaults.Serialize(nine.MethodDifferences));
+        // The 06/09 shared receipt pair is one observed change, not additive.
         Assert.Contains("K2-conflict", nine.Limitation);
         var twelve = report.QuestionOutcomeAudit.Single(x => x.LensId == "12");
         Assert.Equal("not-comparable-with-current-fixture", twelve.AuditStatus);
@@ -2285,7 +2316,28 @@ public sealed class ConditionLensTests
                     Assert.Equal(0, row.GetProperty("methodDifferences").GetArrayLength());
                 }
                 if (lens is "08" or "09")
+                {
                     Assert.Equal(0, row.GetProperty("resolvedLensQuestionIds").GetArrayLength());
+                    Assert.Equal(["same-tick-person-corroboration:5"],
+                        row.GetProperty("resolvedOtherQuestionIds").EnumerateArray()
+                            .Select(q => q.GetString()));
+                }
+                foreach (var (id, required) in new[]
+                {
+                    ("02", "subject-person-verification:5"),
+                    ("04", "adjacent-followup-person-evidence:5"),
+                    ("10", "prior-tick-person-support:5"),
+                    ("21", "distant-person-temporal-applicability:5"),
+                    ("22", "no-received-records-person-availability:5")
+                })
+                {
+                    if (lens == id)
+                        Assert.Equal([required],
+                            row.GetProperty("resolvedLensQuestionIds").EnumerateArray()
+                                .Select(q => q.GetString()));
+                }
+                // CLI-measured synthetic values, retained in the F19 TRX artifact.
+                Console.WriteLine("REV19_ACTUAL_AUDIT " + row.GetRawText());
                 if (row.GetProperty("futureControlCase").ValueKind !=
                     System.Text.Json.JsonValueKind.Null)
                     Assert.Equal("future-not-received-no-observed-change",
@@ -2300,6 +2352,73 @@ public sealed class ConditionLensTests
         {
             if (Directory.Exists(output))
                 Directory.Delete(output, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task LegalNewReceiptCanLeaveTargetTickQuestionUnresolvedInCoreAndCli()
+    {
+        var fixture = System.Text.Json.JsonSerializer.Deserialize<ConditionLensFixture>(
+            Fixture(), new System.Text.Json.JsonSerializerOptions(
+                System.Text.Json.JsonSerializerDefaults.Web));
+        Assert.NotNull(fixture);
+        // AR-91 negative: d-target is received, but at tick 6 not target tick 5.
+        var alteredFixture = fixture with
+        {
+            Cases = fixture.Cases.Select(c => c.Id == "D-eligible"
+                ? c with
+                {
+                    Originals = c.Originals.Select(o => o.Id == "d-target"
+                        ? o with { ObservedTick = 6 } : o).ToArray()
+                } : c).ToArray()
+        };
+        var changed = alteredFixture.Cases.Single(c => c.Id == "D-eligible");
+        Assert.Equal(6, changed.Originals.Single(o => o.Id == "d-target").ObservedTick);
+        var alteredBytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
+            alteredFixture, new System.Text.Json.JsonSerializerOptions(
+                System.Text.Json.JsonSerializerDefaults.Web));
+        var report = ConditionLensAnalysis.Run(alteredBytes);
+        var row = report.QuestionOutcomeAudit.Single(x => x.LensId == "04");
+        Assert.Equal("paired-eligible", row.AuditStatus);
+        Assert.NotEmpty(row.NewlyReceivedOriginalIds);
+        Assert.Equal(["adjacent-followup-person-evidence:5"], row.FromQuestionIds);
+        Assert.Equal(row.FromQuestionIds, row.ToQuestionIds);
+        Assert.Empty(row.ResolvedLensQuestionIds);
+        Assert.All(row.MethodDifferences, delta =>
+        {
+            Assert.Empty(delta.RemovedOuter);
+            Assert.Empty(delta.AddedOuter);
+        });
+        var dir = Path.Combine(Path.GetTempPath(),
+            "footprint-rev19-negative-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(dir);
+            var input = Path.Combine(dir, "observed-tick-negative.json");
+            var output = Path.Combine(dir, "report");
+            await File.WriteAllBytesAsync(input, alteredBytes);
+            Assert.Equal(0, await CliApplication.RunAsync(
+                ["evaluate-condition-lenses", "--fixture", input, "--output", output]));
+            var savedBytes = await File.ReadAllBytesAsync(
+                Path.Combine(output, "condition-lenses.json"));
+            using var saved = System.Text.Json.JsonDocument.Parse(savedBytes);
+            var savedRow = saved.RootElement.GetProperty("questionOutcomeAudit")
+                .EnumerateArray().Single(x => x.GetProperty("lensId").GetString() == "04");
+            Assert.Equal("paired-eligible", savedRow.GetProperty("auditStatus").GetString());
+            Assert.Equal(0, savedRow.GetProperty("resolvedLensQuestionIds").GetArrayLength());
+            Assert.Equal(["adjacent-followup-person-evidence:5"],
+                savedRow.GetProperty("toQuestionIds").EnumerateArray()
+                    .Select(q => q.GetString()));
+            Assert.Equal(JsonDefaults.Serialize(row), JsonDefaults.Serialize(savedRow));
+            Assert.Equal(0, await CliApplication.RunAsync(
+                ["evaluate-condition-lenses", "--fixture", input, "--output", output]));
+            Assert.Equal(savedBytes, await File.ReadAllBytesAsync(
+                Path.Combine(output, "condition-lenses.json")));
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+                Directory.Delete(dir, recursive: true);
         }
     }
 }
