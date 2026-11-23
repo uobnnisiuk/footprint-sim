@@ -71,7 +71,8 @@ public sealed record ConditionLensQuestionOutcomeAudit(
     IReadOnlyList<string> SupportingCaseIds,
     IReadOnlyList<string> FromQuestionIds, IReadOnlyList<string> ToQuestionIds,
     IReadOnlyList<string> ResolvedLensQuestionIds, IReadOnlyList<string> NewLensQuestionIds,
-    IReadOnlyList<string> NewOtherQuestionIds, IReadOnlyList<string> NewlyReceivedOriginalIds,
+    IReadOnlyList<string> NewOtherQuestionIds, IReadOnlyList<string> ResolvedOtherQuestionIds,
+    IReadOnlyList<string> NewlyReceivedOriginalIds,
     string AnswerCondition, string AuditStatus, string FutureControlStatus,
     IReadOnlyList<ConditionLensMethodDifference> MethodDifferences, string Limitation);
 public sealed record ConditionLensReport(
@@ -767,6 +768,11 @@ public static class ConditionLensAnalysis
                 .OrderBy(x => x, StringComparer.Ordinal).ToArray();
             var newOther = (pair?.NewQuestionIds ?? []).Except(newlyAsked, StringComparer.Ordinal)
                 .OrderBy(x => x, StringComparer.Ordinal).ToArray();
+            // A pair can resolve a different lens while this lens first appears.
+            // Never attribute a shared receipt-conditioned delta to either lens.
+            var resolvedOther = (pair?.ResolvedQuestionIds ?? [])
+                .Except(resolved, StringComparer.Ordinal)
+                .OrderBy(x => x, StringComparer.Ordinal).ToArray();
             var newlyReceived = after is null || before is null ? [] :
                 after.ReceivedOriginalIds.Except(before.ReceivedOriginalIds, StringComparer.Ordinal)
                     .OrderBy(x => x, StringComparer.Ordinal).ToArray();
@@ -801,7 +807,7 @@ public static class ConditionLensAnalysis
                 control.Lens, control.Before, control.After, control.Future,
                 control.Supporting.Where(id => cases.Any(c => c.Id == id)).ToArray(),
                 beforeQuestions, afterQuestions, resolved, newlyAsked, newOther,
-                newlyReceived, pair?.AnswerCondition ?? "unavailable", status,
+                resolvedOther, newlyReceived, pair?.AnswerCondition ?? "unavailable", status,
                 futureStatus, valid ? pair!.Methods : [], limitation);
         }).ToArray();
     }
