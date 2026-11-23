@@ -50,7 +50,7 @@ public sealed class ConditionLensTests
     public void SahajataQuestionDoesNotCertifyDoctrinalCondition()
     {
         var report = ConditionLensAnalysis.Run(Fixture());
-        Assert.Equal(10, report.SchemaVersion);
+        Assert.Equal(11, report.SchemaVersion);
         Assert.Equal(24, report.CorrespondenceAudits.Count);
         Assert.Equal(report.Index.Select(x => x.Id),
             report.CorrespondenceAudits.Select(x => x.LensId));
@@ -136,7 +136,7 @@ public sealed class ConditionLensTests
     public void FiveUnimplementedRelationsHaveDistinctOriginalRolesAndMissingLinks()
     {
         var report = ConditionLensAnalysis.Run(Fixture());
-        Assert.Equal(10, report.SchemaVersion);
+        Assert.Equal(11, report.SchemaVersion);
         Assert.Equal(24, report.CorrespondenceAudits.Count);
         foreach (var entry in Rev14Audits)
         {
@@ -203,7 +203,7 @@ public sealed class ConditionLensTests
     public void FourOriginalConditionsAreNotProvenByProvenanceOrPersonDeviceData()
     {
         var report = ConditionLensAnalysis.Run(Fixture());
-        Assert.Equal(10, report.SchemaVersion);
+        Assert.Equal(11, report.SchemaVersion);
         Assert.Equal(24, report.CorrespondenceAudits.Count);
         foreach (var entry in Rev15Audits)
         {
@@ -280,6 +280,76 @@ public sealed class ConditionLensTests
         var cCorroboration = Assert.Single(c.Modes[3].Questions);
         Assert.Equal("same-tick-person-corroboration:5", cCorroboration.QuestionId);
         Assert.NotEqual(cLink.ReasonCode, cCorroboration.ReasonCode);
+    }
+
+    private static readonly (string Id, string Direction, string Time,
+        string Conditioning, string Conditioned, string Case,
+        string Received, string Missing)[] Rev16Audits =
+    [
+        ("13", "context-a-kamma-to-resultant-aggregates-and-kamma-produced-matter;context-b-volition-to-associated-phenomena-and-produced-matter", "context-a-kamma-result-conditioning-not-observation-tick-order;context-b-associated-volition-conditioning-not-receipt-order", "context-a: wholesome-or-unwholesome-kamma", "context-a: resultant-aggregates-and-kamma-produced-material-phenomena", "observed and received ticks", "receipt-tick", "context-b-volition-to-associated-conditional-link"),
+        ("14", "mutual-resultant-immaterial-aggregates-conditioning-in-both-directions", "co-arising-mutual-resultant-conditioning-not-algorithmic-outcome", "mutually conditioning resultant immaterial aggregates", "other resultant immaterial aggregates", "B-eligible/K2-conflict", "method-comparison-conflicted", "mutual-resultant-aggregates-conditional-links"),
+        ("15", "context-a-food-to-bodily-materiality;context-b-immaterial-nutriments-to-associated-phenomena-and-produced-matter", "context-a-material-nutrition;context-b-associated-immaterial-nutrition-not-evidence-receipt", "context-a: physical-food-nutriment", "context-a: bodily-material-phenomena", "U-none/U-eligible", "received-original-count", "context-b-immaterial-nutriment-to-produced-material-link"),
+        ("16", "context-a-sense-faculties-to-consciousness-and-associated-phenomena;context-b-material-life-faculty-to-kamma-born-matter;context-c-immaterial-faculties-to-associated-phenomena-and-produced-matter", "context-a-corresponding-sense-conditionality;context-b-life-faculty-material-conditionality;context-c-immaterial-faculty-conditionality", "context-a: five-material-sense-faculties", "context-a: corresponding-sense-consciousness", "A-none/A-eligible", "entity-kind-person-device-distinction", "context-b-material-life-faculty-and-kamma-born-matter-link"),
+        ("17", "jhana-factors-to-associated-phenomena-and-produced-matter", "jhana-factor-conditionality-not-same-tick-source-corroboration", "mental-jhana-factors", "jhana-associated-mental-phenomena", "S1/S4", "root-removal-candidate-delta", "jhana-factors-to-produced-material-conditional-link"),
+        ("18", "mental-path-factors-to-associated-phenomena-and-produced-matter", "path-factor-conditionality-not-public-geographic-path", "mental-path-factors", "path-associated-mental-phenomena", "#106 public-geographic-route", "public-declared-geographic-path", "path-factors-to-produced-material-conditional-link"),
+    ];
+
+    [Fact]
+    public void SixDistinctOriginalConditionsAreNotEstablishedByReceivedRecords()
+    {
+        var report = ConditionLensAnalysis.Run(Fixture());
+        Assert.Equal(11, report.SchemaVersion);
+        Assert.Equal(24, report.CorrespondenceAudits.Count);
+        foreach (var entry in Rev16Audits)
+        {
+            var audit = report.CorrespondenceAudits.Single(x => x.LensId == entry.Id);
+            Assert.Equal("unimplemented-unassessed", audit.QuestionImplementationStatus);
+            Assert.Equal("doctrinal-correspondence-unassessed", audit.DoctrinalCorrespondenceStatus);
+            Assert.Equal("search-effect-unverified", audit.SearchEffectStatus);
+            Assert.Equal(entry.Direction, audit.ConditioningDirection);
+            Assert.Equal(entry.Time, audit.TemporalRelation);
+            Assert.StartsWith(entry.Conditioning, audit.ConditioningPhenomena);
+            Assert.StartsWith(entry.Conditioned, audit.ConditionedPhenomena);
+            Assert.Contains(entry.Case, audit.EngineeringQuestionTrigger);
+            Assert.Contains(entry.Received, audit.ReceivedEngineeringInputs);
+            Assert.Contains(entry.Missing, audit.UnrepresentedDoctrinalRelations);
+            Assert.Equal("https://www.aimwell.org/patthana.html", audit.DoctrinalSource);
+            Assert.DoesNotContain(report.Cases.SelectMany(c => c.Modes)
+                .SelectMany(m => m.Questions).SelectMany(q => q.LensIds), id => id == entry.Id);
+        }
+        Assert.Equal(6, Rev16Audits.Select(x => x.Direction).Distinct().Count());
+        Assert.Equal(6, Rev16Audits.Select(x => x.Time).Distinct().Count());
+        var kamma = report.CorrespondenceAudits.Single(x => x.LensId == "13");
+        Assert.Equal(["context-a: wholesome-or-unwholesome-kamma", "context-b: associated-volition-cetana"],
+            kamma.ConditioningPhenomena.Split(';'));
+        Assert.Equal(["context-a: resultant-aggregates-and-kamma-produced-material-phenomena",
+                      "context-b: associated-phenomena-and-material-phenomena-produced-by-them"],
+            kamma.ConditionedPhenomena.Split(';'));
+        Assert.Equal(["context-a-kamma-to-resultant-aggregates-and-kamma-produced-matter",
+                      "context-b-volition-to-associated-phenomena-and-produced-matter"],
+            kamma.ConditioningDirection.Split(';'));
+        Assert.Equal(["context-a-kamma-result-conditioning-not-observation-tick-order",
+                      "context-b-associated-volition-conditioning-not-receipt-order"],
+            kamma.TemporalRelation.Split(';'));
+        foreach (var missing in new[] { "context-a-kamma-to-resultant-conditional-link",
+                                        "context-b-volition-to-associated-conditional-link" })
+            Assert.Contains(missing, kamma.UnrepresentedDoctrinalRelations);
+        Assert.Contains("mutual", report.CorrespondenceAudits.Single(x => x.LensId == "14").ConditioningDirection);
+        var food = report.CorrespondenceAudits.Single(x => x.LensId == "15");
+        Assert.Equal(2, food.ConditioningPhenomena.Split(';').Length);
+        Assert.Equal(2, food.ConditionedPhenomena.Split(';').Length);
+        Assert.Equal(2, food.ConditioningDirection.Split(';').Length);
+        var faculties = report.CorrespondenceAudits.Single(x => x.LensId == "16");
+        Assert.Equal(3, faculties.ConditioningPhenomena.Split(';').Length);
+        Assert.Equal(3, faculties.ConditionedPhenomena.Split(';').Length);
+        Assert.Equal(3, faculties.ConditioningDirection.Split(';').Length);
+        Assert.Contains("produced-by-them", report.CorrespondenceAudits.Single(x => x.LensId == "17").ConditionedPhenomena);
+        Assert.Contains("not-public-geographic-path",
+            report.CorrespondenceAudits.Single(x => x.LensId == "18").TemporalRelation);
+        Assert.Equal(56, report.Cases.Count);
+        Assert.All(report.Cases, x => Assert.Equal(11, x.Modes.Count));
+        Assert.All(report.Cases.SelectMany(x => x.Modes),
+            x => Assert.Equal(4, x.MethodComparison.Methods.Count));
     }
 
     [Fact]
@@ -361,7 +431,7 @@ public sealed class ConditionLensTests
             Assert.Equal(JsonDefaults.Serialize(savedRedundant.GetProperty("modes")
                 .EnumerateArray().First().GetProperty("methodComparison")),
                 JsonDefaults.Serialize(savedEight.GetProperty("methodComparison")));
-            Assert.Equal(10, savedReport.RootElement.GetProperty("schemaVersion").GetInt32());
+            Assert.Equal(11, savedReport.RootElement.GetProperty("schemaVersion").GetInt32());
             // These values were read from the CLI's actual saved JSON.
             var savedAudits = savedReport.RootElement.GetProperty("correspondenceAudits")
                 .EnumerateArray().ToArray();
@@ -415,6 +485,52 @@ public sealed class ConditionLensTests
                 Assert.Contains(entry.Missing, saved.GetProperty("unrepresentedDoctrinalRelations")
                     .EnumerateArray().Select(v => v.GetString()));
             }
+            foreach (var entry in Rev16Audits)
+            {
+                var saved = savedAudits.Single(x => x.GetProperty("lensId").GetString() == entry.Id);
+                Assert.Equal("unimplemented-unassessed", saved.GetProperty("questionImplementationStatus").GetString());
+                Assert.Equal("doctrinal-correspondence-unassessed", saved.GetProperty("doctrinalCorrespondenceStatus").GetString());
+                Assert.Equal("search-effect-unverified", saved.GetProperty("searchEffectStatus").GetString());
+                Assert.Equal(entry.Direction, saved.GetProperty("conditioningDirection").GetString());
+                Assert.Equal(entry.Time, saved.GetProperty("temporalRelation").GetString());
+                Assert.StartsWith(entry.Conditioning, saved.GetProperty("conditioningPhenomena").GetString());
+                Assert.StartsWith(entry.Conditioned, saved.GetProperty("conditionedPhenomena").GetString());
+                Assert.Contains(entry.Case, saved.GetProperty("engineeringQuestionTrigger").GetString()!);
+                Assert.Contains(entry.Received, saved.GetProperty("receivedEngineeringInputs")
+                    .EnumerateArray().Select(x => x.GetString()));
+                Assert.Contains(entry.Missing, saved.GetProperty("unrepresentedDoctrinalRelations")
+                    .EnumerateArray().Select(x => x.GetString()));
+            }
+            var savedKamma = savedAudits.Single(x => x.GetProperty("lensId").GetString() == "13");
+            Assert.Equal(["context-a: wholesome-or-unwholesome-kamma", "context-b: associated-volition-cetana"],
+                savedKamma.GetProperty("conditioningPhenomena").GetString()!.Split(';'));
+            Assert.Equal(["context-a: resultant-aggregates-and-kamma-produced-material-phenomena",
+                          "context-b: associated-phenomena-and-material-phenomena-produced-by-them"],
+                savedKamma.GetProperty("conditionedPhenomena").GetString()!.Split(';'));
+            Assert.Equal(["context-a-kamma-to-resultant-aggregates-and-kamma-produced-matter",
+                          "context-b-volition-to-associated-phenomena-and-produced-matter"],
+                savedKamma.GetProperty("conditioningDirection").GetString()!.Split(';'));
+            Assert.Equal(["context-a-kamma-result-conditioning-not-observation-tick-order",
+                          "context-b-associated-volition-conditioning-not-receipt-order"],
+                savedKamma.GetProperty("temporalRelation").GetString()!.Split(';'));
+            foreach (var missing in new[] { "context-a-kamma-to-resultant-conditional-link",
+                                            "context-b-volition-to-associated-conditional-link" })
+                Assert.Contains(missing, savedKamma.GetProperty("unrepresentedDoctrinalRelations")
+                    .EnumerateArray().Select(x => x.GetString()));
+            Assert.Contains("mutual", savedAudits.Single(x => x.GetProperty("lensId").GetString() == "14")
+                .GetProperty("conditioningDirection").GetString());
+            var savedFood = savedAudits.Single(x => x.GetProperty("lensId").GetString() == "15");
+            Assert.Equal(2, savedFood.GetProperty("conditioningPhenomena").GetString()!.Split(';').Length);
+            Assert.Equal(2, savedFood.GetProperty("conditionedPhenomena").GetString()!.Split(';').Length);
+            Assert.Equal(2, savedFood.GetProperty("conditioningDirection").GetString()!.Split(';').Length);
+            var savedFaculties = savedAudits.Single(x => x.GetProperty("lensId").GetString() == "16");
+            Assert.Equal(3, savedFaculties.GetProperty("conditioningPhenomena").GetString()!.Split(';').Length);
+            Assert.Equal(3, savedFaculties.GetProperty("conditionedPhenomena").GetString()!.Split(';').Length);
+            Assert.Equal(3, savedFaculties.GetProperty("conditioningDirection").GetString()!.Split(';').Length);
+            Assert.Contains("produced-by-them", savedAudits.Single(x =>
+                x.GetProperty("lensId").GetString() == "17").GetProperty("conditionedPhenomena").GetString());
+            Assert.Contains("not-public-geographic-path", savedAudits.Single(x =>
+                x.GetProperty("lensId").GetString() == "18").GetProperty("temporalRelation").GetString());
             var savedThree = savedAudits.Single(x =>
                 x.GetProperty("lensId").GetString() == "03");
             Assert.Contains("associated mental phenomena and the material phenomena they produce",
@@ -479,7 +595,7 @@ public sealed class ConditionLensTests
                 await File.ReadAllBytesAsync(Path.Combine(output, "condition-lenses.json")));
             Assert.Equal(24, expected.Index.Count);
             Assert.Equal(56, expected.Cases.Count);
-            Assert.Equal(10, expected.SchemaVersion);
+            Assert.Equal(11, expected.SchemaVersion);
             Assert.All(expected.Cases, c => Assert.Equal(11, c.Modes.Count));
             Assert.Equal(["b"], expected.Cases.Single(c => c.Id == "B-eligible")
                 .Modes[0].MethodComparison.Methods.Single(m =>
@@ -628,7 +744,7 @@ public sealed class ConditionLensTests
             var saved = await File.ReadAllTextAsync(Path.Combine(output, "condition-lenses.json"));
             var report = ConditionLensAnalysis.Run(Fixture());
             Assert.Equal(JsonDefaults.Serialize(report) + "\n", saved);
-            Assert.Equal(10, report.SchemaVersion);
+            Assert.Equal(11, report.SchemaVersion);
             var eligible = report.Cases.Single(c => c.Id == "B-eligible");
             Assert.Empty(eligible.Modes.Single(m => m.Mode == "06").Questions);
             var question = Assert.Single(eligible.Modes.Single(m => m.Mode == "09").Questions);
@@ -1155,7 +1271,7 @@ public sealed class ConditionLensTests
             var bytes = await File.ReadAllBytesAsync(path);
             using var doc = System.Text.Json.JsonDocument.Parse(bytes);
             var root = doc.RootElement;
-            Assert.Equal(10, root.GetProperty("schemaVersion").GetInt32());
+            Assert.Equal(11, root.GetProperty("schemaVersion").GetInt32());
             Assert.Equal(56, root.GetProperty("cases").GetArrayLength());
             var none = root.GetProperty("cases").EnumerateArray().Single(c =>
                 c.GetProperty("id").GetString() == "U-none");
@@ -1257,7 +1373,7 @@ public sealed class ConditionLensTests
     {
         var report = ConditionLensAnalysis.Run(Fixture());
         Assert.Equal(56, report.Cases.Count);
-        Assert.Equal(10, report.SchemaVersion);
+        Assert.Equal(11, report.SchemaVersion);
         Assert.Equal("limited-analogy-implemented",
             report.Index.Single(e => e.Id == "21").Status);
         Assert.All(report.Cases, c => Assert.Equal(11, c.Modes.Count));
@@ -1395,7 +1511,7 @@ public sealed class ConditionLensTests
             var bytes = await File.ReadAllBytesAsync(path);
             using var doc = System.Text.Json.JsonDocument.Parse(bytes);
             var root = doc.RootElement;
-            Assert.Equal(10, root.GetProperty("schemaVersion").GetInt32());
+            Assert.Equal(11, root.GetProperty("schemaVersion").GetInt32());
             Assert.Equal(56, root.GetProperty("cases").GetArrayLength());
             var cases = root.GetProperty("cases").EnumerateArray().ToArray();
             System.Text.Json.JsonElement Case(string id) => cases.Single(c =>
@@ -1638,7 +1754,7 @@ public sealed class ConditionLensTests
             var bytes = await File.ReadAllBytesAsync(path);
             using var saved = System.Text.Json.JsonDocument.Parse(bytes);
             var root = saved.RootElement;
-            Assert.Equal(10, root.GetProperty("schemaVersion").GetInt32());
+            Assert.Equal(11, root.GetProperty("schemaVersion").GetInt32());
             Assert.Equal(24, root.GetProperty("index").GetArrayLength());
             Assert.Equal(24, root.GetProperty("correspondenceAudits").GetArrayLength());
             var cases = root.GetProperty("cases").EnumerateArray().ToArray();
