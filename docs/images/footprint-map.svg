@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" font-family="sans-serif">
+  <rect width="640" height="400" fill="#e8f0e4"/>
+  <path d="M0,300 C120,270 180,330 320,300 C460,270 540,320 640,290 L640,400 L0,400 Z" fill="#cfe3c0"/>
+  <path d="M0,80 C150,60 260,110 400,85 C500,68 580,95 640,80 L640,0 L0,0 Z" fill="#dcebd2"/>
+  <path d="M120,0 C160,90 90,160 150,240 C190,295 170,350 190,400" stroke="#8fc1e3" stroke-width="16" fill="none" opacity="0.8"/>
+  <path d="M0,210 C160,190 300,225 640,180" stroke="#d8cf9f" stroke-width="7" fill="none"/>
+  <path d="M330,400 C340,300 315,220 345,120 C360,70 350,30 355,0" stroke="#d8cf9f" stroke-width="6" fill="none"/>
+  <g font-size="13" fill="#5a6b52" font-weight="600">
+    <text x="40" y="130">北の尾根</text><text x="470" y="130">東の集落</text>
+    <text x="52" y="360">南の河原</text><text x="480" y="350">南東の森</text>
+    <text x="255" y="45">高原</text><text x="238" y="382">橋のたもと</text>
+  </g>
+  <text x="100" y="200" font-size="11" fill="#4a7ba6">川</text>
+  <!-- truth trail (answer key, not used by inference) -->
+  <path d="M355,388 C350,320 380,285 420,262 C462,238 505,232 545,205" stroke="#7a3ea1" stroke-width="3" fill="none" stroke-dasharray="2 6"/>
+  <circle cx="545" cy="205" r="8" fill="#7a3ea1"/>
+  <text x="470" y="188" font-size="12" fill="#7a3ea1" font-weight="700">★ 実際の足取りの先</text>
+  <!-- candidate area: shrinks as evidence arrives (12s loop) -->
+  <ellipse cx="320" cy="200" rx="310" ry="185" fill="#e2543e" opacity="0.28" stroke="#e2543e" stroke-width="2" stroke-dasharray="6 4">
+    <animate attributeName="cx" values="320;320;400;480;530;530" keyTimes="0;0.15;0.35;0.55;0.75;1" dur="12s" repeatCount="indefinite"/>
+    <animate attributeName="cy" values="200;200;215;225;218;218" keyTimes="0;0.15;0.35;0.55;0.75;1" dur="12s" repeatCount="indefinite"/>
+    <animate attributeName="rx" values="310;310;200;120;55;55" keyTimes="0;0.15;0.35;0.55;0.75;1" dur="12s" repeatCount="indefinite"/>
+    <animate attributeName="ry" values="185;185;130;80;38;38" keyTimes="0;0.15;0.35;0.55;0.75;1" dur="12s" repeatCount="indefinite"/>
+  </ellipse>
+  <!-- evidence markers appear in sequence -->
+  <g opacity="0">
+    <circle cx="392" cy="278" r="8" fill="#1f7a4d"/><text x="360" y="306" font-size="11" fill="#1f7a4d" font-weight="700">証拠1 本人の観測</text>
+    <animate attributeName="opacity" values="0;0;1;1" keyTimes="0;0.3;0.38;1" dur="12s" repeatCount="indefinite"/>
+  </g>
+  <g opacity="0">
+    <circle cx="470" cy="245" r="8" fill="#b8860b"/><text x="428" y="230" font-size="11" fill="#8a6508" font-weight="700">証拠2 すれ違い（横糸）</text>
+    <animate attributeName="opacity" values="0;0;1;1" keyTimes="0;0.5;0.58;1" dur="12s" repeatCount="indefinite"/>
+  </g>
+  <g opacity="0">
+    <circle cx="520" cy="218" r="8" fill="#205a9e"/><text x="452" y="266" font-size="11" fill="#205a9e" font-weight="700">証拠3 受領で時刻確定</text>
+    <animate attributeName="opacity" values="0;0;1;1" keyTimes="0;0.68;0.76;1" dur="12s" repeatCount="indefinite"/>
+  </g>
+  <g><rect x="28" y="196" width="18" height="14" fill="#444"/><text x="20" y="228" font-size="11" fill="#333" font-weight="700">救助拠点</text></g>
+  <text x="320" y="392" font-size="12" fill="#555" text-anchor="middle">候補エリア 100% → 約55% → 約30% → 約14% → 約6%（模式図）</text>
+</svg>
