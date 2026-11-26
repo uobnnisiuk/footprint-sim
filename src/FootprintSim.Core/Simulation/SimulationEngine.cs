@@ -174,11 +174,16 @@ public sealed class SimulationEngine
         InteractionObservation? observation = null;
         if (condition != WeftEvidenceCondition.DeviceOnly)
         {
-            var observedWindow = ((uint)seed / (uint)definition.ConditionCycle.Count) % 2 == 0
-                ? InteractionTimeWindow.At(definition.HistoricalEndTick)
-                : new InteractionTimeWindow(
-                    definition.HistoricalStartTick,
-                    definition.HistoricalEndTick);
+            // NEXUS TRIAL T2 / B1 (relational recording, same as trial 1):
+            // always record the encounter observation with its full
+            // co-presence interval [HistoricalStartTick, HistoricalEndTick]
+            // instead of collapsing it to a single tick for half of the
+            // seeds. The interval — duration and simultaneous existence —
+            // is relational structure that must not be discarded at the
+            // recording boundary.
+            var observedWindow = new InteractionTimeWindow(
+                definition.HistoricalStartTick,
+                definition.HistoricalEndTick);
             var state = condition switch
             {
                 WeftEvidenceCondition.SupportedButUncertain =>

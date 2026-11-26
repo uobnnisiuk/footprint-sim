@@ -1,5 +1,6 @@
 using FootprintSim.Evidence;
 using FootprintSim.Inference;
+using FootprintSim.Interactions;
 
 namespace FootprintSim.Evaluation;
 
@@ -81,7 +82,48 @@ public sealed class HazardAwareStrategy : ISearchStrategy
                 observation.ReportedRegionId!,
                 StringComparer.Ordinal));
 
-        if (!hazardEvidence || hazardRegions.Count == 0)
+        // NEXUS TRIAL T2 / H2 (relational anchor for hazard-aware): when no
+        // person point observation attests presence inside the declared
+        // hazard envelope, a received encounter (co-presence) constraint may
+        // open the envelope instead, provided its observed interval OVERLAPS
+        // the historical window (simultaneous existence), it attests a
+        // historical candidate region, and the historical candidate set
+        // reaches into the declared envelope (its source region). This only
+        // ever OPENS the declared envelope exactly as the point-observation
+        // branch does; it never narrows it. An encounter that was never
+        // received (device-only / unavailable conditions produce no public
+        // constraint) cannot anchor anything. Scenarios without a declared
+        // candidate-warp definition have no historical window, so the anchor
+        // cannot fire there.
+        var definition = input.PublicContext.PublicCandidateWarp;
+        var anchorConstraint = hazardEvidence || definition is null ||
+            input.AvailableCrossThreadConstraints is null
+            ? null
+            : input.AvailableCrossThreadConstraints.Constraints
+                .Where(constraint =>
+                    constraint.DerivationKind ==
+                        CrossThreadConstraintDerivationKind.PersonEncounterCoLocation &&
+                    string.Equals(
+                        constraint.TargetEntityId,
+                        input.PublicContext.TargetPersonId,
+                        StringComparison.Ordinal) &&
+                    constraint.Visibility == InteractionVisibility.PublicEvidence &&
+                    constraint.AvailableAtTick <= input.CurrentTick &&
+                    constraint.SourceObservedTimeWindow.StartTick <=
+                        definition.HistoricalTimeWindow.EndTick &&
+                    definition.HistoricalTimeWindow.StartTick <=
+                        constraint.SourceObservedTimeWindow.EndTick &&
+                    constraint.AllowedRegionIds.Any(regionId =>
+                        definition.HistoricalCandidateRegionIds.Contains(
+                            regionId,
+                            StringComparer.Ordinal)) &&
+                    definition.HistoricalCandidateRegionIds.Any(regionId =>
+                        hazardRegions.Contains(regionId, StringComparer.Ordinal)))
+                .OrderBy(constraint => constraint.AvailableAtTick)
+                .ThenBy(constraint => constraint.ConstraintId, StringComparer.Ordinal)
+                .FirstOrDefault();
+
+        if ((!hazardEvidence && anchorConstraint is null) || hazardRegions.Count == 0)
         {
             return StrategySupport.Result(
                 this,
@@ -110,7 +152,9 @@ public sealed class HazardAwareStrategy : ISearchStrategy
             candidates,
             summary.EvidenceState,
             [
-                "person-observation-in-declared-hazard-envelope",
+                hazardEvidence
+                    ? "person-observation-in-declared-hazard-envelope"
+                    : "encounter-interval-anchor",
                 "declared-hazard-transport-envelope"
             ],
             confirmed is null ? [] : [confirmed],
