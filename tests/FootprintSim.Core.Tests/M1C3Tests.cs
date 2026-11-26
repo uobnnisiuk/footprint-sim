@@ -175,25 +175,32 @@ public sealed class M1C3Tests
     }
 
     [Fact]
-    public void ExactTickAndInclusiveIntervalRemainRecoverableInS3Audits()
+    public void EncounterIntervalRemainsRecoverableInS3Audits()
     {
+        // Since the 2026-11-26 owner decision O2 (relational anchor
+        // adoption), encounter observations are always recorded with their
+        // full co-presence interval instead of being collapsed to a single
+        // tick for half of the seeds, so every seed now yields interval
+        // audits. The interval, its relation kind, participants, and
+        // provenance must remain recoverable from the audits.
         var scenario = LoadS3();
-        var exact = new CrossThreadConstrainedStrategy().Evaluate(
+        var first = new CrossThreadConstrainedStrategy().Evaluate(
             Input(scenario, new SimulationEngine().Run(scenario, 0), 30));
-        var interval = new CrossThreadConstrainedStrategy().Evaluate(
+        var second = new CrossThreadConstrainedStrategy().Evaluate(
             Input(scenario, new SimulationEngine().Run(scenario, 6), 30));
 
-        Assert.All(exact.CrossThreadConstraintAudits, audit =>
-            Assert.Equal(ConstraintTemporalKind.ExactTick, audit.ConstraintTemporalKind));
-        Assert.All(interval.CrossThreadConstraintAudits, audit =>
+        foreach (var result in new[] { first, second })
         {
-            Assert.Equal(ConstraintTemporalKind.InclusiveInterval, audit.ConstraintTemporalKind);
-            Assert.Equal(8, audit.SourceObservedTimeWindow.StartTick);
-            Assert.Equal(9, audit.SourceObservedTimeWindow.EndTick);
-            Assert.Equal(InteractionRelationKind.PersonPersonEncounter, audit.RelationKind);
-            Assert.NotEmpty(audit.SourceParticipants);
-            Assert.NotEmpty(audit.Provenance);
-        });
+            Assert.All(result.CrossThreadConstraintAudits, audit =>
+            {
+                Assert.Equal(ConstraintTemporalKind.InclusiveInterval, audit.ConstraintTemporalKind);
+                Assert.Equal(8, audit.SourceObservedTimeWindow.StartTick);
+                Assert.Equal(9, audit.SourceObservedTimeWindow.EndTick);
+                Assert.Equal(InteractionRelationKind.PersonPersonEncounter, audit.RelationKind);
+                Assert.NotEmpty(audit.SourceParticipants);
+                Assert.NotEmpty(audit.Provenance);
+            });
+        }
     }
 
     [Fact]

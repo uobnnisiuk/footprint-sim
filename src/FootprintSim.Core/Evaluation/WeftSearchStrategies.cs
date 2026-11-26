@@ -44,7 +44,39 @@ internal static class WeftStrategySupport
                 .OrderBy(observation => observation.AvailableTick)
                 .ThenBy(observation => observation.ObservationId, StringComparer.Ordinal)
                 .FirstOrDefault();
-        if (definition is null || ownObservation is null)
+        // NEXUS TRIAL B2 (relational inference): when the target's own point
+        // observation is missing, a received encounter (co-presence) record
+        // may anchor the historical warp if its observed interval OVERLAPS
+        // the historical window (simultaneous existence) and attests a
+        // candidate region. Cross-thread strategy only: the own-evidence
+        // ablation must not consume other-person evidence. An encounter that
+        // was never received (device-only / unavailable conditions produce no
+        // public constraint) cannot anchor anything.
+        var anchorConstraint = definition is null || ownObservation is not null ||
+            !applyCrossThread || input.AvailableCrossThreadConstraints is null
+            ? null
+            : input.AvailableCrossThreadConstraints.Constraints
+                .Where(constraint =>
+                    constraint.DerivationKind ==
+                        CrossThreadConstraintDerivationKind.PersonEncounterCoLocation &&
+                    string.Equals(
+                        constraint.TargetEntityId,
+                        input.PublicContext.TargetPersonId,
+                        StringComparison.Ordinal) &&
+                    constraint.Visibility == InteractionVisibility.PublicEvidence &&
+                    constraint.AvailableAtTick <= input.CurrentTick &&
+                    constraint.SourceObservedTimeWindow.StartTick <=
+                        definition.HistoricalTimeWindow.EndTick &&
+                    definition.HistoricalTimeWindow.StartTick <=
+                        constraint.SourceObservedTimeWindow.EndTick &&
+                    constraint.AllowedRegionIds.Any(regionId =>
+                        definition.HistoricalCandidateRegionIds.Contains(
+                            regionId,
+                            StringComparer.Ordinal)))
+                .OrderBy(constraint => constraint.AvailableAtTick)
+                .ThenBy(constraint => constraint.ConstraintId, StringComparer.Ordinal)
+                .FirstOrDefault();
+        if (definition is null || (ownObservation is null && anchorConstraint is null))
         {
             var fallback = new HazardAwareStrategy().Evaluate(input);
             return fallback with
@@ -61,14 +93,30 @@ internal static class WeftStrategySupport
             definition.HistoricalTimeWindow.EndTick
             ? CandidateWarpTemporalKind.EventPoint
             : CandidateWarpTemporalKind.StateInterval;
-        var provenance = CandidateWarpProvenance.Create(
-            CandidateWarpSourceKind.PersonObservation,
-            ownObservation.ObservationId,
-            ownObservation.AvailableTick,
-            isPersonEvidence: true,
-            isDeviceOnlyEvidence: false,
-            ownObservation.State,
-            definition.HistoricalCandidateRegionIds);
+        var provenance = ownObservation is not null
+            ? CandidateWarpProvenance.Create(
+                CandidateWarpSourceKind.PersonObservation,
+                ownObservation.ObservationId,
+                ownObservation.AvailableTick,
+                isPersonEvidence: true,
+                isDeviceOnlyEvidence: false,
+                ownObservation.State,
+                definition.HistoricalCandidateRegionIds)
+            : CandidateWarpProvenance.Create(
+                anchorConstraint!.EvidenceBoundaryState == EvidenceState.Conflicting
+                    ? CandidateWarpSourceKind.ConflictingObservation
+                    : CandidateWarpSourceKind.CrossThreadObservation,
+                anchorConstraint.ConstraintId,
+                anchorConstraint.AvailableAtTick,
+                anchorConstraint.IsPersonEvidence,
+                anchorConstraint.IsDeviceOnlyEvidence,
+                anchorConstraint.EvidenceBoundaryState,
+                anchorConstraint.AllowedRegionIds,
+                anchorConstraint.SourceRelationKind,
+                anchorConstraint.SourceObservationId,
+                anchorConstraint.SourceObservedTimeWindow,
+                anchorConstraint.SourceParticipants,
+                anchorConstraint.Provenance);
         var warps = PublicCandidateWarpFactory.Create(
             input.ScenarioId,
             input.Seed,
@@ -126,7 +174,9 @@ internal static class WeftStrategySupport
             outer,
             state,
             applyCrossThread
-                ? ["own-evidence-candidate-warp", "available-cross-thread-constraint"]
+                ? [anchorConstraint is not null
+                    ? "encounter-interval-anchor"
+                    : "own-evidence-candidate-warp", "available-cross-thread-constraint"]
                 : ["own-evidence-candidate-warp", "cross-thread-ablation"],
             [],
             CandidateProvenance(warps, input.CurrentTick));

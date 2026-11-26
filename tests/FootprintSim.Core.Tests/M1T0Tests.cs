@@ -73,8 +73,17 @@ public sealed class M1T0Tests
         Assert.Contains(telemetry.Truth.WorldEvents, record =>
             record.OccurrenceTimeWindow.TemporalKind == TelemetryTemporalKind.ExactEventPoint &&
             record.CausalReferenceIds.Count > 0);
-        Assert.Contains(telemetry.Evidence.InteractionObservations, record =>
-            record.ObservedTimeWindow.TemporalKind == TelemetryTemporalKind.ExactEventPoint);
+        // Since the 2026-11-26 owner decision O2 (relational anchor
+        // adoption), encounter observations always carry their full
+        // co-presence interval; none are collapsed to an exact tick.
+        Assert.All(telemetry.Evidence.InteractionObservations, record =>
+        {
+            Assert.Equal(
+                TelemetryTemporalKind.InclusiveStateInterval,
+                record.ObservedTimeWindow.TemporalKind);
+            Assert.Equal(8, record.ObservedTimeWindow.StartTick);
+            Assert.Equal(9, record.ObservedTimeWindow.EndTick);
+        });
         Assert.Contains(telemetry.Evidence.InteractionObservations, record =>
             record.ObservedTimeWindow.TemporalKind == TelemetryTemporalKind.InclusiveStateInterval &&
             record.ObservedTimeWindow.StartTick == 8 &&
