@@ -78,7 +78,18 @@ internal static class WeftStrategySupport
                 .FirstOrDefault();
         if (definition is null || (ownObservation is null && anchorConstraint is null))
         {
-            var fallback = new HazardAwareStrategy().Evaluate(input);
+            // AR-101: when cross-thread application is disabled (the
+            // own-evidence ablation), the hazard-aware fallback must not
+            // consume other-person encounter constraints through its H2
+            // anchor either. Strip the constraint set before falling back
+            // so the fallback sees the same evidence boundary as this
+            // strategy itself; with the B2 anchor already gated on
+            // applyCrossThread above, no cross-thread input then reaches
+            // the own-evidence path at all.
+            var fallbackInput = applyCrossThread
+                ? input
+                : input with { AvailableCrossThreadConstraints = null };
+            var fallback = new HazardAwareStrategy().Evaluate(fallbackInput);
             return fallback with
             {
                 StrategyId = strategy.Id,
